@@ -1314,9 +1314,14 @@ def test_hazel_importer_normalizes_paths_filters_clauses_and_maps_unarchive(tmp_
     assert "rootfile" not in res.keyword_rules
     assert "pure size rule" not in res.keyword_rules
 
-    # 2. 'none' mode rule preserved as compound NOR policy; Unarchive rule mapped; Copy PDF rule skipped!
-    assert len(res.policies) == 2
+    # 2. Single-condition Pure Size Rule, 'none' mode compound NOR policy, and Unarchive rule mapped; Copy PDF rule skipped!
+    assert len(res.policies) == 3
     by_target = {p["target_path"]: p for p in res.policies}
+
+    size_pol = by_target["LargeFiles"]
+    assert size_pol["type"] == "size"
+    assert size_pol["expression"] == "> 50MB"
+
     none_pol = by_target["NonSecret"]
     assert none_pol["match_mode"] == "none"
     assert none_pol["conditions"] == [

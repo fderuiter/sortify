@@ -363,6 +363,8 @@ def test_metadata_pass_blocks_bypass_on_content_clause_and_analyzer_routes(tmp_p
 
 def test_drop_zone_is_supported_file_evaluates_compound_policy(tmp_path):
     """Req 5: DropZoneModal._is_supported_file routes compound policy checks through PolicyEngine."""
+    from app.core.metadata import evaluate_static_file_routing
+
     good_bin = tmp_path / "fw_prod_v2.custombin"
     good_bin.write_bytes(b"\x00\x01\x02")
     excluded_bin = tmp_path / "fw_beta_v2.custombin"
@@ -376,6 +378,7 @@ def test_drop_zone_is_supported_file_evaluates_compound_policy(tmp_path):
             "expression": "ALL(ext==custombin, NOT beta)",
             "target_path": "Firmware/Prod",
             "priority": 80,
+            "halting": True,
             "enabled": True,
             "match_mode": "all",
             "conditions": [
@@ -389,6 +392,17 @@ def test_drop_zone_is_supported_file_evaluates_compound_policy(tmp_path):
             ],
         }
     ]
+
+    assert evaluate_static_file_routing(str(good_bin), settings) == (
+        "Firmware/Prod",
+        False,
+        False,
+    )
+    assert evaluate_static_file_routing(str(excluded_bin), settings) == (
+        None,
+        False,
+        True,
+    )
 
     modal = DropZoneModal(settings=settings, base_dir=str(tmp_path))
     assert modal._is_supported_file(str(good_bin)) is True

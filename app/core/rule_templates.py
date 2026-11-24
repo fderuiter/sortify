@@ -400,6 +400,7 @@ def export_active_rules(
             p_action = str(pol.get("action", "") or "").strip().lower()
             p_expr = str(pol.get("expression", "")).strip()
             p_target = str(pol.get("target_path", "")).strip()
+            p_rename = str(pol.get("rename_pattern", "") or "").strip()
             raw_conds = pol.get("conditions")
             has_conds = isinstance(raw_conds, list) and len(raw_conds) > 0
             if not p_expr and not has_conds:
@@ -411,6 +412,20 @@ def export_active_rules(
                 hazel_act_type = "NSRuleActionUnarchive"
             else:
                 hazel_act_type = "NSRuleActionMove"
+
+            rule_actions: list[dict[str, Any]] = [
+                {
+                    "NSRuleActionType": hazel_act_type,
+                    "DestinationPath": p_target,
+                }
+            ]
+            if p_rename and p_action != "trash":
+                rule_actions.append(
+                    {
+                        "NSRuleActionType": "NSRuleActionRename",
+                        "RenamePattern": p_rename,
+                    }
+                )
 
             p_case = bool(pol.get("case_sensitive", False))
             p_regex = bool(pol.get("regex", False))
@@ -428,18 +443,14 @@ def export_active_rules(
                     "NSRuleIsEnabled": bool(pol.get("enabled", True)),
                     "NSRuleConditionMode": p_mode,
                     "NSRuleConditions": hz_conds,
-                    "NSRuleActions": [
-                        {
-                            "NSRuleActionType": hazel_act_type,
-                            "DestinationPath": p_target,
-                        }
-                    ],
+                    "NSRuleActions": rule_actions,
                 }
                 if p_negate:
                     rule_entry["NSRuleNegated"] = True
                 rules_list.append(rule_entry)
                 continue
 
+            cond_val = p_expr
             if p_regex:
                 cond_target = "Name"
                 cond_op = "matches regex"
@@ -448,6 +459,40 @@ def export_active_rules(
                     "Extension" if ("." in p_expr and "*" not in p_expr) else "Name"
                 )
                 cond_op = "matches"
+            elif p_type == "duplicate":
+                cond_target = "Duplicate"
+                cond_op = "is"
+            elif p_type in (
+                "size",
+                "age",
+                "modified_date",
+                "created_date",
+                "exif_date",
+            ):
+                target_map = {
+                    "size": "Size",
+                    "age": "Age",
+                    "modified_date": "DateModified",
+                    "created_date": "DateCreated",
+                    "exif_date": "EXIFDate",
+                }
+                cond_target = target_map[p_type]
+                expr_lower = p_expr.lower()
+                if expr_lower.startswith("older than "):
+                    cond_op = "older than"
+                    cond_val = p_expr[len("older than ") :].strip()
+                elif expr_lower.startswith("in the last "):
+                    cond_op = "in the last"
+                    cond_val = p_expr[len("in the last ") :].strip()
+                elif p_expr.startswith((">=", "<=", "==")):
+                    cond_op = "=" if p_expr[:2] == "==" else p_expr[:2]
+                    cond_val = p_expr[2:].strip()
+                elif p_expr.startswith((">", "<", "=")):
+                    cond_op = p_expr[:1]
+                    cond_val = p_expr[1:].strip()
+                else:
+                    cond_op = "is"
+                    cond_val = p_expr
             else:
                 cond_target = "Name"
                 cond_op = "contains"
@@ -455,10 +500,10 @@ def export_active_rules(
             single_cond: dict[str, Any] = {
                 "target": cond_target,
                 "operator": cond_op,
-                "value": p_expr,
+                "value": cond_val,
                 "NSRuleConditionTarget": cond_target,
                 "NSRuleConditionOperator": cond_op,
-                "NSRuleConditionValue": p_expr,
+                "NSRuleConditionValue": cond_val,
             }
             if p_regex:
                 single_cond["regex"] = True
@@ -471,12 +516,7 @@ def export_active_rules(
                 "NSRuleName": f"Policy {idx + 1}: {p_expr}",
                 "NSRuleIsEnabled": bool(pol.get("enabled", True)),
                 "NSRuleConditions": [single_cond],
-                "NSRuleActions": [
-                    {
-                        "NSRuleActionType": hazel_act_type,
-                        "DestinationPath": p_target,
-                    }
-                ],
+                "NSRuleActions": rule_actions,
             }
             if p_mode in ("all", "any", "none") and ("match_mode" in pol or p_negate):
                 rule_entry["NSRuleConditionMode"] = (

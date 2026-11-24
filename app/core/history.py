@@ -397,9 +397,14 @@ def _move_aside_blocking_parents(path: str, base_dir: str, db_conn) -> None:
     The user may have saved a file named like a folder that a sort emptied and
     removed; undo moves it to a free name instead of failing to recreate the folder.
     """
+    if not path or not base_dir:
+        return
     from app.core.mover import get_safe_path
 
-    parts = safe_relpath(path, base_dir).replace("\\", "/").split("/")
+    rel_str = safe_relpath(path, base_dir).replace("\\", "/")
+    parts = [p for p in rel_str.split("/") if p and p != "."]
+    if not parts or ".." in parts or os.path.isabs(rel_str):
+        return
     current = base_dir
     for part in parts[:-1]:
         current = os.path.join(current, part)
@@ -694,7 +699,9 @@ class HistoryManager:
 
         return self.db.worker.execute_write(_write)
 
-    def complete_session(self, session_id: str) -> None:
+    def complete_session(
+        self, session_id: str, metadata: Optional[dict[str, Any]] = None
+    ) -> None:
         """Mark ``session_id`` as ``completed`` while keeping its ``moves`` ledger intact."""
         if not session_id:
             return
@@ -702,7 +709,9 @@ class HistoryManager:
         def _write() -> None:
             conn = get_db_connection(self.db_path)
             with conn:
-                self._transition_session_status(session_id, COMPLETED, conn=conn)
+                self._transition_session_status(
+                    session_id, COMPLETED, conn=conn, metadata=metadata
+                )
 
         self.db.worker.execute_write(_write)
 
@@ -1081,12 +1090,78 @@ class HistoryManager:
                 "SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,)
             ).fetchone()
         base_dir = row[0] if row else None
-        session_backup_root = (
-            overwrite_backup_dir(base_dir, session_id) if base_dir else None
-        )
 
         claimed = {m.dst for m in moves if m.state not in (INTENT, FAILED)}
         docs_conn = get_db_connection(self.db.db_path)
+
+        candidate_roots: list[str] = []
+        seen_root_keys: set[str] = set()
+
+        def _add_candidate_root(raw_root: Optional[str]) -> None:
+            if not raw_root or not isinstance(raw_root, str):
+                return
+            norm_root = os.path.normpath(os.path.abspath(raw_root))
+            key = os.path.normcase(norm_root)
+            if key not in seen_root_keys:
+                seen_root_keys.add(key)
+                candidate_roots.append(norm_root)
+
+        _add_candidate_root(base_dir)
+        try:
+            for ev in self.state_machine.get_audit_events(
+                session_id=session_id, conn=conn
+            ):
+                meta = ev.get("metadata") or {}
+                for br in meta.get("batch_roots") or []:
+                    _add_candidate_root(br)
+        except Exception:
+            pass
+        try:
+            doc_base_rows = docs_conn.execute(
+                "SELECT DISTINCT base_dir FROM documents WHERE base_dir IS NOT NULL"
+            ).fetchall()
+            for (doc_bdir,) in doc_base_rows:
+                if not doc_bdir:
+                    continue
+                norm_db = os.path.normcase(os.path.normpath(os.path.abspath(doc_bdir)))
+                prefix = norm_db.rstrip("/\\") + os.sep
+                for m in moves:
+                    for p_cand in (m.src, m.dst):
+                        if p_cand:
+                            norm_p = os.path.normcase(
+                                os.path.normpath(os.path.abspath(p_cand))
+                            )
+                            if norm_p == norm_db or norm_p.startswith(prefix):
+                                _add_candidate_root(doc_bdir)
+                                break
+        except DB_ERRORS:
+            pass
+
+        effective_roots = candidate_roots or ([base_dir] if base_dir else [])
+        session_backup_roots = [
+            overwrite_backup_dir(r, session_id) for r in effective_roots if r
+        ]
+
+        def _is_in_session_backup(path_str: Optional[str]) -> bool:
+            if not path_str:
+                return False
+            return any(
+                is_subpath_or_equal(path_str, b_root) for b_root in session_backup_roots
+            )
+
+        def _best_root_for(path_str: str) -> Optional[str]:
+            if not path_str:
+                return base_dir
+            norm_p = os.path.normcase(os.path.normpath(os.path.abspath(path_str)))
+            best: Optional[str] = None
+            for cand in candidate_roots:
+                norm_c = os.path.normcase(cand)
+                prefix = norm_c.rstrip("/\\") + os.sep
+                if norm_p == norm_c or norm_p.startswith(prefix):
+                    if best is None or len(norm_c) > len(os.path.normcase(best)):
+                        best = cand
+            return best or base_dir
+
         dirs_to_prune = set()
         restored = 0
         conflicts = []
@@ -1111,30 +1186,29 @@ class HistoryManager:
                 if moved:
                     claimed.add(moved)
                     dirs_to_prune.add(os.path.dirname(moved))
-                    is_synthetic_src = bool(
-                        session_backup_root
-                        and is_subpath_or_equal(move.src, session_backup_root)
-                    )
+                    is_synthetic_src = _is_in_session_backup(move.src)
                     if is_synthetic_src:
                         resilient_remove(moved)
                         restored += 1
-                        if base_dir:
+                        doc_root = _best_root_for(moved)
+                        if doc_root:
                             try:
-                                rel_moved = safe_relpath(moved, base_dir).replace(
+                                rel_moved = safe_relpath(moved, doc_root).replace(
                                     "\\", "/"
                                 )
                                 with docs_conn:
                                     docs_conn.execute(
                                         "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                        (base_dir, rel_moved, rel_moved),
+                                        (doc_root, rel_moved, rel_moved),
                                     )
                             except Exception as err:
                                 logging.warning(
                                     f"Could not delete synthetic document row for {moved}: {err}"
                                 )
                     else:
-                        if base_dir:
-                            _move_aside_blocking_parents(move.src, base_dir, docs_conn)
+                        src_root = _best_root_for(move.src)
+                        if src_root:
+                            _move_aside_blocking_parents(move.src, src_root, docs_conn)
                         os.makedirs(os.path.dirname(move.src), exist_ok=True)
                         restored_to = move.src
                         if os.path.lexists(move.src) and same_file_content(
@@ -1149,28 +1223,27 @@ class HistoryManager:
                                     f"Undo conflict: {move.src} is occupied by a different file; "
                                     f"restored {moved} to {restored_to} instead."
                                 )
-                        if session_backup_root and is_subpath_or_equal(
-                            move.dst, session_backup_root
-                        ):
+                        if _is_in_session_backup(move.dst):
                             dirs_to_prune.add(os.path.dirname(move.dst))
                         restored += 1
-                        if db and base_dir:
+                        doc_root = _best_root_for(restored_to) or _best_root_for(moved)
+                        if db and doc_root:
                             try:
-                                old_rel = safe_relpath(moved, base_dir).replace(
+                                old_rel = safe_relpath(moved, doc_root).replace(
                                     "\\", "/"
                                 )
-                                new_rel = safe_relpath(restored_to, base_dir).replace(
+                                new_rel = safe_relpath(restored_to, doc_root).replace(
                                     "\\", "/"
                                 )
                                 try:
                                     db.update_document_path(
-                                        base_dir,
+                                        doc_root,
                                         old_rel,
                                         new_rel,
                                         clear_verified_target=True,
                                     )
                                 except TypeError:
-                                    db.update_document_path(base_dir, old_rel, new_rel)
+                                    db.update_document_path(doc_root, old_rel, new_rel)
                             except Exception as err:
                                 logging.warning(
                                     f"Could not update the document path for {restored_to}: {err}"
@@ -1187,16 +1260,18 @@ class HistoryManager:
                 logging.error(f"Failed to undo move {session_id}#{move.seq}: {err}")
                 failures.append(err)
 
-        if base_dir and not is_partial:
-            restored += _restore_trapped_branch_files(
-                base_dir, session_id, docs_conn, failures
-            )
-
-        if base_dir and os.path.exists(base_dir):
-            _remove_staging_leftovers(base_dir)
-            _prune_emptied_dirs(dirs_to_prune, base_dir)
-            if not failures and not conflicts and not is_partial:
-                _purge_overwrite_backups(base_dir, session_id)
+        for root_dir in effective_roots:
+            if not root_dir:
+                continue
+            if not is_partial:
+                restored += _restore_trapped_branch_files(
+                    root_dir, session_id, docs_conn, failures
+                )
+            if os.path.exists(root_dir):
+                _remove_staging_leftovers(root_dir)
+                _prune_emptied_dirs(dirs_to_prune, root_dir)
+                if not failures and not conflicts and not is_partial:
+                    _purge_overwrite_backups(root_dir, session_id)
 
         if failures:
             try:

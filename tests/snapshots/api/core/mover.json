@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "3c99f3a90abbfc85159aacf796fc32c638013ab06620e32e1a6f76c4bbd8a5ba"
+    "checksum": "e6650c3873dc6d68cd6067b9bc7881416d425fa80c6e607efaadbb235ed1850f"
   },
   "classes": [
     {
@@ -104,6 +104,16 @@
               "annotation": "Any",
               "default": "None",
               "name": "pipeline"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "session_id"
+            },
+            {
+              "annotation": "bool",
+              "default": "True",
+              "name": "manage_session_lifecycle"
             },
             {
               "annotation": "Any",
@@ -622,6 +632,16 @@
           "annotation": "Any",
           "default": "None",
           "name": "pipeline"
+        },
+        {
+          "annotation": "str | None",
+          "default": "None",
+          "name": "session_id"
+        },
+        {
+          "annotation": "bool",
+          "default": "True",
+          "name": "manage_session_lifecycle"
         },
         {
           "annotation": "Any",

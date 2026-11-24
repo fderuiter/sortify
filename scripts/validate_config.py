@@ -60,6 +60,11 @@ EXPECTED_POLICY_TYPES = {
     "compliance",
     "unarchive",
     "duplicate",
+    "age",
+    "modified_date",
+    "created_date",
+    "exif_date",
+    "size",
 }
 EXPECTED_POLICY_ACTIONS = {
     "archive",
@@ -131,7 +136,9 @@ def validate_schema_completeness(schema: dict) -> None:
         "halting",
         "enabled",
         "action",
+        "detect_original_by",
         "post_unarchive_action",
+        "rename_pattern",
         "match_mode",
         "conditions",
         "negate",

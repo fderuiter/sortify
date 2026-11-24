@@ -1309,6 +1309,26 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
     }
     """
 
+    MATCH_MODE_OPTIONS: list[tuple[str, str]] = [
+        ("Simple Keyword / Pattern", "simple"),
+        ("All conditions (AND)", "all"),
+        ("Any condition (OR)", "any"),
+        ("No conditions (NONE)", "none"),
+    ]
+    RULE_TYPE_OPTIONS: list[tuple[str, str]] = [
+        ("Keyword (substring)", "keyword"),
+        ("Pattern (regex / glob)", "pattern"),
+        ("Override", "override"),
+        ("Action", "action"),
+        ("File Age (e.g. > 30d)", "age"),
+        ("Modified Date (e.g. < 2025-01-01)", "modified_date"),
+        ("Created Date (e.g. > 2024-01-01)", "created_date"),
+        ("EXIF / PDF Date (e.g. < 2023-06-01)", "exif_date"),
+        ("File Size (e.g. > 10MB)", "size"),
+        ("Compliance", "compliance"),
+        ("Unarchive", "unarchive"),
+        ("Duplicate", "duplicate"),
+    ]
     MAX_WORKSPACE_PREVIEW_FILES: int = 200
 
     def __init__(
@@ -1327,6 +1347,10 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
         base_dir: Optional[str] = None,
         source_dirs: Optional[list[str]] = None,
         db: Any = None,
+        *,
+        rename_pattern: str = "",
+        rule_type: Optional[str] = None,
+        rule_action: Optional[str] = None,
     ):
         super().__init__()
         self.title_text = title
@@ -1353,6 +1377,12 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
         )
 
         norm_kind = str(rule_kind or "").strip().lower()
+        if rule_type is not None:
+            legacy_rt = str(rule_type).strip().lower()
+            if norm_kind in ("", "keyword") and legacy_rt and legacy_rt != "keyword":
+                norm_kind = "policy"
+            if policy_type == "keyword" and legacy_rt:
+                policy_type = legacy_rt
         if self.initial_policy is not None and norm_kind in ("", "keyword"):
             norm_kind = "policy"
         self.initial_kind = (
@@ -1378,11 +1408,21 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
                 else False
             )
         )
-        self.initial_action = str(
+        eff_action = (
             action
+            or rule_action
             or (self.initial_policy.get("action") if self.initial_policy else "")
             or ""
-        ).strip()
+        )
+        self.initial_action = str(eff_action).strip()
+        eff_rename = (
+            rename_pattern
+            or (
+                self.initial_policy.get("rename_pattern") if self.initial_policy else ""
+            )
+            or ""
+        )
+        self.initial_rename_pattern = str(eff_rename).strip()
         self.initial_enabled = bool(
             self.initial_policy.get("enabled", enabled)
             if self.initial_policy is not None
@@ -1457,15 +1497,7 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
         if self.initial_kind == "learned":
             kind_options.insert(0, ("Learned Rule", "learned"))
 
-        policy_types: list[tuple[str, str]] = [
-            ("Keyword (substring)", "keyword"),
-            ("Pattern (regex)", "pattern"),
-            ("Override", "override"),
-            ("Action", "action"),
-            ("Compliance", "compliance"),
-            ("Unarchive", "unarchive"),
-            ("Duplicate", "duplicate"),
-        ]
+        policy_types: list[tuple[str, str]] = list(self.RULE_TYPE_OPTIONS)
         known_pol_vals = {val for _lbl, val in policy_types}
         if self.initial_policy_type and self.initial_policy_type not in known_pol_vals:
             policy_types.append(
@@ -1536,12 +1568,10 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
                 )
                 inp_pattern = Input(
                     value=self.initial_pattern,
-                    placeholder="e.g. invoice or ^INV-\\d+ (auto-summarized in compound mode)",
+                    placeholder="e.g. invoice, ^INV-\\d+, > 30d, > 10MB (auto-summarized in compound mode)",
                     id="input-rule-pattern",
                 )
-                inp_pattern.tooltip = (
-                    "Keyword substring or policy expression/regex pattern"
-                )
+                inp_pattern.tooltip = "Keyword substring or policy expression (regex, glob, age, date, or size)"
                 yield inp_pattern
 
                 with Vertical(
@@ -1575,13 +1605,24 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
                 yield Label("Target Folder:", classes="field-label")
                 inp_target = Input(
                     value=self.initial_target,
-                    placeholder="e.g. Finances/Invoices",
+                    placeholder="e.g. Finances/Invoices or Archive/{year}/{month}",
                     id="input-rule-target",
                 )
                 inp_target.tooltip = (
                     "Relative destination folder inside the active workspace"
                 )
                 yield inp_target
+
+                yield Label("Rename Template (optional):", classes="field-label")
+                inp_rename = Input(
+                    value=self.initial_rename_pattern,
+                    placeholder="e.g. {date}_{stem}{extension}",
+                    id="input-rule-rename-pattern",
+                )
+                inp_rename.tooltip = (
+                    "Optional filename rename template (e.g. {date}_{stem}{extension})"
+                )
+                yield inp_rename
 
                 with Vertical(id="policy-fields-container", classes=pol_cls):
                     yield Label("Policy Type:", classes="field-label")
@@ -1639,7 +1680,6 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
                         classes="preview-status",
                         id="lbl-rule-preview",
                     )
-
                 yield Label("", classes="error-label", id="lbl-rule-error")
             with Horizontal(classes="button-row"):
                 btn_cancel = Button(
@@ -1745,6 +1785,14 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
         pattern_val = self.query_one("#input-rule-pattern", Input).value.strip()
         target_val = self.query_one("#input-rule-target", Input).value.strip()
 
+        rename_val = self.initial_rename_pattern
+        try:
+            rename_val = self.query_one(
+                "#input-rule-rename-pattern", Input
+            ).value.strip()
+        except Exception:
+            pass
+
         pol_type = self.initial_policy_type
         try:
             sel_pt = self.query_one("#select-policy-type", Select).value
@@ -1793,6 +1841,7 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
             "conditions": raw_conditions,
             "pattern": pattern_val,
             "target": target_val,
+            "rename_pattern": rename_val,
             "policy_type": pol_type,
             "priority_raw": prio_raw,
             "action": action_val,
@@ -1807,7 +1856,7 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
         import re
 
         from app.core.network_guard import block_external_network
-        from app.core.policy_engine import PolicyEngine
+        from app.core.policy_engine import METADATA_POLICY_TYPES, PolicyEngine
 
         pattern = draft["pattern"]
         kind = draft["kind"]
@@ -1817,18 +1866,44 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
         has_flags = bool(draft["negate"] or draft["regex"] or draft["case_sensitive"])
         conditions = draft["conditions"]
 
+        eff_pattern = pattern
+        if (
+            not is_compound
+            and not eff_pattern
+            and kind == "policy"
+            and pol_type == "duplicate"
+        ):
+            eff_pattern = "*"
+
         if is_compound:
             if not conditions:
                 return False
-        elif not pattern and not (kind == "policy" and pol_type == "unarchive"):
+        elif not eff_pattern and not (
+            kind == "policy" and pol_type in ("unarchive", "duplicate")
+        ):
             return False
 
         with block_external_network("inline rule preview"):
-            doc_text = self._get_item_text(src_root, rel_path)
-            status_re = (
-                re.match(r"^\[STATUS:(.*?)\]$", doc_text.strip()) if doc_text else None
+            abs_p = (
+                os.path.abspath(os.path.join(src_root, rel_path))
+                if src_root
+                else os.path.abspath(rel_path)
             )
-            status_tag: Optional[str] = status_re.group(1) if status_re else None
+            if (
+                not is_compound
+                and kind == "policy"
+                and pol_type in METADATA_POLICY_TYPES
+            ):
+                doc_text = ""
+                status_tag: Optional[str] = None
+            else:
+                doc_text = self._get_item_text(src_root, rel_path)
+                status_re = (
+                    re.match(r"^\[STATUS:(.*?)\]$", doc_text.strip())
+                    if doc_text
+                    else None
+                )
+                status_tag = status_re.group(1) if status_re else None
 
             if kind == "policy" or is_compound or has_flags:
                 try:
@@ -1849,7 +1924,7 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
                     )
                 pol_dict: dict[str, Any] = {
                     "type": eff_type,
-                    "expression": pattern or "*",
+                    "expression": eff_pattern or "*",
                     "target_path": draft["target"],
                     "priority": prio_int,
                     "halting": draft["halting"],
@@ -1869,7 +1944,11 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
                 try:
                     return bool(
                         PolicyEngine.match_policy(
-                            pol_dict, rel_path, doc_text, status_tag
+                            pol_dict,
+                            rel_path,
+                            doc_text,
+                            status_tag,
+                            abs_file_path=abs_p,
                         )
                     )
                 except Exception:
@@ -1889,7 +1968,11 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
 
     def _refresh_preview(self, announce_change: bool = False) -> None:
         """Recompute sample file match status and total workspace match count."""
-        from app.core.policy_engine import validate_safe_regex
+        from app.core.policy_engine import (
+            METADATA_POLICY_TYPES,
+            validate_metadata_expression,
+            validate_safe_regex,
+        )
 
         try:
             lbl = self.query_one("#lbl-rule-preview", Label)
@@ -1903,7 +1986,7 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
         is_compound = draft["match_mode"] != "simple"
         conditions = draft["conditions"]
 
-        # Validate regex early so user gets live syntax/ReDoS feedback
+        # Validate regex or metadata expression early so user gets live syntax/ReDoS feedback
         if not is_compound and draft["regex"] and pattern:
             try:
                 validate_safe_regex(pattern, case_sensitive=draft["case_sensitive"])
@@ -1934,6 +2017,22 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
                 if announce_change:
                     self.announce(msg)
                 return
+        elif (
+            not is_compound
+            and kind == "policy"
+            and pol_type in METADATA_POLICY_TYPES
+            and pattern
+        ):
+            try:
+                validate_metadata_expression(pol_type, pattern)
+            except ValueError as exc:
+                msg = f"Invalid {pol_type} expression: {exc}"
+                lbl.update(msg)
+                lbl.remove_class("match")
+                lbl.add_class("no-match")
+                if announce_change:
+                    self.announce(msg)
+                return
 
         selected_item: Optional[str] = None
         try:
@@ -1947,7 +2046,9 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
         has_testable_input = (
             bool(conditions)
             if is_compound
-            else bool(pattern or (kind == "policy" and pol_type == "unarchive"))
+            else bool(
+                pattern or (kind == "policy" and pol_type in ("unarchive", "duplicate"))
+            )
         )
         if not has_testable_input:
             if selected_item:
@@ -2156,7 +2257,8 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
     def action_save(self) -> None:
         """Validate inputs and dismiss modal with keyword rule or policy definition."""
         from app.config import Settings
-        from app.core.path_utils import validate_target_path
+        from app.core.path_utils import ILLEGAL_PATH_CHARS_SET, validate_target_path
+        from app.core.pattern_formatter import PatternTokenFormatter
         from app.core.policy_engine import (
             PolicyEngine,
             summarize_policy_conditions,
@@ -2172,11 +2274,58 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
         case_sensitive = draft["case_sensitive"]
         pattern = draft["pattern"]
         target = draft["target"]
+        rename_pat = draft["rename_pattern"]
         err_lbl = self.query_one("#lbl-rule-error", Label)
+
+        if rename_pat:
+            if (
+                "/" in rename_pat
+                or "\\" in rename_pat
+                or ".." in rename_pat
+                or "\x00" in rename_pat
+                or any(ch in ILLEGAL_PATH_CHARS_SET for ch in rename_pat)
+            ):
+                msg = (
+                    "Rename template cannot contain path separators, '..', null bytes, "
+                    "or illegal filename characters."
+                )
+                err_lbl.update(msg)
+                err_lbl.add_class("visible")
+                self.announce(msg, priority="assertive")
+                if hasattr(self.app, "notify"):
+                    self.app.notify(msg, severity="error")
+                return
+            preview_fn = PatternTokenFormatter.format_pattern(
+                rename_pat,
+                metadata={
+                    "date": "2026-01-15",
+                    "category": "sample",
+                    "original": "document",
+                    "stem": "document",
+                    "extension": ".pdf",
+                },
+                seq=1,
+                fallback_original="",
+            )
+            if not preview_fn or "/" in preview_fn or "\\" in preview_fn:
+                msg = (
+                    f"Rename template '{rename_pat}' does not produce a valid filename."
+                )
+                err_lbl.update(msg)
+                err_lbl.add_class("visible")
+                self.announce(msg, priority="assertive")
+                if hasattr(self.app, "notify"):
+                    self.app.notify(msg, severity="error")
+                return
 
         is_compound = match_mode != "simple"
         has_policy_flags = bool(negate or is_regex or case_sensitive)
-        wants_policy = bool(kind == "policy" or is_compound or has_policy_flags)
+        wants_policy = bool(
+            kind == "policy"
+            or is_compound
+            or has_policy_flags
+            or (kind in ("keyword", "learned") and rename_pat)
+        )
 
         if not wants_policy:
             if not pattern:
@@ -2194,7 +2343,20 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
                 return
 
             try:
-                validate_target_path(target, keyword=pattern)
+                if "{" in target and "}" in target:
+                    PatternTokenFormatter.format_target_path(
+                        target,
+                        metadata={
+                            "date": "2026-01-15",
+                            "category": "sample",
+                            "original": "document",
+                            "stem": "document",
+                            "extension": ".pdf",
+                        },
+                        seq=1,
+                    )
+                else:
+                    validate_target_path(target, keyword=pattern)
             except (ValueError, Exception) as exc:
                 err_lbl.update(f"Invalid path: {exc}")
                 err_lbl.add_class("visible")
@@ -2206,16 +2368,18 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
             self.dismiss(
                 {
                     "kind": kind,
+                    "type": kind,
                     "pattern": pattern,
                     "target": target,
+                    "rename_pattern": "",
                     "is_policy": False,
                 }
             )
             return
 
-        # Policy validation (either explicit Policy Rule category or promoted via compound/flags)
-        pol_type = draft["policy_type"]
-        action_raw = draft["action"]
+        # Policy validation (explicit Policy Rule category or promoted via compound/flags/rename_pattern)
+        pol_type = draft["policy_type"] if kind == "policy" else "keyword"
+        action_raw = draft["action"] if kind == "policy" else ""
 
         try:
             if (
@@ -2246,11 +2410,18 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
                     self.app.notify(msg, severity="error")
                 return
             normalized_action = str(action_raw).strip().lower()
+        elif pol_type == "unarchive":
+            normalized_action = "unarchive"
+        elif pol_type == "duplicate" and not target:
+            normalized_action = "trash"
 
         if not is_compound:
+            if not pattern and pol_type == "duplicate":
+                pattern = "*"
+
             if (
                 not pattern
-                and pol_type != "unarchive"
+                and pol_type not in ("unarchive", "duplicate")
                 and normalized_action not in ("trash", "unarchive")
             ):
                 msg = (
@@ -2297,7 +2468,7 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
                     "expression": pattern,
                     "target_path": target,
                     "priority": prio_int,
-                    "halting": draft["halting"],
+                    "halting": draft["halting"] if kind == "policy" else False,
                     "enabled": self.initial_enabled,
                 }
             )
@@ -2307,6 +2478,10 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
                 candidate_pol["action"] = normalized_action
             else:
                 candidate_pol.pop("action", None)
+            if rename_pat:
+                candidate_pol["rename_pattern"] = rename_pat
+            else:
+                candidate_pol.pop("rename_pattern", None)
             if negate:
                 candidate_pol["negate"] = True
             else:
@@ -2335,8 +2510,13 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
                 {
                     "kind": "policy",
                     "is_policy": True,
+                    "type": str(validated_pol.get("type", pol_type)),
                     "pattern": str(validated_pol.get("expression", pattern)),
                     "target": str(validated_pol.get("target_path", target)),
+                    "rename_pattern": str(
+                        validated_pol.get("rename_pattern", "") or ""
+                    ),
+                    "priority": int(validated_pol.get("priority", prio_int)),
                     "policy": validated_pol,
                 }
             )
@@ -2406,7 +2586,7 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
                 "expression": effective_pattern,
                 "target_path": target,
                 "priority": prio_int,
-                "halting": draft["halting"],
+                "halting": draft["halting"] if kind == "policy" else False,
                 "enabled": self.initial_enabled,
                 "match_mode": match_mode,
                 "conditions": validated_conditions,
@@ -2416,6 +2596,10 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
             candidate_compound["action"] = normalized_action
         else:
             candidate_compound.pop("action", None)
+        if rename_pat:
+            candidate_compound["rename_pattern"] = rename_pat
+        else:
+            candidate_compound.pop("rename_pattern", None)
         if negate:
             candidate_compound["negate"] = True
         else:
@@ -2444,8 +2628,11 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
             {
                 "kind": "policy",
                 "is_policy": True,
+                "type": str(validated_pol.get("type", eff_pol_type)),
                 "pattern": str(validated_pol.get("expression", effective_pattern)),
                 "target": str(validated_pol.get("target_path", target)),
+                "rename_pattern": str(validated_pol.get("rename_pattern", "") or ""),
+                "priority": int(validated_pol.get("priority", prio_int)),
                 "policy": validated_pol,
             }
         )
@@ -2775,6 +2962,7 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
                         "type": _format_policy_type_badge(pol),
                         "pattern": str(pol.get("expression", "")),
                         "target_folder": str(pol.get("target_path", "")),
+                        "rename_pattern": str(pol.get("rename_pattern", "") or ""),
                         "priority": pol.get("priority", 0),
                         "halting": bool(pol.get("halting", False)),
                         "action": str(pol.get("action") or ""),
@@ -2987,7 +3175,20 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
                 idx = rule["policy_idx"]
                 if 0 <= idx < len(policies):
                     if "policy" in result and isinstance(result["policy"], dict):
-                        policies[idx] = copy.deepcopy(result["policy"])
+                        updated_pol = copy.deepcopy(policies[idx])
+                        updated_pol.update(copy.deepcopy(result["policy"]))
+                        for opt_key in (
+                            "action",
+                            "rename_pattern",
+                            "match_mode",
+                            "conditions",
+                            "negate",
+                            "regex",
+                            "case_sensitive",
+                        ):
+                            if opt_key not in result["policy"]:
+                                updated_pol.pop(opt_key, None)
+                        policies[idx] = updated_pol
                     else:
                         policies[idx]["expression"] = new_pattern
                         policies[idx]["target_path"] = new_target
@@ -3093,6 +3294,9 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
                 base_dir=getattr(self.app, "base_dir", None),
                 source_dirs=getattr(self.app, "source_dirs", None),
                 db=getattr(self.app, "db", None),
+                rename_pattern=str(
+                    orig_pol.get("rename_pattern") or rule.get("rename_pattern") or ""
+                ),
             ),
             on_rule_edited,
         )

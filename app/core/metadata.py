@@ -159,6 +159,7 @@ def evaluate_static_file_routing(
         active_policies,
         return_halting=True,
         is_sorted=True,
+        abs_file_path=file_path if file_path and os.path.isfile(file_path) else None,
     )
     matched_policy, halt_evaluation = (
         eval_out if isinstance(eval_out, tuple) else (eval_out, False)
@@ -338,7 +339,11 @@ class MetadataPass:
                         continue
                     p_type = str(_policy_field(pol_cand, "type", "") or "").lower()
                     if PolicyEngine.match_policy(
-                        pol_cand, item_path, "", "[STATUS:STATIC]"
+                        pol_cand,
+                        item_path,
+                        "",
+                        "[STATUS:STATIC]",
+                        abs_file_path=item_path,
                     ):
                         matched_from_policy = True
                         matched_policy_action = str(
