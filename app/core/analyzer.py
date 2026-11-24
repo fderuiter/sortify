@@ -21,7 +21,14 @@ from app.core.domain_contracts import (
 )
 from app.core.path_utils import safe_relpath
 
-_UNSPECIFIED = object()
+
+class _Unspecified:
+    """Sentinel type distinguishing an omitted parameter from explicit None."""
+
+    __slots__ = ()
+
+
+_UNSPECIFIED = _Unspecified()
 
 _SortingPlanNodeSchema = SortingPlanNodeModel
 
@@ -522,20 +529,20 @@ class IncrementalAnalyzer:
         stop_words: set,
         db,
         strategy_name: str = "generative",
-        model_path: str | object | None = _UNSPECIFIED,
+        model_path: str | None | _Unspecified = _UNSPECIFIED,
     ) -> None:
         self.db = db
         self.max_folders = max_folders
         self.stop_words = stop_words
         self.strategy_name = strategy_name
         self.model_path: str | None = (
-            model_path if isinstance(model_path, str) else None
+            None if isinstance(model_path, _Unspecified) else model_path
         )
         self.model_name = None
         self.corpus = {}
         self._last_reconstruction_error = 0.0
 
-        if model_path is _UNSPECIFIED:
+        if isinstance(model_path, _Unspecified):
             self.model_path = None
             from app.core.path_utils import get_meipass_dir
 
