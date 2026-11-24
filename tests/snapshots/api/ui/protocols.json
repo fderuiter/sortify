@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "9a1fd110ea2022bae8f0a91ff14a4170094658f0e71ad9eeac6d9d8a580f8578"
+    "checksum": "76818730fe85a2984d04538867c817936ef2ab06d58ce725ec60704a242b41aa"
   },
   "classes": [
     {
@@ -774,6 +774,19 @@
         {
           "async": false,
           "decorators": [],
+          "name": "_clear_manual_plan_edits",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
           "name": "_collect_file_nodes_from_dict",
           "parameters": [
             {
@@ -1090,6 +1103,19 @@
             }
           ],
           "returns": "dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_reapply_manual_plan_edits",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
         },
         {
           "async": false,

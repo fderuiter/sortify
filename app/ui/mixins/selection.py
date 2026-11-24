@@ -61,7 +61,9 @@ def _find_file_in_plan(
     """Recursively locate ``file_key`` (or ``target_info``) inside a nested ``plan``."""
     for k, v in plan.items():
         if isinstance(v, dict) and v.get("__type__") == "file":
-            if (target_info is not None and v is target_info) or k == file_key:
+            if (target_info is not None and v is target_info) or (
+                bool(file_key) and k == file_key
+            ):
                 return current_folder, plan, v
         elif isinstance(v, dict):
             sub_folder = f"{current_folder}/{k}" if current_folder else k
@@ -71,6 +73,131 @@ def _find_file_in_plan(
             if found_container is not None:
                 return found_folder, found_container, found_val
     return "", None, None
+
+
+def _find_key_for_info(plan: dict[str, Any], target_info: Any) -> tuple[str, str]:
+    """Return ``(folder_path, key)`` for ``target_info`` object identity inside ``plan``."""
+    for k, v in plan.items():
+        if v is target_info:
+            return "", k
+        if isinstance(v, dict) and v.get("__type__") != "file":
+            sub_folder, sub_key = _find_key_for_info(v, target_info)
+            if sub_key:
+                full_folder = f"{k}/{sub_folder}" if sub_folder else k
+                return full_folder, sub_key
+    return "", ""
+
+
+def _collect_plan_folders(plan: dict[str, Any], prefix: str = "") -> list[str]:
+    """Recursively collect slash-delimited folder paths present in ``plan``."""
+    folders: list[str] = []
+    for k, v in plan.items():
+        if isinstance(v, dict) and v.get("__type__") != "file":
+            full = f"{prefix}/{k}" if prefix else k
+            folders.append(full)
+            folders.extend(_collect_plan_folders(v, full))
+    return folders
+
+
+def _make_manual_edit_key(db_base_dir: str, doc_relpath: str) -> str:
+    """Build canonical lookup key for ``_manual_plan_edits``."""
+    norm_rel = doc_relpath.replace("\\", "/").lstrip("/")
+    if db_base_dir:
+        norm_base = os.path.normcase(os.path.normpath(os.path.abspath(db_base_dir)))
+        return f"{norm_base}::{norm_rel}"
+    return norm_rel
+
+
+def _resolve_source_identity(
+    host: Any,
+    file_key: Optional[str] = None,
+    filepath: Optional[str] = None,
+    info: Optional[dict[str, Any]] = None,
+) -> tuple[str, str, str]:
+    """Resolve ``(db_base_dir, doc_relpath, abs_filepath)`` for a plan file node."""
+    from app.core.path_utils import safe_relpath
+
+    info_dict = info if isinstance(info, dict) else {}
+    host_base = str(getattr(host, "base_dir", "") or "")
+
+    db_base_dir = str(info_dict.get("source_root") or "")
+    if not db_base_dir and isinstance(file_key, str) and "::" in file_key:
+        db_base_dir = file_key.split("::", 1)[0]
+    if (
+        not db_base_dir
+        and isinstance(info_dict.get("source_path"), str)
+        and "::" in str(info_dict["source_path"])
+    ):
+        db_base_dir = str(info_dict["source_path"]).split("::", 1)[0]
+    if not db_base_dir:
+        db_base_dir = host_base
+
+    raw_src: Any = (
+        info_dict.get("source_path")
+        or info_dict.get("filepath")
+        or filepath
+        or file_key
+        or ""
+    )
+    raw_src_str = str(raw_src)
+    if "::" in raw_src_str:
+        parsed_root, raw_src_str = raw_src_str.split("::", 1)
+        if not info_dict.get("source_root") and parsed_root:
+            db_base_dir = parsed_root
+
+    if not raw_src_str:
+        return db_base_dir, "", ""
+
+    if os.path.isabs(raw_src_str):
+        abs_fp = os.path.normpath(raw_src_str)
+        if db_base_dir:
+            rel = safe_relpath(abs_fp, db_base_dir).replace("\\", "/")
+            if not rel.startswith(".."):
+                return db_base_dir, rel, abs_fp
+        if host_base:
+            rel_host = safe_relpath(abs_fp, host_base).replace("\\", "/")
+            if not rel_host.startswith(".."):
+                return host_base, rel_host, abs_fp
+        return db_base_dir, os.path.basename(abs_fp), abs_fp
+
+    doc_relpath = raw_src_str.replace("\\", "/").lstrip("/")
+    abs_fp = (
+        os.path.normpath(os.path.join(db_base_dir, doc_relpath))
+        if db_base_dir
+        else doc_relpath
+    )
+    return db_base_dir, doc_relpath, abs_fp
+
+
+def _record_manual_edit(
+    host: Any,
+    db_base_dir: str,
+    doc_relpath: str,
+    abs_filepath: str = "",
+    **updates: Any,
+) -> None:
+    """Persist manual node edits in ``host._manual_plan_edits`` keyed by source ``doc_relpath``."""
+    if not doc_relpath:
+        return
+    edits_map = getattr(host, "_manual_plan_edits", None)
+    if not isinstance(edits_map, dict):
+        return
+    key = _make_manual_edit_key(db_base_dir, doc_relpath)
+    entry = edits_map.setdefault(
+        key,
+        {
+            "db_base_dir": db_base_dir,
+            "doc_relpath": doc_relpath,
+            "abs_filepath": abs_filepath,
+        },
+    )
+    if abs_filepath and not entry.get("abs_filepath"):
+        entry["abs_filepath"] = abs_filepath
+    for k, v in updates.items():
+        if v is None and k in ("folder", "target_filename"):
+            entry.pop(k, None)
+        else:
+            entry[k] = v
 
 
 def _derive_learned_pattern(raw_name: str) -> Optional[str]:
@@ -161,6 +288,18 @@ class SelectionActionsMixin:
             fi["is_checked"] = new_checked
             if new_checked:
                 fi["is_excluded"] = False
+            _, found_k = _find_key_for_info(self.plan, fi)
+            db_b, doc_rel, abs_fp = _resolve_source_identity(
+                self, file_key=found_k, filepath=fi.get("filepath"), info=fi
+            )
+            _record_manual_edit(
+                self,
+                db_b,
+                doc_rel,
+                abs_fp,
+                is_checked=fi["is_checked"],
+                is_excluded=bool(fi.get("is_excluded", False)),
+            )
 
         self.rebuild_tree()
         status_str = "checked [x]" if new_checked else "unchecked [ ]"
@@ -206,6 +345,18 @@ class SelectionActionsMixin:
         for fi in target_files:
             fi["is_checked"] = False
             fi["is_excluded"] = True
+            _, found_k = _find_key_for_info(self.plan, fi)
+            db_b, doc_rel, abs_fp = _resolve_source_identity(
+                self, file_key=found_k, filepath=fi.get("filepath"), info=fi
+            )
+            _record_manual_edit(
+                self,
+                db_b,
+                doc_rel,
+                abs_fp,
+                is_checked=False,
+                is_excluded=True,
+            )
 
         self.rebuild_tree()
         self.announce(f"Excluded {len(target_files)} file(s) from sorting plan.")
@@ -223,6 +374,18 @@ class SelectionActionsMixin:
         for fi in target_files:
             fi["is_checked"] = True
             fi["is_excluded"] = False
+            _, found_k = _find_key_for_info(self.plan, fi)
+            db_b, doc_rel, abs_fp = _resolve_source_identity(
+                self, file_key=found_k, filepath=fi.get("filepath"), info=fi
+            )
+            _record_manual_edit(
+                self,
+                db_b,
+                doc_rel,
+                abs_fp,
+                is_checked=True,
+                is_excluded=False,
+            )
 
         self.rebuild_tree()
         self.announce(f"Included {len(target_files)} file(s) in sorting plan.")
@@ -239,11 +402,7 @@ class SelectionActionsMixin:
 
         from app.core.scanner import discover_existing_folders
 
-        plan_folders = [
-            k
-            for k, v in self.plan.items()
-            if isinstance(v, dict) and v.get("__type__") != "file"
-        ]
+        plan_folders = _collect_plan_folders(self.plan)
         disk_folders = discover_existing_folders(
             getattr(self, "base_dir", None),
             settings=getattr(self, "settings", None),
@@ -259,7 +418,7 @@ class SelectionActionsMixin:
             if not target_folder:
                 return
 
-            from app.core.path_utils import safe_relpath, validate_target_path
+            from app.core.path_utils import validate_target_path
 
             host: Any = self
             can_learn_rule = False
@@ -279,71 +438,83 @@ class SelectionActionsMixin:
 
             reassigned_count = 0
             for fi in target_files:
+                found_folder, old_container, _ = _find_file_in_plan(
+                    host.plan,
+                    str(fi.get("target_filename") or fi.get("key") or ""),
+                    target_info=fi,
+                )
                 file_key = None
-                old_folder = fi.get("folder", "")
-
-                for f_name, f_content in list(host.plan.items()):
-                    if isinstance(f_content, dict):
-                        for k, v in list(f_content.items()):
-                            if v is fi:
-                                file_key = k
-                                old_folder = f_name
-                                break
-                    if file_key:
-                        break
-
+                if old_container is not None:
+                    for k, v in list(old_container.items()):
+                        if v is fi:
+                            file_key = k
+                            break
                 if not file_key:
                     file_key = fi.get("target_filename") or fi.get("key")
+                old_folder = found_folder or fi.get("folder", "")
+                if old_container is None and old_folder:
+                    old_container = _resolve_plan_folder_dict(host.plan, old_folder)
 
-                if file_key and old_folder in host.plan:
-                    if file_key in host.plan[old_folder]:
-                        host.plan[old_folder].pop(file_key, None)
-                    if target_folder not in host.plan:
+                if file_key and old_container is not None:
+                    db_base, doc_relpath, abs_fp = _resolve_source_identity(
+                        host,
+                        file_key=str(file_key),
+                        filepath=fi.get("filepath"),
+                        info=fi,
+                    )
+                    if doc_relpath and not fi.get("source_path"):
+                        fi["source_path"] = doc_relpath
+                    if abs_fp and not fi.get("filepath"):
+                        fi["filepath"] = abs_fp
+
+                    old_container.pop(file_key, None)
+                    target_container = _resolve_plan_folder_dict(
+                        host.plan, target_folder, create=True
+                    )
+                    if target_container is None:
                         host.plan[target_folder] = {}
+                        target_container = host.plan[target_folder]
 
                     from app.core.path_utils import _disambiguate_key
 
                     # Non-clobbering mutation with automatic numeric disambiguation
-                    if file_key in host.plan[target_folder]:
+                    if (
+                        file_key in target_container
+                        and target_container[file_key] is not fi
+                    ):
                         dest_key = _disambiguate_key(
-                            host.plan[target_folder], file_key, is_file=True
+                            target_container, file_key, is_file=True
                         )
                         fi["target_filename"] = dest_key
                         fi["confirmed"] = True
                     else:
                         dest_key = file_key
 
-                    host.plan[target_folder][dest_key] = fi
+                    target_container[dest_key] = fi
                     fi["folder"] = target_folder
                     fi["is_locked"] = True
                     host.locked_files[dest_key] = target_folder
 
-                    raw_src = fi.get("source_path") or dest_key
-                    if isinstance(raw_src, str) and "::" in raw_src:
-                        raw_src = raw_src.split("::", 1)[1]
-                    if (
-                        getattr(host, "base_dir", None)
-                        and isinstance(raw_src, str)
-                        and os.path.isabs(raw_src)
-                    ):
-                        rel = safe_relpath(raw_src, host.base_dir)
-                        doc_relpath = (
-                            rel.replace("\\", "/")
-                            if not rel.startswith("..")
-                            else dest_key
-                        )
-                    else:
-                        doc_relpath = str(raw_src).replace("\\", "/")
-
-                    host.locked_files[doc_relpath] = target_folder
-                    if host.app_session:
-                        host.app_session.db.set_user_verified_target_path(
-                            host.base_dir, doc_relpath, target_folder
+                    if doc_relpath:
+                        host.locked_files[doc_relpath] = target_folder
+                        if host.app_session:
+                            host.app_session.db.set_user_verified_target_path(
+                                db_base, doc_relpath, target_folder
+                            )
+                        edit_kwargs: dict[str, Any] = {
+                            "folder": target_folder,
+                            "is_locked": True,
+                        }
+                        if fi.get("target_filename"):
+                            edit_kwargs["target_filename"] = fi["target_filename"]
+                            edit_kwargs["confirmed"] = True
+                        _record_manual_edit(
+                            host, db_base, doc_relpath, abs_fp, **edit_kwargs
                         )
 
                     if can_learn_rule and settings_obj is not None:
                         pattern = _derive_learned_pattern(
-                            str(fi.get("source_path") or file_key)
+                            str(doc_relpath or fi.get("source_path") or file_key)
                         )
                         if pattern:
                             learned_rules[pattern] = target_folder
@@ -407,6 +578,18 @@ class SelectionActionsMixin:
             f["is_checked"] = new_state
             if new_state:
                 f["is_excluded"] = False
+            _, found_k = _find_key_for_info(self.plan, f)
+            db_b, doc_rel, abs_fp = _resolve_source_identity(
+                self, file_key=found_k, filepath=f.get("filepath"), info=f
+            )
+            _record_manual_edit(
+                self,
+                db_b,
+                doc_rel,
+                abs_fp,
+                is_checked=new_state,
+                is_excluded=bool(f.get("is_excluded", False)),
+            )
 
         self.rebuild_tree(run_validation=True)
 
@@ -458,23 +641,41 @@ class SelectionActionsMixin:
         file_key = data["key"]
         filepath = data["filepath"]
         folder = data["folder"]
+        info_dict = data.get("info") if isinstance(data.get("info"), dict) else None
+        db_base, doc_relpath, abs_fp = _resolve_source_identity(
+            self, file_key=file_key, filepath=filepath, info=info_dict
+        )
 
         if data.get("is_locked"):
             self.locked_files.pop(file_key, None)
             self.locked_files.pop(filepath, None)
+            if doc_relpath:
+                self.locked_files.pop(doc_relpath, None)
             data["is_locked"] = False
-            if self.app_session:
+            if isinstance(info_dict, dict):
+                info_dict["is_locked"] = False
+            if self.app_session and doc_relpath:
                 self.app_session.db.set_user_verified_target_path(
-                    self.base_dir, file_key, None
+                    db_base, doc_relpath, None
                 )
+            _record_manual_edit(
+                self, db_base, doc_relpath, abs_fp, folder=None, is_locked=False
+            )
             msg = f"Unlocked file '{file_key}'"
         else:
             self.locked_files[file_key] = folder
+            if doc_relpath:
+                self.locked_files[doc_relpath] = folder
             data["is_locked"] = True
-            if self.app_session:
+            if isinstance(info_dict, dict):
+                info_dict["is_locked"] = True
+            if self.app_session and doc_relpath:
                 self.app_session.db.set_user_verified_target_path(
-                    self.base_dir, file_key, folder
+                    db_base, doc_relpath, folder
                 )
+            _record_manual_edit(
+                self, db_base, doc_relpath, abs_fp, folder=folder, is_locked=True
+            )
             msg = f"Locked file '{file_key}' to folder '{folder}'"
 
         self.announce(msg)
@@ -574,11 +775,12 @@ class SelectionActionsMixin:
         # If a folder category node is explicitly focused, preserve folder rename workflow
         if node and node.data and not node.data.get("is_file"):
             data = node.data
-            old_name = data.get("key")
+            old_name = str(data.get("key") or "")
+            old_folder_path = str(data.get("folder") or old_name)
             modal = RenameModal(
-                title=f"Rename Folder: {old_name}",
+                title=f"Rename Folder: {old_folder_path}",
                 current_name=old_name,
-                category=old_name,
+                category=old_folder_path,
                 is_folder=True,
                 plan=self.plan,
                 base_dir=self.base_dir,
@@ -588,47 +790,117 @@ class SelectionActionsMixin:
                 if not new_name:
                     return
 
-                from app.core.path_utils import _merge_plan_dicts
+                from app.core.path_utils import _is_absolute_path, _merge_plan_dicts
 
                 dest_override = getattr(new_name, "destination_override", None)
                 if isinstance(new_name, tuple):
                     new_name_str = str(new_name[0])
                 else:
                     new_name_str = str(new_name)
-                eff_name = dest_override if dest_override else new_name_str
+                raw_target = str(dest_override if dest_override else new_name_str)
+                if not raw_target:
+                    return
 
-                if not eff_name or eff_name == old_name:
+                if dest_override or _is_absolute_path(raw_target):
+                    eff_folder_path = (
+                        raw_target
+                        if _is_absolute_path(raw_target)
+                        else raw_target.replace("\\", "/").strip("/")
+                    )
+                elif "/" in raw_target or "\\" in raw_target:
+                    eff_folder_path = raw_target.replace("\\", "/").strip("/")
+                elif (
+                    "/" in old_folder_path
+                    and not _is_absolute_path(old_folder_path)
+                    and old_folder_path not in self.plan
+                ):
+                    parent_prefix = old_folder_path.rsplit("/", 1)[0]
+                    eff_folder_path = f"{parent_prefix}/{raw_target}"
+                else:
+                    eff_folder_path = raw_target
+
+                if not eff_folder_path or eff_folder_path == old_folder_path:
+                    return
+
+                old_content: Optional[dict[str, Any]] = None
+                if old_folder_path in self.plan and isinstance(
+                    self.plan[old_folder_path], dict
+                ):
+                    old_content = self.plan.pop(old_folder_path)
+                elif "/" in old_folder_path and not _is_absolute_path(old_folder_path):
+                    parent_prefix, leaf_name = old_folder_path.rsplit("/", 1)
+                    parent_dict = _resolve_plan_folder_dict(self.plan, parent_prefix)
+                    if parent_dict is not None and isinstance(
+                        parent_dict.get(leaf_name), dict
+                    ):
+                        old_content = parent_dict.pop(leaf_name)
+                elif old_name in self.plan and isinstance(self.plan[old_name], dict):
+                    old_content = self.plan.pop(old_name)
+
+                if old_content is None:
                     return
 
                 def _recursively_update_folder(
-                    content_dict: dict, parent_folder: str
+                    content_dict: dict[str, Any], parent_folder: str
                 ) -> None:
                     for k, v in content_dict.items():
                         if isinstance(v, dict):
                             if v.get("__type__") == "file":
+                                db_b, doc_rel, abs_fp = _resolve_source_identity(
+                                    self,
+                                    file_key=k,
+                                    filepath=v.get("filepath"),
+                                    info=v,
+                                )
+                                if doc_rel and not v.get("source_path"):
+                                    v["source_path"] = doc_rel
+                                if abs_fp and not v.get("filepath"):
+                                    v["filepath"] = abs_fp
                                 v["folder"] = parent_folder
+                                v["is_locked"] = True
                                 self.locked_files[k] = parent_folder
+                                if doc_rel:
+                                    self.locked_files[doc_rel] = parent_folder
+                                    if self.app_session:
+                                        self.app_session.db.set_user_verified_target_path(
+                                            db_b, doc_rel, parent_folder
+                                        )
+                                    _record_manual_edit(
+                                        self,
+                                        db_b,
+                                        doc_rel,
+                                        abs_fp,
+                                        folder=parent_folder,
+                                        is_locked=True,
+                                    )
                             else:
                                 sub = f"{parent_folder}/{k}" if parent_folder else k
                                 _recursively_update_folder(v, sub)
 
-                if old_name in self.plan:
-                    old_content = self.plan.pop(old_name)
-                    if eff_name in self.plan and isinstance(self.plan[eff_name], dict):
-                        # Recursive non-clobbering merge
-                        _merge_plan_dicts(self.plan[eff_name], old_content)
-                        _recursively_update_folder(self.plan[eff_name], eff_name)
-                        self.rebuild_tree(run_validation=True)
-                        self.announce(
-                            f"Merged folder category '{old_name}' into '{eff_name}'"
-                        )
+                existing_dest = _resolve_plan_folder_dict(
+                    self.plan, eff_folder_path, create=False
+                )
+                if existing_dest is not None:
+                    _merge_plan_dicts(existing_dest, old_content)
+                    _recursively_update_folder(existing_dest, eff_folder_path)
+                    self.rebuild_tree(run_validation=True)
+                    self.announce(
+                        f"Merged folder category '{old_folder_path}' into '{eff_folder_path}'"
+                    )
+                else:
+                    dest_dict = _resolve_plan_folder_dict(
+                        self.plan, eff_folder_path, create=True
+                    )
+                    if dest_dict is None:
+                        self.plan[eff_folder_path] = old_content
+                        dest_dict = self.plan[eff_folder_path]
                     else:
-                        self.plan[eff_name] = old_content
-                        _recursively_update_folder(self.plan[eff_name], eff_name)
-                        self.rebuild_tree(run_validation=True)
-                        self.announce(
-                            f"Renamed folder category '{old_name}' -> '{eff_name}'"
-                        )
+                        dest_dict.update(old_content)
+                    _recursively_update_folder(dest_dict, eff_folder_path)
+                    self.rebuild_tree(run_validation=True)
+                    self.announce(
+                        f"Renamed folder category '{old_folder_path}' -> '{eff_folder_path}'"
+                    )
 
             self.push_screen(modal, on_folder_renamed)
             return
@@ -675,6 +947,7 @@ class SelectionActionsMixin:
                                 "new_name": target_fn,
                                 "info": info or entry.get("info", {}),
                                 "old_folder": entry.get("folder", ""),
+                                "filepath": entry.get("filepath"),
                             }
                         )
 
@@ -717,6 +990,14 @@ class SelectionActionsMixin:
                         if isinstance(existing_val, dict):
                             data_info = existing_val
 
+                    raw_item_fp = item.get("filepath")
+                    db_base, doc_relpath, abs_fp = _resolve_source_identity(
+                        self,
+                        file_key=old_name,
+                        filepath=raw_item_fp if isinstance(raw_item_fp, str) else None,
+                        info=data_info if isinstance(data_info, dict) else None,
+                    )
+
                     # Remove from old location in self.plan
                     if old_container is not None and old_name in old_container:
                         old_container.pop(old_name, None)
@@ -738,22 +1019,45 @@ class SelectionActionsMixin:
                         )
 
                     if isinstance(data_info, dict):
+                        if doc_relpath and not data_info.get("source_path"):
+                            data_info["source_path"] = doc_relpath
+                        if abs_fp and not data_info.get("filepath"):
+                            data_info["filepath"] = abs_fp
                         target_container[new_filename] = data_info
                         data_info["target_filename"] = new_filename
                         data_info["folder"] = target_folder
                         data_info["is_locked"] = True
+                        data_info["confirmed"] = True
                     else:
-                        target_container[new_filename] = {
+                        new_info: dict[str, Any] = {
                             "__type__": "file",
                             "target_filename": new_filename,
                             "folder": target_folder,
                             "is_locked": True,
+                            "confirmed": True,
                         }
+                        if doc_relpath:
+                            new_info["source_path"] = doc_relpath
+                        if abs_fp:
+                            new_info["filepath"] = abs_fp
+                        target_container[new_filename] = new_info
 
                     self.locked_files[new_filename] = target_folder
-                    if self.app_session:
-                        self.app_session.db.set_user_verified_target_path(
-                            self.base_dir, new_filename, target_folder
+                    if doc_relpath:
+                        self.locked_files[doc_relpath] = target_folder
+                        if self.app_session:
+                            self.app_session.db.set_user_verified_target_path(
+                                db_base, doc_relpath, target_folder
+                            )
+                        _record_manual_edit(
+                            self,
+                            db_base,
+                            doc_relpath,
+                            abs_fp,
+                            target_filename=new_filename,
+                            folder=target_folder,
+                            is_locked=True,
+                            confirmed=True,
                         )
                     renamed_count += 1
 
@@ -836,6 +1140,12 @@ class SelectionActionsMixin:
 
                 # Collision check & numeric disambiguation
                 file_info = data.get("info")
+                db_base, doc_relpath, abs_fp = _resolve_source_identity(
+                    self,
+                    file_key=old_name,
+                    filepath=filepath,
+                    info=file_info if isinstance(file_info, dict) else None,
+                )
                 if (
                     new_filename in target_container
                     and target_container[new_filename] is not file_info
@@ -845,25 +1155,47 @@ class SelectionActionsMixin:
                     )
 
                 if isinstance(file_info, dict):
+                    if doc_relpath and not file_info.get("source_path"):
+                        file_info["source_path"] = doc_relpath
+                    if abs_fp and not file_info.get("filepath"):
+                        file_info["filepath"] = abs_fp
                     target_container[new_filename] = file_info
                     file_info["target_filename"] = new_filename
                     file_info["folder"] = target_folder
                     file_info["is_locked"] = True
+                    file_info["confirmed"] = True
                 else:
                     file_info = {
                         "__type__": "file",
                         "target_filename": new_filename,
                         "folder": target_folder,
                         "is_locked": True,
+                        "confirmed": True,
                     }
+                    if doc_relpath:
+                        file_info["source_path"] = doc_relpath
+                    if abs_fp:
+                        file_info["filepath"] = abs_fp
                     data["info"] = file_info
                     target_container[new_filename] = file_info
                 data["folder"] = target_folder
                 data["is_locked"] = True
                 self.locked_files[new_filename] = target_folder
-                if self.app_session:
-                    self.app_session.db.set_user_verified_target_path(
-                        self.base_dir, new_filename, target_folder
+                if doc_relpath:
+                    self.locked_files[doc_relpath] = target_folder
+                    if self.app_session:
+                        self.app_session.db.set_user_verified_target_path(
+                            db_base, doc_relpath, target_folder
+                        )
+                    _record_manual_edit(
+                        self,
+                        db_base,
+                        doc_relpath,
+                        abs_fp,
+                        target_filename=new_filename,
+                        folder=target_folder,
+                        is_locked=True,
+                        confirmed=True,
                     )
                 self.rebuild_tree(run_validation=True)
                 self.announce(f"Renamed target file to '{new_filename}' [Locked]")
@@ -878,8 +1210,12 @@ class SelectionActionsMixin:
         def on_created(folder_name: Optional[str]) -> None:
             if not folder_name:
                 return
-            if folder_name not in self.plan:
-                self.plan[folder_name] = {}
+            existing = _resolve_plan_folder_dict(self.plan, folder_name, create=False)
+            if existing is None:
+                created = _resolve_plan_folder_dict(self.plan, folder_name, create=True)
+                if created is None:
+                    self.plan[folder_name] = {}
+                self._manual_empty_folders.add(folder_name)
                 self.rebuild_tree()
                 self.announce(f"Created new folder category: '{folder_name}'")
             else:
