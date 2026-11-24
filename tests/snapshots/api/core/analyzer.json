@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "e056eb6c462ef0ae79d0acad5d38c5094d33f0aa9722d9c7eb832efd249dd46a"
+    "checksum": "bfd3d27ff99ab945d0ceea869eabff7f9f6919237903f0b9b001636416b53883"
   },
   "classes": [
     {
@@ -57,6 +57,31 @@
             }
           ],
           "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "detect_duplicate_clusters",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "file_paths"
+            },
+            {
+              "annotation": "str",
+              "default": "'first_seen'",
+              "name": "detect_original_by"
+            }
+          ],
+          "returns": "list[dict[str, Any]]"
         },
         {
           "async": false,

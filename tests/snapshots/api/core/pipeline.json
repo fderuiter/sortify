@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "9fd374960728290ab8166abf233edd17d7da7ef53724e152f4cba7d1ee047415"
+    "checksum": "bbc2f2d415d4e1e27a7e69cd5674931a27016150ac2e5b60044f12e9d02fa89d"
   },
   "classes": [
     {
@@ -119,12 +119,60 @@
               "name": "move_context"
             },
             {
+              "annotation": "bool",
+              "default": "False",
+              "name": "flush_trash"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "flush_trashed_only"
+            },
+            {
+              "annotation": "Callable[[str], Any] | None",
+              "default": "None",
+              "name": "trash_fn"
+            },
+            {
               "annotation": null,
               "default": null,
               "name": "**kwargs"
             }
           ],
           "returns": "SortResult"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "flush_trash",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "session_id"
+            },
+            {
+              "annotation": "float | None",
+              "default": "None",
+              "name": "max_age_days"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "trashed_only"
+            },
+            {
+              "annotation": "Callable[[str], Any] | None",
+              "default": "None",
+              "name": "trash_fn"
+            }
+          ],
+          "returns": "dict[str, Any]"
         },
         {
           "async": false,
@@ -233,6 +281,16 @@
               "annotation": "Callable[[Any], AbstractContextManager[Any]] | None",
               "default": "None",
               "name": "move_context"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "flush_trash"
+            },
+            {
+              "annotation": "Callable[[str], Any] | None",
+              "default": "None",
+              "name": "trash_fn"
             },
             {
               "annotation": null,

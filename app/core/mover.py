@@ -678,12 +678,18 @@ def _resolve_pending_links(
 
 
 OVERWRITE_BACKUP_DIR = ".sortify_overwritten"
-_OWNED_HIDDEN_DIRS = {".branches", OVERWRITE_BACKUP_DIR}
+DUPLICATE_STAGING_DIR = ".sortify_duplicates"
+_OWNED_HIDDEN_DIRS = {".branches", OVERWRITE_BACKUP_DIR, DUPLICATE_STAGING_DIR}
 
 
 def overwrite_backup_dir(base_dir: str, session_id: str) -> str:
     """Return the folder where a session parks the files its overwrites displaced."""
     return os.path.join(base_dir, OVERWRITE_BACKUP_DIR, session_id)
+
+
+def duplicate_staging_dir(base_dir: str, session_id: str) -> str:
+    """Return the folder where a session parks verified duplicate or trashed copies for undo."""
+    return os.path.join(base_dir, DUPLICATE_STAGING_DIR, session_id)
 
 
 def _displace_for_overwrite(
@@ -1267,7 +1273,6 @@ def _collect_move_items(
         if is_leaf:
             if node_type == "directory":
                 continue
-
             if (
                 _get_val(content, "is_excluded")
                 or _get_val(content, "excluded")
@@ -2005,6 +2010,403 @@ def _execute_prepared_move_group(
         }
 
 
+def _prepare_disposal_item(
+    base_dir: str,
+    item: dict,
+    path_map: dict,
+    session_id: str,
+    moves: Any,
+    *,
+    moves_by_src: dict[str, list[Any]] | None = None,
+    reserved_dests: set[str] | None = None,
+) -> dict[str, Any] | None:
+    """Validate ADR 0005 primary survival and prepare staging target/hash off-lock."""
+    from app.core.extractor import get_file_hash
+    from app.core.moves import VERIFIED
+    from app.core.resilient_file_ops import (
+        duplicate_staging_relpath,
+        same_file_content,
+    )
+    from app.core.scanner import parse_item_identifier
+
+    source_path = item["source_path"]
+    if not os.path.lexists(source_path):
+        return None
+
+    content = item.get("content")
+    dup_action = _get_val(content, "duplicate_action")
+    pol_action = _get_val(content, "policy_action")
+    is_dup = bool(_get_val(content, "is_duplicate"))
+    dup_of = _get_val(content, "duplicate_of")
+
+    # ADR 0005: Never displace or trash a duplicate until the surviving primary is verified
+    if is_dup or dup_of:
+        if not dup_of:
+            logging.warning(
+                "ADR 0005 guard: refusing to stage duplicate %s without surviving primary reference.",
+                source_path,
+            )
+            return None
+
+        dup_of_str = str(dup_of)
+        if os.path.isabs(dup_of_str) and "::" not in dup_of_str:
+            primary_orig_abs = os.path.normpath(dup_of_str)
+        else:
+            p_root, p_rel = parse_item_identifier(dup_of_str, base_dir)
+            primary_orig_abs = os.path.normpath(
+                os.path.abspath(os.path.join(p_root, p_rel))
+            )
+        norm_primary_orig = os.path.normcase(os.path.abspath(primary_orig_abs))
+
+        verified_primary_path: str | None = None
+        primary_moved_in_ledger = False
+        if moves is not None and session_id:
+            if moves_by_src is not None:
+                matching_rows = moves_by_src.get(norm_primary_orig, [])
+            else:
+                session_moves = moves.list_moves(session_id)
+                matching_rows = [
+                    m
+                    for m in session_moves
+                    if os.path.normcase(os.path.abspath(m.src)) == norm_primary_orig
+                ]
+            if matching_rows:
+                primary_moved_in_ledger = True
+                latest = matching_rows[-1]
+                if latest.state == VERIFIED and os.path.isfile(latest.dst):
+                    verified_primary_path = latest.dst
+
+        if primary_moved_in_ledger:
+            if not verified_primary_path:
+                logging.warning(
+                    "ADR 0005 guard: refusing to stage duplicate %s because surviving primary %s is not marked verified in MoveLedger.",
+                    source_path,
+                    primary_orig_abs,
+                )
+                return None
+        else:
+            cand_dst = path_map.get(norm_primary_orig) or primary_orig_abs
+            if moves is not None and not _is_same_path(cand_dst, primary_orig_abs):
+                if not os.path.isfile(cand_dst):
+                    logging.warning(
+                        "ADR 0005 guard: refusing to stage duplicate %s because primary destination %s is missing.",
+                        source_path,
+                        cand_dst,
+                    )
+                    return None
+                verified_primary_path = cand_dst
+            elif os.path.isfile(cand_dst):
+                verified_primary_path = cand_dst
+
+        if not verified_primary_path or not os.path.isfile(verified_primary_path):
+            logging.warning(
+                "ADR 0005 guard: refusing to stage duplicate %s because primary file could not be located on disk.",
+                source_path,
+            )
+            return None
+
+        try:
+            if os.path.samefile(verified_primary_path, source_path):
+                return None
+        except OSError:
+            if _is_same_path(verified_primary_path, source_path):
+                return None
+
+        if not same_file_content(verified_primary_path, source_path):
+            logging.warning(
+                "ADR 0005 guard: refusing to stage %s because its bytes do not match primary %s.",
+                source_path,
+                verified_primary_path,
+            )
+            return None
+
+    src_root = _get_val(content, "source_root") or base_dir
+    stage_rel = duplicate_staging_relpath(source_path, base_dir, source_root=src_root)
+    eff_session = session_id or f"nosession_{uuid.uuid4().hex}"
+    is_trash_target = dup_action == "trash" or pol_action == "trash"
+    stage_base = duplicate_staging_dir(base_dir, eff_session)
+    if is_trash_target:
+        stage_base = os.path.join(stage_base, "_trash")
+
+    planned_stage_target = os.path.normpath(os.path.join(stage_base, stage_rel))
+    stage_dir = os.path.dirname(planned_stage_target)
+    os.makedirs(stage_dir, exist_ok=True)
+    if reserved_dests is not None:
+        dest_path = os.path.normpath(
+            _get_safe_path_with_reservations(
+                stage_dir,
+                os.path.basename(planned_stage_target),
+                source_path,
+                reserved_dests,
+            )
+        )
+        reserved_dests.add(os.path.normcase(os.path.abspath(dest_path)))
+    else:
+        dest_path = os.path.normpath(
+            get_safe_path(
+                stage_dir, os.path.basename(planned_stage_target), source_path
+            )
+        )
+
+    pre_hash = ""
+    intent_size = None
+    try:
+        if os.path.isfile(source_path) and not os.path.islink(source_path):
+            intent_size = os.lstat(source_path).st_size
+    except OSError:
+        pass
+    try:
+        pre_hash = get_file_hash(source_path)
+    except (OSError, ValueError, TypeError):
+        pre_hash = ""
+
+    return {
+        "source_path": source_path,
+        "dest_path": dest_path,
+        "pre_hash": pre_hash,
+        "intent_size": intent_size,
+        "is_trash_target": is_trash_target,
+        "source_rel_path": safe_relpath(source_path, base_dir).replace("\\", "/"),
+    }
+
+
+def _stage_disposal_chunk(
+    base_dir: str,
+    items: list[dict],
+    db: Any,
+    path_map: dict,
+    session_id: str,
+    history_manager: Any,
+    db_lock: threading.Lock,
+    db_updates_batch: list,
+    audit_records: list | None = None,
+    *,
+    moves_by_src: dict[str, list[Any]] | None = None,
+    flush_db: bool = True,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Stage a chunk of duplicate or policy-trashed items with batched MoveLedger commits."""
+    from app.core.extractor import get_file_hash
+    from app.core.moves import STATUS_ABORTED, format_move_failure
+    from app.core.resilient_file_ops import resilient_move
+
+    moves_ledger = getattr(history_manager, "moves", None) if history_manager else None
+    reserved_stage_dests: set[str] = set()
+    prepared_disposals: list[dict[str, Any]] = []
+    for disp_item in items:
+        prep_d = _prepare_disposal_item(
+            base_dir=base_dir,
+            item=disp_item,
+            path_map=path_map,
+            session_id=session_id,
+            moves=moves_ledger,
+            moves_by_src=moves_by_src,
+            reserved_dests=reserved_stage_dests,
+        )
+        if prep_d is not None:
+            prepared_disposals.append(prep_d)
+    if not prepared_disposals:
+        return [], False
+
+    disp_intents = [
+        (
+            pd["source_path"],
+            pd["dest_path"],
+            pd["pre_hash"],
+            pd["intent_size"],
+        )
+        for pd in prepared_disposals
+    ]
+    disp_seqs = _record_move_intents_batch(moves_ledger, session_id, disp_intents)
+    disp_completions: list[dict[str, Any]] = []
+    disp_db_updates: list[dict[str, Any]] = []
+    staged_entries: list[dict[str, Any]] = []
+    disp_exc: BaseException | None = None
+
+    for idx_d, (pd, d_seq) in enumerate(zip(prepared_disposals, disp_seqs)):
+        try:
+            final_dest = resilient_move(pd["source_path"], pd["dest_path"])
+        except Exception as err:
+            if d_seq is not None:
+                disp_completions.append(
+                    {
+                        "seq": d_seq,
+                        "state": MoveOpState.FAILED.value,
+                        "error": str(err),
+                        "required": False,
+                    }
+                )
+            for rem_seq in disp_seqs[idx_d + 1 :]:
+                if rem_seq is not None:
+                    disp_completions.append(
+                        {
+                            "seq": rem_seq,
+                            "state": MoveOpState.FAILED.value,
+                            "error": format_move_failure(STATUS_ABORTED),
+                            "required": False,
+                        }
+                    )
+            disp_exc = err
+            break
+
+        post_hash = get_file_hash(final_dest) if os.path.isfile(final_dest) else ""
+        d_state = (
+            MoveOpState.VERIFIED.value
+            if (pd["pre_hash"] and post_hash == pd["pre_hash"])
+            else MoveOpState.DONE.value
+        )
+        if d_seq is not None:
+            disp_completions.append(
+                {
+                    "seq": d_seq,
+                    "state": d_state,
+                    "dst": final_dest,
+                    "displaced": None,
+                    "required": True,
+                }
+            )
+        _update_path_map_entry(path_map, pd["source_path"], final_dest, lock=db_lock)
+        rel_dest = safe_relpath(final_dest, base_dir).replace("\\", "/")
+        disp_db_updates.append(
+            {
+                "type": "document_path",
+                "args": (base_dir, pd["source_rel_path"], rel_dest),
+            }
+        )
+        if audit_records is not None:
+            with db_lock:
+                audit_records.append(
+                    {
+                        "source_path": pd["source_path"],
+                        "destination_path": final_dest,
+                        "pre_hash": pd["pre_hash"],
+                        "post_hash": post_hash or pd["pre_hash"],
+                    }
+                )
+        staged_entries.append(
+            {
+                "source_path": pd["source_path"],
+                "staged_path": final_dest,
+                "action": "trash" if pd["is_trash_target"] else "stage",
+                "sha256": pd["pre_hash"],
+            }
+        )
+
+    flushed = False
+    if flush_db:
+        with db_lock:
+            if db_updates_batch:
+                disp_db_updates = list(db_updates_batch) + disp_db_updates
+                db_updates_batch.clear()
+        flushed = _flush_chunk_completions_and_db(
+            db,
+            moves_ledger,
+            session_id,
+            disp_completions,
+            disp_db_updates,
+        )
+    else:
+        _flush_chunk_completions_and_db(
+            None, moves_ledger, session_id, disp_completions, []
+        )
+        if disp_db_updates:
+            with db_lock:
+                db_updates_batch.extend(disp_db_updates)
+
+    if disp_exc is not None:
+        raise disp_exc
+    return staged_entries, flushed
+
+
+def _stage_disposal_item(
+    base_dir: str,
+    item: dict,
+    db,
+    path_map: dict,
+    session_id: str,
+    history_manager,
+    db_lock: threading.Lock,
+    db_updates_batch: list,
+    audit_records: list | None = None,
+) -> dict[str, Any] | None:
+    """Stage a redundant duplicate or policy-trashed file into ``.sortify_duplicates/<session_id>/``.
+
+    Enforces ADR 0005 (surviving primary must be ``verified`` in ``MoveLedger`` or
+    verified byte-identical on disk if stationary) and ADR 0006 (every staging
+    relocation is recorded in ``MoveLedger`` so ``SortPipeline.undo`` replays it).
+    """
+    entries, _ = _stage_disposal_chunk(
+        base_dir=base_dir,
+        items=[item],
+        db=db,
+        path_map=path_map,
+        session_id=session_id,
+        history_manager=history_manager,
+        db_lock=db_lock,
+        db_updates_batch=db_updates_batch,
+        audit_records=audit_records,
+        flush_db=False,
+    )
+    return entries[0] if entries else None
+
+
+def _submit_bounded_to_pool(
+    pool: Any,
+    max_concurrency: int,
+    fn: Any,
+    task_args: list[tuple[Any, ...]],
+) -> tuple[list[Any], BaseException | None]:
+    """Submit tasks to ``SharedWorkerPool`` bounded by ``max_concurrency`` and stop on first error."""
+    limit = max(1, int(max_concurrency))
+    if limit == 1:
+        results: list[Any] = []
+        for args in task_args:
+            fut = pool.submit(fn, *args)
+            exc = fut.exception()
+            if exc is not None:
+                return results, exc
+            results.append(fut.result())
+        return results, None
+
+    it = iter(enumerate(task_args))
+    in_flight: dict[concurrent.futures.Future[Any], int] = {}
+    ordered_results: dict[int, Any] = {}
+    first_exc: BaseException | None = None
+
+    for idx, args in it:
+        in_flight[pool.submit(fn, *args)] = idx
+        if len(in_flight) >= limit:
+            break
+
+    while in_flight:
+        done, _ = concurrent.futures.wait(
+            in_flight.keys(),
+            return_when=concurrent.futures.FIRST_COMPLETED,
+        )
+        for fut in done:
+            idx = in_flight.pop(fut)
+            if not fut.cancelled():
+                exc = fut.exception()
+                if exc is not None and first_exc is None:
+                    first_exc = exc
+                elif exc is None:
+                    ordered_results[idx] = fut.result()
+        if first_exc is not None:
+            for pending_fut in list(in_flight.keys()):
+                pending_fut.cancel()
+            if in_flight:
+                concurrent.futures.wait(in_flight.keys())
+            in_flight.clear()
+            break
+        while len(in_flight) < limit:
+            try:
+                next_idx, next_args = next(it)
+            except StopIteration:
+                break
+            in_flight[pool.submit(fn, *next_args)] = next_idx
+
+    return [ordered_results[i] for i in sorted(ordered_results)], first_exc
+
+
 class AsyncMoveEngine(LifecycleTelemetryMixin):
     """Asynchronous Chunked Thread Pool Execution Engine for file relocation."""
 
@@ -2164,7 +2566,7 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
             raw_move_items = _collect_move_items(
                 base_dir, plan, priority=effective_priority
             )
-            move_items = [
+            all_filtered_items = [
                 item
                 for item in raw_move_items
                 if not (
@@ -2173,6 +2575,19 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                     or scan_filter.has_ignored_extension(item["source_path"])
                 )
             ]
+            move_items = []
+            disposal_items = []
+            for item in all_filtered_items:
+                c_node = item.get("content")
+                d_act = _get_val(c_node, "duplicate_action")
+                p_act = _get_val(c_node, "policy_action")
+                if d_act == "skip":
+                    continue
+                if d_act in ("stage", "trash") or p_act == "trash":
+                    disposal_items.append(item)
+                else:
+                    move_items.append(item)
+
             auto_ratings = {
                 str(r).upper()
                 for r in (
@@ -2208,7 +2623,9 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                         return True
                 return False
 
-            has_candidate_moves = any(_item_may_move(item) for item in move_items)
+            has_candidate_moves = any(
+                _item_may_move(item) for item in move_items
+            ) or bool(disposal_items)
 
             registered_session = False
             if not resume and history_manager and has_candidate_moves:
@@ -2254,14 +2671,14 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
 
             if not session_id and (resume or has_candidate_moves):
                 session_id = str(uuid.uuid4())
-            total_items = len(move_items)
+            total_items = len(move_items) + len(disposal_items)
             chunks = [
                 move_items[i : i + effective_chunk_size]
                 for i in range(0, len(move_items), effective_chunk_size)
             ]
             total_chunks = len(chunks)
 
-            if total_chunks == 0:
+            if total_chunks == 0 and not disposal_items:
                 emit_progress(
                     effective_progress_cb,
                     1.0,
@@ -2372,35 +2789,31 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                         )
                         target_buckets.setdefault(cand_target, []).append(item)
 
-                    futures = [
-                        pool.submit(
-                            _process_move_group,
-                            base_dir,
-                            bucket_items,
-                            db,
-                            path_map,
-                            runtime_settings,
-                            session_id,
-                            history_manager,
-                            db_lock,
-                            db_updates_batch,
-                            audit_records,
-                            pending_links,
-                            chunk_hash_map,
-                            target_locks,
-                        )
-                        for bucket_items in target_buckets.values()
-                    ]
-                    _done, not_done = concurrent.futures.wait(
-                        futures, return_when=concurrent.futures.FIRST_EXCEPTION
+                    _, group_exc = _submit_bounded_to_pool(
+                        pool,
+                        effective_max_workers,
+                        _process_move_group,
+                        [
+                            (
+                                base_dir,
+                                bucket_items,
+                                db,
+                                path_map,
+                                runtime_settings,
+                                session_id,
+                                history_manager,
+                                db_lock,
+                                db_updates_batch,
+                                audit_records,
+                                pending_links,
+                                chunk_hash_map,
+                                target_locks,
+                            )
+                            for bucket_items in target_buckets.values()
+                        ],
                     )
-                    if not_done:
-                        for fut in not_done:
-                            fut.cancel()
-                        concurrent.futures.wait(not_done)
-                    for fut in futures:
-                        if not fut.cancelled() and fut.exception() is not None:
-                            raise fut.exception()
+                    if group_exc is not None:
+                        raise group_exc
                     with db_lock:
                         if len(db_updates_batch) >= batch_size and hasattr(
                             db, "execute_batch_updates"
@@ -2409,34 +2822,27 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                             db_updates_batch.clear()
                             has_flushed_db = True
                 else:
-                    prep_futures = [
-                        pool.submit(
-                            _prepare_chunk_move_item,
-                            base_dir,
-                            item,
-                            db,
-                            runtime_settings,
-                            db_lock,
-                            chunk_hash_map,
-                        )
-                        for item in chunk
-                    ]
-                    _prep_done, prep_not_done = concurrent.futures.wait(
-                        prep_futures, return_when=concurrent.futures.FIRST_EXCEPTION
+                    prep_results, prep_exc = _submit_bounded_to_pool(
+                        pool,
+                        effective_max_workers,
+                        _prepare_chunk_move_item,
+                        [
+                            (
+                                base_dir,
+                                item,
+                                db,
+                                runtime_settings,
+                                db_lock,
+                                chunk_hash_map,
+                            )
+                            for item in chunk
+                        ],
                     )
-                    if prep_not_done:
-                        for fut in prep_not_done:
-                            fut.cancel()
-                        concurrent.futures.wait(prep_not_done)
-
-                    prepared_items: list[dict[str, Any]] = []
-                    for fut in prep_futures:
-                        if not fut.cancelled() and fut.exception() is not None:
-                            raise fut.exception()
-                        if not fut.cancelled():
-                            prep_res = fut.result()
-                            if prep_res is not None:
-                                prepared_items.append(prep_res)
+                    if prep_exc is not None:
+                        raise prep_exc
+                    prepared_items = [
+                        prep_res for prep_res in prep_results if prep_res is not None
+                    ]
 
                     reserved_dests: set[str] = set()
                     active_prepared: list[dict[str, Any]] = []
@@ -2483,34 +2889,24 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                             norm_dst = os.path.normcase(os.path.abspath(p["dest_path"]))
                             dest_groups.setdefault(norm_dst, []).append(p)
 
-                        futures = [
-                            pool.submit(
-                                _execute_prepared_move_group,
-                                base_dir,
-                                group,
-                                path_map,
-                                session_id,
-                                moves_ledger,
-                                db_lock,
-                            )
-                            for group in dest_groups.values()
-                        ]
-
                         # Never leave moves in flight: on the first failure, cancel
                         # what hasn't started and wait for the rest before any rollback.
-                        _done, not_done = concurrent.futures.wait(
-                            futures, return_when=concurrent.futures.FIRST_EXCEPTION
+                        _, first_exc = _submit_bounded_to_pool(
+                            pool,
+                            effective_max_workers,
+                            _execute_prepared_move_group,
+                            [
+                                (
+                                    base_dir,
+                                    group,
+                                    path_map,
+                                    session_id,
+                                    moves_ledger,
+                                    db_lock,
+                                )
+                                for group in dest_groups.values()
+                            ],
                         )
-                        if not_done:
-                            for fut in not_done:
-                                fut.cancel()
-                            concurrent.futures.wait(not_done)
-
-                        first_exc: BaseException | None = None
-                        for fut in futures:
-                            if not fut.cancelled() and fut.exception() is not None:
-                                first_exc = fut.exception()
-                                break
 
                         from app.core.moves import STATUS_ABORTED, format_move_failure
 
@@ -2606,6 +3002,63 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                 self.transition_to(MoveEngineState.CANCELLED)
                 summary.state = self.state
             else:
+                staged_duplicates: list[dict[str, Any]] = []
+                if (
+                    disposal_items
+                    and isinstance(session_id, str)
+                    and not _is_cancelled(cancel_token)
+                ):
+                    moves_ledger = (
+                        getattr(history_manager, "moves", None)
+                        if history_manager
+                        else None
+                    )
+                    moves_by_src: dict[str, list[Any]] | None = None
+                    if (
+                        moves_ledger is not None
+                        and session_id
+                        and hasattr(moves_ledger, "list_moves")
+                    ):
+                        moves_by_src = {}
+                        for m in moves_ledger.list_moves(session_id):
+                            norm_m_src = os.path.normcase(os.path.abspath(m.src))
+                            moves_by_src.setdefault(norm_m_src, []).append(m)
+
+                    disposal_chunks = [
+                        disposal_items[i : i + effective_chunk_size]
+                        for i in range(0, len(disposal_items), effective_chunk_size)
+                    ]
+                    for disp_chunk in disposal_chunks:
+                        if _is_cancelled(cancel_token):
+                            summary.cancelled = True
+                            break
+                        chunk_staged, chunk_flushed = _stage_disposal_chunk(
+                            base_dir=base_dir,
+                            items=disp_chunk,
+                            db=db,
+                            path_map=path_map,
+                            session_id=session_id,
+                            history_manager=history_manager,
+                            db_lock=db_lock,
+                            db_updates_batch=db_updates_batch,
+                            audit_records=audit_records,
+                            moves_by_src=moves_by_src,
+                            flush_db=True,
+                        )
+                        staged_duplicates.extend(chunk_staged)
+                        if chunk_flushed:
+                            has_flushed_db = True
+
+                    if staged_duplicates:
+                        emit_progress(
+                            effective_progress_cb,
+                            1.0,
+                            stage=f"Staged {len(staged_duplicates)} verified duplicate(s)",
+                            unit_count=total_items,
+                            unit_type="files",
+                        )
+                summary["staged_duplicates"] = staged_duplicates
+
                 if pending_links:
                     self.transition_to(MoveEngineState.RESOLVING_LINKS)
                     summary.state = self.state

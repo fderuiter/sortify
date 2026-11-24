@@ -738,3 +738,66 @@ def test_mover_duck_typed_single_item_ledger_fallback() -> None:
         "done",
         "failed",
     ]
+
+
+def test_200_file_pipeline_with_duplicate_staging_uses_chunked_commits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """200-file sort + undo with DUPLICATE_ACTION='stage' batches disposal moves into <= 25 SQLite commits."""
+    app_dir = tmp_path / "app_data_dup"
+    work_dir = tmp_path / "workspace_dup"
+    app_dir.mkdir()
+    work_dir.mkdir()
+    for idx in range(100):
+        words, label = TOPICS[idx % len(TOPICS)]
+        body = f"Document {idx:03d} ({label})\n{words} cluster_{idx}\n"
+        (work_dir / f"orig_{idx:03d}_{label.lower()}.txt").write_text(
+            body, encoding="utf-8"
+        )
+        (work_dir / f"z_copy_{idx:03d}_{label.lower()}.txt").write_text(
+            body, encoding="utf-8"
+        )
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(app_dir))
+
+    state, _ = _install_sqlite_commit_tracer(monkeypatch)
+    store = open_store(app_dir, legacy_session_root=tmp_path / "none")
+
+    settings = AppSettings()
+    settings.AI_CONSENT_GRANTED = False
+    settings.MAX_FOLDERS = 4
+    settings.MAX_WORKERS = 4
+    settings.DUPLICATE_ACTION = "stage"
+    settings.DETECT_ORIGINAL_BY = "name"
+
+    state["phase"] = "session_init"
+    session = AppSession(settings, str(work_dir), store=store)
+    try:
+        pipeline = SortPipeline(session)
+
+        state["phase"] = "plan"
+        plan = pipeline.plan(chunk_size=50)
+
+        state["phase"] = "execute"
+        sort_res = pipeline.execute(plan, chunk_size=50, batch_size=50)
+        assert sort_res.ok
+        assert sort_res.session_id is not None
+        assert len(sort_res.summary.get("staged_duplicates", [])) == 100
+
+        state["phase"] = "undo"
+        undo_res = pipeline.undo(sort_res.session_id)
+        assert undo_res.ok
+        assert len(undo_res.moved) == 200
+
+        restored = [p.name for p in work_dir.iterdir() if p.is_file()]
+        assert len(restored) == 200
+
+        commits = state["commits_by_phase"]
+        total_commits = (
+            commits.get("plan", 0) + commits.get("execute", 0) + commits.get("undo", 0)
+        )
+        assert total_commits <= 25, f"Expected <= 25 commits, got {commits}"
+        assert state["non_worker_writes"] == []
+    finally:
+        state["phase"] = "setup"
+        session.close()
+        db_conn.clear_connection_cache(only_current_and_inactive=False)

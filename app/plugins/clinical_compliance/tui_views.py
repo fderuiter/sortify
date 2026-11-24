@@ -228,6 +228,9 @@ class CROForensicModal(ResponsiveModalScreen[None]):
             pipeline = CROMultiStudyPipeline(
                 mode="tmf",
                 smart_renaming=getattr(self.settings, "CLINICAL_SMART_RENAMING", True),
+                suppress_duplicates=bool(
+                    getattr(self.settings, "CLINICAL_SUPPRESS_DUPLICATES", False)
+                ),
             )
 
             def progress_cb(prog_or_update: Any, stage_msg: str = "") -> None:

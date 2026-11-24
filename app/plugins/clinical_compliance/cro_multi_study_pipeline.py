@@ -23,6 +23,7 @@ from app.core.lifecycle import LifecycleTelemetryMixin
 from app.core.mover import get_safe_path
 from app.core.path_utils import safe_relpath, sanitize_name
 from app.core.progress import ProgressUpdate, emit_progress
+from app.core.resilient_file_ops import same_file_content
 from app.plugins.clinical_compliance.clinical_compliance import ClinicalComplianceEngine
 from app.plugins.clinical_compliance.clinical_renamer import ClinicalRenamer
 from app.plugins.clinical_compliance.clinical_strategy import ClinicalTMFStrategy
@@ -116,9 +117,27 @@ class CROMultiStudyPipeline(LifecycleTelemetryMixin):
 
     _VALID_CRO_TRANSITIONS = _VALID_CRO_TRANSITIONS
 
-    def __init__(self, mode: str = "tmf", smart_renaming: bool = True):
+    def __init__(
+        self,
+        mode: str = "tmf",
+        smart_renaming: bool = True,
+        suppress_duplicates: bool = False,
+        duplicate_action: str = "off",
+    ):
         self.mode = mode
         self.smart_renaming = smart_renaming
+        normalized_action = str(duplicate_action or "off").strip().lower()
+        if normalized_action in ("stage", "trash"):
+            normalized_action = "archive"
+        if normalized_action not in ("off", "skip", "archive"):
+            raise ValueError(
+                f"Unsupported CRO duplicate_action '{duplicate_action}'. "
+                "Expected 'off', 'skip', or 'archive'."
+            )
+        if suppress_duplicates and normalized_action == "off":
+            normalized_action = "skip"
+        self.duplicate_action = normalized_action
+        self.suppress_duplicates = normalized_action != "off"
         self.scanner = ForensicScanner()
         self.disambiguator = StudyDisambiguator()
         self.compliance_engine = ClinicalComplianceEngine()
@@ -274,7 +293,39 @@ class CROMultiStudyPipeline(LifecycleTelemetryMixin):
             self._transition_to(CROPipelineState.PARTITIONING)
             studies_summary: list[StudyIngestSummary] = []
             manifest_records: list[dict[str, Any]] = []
+            docs_by_source: dict[str, Any] = {d.source_path: d for d in discovered_docs}
+            primary_dest_by_source: dict[str, str] = {}
+            suppressed_duplicates_count = 0
+            archived_duplicates_count = 0
 
+            def _is_verified_duplicate(doc_item: Any) -> bool:
+                if not doc_item.is_duplicate or not doc_item.duplicate_of:
+                    return False
+                src_candidate = doc_item.staging_file_path or doc_item.source_path
+                primary_doc = docs_by_source.get(doc_item.duplicate_of)
+                primary_candidate = (
+                    (primary_doc.staging_file_path or primary_doc.source_path)
+                    if primary_doc is not None
+                    else doc_item.duplicate_of
+                )
+                if (
+                    src_candidate
+                    and primary_candidate
+                    and os.path.isfile(src_candidate)
+                    and os.path.isfile(primary_candidate)
+                ):
+                    return same_file_content(src_candidate, primary_candidate)
+                if (
+                    primary_doc is not None
+                    and doc_item.sha256_hash
+                    and doc_item.sha256_hash != "ERROR"
+                    and doc_item.sha256_hash == primary_doc.sha256_hash
+                    and doc_item.file_size_bytes == primary_doc.file_size_bytes
+                ):
+                    return True
+                return False
+
+            # Pre-order partitions only within each study so primaries materialize first
             total_partitions = len(study_partitions)
             is_cancelled = False
             for p_idx, (study_id, docs) in enumerate(study_partitions.items()):
@@ -293,6 +344,19 @@ class CROMultiStudyPipeline(LifecycleTelemetryMixin):
                     f"Organizing {study_id} ({len(docs)} files)...",
                 )
 
+                ordered_docs = (
+                    sorted(docs, key=lambda d: 1 if d.is_duplicate else 0)
+                    if self.suppress_duplicates
+                    else list(docs)
+                )
+                active_plan_docs = (
+                    [d for d in ordered_docs if not _is_verified_duplicate(d)]
+                    if self.suppress_duplicates
+                    else ordered_docs
+                )
+                if not active_plan_docs:
+                    active_plan_docs = ordered_docs
+
                 strategy = ClinicalTMFStrategy(
                     mode=self.mode,
                     smart_renaming=self.smart_renaming,
@@ -300,14 +364,15 @@ class CROMultiStudyPipeline(LifecycleTelemetryMixin):
                 )
                 strategy.base_dir = study_target_dir
 
-                filenames = [d.file_name for d in docs]
-                doc_texts = [d.extracted_text for d in docs]
+                filenames = [d.file_name for d in active_plan_docs]
+                doc_texts = [d.extracted_text for d in active_plan_docs]
 
                 _plan, _ = strategy.generate_plan(filenames, doc_texts)
 
                 # Copy files non-destructively to target directory
                 classified_map = {}
-                for doc in docs:
+                copied_binder_filenames: list[str] = []
+                for doc in ordered_docs:
                     if cancel_check and cancel_check():
                         is_cancelled = True
                         break
@@ -323,7 +388,90 @@ class CROMultiStudyPipeline(LifecycleTelemetryMixin):
                         )
                     art_id = artifact.artifact_id if artifact else "unclassified"
                     art_name = artifact.name if artifact else "Unclassified"
+
+                    if self.smart_renaming and artifact:
+                        target_fn = ClinicalRenamer.generate_standard_filename(
+                            doc.file_name, art_name, doc.extracted_text
+                        )
+                    else:
+                        target_fn = sanitize_name(doc.file_name)
+
+                    src_to_copy = doc.staging_file_path or doc.source_path
+                    verified_dup = self.suppress_duplicates and _is_verified_duplicate(
+                        doc
+                    )
+                    primary_rel_dest = (
+                        primary_dest_by_source.get(doc.duplicate_of)
+                        if doc.duplicate_of
+                        else None
+                    )
+
+                    if verified_dup and self.duplicate_action == "skip":
+                        suppressed_duplicates_count += 1
+                        manifest_records.append(
+                            {
+                                "source_path": doc.source_path,
+                                "archive_origin": doc.archive_origin,
+                                "sha256_hash": doc.sha256_hash,
+                                "file_size_bytes": doc.file_size_bytes,
+                                "assigned_study": study_id,
+                                "classified_artifact_id": art_id,
+                                "classified_artifact_name": art_name,
+                                "destination_path": None,
+                                "primary_destination_path": primary_rel_dest,
+                                "duplicate_status": "skipped",
+                                "is_duplicate": doc.is_duplicate,
+                                "duplicate_of": doc.duplicate_of,
+                                "ingest_timestamp": datetime.now(
+                                    timezone.utc
+                                ).isoformat(),
+                            }
+                        )
+                        continue
+
+                    if verified_dup and self.duplicate_action == "archive":
+                        archived_duplicates_count += 1
+                        archive_dir = os.path.join(
+                            study_target_dir, "_Duplicate_Archive"
+                        )
+                        os.makedirs(archive_dir, exist_ok=True)
+                        archive_dest_path = get_safe_path(
+                            archive_dir, target_fn, source_path=src_to_copy
+                        )
+                        if os.path.isfile(src_to_copy):
+                            try:
+                                shutil.copy2(src_to_copy, archive_dest_path)
+                            except shutil.SameFileError:
+                                pass
+                            except OSError as e:
+                                logger.warning(
+                                    f"Failed to archive duplicate {src_to_copy} to {archive_dest_path}: {e}"
+                                )
+                        manifest_records.append(
+                            {
+                                "source_path": doc.source_path,
+                                "archive_origin": doc.archive_origin,
+                                "sha256_hash": doc.sha256_hash,
+                                "file_size_bytes": doc.file_size_bytes,
+                                "assigned_study": study_id,
+                                "classified_artifact_id": art_id,
+                                "classified_artifact_name": art_name,
+                                "destination_path": safe_relpath(
+                                    archive_dest_path, target_root
+                                ),
+                                "primary_destination_path": primary_rel_dest,
+                                "duplicate_status": "archived",
+                                "is_duplicate": doc.is_duplicate,
+                                "duplicate_of": doc.duplicate_of,
+                                "ingest_timestamp": datetime.now(
+                                    timezone.utc
+                                ).isoformat(),
+                            }
+                        )
+                        continue
+
                     classified_map[doc.file_name] = art_id
+                    copied_binder_filenames.append(doc.file_name)
 
                     # Compute destination subfolder
                     if art_id == "99.01.01":
@@ -341,14 +489,6 @@ class CROMultiStudyPipeline(LifecycleTelemetryMixin):
                     dest_dir = os.path.join(study_target_dir, subfolder_rel)
                     os.makedirs(dest_dir, exist_ok=True)
 
-                    if self.smart_renaming and artifact:
-                        target_fn = ClinicalRenamer.generate_standard_filename(
-                            doc.file_name, art_name, doc.extracted_text
-                        )
-                    else:
-                        target_fn = sanitize_name(doc.file_name)
-
-                    src_to_copy = doc.staging_file_path or doc.source_path
                     dest_file_path = get_safe_path(
                         dest_dir, target_fn, source_path=src_to_copy
                     )
@@ -374,23 +514,27 @@ class CROMultiStudyPipeline(LifecycleTelemetryMixin):
                                     f"Failed to copy {src_to_copy} to {dest_file_path}: {e}"
                                 )
 
-                    manifest_records.append(
-                        {
-                            "source_path": doc.source_path,
-                            "archive_origin": doc.archive_origin,
-                            "sha256_hash": doc.sha256_hash,
-                            "file_size_bytes": doc.file_size_bytes,
-                            "assigned_study": study_id,
-                            "classified_artifact_id": art_id,
-                            "classified_artifact_name": art_name,
-                            "destination_path": safe_relpath(
-                                dest_file_path, target_root
-                            ),
-                            "is_duplicate": doc.is_duplicate,
-                            "duplicate_of": doc.duplicate_of,
-                            "ingest_timestamp": datetime.now(timezone.utc).isoformat(),
-                        }
-                    )
+                    rel_dest = safe_relpath(dest_file_path, target_root)
+                    if not doc.is_duplicate:
+                        primary_dest_by_source[doc.source_path] = rel_dest
+
+                    record_entry: dict[str, Any] = {
+                        "source_path": doc.source_path,
+                        "archive_origin": doc.archive_origin,
+                        "sha256_hash": doc.sha256_hash,
+                        "file_size_bytes": doc.file_size_bytes,
+                        "assigned_study": study_id,
+                        "classified_artifact_id": art_id,
+                        "classified_artifact_name": art_name,
+                        "destination_path": rel_dest,
+                        "duplicate_status": "copied",
+                        "is_duplicate": doc.is_duplicate,
+                        "duplicate_of": doc.duplicate_of,
+                        "ingest_timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                    if primary_rel_dest is not None:
+                        record_entry["primary_destination_path"] = primary_rel_dest
+                    manifest_records.append(record_entry)
 
                 if is_cancelled:
                     break
@@ -400,7 +544,9 @@ class CROMultiStudyPipeline(LifecycleTelemetryMixin):
                     comp_eval = strategy.last_compliance_result
                 else:
                     comp_eval = self.compliance_engine.evaluate_compliance(
-                        classified_map, filenames, base_dir=study_target_dir
+                        classified_map,
+                        copied_binder_filenames,
+                        base_dir=study_target_dir,
                     )
                 html_report_path = os.path.join(
                     study_target_dir, "compliance_audit_report.html"
@@ -468,6 +614,13 @@ class CROMultiStudyPipeline(LifecycleTelemetryMixin):
                     status=CROPipelineState.CANCELLED,
                 )
 
+            for rec in manifest_records:
+                dup_of_path = rec.get("duplicate_of")
+                if dup_of_path and rec.get("primary_destination_path") is None:
+                    resolved_primary = primary_dest_by_source.get(dup_of_path)
+                    if resolved_primary is not None:
+                        rec["primary_destination_path"] = resolved_primary
+
             manifest_path = os.path.join(target_root, "chain_of_custody_manifest.json")
             unique_docs_count = len([d for d in discovered_docs if not d.is_duplicate])
             dups_count = len([d for d in discovered_docs if d.is_duplicate])
@@ -482,6 +635,8 @@ class CROMultiStudyPipeline(LifecycleTelemetryMixin):
                     "total_documents_scanned": len(discovered_docs),
                     "total_unique_documents": unique_docs_count,
                     "total_duplicates_detected": dups_count,
+                    "total_duplicates_suppressed": suppressed_duplicates_count,
+                    "total_duplicates_archived": archived_duplicates_count,
                     "total_studies_discovered": len(self.disambiguator.studies),
                 },
                 "discovered_studies": [s.model_dump() for s in studies_summary],

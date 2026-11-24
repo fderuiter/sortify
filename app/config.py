@@ -113,12 +113,14 @@ class PolicyRule(TypedDict):
             "action",
             "compliance",
             "unarchive",
+            "duplicate",
         ],
         Field(
             description=(
                 "Rule evaluation strategy: 'keyword', 'action', 'compliance', or 'unarchive' "
                 "match filenames and document text; 'pattern' matches lowercase filenames only; "
-                "'override' matches lowercase filenames or full file paths."
+                "'override' matches lowercase filenames or full file paths; "
+                "'duplicate' matches byte-verified duplicate files."
             )
         ),
     ]
@@ -163,9 +165,36 @@ class PolicyRule(TypedDict):
     ]
     action: NotRequired[
         Annotated[
-            Literal["archive", "retain", "quarantine", "redact", "unarchive"],
+            Literal[
+                "archive",
+                "retain",
+                "quarantine",
+                "redact",
+                "unarchive",
+                "trash",
+            ],
             Field(
                 description="Optional lifecycle directive executed when the policy matches."
+            ),
+        ]
+    ]
+    detect_original_by: NotRequired[
+        Annotated[
+            Literal[
+                "first_seen",
+                "name",
+                "created",
+                "lastmodified",
+                "-first_seen",
+                "-name",
+                "-created",
+                "-lastmodified",
+            ],
+            Field(
+                description=(
+                    "Optional original-file selection mode for 'duplicate' policy rules "
+                    "('first_seen', 'name', 'created', 'lastmodified', or '-' reverse variants)."
+                )
             ),
         ]
     ]
@@ -316,9 +345,10 @@ class Settings(BaseSettings):
         default_factory=list,
         description=(
             "Ordered list of typed PolicyRule dictionaries evaluated from highest integer "
-            "priority to lowest across 6 rule types ('keyword', 'pattern', 'override', 'action', "
-            "'compliance', 'unarchive'), 5 lifecycle actions ('archive', 'retain', 'quarantine', "
-            "'redact', 'unarchive'), and 8 post-unarchive actions; warns when higher-priority rules shadow lower-priority rules."
+            "priority to lowest across 7 rule types ('keyword', 'pattern', 'override', 'action', "
+            "'compliance', 'unarchive', 'duplicate'), 6 lifecycle actions ('archive', 'retain', "
+            "'quarantine', 'redact', 'unarchive', 'trash'), and 8 post-unarchive actions; warns "
+            "when higher-priority rules shadow lower-priority rules."
         ),
     )
     VISUAL_TIMEOUT: int = Field(
@@ -564,6 +594,31 @@ class Settings(BaseSettings):
             "the source untouched, 'rename' appends a numeric suffix, and 'overwrite' replaces the target."
         ),
     )
+    DUPLICATE_ACTION: Literal["off", "review", "skip", "stage", "trash"] = Field(
+        default="off",
+        description=(
+            "Handling mode for exact byte-identical duplicate clusters during scan and sort: "
+            "'off' treats copies normally, 'review' prompts in interactive TUI, 'skip' excludes "
+            "redundant copies, 'stage' displaces copies into .sortify_duplicates/<session_id>/ "
+            "for undo, and 'trash' stages verified copies for OS Trash disposal."
+        ),
+    )
+    DETECT_ORIGINAL_BY: Literal[
+        "first_seen",
+        "name",
+        "created",
+        "lastmodified",
+        "-first_seen",
+        "-name",
+        "-created",
+        "-lastmodified",
+    ] = Field(
+        default="first_seen",
+        description=(
+            "Selector used to choose the surviving original file in each byte-identical duplicate "
+            "cluster ('first_seen', 'name', 'created', 'lastmodified', or '-' reverse order variants)."
+        ),
+    )
     SORTING_STRATEGY: str = Field(
         default="default",
         description=(
@@ -583,6 +638,13 @@ class Settings(BaseSettings):
         description=(
             "Whether clinical compliance runs automatically generate a regulatory "
             "audit trail report upon completion."
+        ),
+    )
+    CLINICAL_SUPPRESS_DUPLICATES: bool = Field(
+        default=False,
+        description=(
+            "Whether clinical multi-study ingestion skips copying byte-verified duplicate "
+            "artifacts instead of creating numbered _1 copies while preserving manifest lineage."
         ),
     )
     COHERENCE_THRESHOLD: float = Field(
@@ -735,6 +797,34 @@ class Settings(BaseSettings):
             )
         return v
 
+    @field_validator("DUPLICATE_ACTION", mode="before")
+    @classmethod
+    def validate_duplicate_action(cls, v: str) -> str:
+        """Validate that DUPLICATE_ACTION is a supported duplicate handling mode."""
+        if not isinstance(v, str):
+            raise ValueError("DUPLICATE_ACTION must be a string.")
+        v_clean = v.strip().lower()
+        if v_clean not in ("off", "review", "skip", "stage", "trash"):
+            raise ValueError(
+                "DUPLICATE_ACTION must be 'off', 'review', 'skip', 'stage', or 'trash'."
+            )
+        return v_clean
+
+    @field_validator("DETECT_ORIGINAL_BY", mode="before")
+    @classmethod
+    def validate_detect_original_by(cls, v: str) -> str:
+        """Validate that DETECT_ORIGINAL_BY is a supported original selector."""
+        from app.core.resilient_file_ops import DETECT_ORIGINAL_BY_MODES
+
+        if not isinstance(v, str):
+            raise ValueError("DETECT_ORIGINAL_BY must be a string.")
+        v_clean = v.strip().lower()
+        if v_clean not in DETECT_ORIGINAL_BY_MODES:
+            raise ValueError(
+                f"DETECT_ORIGINAL_BY must be one of {list(DETECT_ORIGINAL_BY_MODES)}."
+            )
+        return v_clean
+
     @field_validator("SECURITY_ADVISORY_FALLBACK_POLICY")
     @classmethod
     def validate_advisory_fallback_policy(cls, v: str) -> str:
@@ -825,19 +915,36 @@ class Settings(BaseSettings):
                 "action",
                 "compliance",
                 "unarchive",
+                "duplicate",
             ):
                 raise ValueError(
-                    f"Invalid policy type: {rule_type}. Must be keyword, pattern, override, action, compliance, or unarchive."
+                    f"Invalid policy type: {rule_type}. Must be keyword, pattern, override, action, compliance, unarchive, or duplicate."
                 )
 
             expression = rule.get("expression")
-            if not isinstance(expression, str) or not expression.strip():
+            defaulted_expression = False
+            if rule_type == "duplicate" and (
+                expression is None
+                or (isinstance(expression, str) and not expression.strip())
+            ):
+                expression = "*"
+                defaulted_expression = True
+            elif not isinstance(expression, str) or not expression.strip():
                 raise ValueError("Policy expression must be a non-empty string.")
 
+            action = rule.get("action")
+            action_lower = action.lower() if isinstance(action, str) else None
+            allows_empty_target = action_lower == "trash" or rule_type == "duplicate"
+
             target_path = rule.get("target_path")
+            defaulted_target = False
+            if target_path is None and allows_empty_target:
+                target_path = ""
+                defaulted_target = True
             if target_path is None or not isinstance(target_path, str):
                 raise ValueError("Policy target_path must be a string.")
-            validate_target_path(target_path, keyword=expression)
+            if target_path != "" or not allows_empty_target:
+                validate_target_path(target_path, keyword=expression)
 
             if (
                 "priority" not in rule
@@ -852,7 +959,6 @@ class Settings(BaseSettings):
             if "enabled" in rule and not isinstance(rule["enabled"], bool):
                 raise ValueError("Policy enabled property must be a boolean.")
 
-            action = rule.get("action")
             if action is not None:
                 from app.core.policy_engine import PolicyEngine
 
@@ -861,6 +967,18 @@ class Settings(BaseSettings):
                 ) or not PolicyEngine.validate_policy_action(action):
                     raise ValueError(
                         f"Invalid policy action: {action}. Must be one of {sorted(PolicyEngine.SUPPORTED_ACTIONS)}."
+                    )
+
+            detect_by = rule.get("detect_original_by")
+            if detect_by is not None:
+                from app.core.resilient_file_ops import DETECT_ORIGINAL_BY_MODES
+
+                if (
+                    not isinstance(detect_by, str)
+                    or detect_by.strip().lower() not in DETECT_ORIGINAL_BY_MODES
+                ):
+                    raise ValueError(
+                        f"Invalid detect_original_by: {detect_by}. Must be one of {list(DETECT_ORIGINAL_BY_MODES)}."
                     )
 
             post_act = (
@@ -882,8 +1000,14 @@ class Settings(BaseSettings):
                     raise ValueError(f"Invalid post_unarchive_action: {post_act}.")
 
             needs_copy = (
-                ("action" in rule and rule["action"] is None)
+                defaulted_expression
+                or defaulted_target
+                or ("action" in rule and rule["action"] is None)
                 or (isinstance(action, str) and action != action.lower())
+                or (
+                    isinstance(detect_by, str)
+                    and detect_by != detect_by.strip().lower()
+                )
                 or (
                     "post_unarchive_action" in rule
                     and rule["post_unarchive_action"] is None
@@ -896,11 +1020,19 @@ class Settings(BaseSettings):
             )
             if needs_copy:
                 updated_rule = dict(rule)
+                if defaulted_expression:
+                    updated_rule["expression"] = expression
+                if defaulted_target:
+                    updated_rule["target_path"] = target_path
                 if "action" in updated_rule:
                     if updated_rule["action"] is None:
                         updated_rule.pop("action")
                     elif isinstance(updated_rule["action"], str):
                         updated_rule["action"] = updated_rule["action"].lower()
+                if isinstance(updated_rule.get("detect_original_by"), str):
+                    updated_rule["detect_original_by"] = (
+                        updated_rule["detect_original_by"].strip().lower()
+                    )
                 if "post_unarchive_action" in updated_rule:
                     if updated_rule["post_unarchive_action"] is None:
                         updated_rule.pop("post_unarchive_action")

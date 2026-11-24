@@ -949,6 +949,9 @@ class SortPipeline(LifecycleTelemetryMixin):
         plan,
         *,
         move_context: Callable[[Any], AbstractContextManager[Any]] | None = None,
+        flush_trash: bool = False,
+        flush_trashed_only: bool = False,
+        trash_fn: Callable[[str], Any] | None = None,
         **kwargs,
     ) -> SortResult:
         """Move the files in ``plan`` and return what happened."""
@@ -998,6 +1001,13 @@ class SortPipeline(LifecycleTelemetryMixin):
                 if self.state != PipelineLifecycleState.COMPLETED:
                     self.transition_to(PipelineLifecycleState.COMPLETED)
                 result.state = PipelineLifecycleState.COMPLETED
+                if flush_trash and (result.session_id or not flush_trashed_only):
+                    trash_report = self.flush_trash(
+                        result.session_id or None,
+                        trashed_only=flush_trashed_only,
+                        trash_fn=trash_fn,
+                    )
+                    result.summary["trash_handoff"] = trash_report
 
             if hasattr(self, "_rollback_completed"):
                 result.rollback_completed = self._rollback_completed
@@ -1133,12 +1143,34 @@ class SortPipeline(LifecycleTelemetryMixin):
             if lease is not None:
                 lease.close()
 
+    def flush_trash(
+        self,
+        session_id: str | None = None,
+        *,
+        max_age_days: float | None = None,
+        trashed_only: bool = False,
+        trash_fn: Callable[[str], Any] | None = None,
+    ) -> dict[str, Any]:
+        """Export staged duplicates to native OS Trash and record irreversible handoff."""
+        history = getattr(self.session, "history_manager", None)
+        if history is None or not hasattr(history, "flush_staged_duplicates"):
+            return {"exported": [], "kept_staged": [], "errors": {}}
+        return history.flush_staged_duplicates(
+            session_id=session_id,
+            base_dir=self.base_dir or None,
+            max_age_days=max_age_days,
+            trashed_only=trashed_only,
+            trash_fn=trash_fn,
+        )
+
     def run(
         self,
         items: list | None = None,
         *,
         dry_run: bool = False,
         move_context: Callable[[Any], AbstractContextManager[Any]] | None = None,
+        flush_trash: bool = False,
+        trash_fn: Callable[[str], Any] | None = None,
         **kwargs,
     ):
         """Plan, then execute unless ``dry_run``. Returns ``(plan, result)``.
@@ -1148,4 +1180,9 @@ class SortPipeline(LifecycleTelemetryMixin):
         plan = self.plan(items, **kwargs)
         if dry_run or plan is None:
             return plan, None
-        return plan, self.execute(plan, move_context=move_context)
+        return plan, self.execute(
+            plan,
+            move_context=move_context,
+            flush_trash=flush_trash,
+            trash_fn=trash_fn,
+        )
