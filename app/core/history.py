@@ -1032,20 +1032,40 @@ class HistoryManager:
         if db and hasattr(db, "invalidate_cache"):
             db.invalidate_cache()
         moves = self.moves.list_moves(session_id)
+        active_moves = [m for m in moves if m.state not in (INTENT, FAILED)]
         if selected_step_ids is not None:
             sel_set = {str(x) for x in selected_step_ids}
             moves_to_unwind = [m for m in moves if str(m.seq) in sel_set]
-            active_moves = [m for m in moves if m.state not in (INTENT, FAILED)]
-            is_partial = len(moves_to_unwind) < len(active_moves) or not active_moves
             if not moves_to_unwind:
-                self._transition_session_status(session_id, PARTIALLY_ROLLED_BACK)
+                conn = get_db_connection(self.db_path)
+                with conn:
+                    row = conn.execute(
+                        "SELECT status FROM sessions WHERE session_id = ?",
+                        (session_id,),
+                    ).fetchone()
+                curr_status = row[0] if row else None
+                target_status = (
+                    ROLLED_BACK
+                    if (curr_status == PARTIALLY_ROLLED_BACK and not active_moves)
+                    else PARTIALLY_ROLLED_BACK
+                )
+                self._transition_session_status(session_id, target_status)
                 return 0
+            unwound_seq_set = {m.seq for m in moves_to_unwind}
+            remaining_active = [m for m in active_moves if m.seq not in unwound_seq_set]
+            is_partial = len(remaining_active) > 0
+            delete_unwound = True
         else:
             moves_to_unwind = moves
             is_partial = False
+            delete_unwound = False
 
         return self._replay_moves_backwards(
-            session_id, moves_to_unwind, db=db, is_partial=is_partial
+            session_id,
+            moves_to_unwind,
+            db=db,
+            is_partial=is_partial,
+            delete_unwound=delete_unwound,
         )
 
     def _replay_moves_backwards(
@@ -1054,6 +1074,7 @@ class HistoryManager:
         moves: list[Move],
         db=None,
         is_partial: bool = False,
+        delete_unwound: bool | None = None,
     ) -> int:
         """Undo a session by walking its ``moves`` rows from last to first (ADR 0006).
 
@@ -1192,17 +1213,37 @@ class HistoryManager:
                 f"that changed since the sort, left in place (e.g. {conflicts[0]})."
             )
 
-        status_to_set = PARTIALLY_ROLLED_BACK if is_partial else ROLLED_BACK
         unwound_seqs = [m.seq for m in moves]
 
         with conn:
-            self._transition_session_status(session_id, status_to_set, conn=conn)
-            if is_partial and unwound_seqs:
+            prev_row = conn.execute(
+                "SELECT status FROM sessions WHERE session_id = ?", (session_id,)
+            ).fetchone()
+            prev_status = prev_row[0] if prev_row else None
+            should_delete = (
+                bool(is_partial or prev_status == PARTIALLY_ROLLED_BACK)
+                if delete_unwound is None
+                else bool(
+                    delete_unwound or is_partial or prev_status == PARTIALLY_ROLLED_BACK
+                )
+            )
+            if should_delete and unwound_seqs:
                 placeholders = ",".join("?" for _ in unwound_seqs)
                 conn.execute(
                     f"DELETE FROM moves WHERE session_id = ? AND seq IN ({placeholders})",
                     [session_id] + unwound_seqs,
                 )
+            rem_row = conn.execute(
+                "SELECT COUNT(*) FROM moves WHERE session_id = ? AND state IN ('done', 'verified')",
+                (session_id,),
+            ).fetchone()
+            remaining_active = int(rem_row[0]) if rem_row else 0
+            status_to_set = (
+                PARTIALLY_ROLLED_BACK
+                if (is_partial and remaining_active > 0)
+                else ROLLED_BACK
+            )
+            self._transition_session_status(session_id, status_to_set, conn=conn)
 
         if db and hasattr(db, "invalidate_cache"):
             db.invalidate_cache()

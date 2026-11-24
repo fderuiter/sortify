@@ -404,7 +404,12 @@ class AppSession:
 
                     if summary.get("cancelled"):
                         self.transition_to(PipelineLifecycleState.CANCELLED)
-                    elif summary.get("error"):
+                    elif (
+                        summary.get("error")
+                        or summary.get("lifecycle_state")
+                        == PipelineLifecycleState.FAILED
+                        or bool((summary.get("audit_report") or {}).get("failed_items"))
+                    ):
                         self.transition_to(PipelineLifecycleState.FAILED)
                     else:
                         self.transition_to(PipelineLifecycleState.COMPLETED)

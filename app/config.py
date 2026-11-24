@@ -594,6 +594,23 @@ class Settings(BaseSettings):
             "the source untouched, 'rename' appends a numeric suffix, and 'overwrite' replaces the target."
         ),
     )
+    MOVE_ERROR_POLICY: Literal["rollback", "partial_commit"] = Field(
+        default="rollback",
+        description=(
+            "Failure handling policy during physical file moves: 'rollback' automatically "
+            "unwinds completed moves in the session on error, while 'partial_commit' "
+            "preserves verified moves and reports failed items for targeted retry."
+        ),
+    )
+
+    @field_validator("MOVE_ERROR_POLICY", mode="before")
+    @classmethod
+    def validate_move_error_policy(cls, v: Any) -> Any:
+        """Normalize string move error policy identifiers to lowercase."""
+        if isinstance(v, str):
+            return v.strip().lower()
+        return v
+
     DUPLICATE_ACTION: Literal["off", "review", "skip", "stage", "trash"] = Field(
         default="off",
         description=(

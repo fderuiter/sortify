@@ -251,6 +251,13 @@ Visual text and caption extraction backend: 'easyocr' for standard OCR or 'flore
 
 Resolution strategy when a destination file already exists: 'skip' leaves the source untouched, 'rename' appends a numeric suffix, and 'overwrite' replaces the target.
 
+### `MOVE_ERROR_POLICY`
+- **Type**: `str`
+- **Default**: `'rollback'`
+- **Allowed**: `rollback`, `partial_commit`
+
+Failure handling policy during physical file moves: 'rollback' automatically unwinds completed moves in the session on error, while 'partial_commit' preserves verified moves and reports failed items for targeted retry.
+
 ### `DUPLICATE_ACTION`
 - **Type**: `str`
 - **Default**: `'off'`
@@ -821,7 +828,9 @@ options:
 ##### `undo`
 ```text
 usage: smart-autosorter undo [-h] [--session-id SESSION_ID] [--list]
-                             [--latest] [--force] [--json] [-q] [--no-color]
+                             [--list-moves] [--latest] [--dry-run]
+                             [--step-id STEP_ID] [--file FILE] [--force]
+                             [--json] [-q] [--no-color]
                              [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
                              [--conflict-policy {skip,rename}]
@@ -840,7 +849,15 @@ options:
   --session-id SESSION_ID
                         Specific historical session ID UUID to rollback
   --list                List active and completed historical sorting sessions
+  --list-moves          List recorded move operations for the target sorting
+                        session
   --latest              Rollback the latest historical sorting session
+  --dry-run             Preview restoration paths, collisions, and missing
+                        targets without modifying files on disk
+  --step-id STEP_ID     Revert specific move step sequence ID (may be
+                        specified multiple times)
+  --file FILE           Revert specific move matching source or destination
+                        file path (may be specified multiple times)
   --force               Force rollback even if original files are missing
   --json                Output session list or rollback status in structured
                         JSON format

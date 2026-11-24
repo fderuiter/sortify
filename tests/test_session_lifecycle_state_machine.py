@@ -284,7 +284,7 @@ def test_unwind_empty_selected_steps_preserves_partial_status(lifecycle_env):
 def test_session_catalog_recognizes_failed_and_partially_rolled_back_sessions(
     lifecycle_env,
 ):
-    """Verify session catalog identifies interrupted, failed, and partially rolled back sessions (Criterion 4 & Requirement 5)."""
+    """Verify session catalog identifies failed sessions and only flags partially_rolled_back when .branches holds trapped files."""
     history = lifecycle_env["history"]
     base_dir = lifecycle_env["base_dir"]
     store = lifecycle_env["store"]
@@ -293,24 +293,34 @@ def test_session_catalog_recognizes_failed_and_partially_rolled_back_sessions(
     sid_failed = history.start_session(base_dir)
     history._transition_session_status(sid_failed, "failed")
 
-    # 2. Create a session and set to partially_rolled_back
-    sid_partial = history.start_session(base_dir)
-    history._transition_session_status(sid_partial, "partially_rolled_back")
+    # 2. Create a settled partially_rolled_back session (no trapped files)
+    sid_partial_settled = history.start_session(base_dir)
+    history._transition_session_status(sid_partial_settled, "partially_rolled_back")
 
-    # 3. Create a completed session
+    # 3. Create a partially_rolled_back session with trapped .branches files
+    from pathlib import Path
+
+    sid_partial_trapped = history.start_session(base_dir)
+    history._transition_session_status(sid_partial_trapped, "partially_rolled_back")
+    trapped_dir = Path(base_dir) / ".branches" / sid_partial_trapped
+    trapped_dir.mkdir(parents=True, exist_ok=True)
+    (trapped_dir / "trapped.txt").write_text("trapped bytes", encoding="utf-8")
+
+    # 4. Create a completed session
     sid_completed = history.start_session(base_dir)
     history._transition_session_status(sid_completed, "completed")
 
-    # 4. Create a rolled_back session
+    # 5. Create a rolled_back session
     sid_rolled_back = history.start_session(base_dir)
     history._transition_session_status(sid_rolled_back, "rolled_back")
 
     abandoned = find_abandoned_sessions(store=store)
     found_sids = {item["session_id"] for item in abandoned}
 
-    # Must recognize both failed and partially_rolled_back
+    # Must recognize failed and trapped partially_rolled_back, while excluding settled partially_rolled_back
     assert sid_failed in found_sids
-    assert sid_partial in found_sids
+    assert sid_partial_trapped in found_sids
+    assert sid_partial_settled not in found_sids
 
     # Completed and fully rolled back sessions must not appear in abandoned sessions
     assert sid_completed not in found_sids
@@ -319,8 +329,9 @@ def test_session_catalog_recognizes_failed_and_partially_rolled_back_sessions(
     failed_entry = next(s for s in abandoned if s["session_id"] == sid_failed)
     assert failed_entry["status"] == "failed"
 
-    partial_entry = next(s for s in abandoned if s["session_id"] == sid_partial)
+    partial_entry = next(s for s in abandoned if s["session_id"] == sid_partial_trapped)
     assert partial_entry["status"] == "partially_rolled_back"
+    assert partial_entry["has_trapped_files"] is True
 
 
 def test_mark_session_abandoned_transitions_status(lifecycle_env):

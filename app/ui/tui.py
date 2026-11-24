@@ -1681,7 +1681,7 @@ class AutoSorterTUI(
         """Trigger instant undo rollback for the most recent completed sorting session."""
         if self._is_text_control_focused(allow_tree_search=True):
             return
-        from app.core.session_catalog import list_sessions
+        from app.core.session_catalog import has_remaining_undo_moves, list_sessions
 
         sessions = list_sessions()
         active_base = (
@@ -1691,10 +1691,7 @@ class AutoSorterTUI(
         )
         target_sess = None
         for s in sessions:
-            if (
-                str(s.get("status", "")).lower() != "completed"
-                or int(s.get("step_count") or 0) <= 0
-            ):
+            if not has_remaining_undo_moves(s):
                 continue
             if active_base:
                 sess_base_raw = str(s.get("base_dir", "") or "")
@@ -1725,7 +1722,7 @@ class AutoSorterTUI(
             handle_confirm_result,
         )
 
-    @work(thread=True)
+    @work(thread=True, group="undo")
     def run_undo_worker(
         self,
         session_id: str,
@@ -1824,7 +1821,7 @@ class AutoSorterTUI(
             )
 
         if audit_report:
-            self.push_screen(AuditReportModal(audit_report))
+            self.push_screen(AuditReportModal(audit_report, session=self.app_session))
         else:
             self.announce(
                 "No audit report available. Execute a sorting operation first."

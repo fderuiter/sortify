@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "3339c69e5a7f5c9da675c622a9168b07e265eb341883cc7040178fe96f32edb2"
+    "checksum": "2b03d9fa6d7fbe2a9e1bf02d8ff2ff87651cec0f5fc2bf839036c4f4199bd146"
   },
   "classes": [],
   "functions": [
@@ -57,6 +57,24 @@
         }
       ],
       "returns": "list[dict[str, Any]]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "has_remaining_undo_moves",
+      "parameters": [
+        {
+          "annotation": "dict[str, Any]",
+          "default": null,
+          "name": "session_entry"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "store"
+        }
+      ],
+      "returns": "bool"
     },
     {
       "async": false,

@@ -1239,6 +1239,96 @@ def _get_target_lock(
     return t_lock
 
 
+def _record_partial_commit_failure(
+    *,
+    base_dir: str,
+    item: dict[str, Any],
+    err: BaseException,
+    session_id: str | None,
+    history_manager: Any,
+    db_lock: threading.Lock,
+    audit_records: list | None,
+    chunk_hash_map: dict | None = None,
+    path_map: dict | None = None,
+    pending_links: list | None = None,
+) -> None:
+    """Record a single-item failure in MoveLedger and audit_records without aborting the batch."""
+    source_path = str(item.get("source_path") or "")
+    if source_path and os.path.lexists(source_path):
+        if path_map is not None:
+            _update_path_map_entry(path_map, source_path, source_path, lock=db_lock)
+        if pending_links is not None:
+            norm_src = os.path.normcase(os.path.abspath(source_path))
+            with db_lock:
+                pending_links[:] = [
+                    entry
+                    for entry in pending_links
+                    if os.path.normcase(os.path.abspath(entry.get("source_path", "")))
+                    != norm_src
+                ]
+    current_dest = str(item.get("current_dest") or "")
+    filename = str(item.get("filename") or os.path.basename(source_path))
+    planned_dst = (
+        os.path.normpath(os.path.join(base_dir, current_dest, filename))
+        if (base_dir or current_dest or filename)
+        else ""
+    )
+
+    pre_hash = ""
+    if chunk_hash_map and source_path and base_dir:
+        rel_src = safe_relpath(source_path, base_dir).replace("\\", "/")
+        pre_hash = str(chunk_hash_map.get(rel_src) or "")
+    if not pre_hash and source_path and os.path.isfile(source_path):
+        try:
+            from app.core.extractor import get_file_hash
+
+            pre_hash = get_file_hash(source_path)
+        except Exception:
+            pre_hash = ""
+
+    moves = getattr(history_manager, "moves", None) if history_manager else None
+    if moves is not None and session_id and source_path:
+        try:
+            already_recorded = False
+            if hasattr(moves, "list_moves"):
+                norm_src = os.path.normcase(os.path.abspath(source_path))
+                existing = moves.list_moves(session_id)
+                already_recorded = any(
+                    os.path.normcase(os.path.abspath(getattr(m, "src", ""))) == norm_src
+                    and getattr(m, "state", None) == MoveOpState.FAILED.value
+                    for m in existing
+                )
+            if not already_recorded:
+                seq = _record_move_intent(
+                    moves, session_id, source_path, planned_dst, pre_hash
+                )
+                _record_move_state(
+                    moves,
+                    session_id,
+                    seq,
+                    MoveOpState.FAILED,
+                    required=False,
+                    error=str(err),
+                )
+        except Exception as ledger_err:
+            logging.debug(
+                f"Could not record failed move ledger state for {source_path}: {ledger_err}"
+            )
+
+    if audit_records is not None:
+        with db_lock:
+            audit_records.append(
+                {
+                    "source_path": source_path,
+                    "destination_path": planned_dst,
+                    "pre_hash": pre_hash,
+                    "post_hash": None,
+                    "status": MoveVerificationStatus.MOVE_FAIL.value,
+                    "error": str(err),
+                }
+            )
+
+
 def _process_move_group(
     base_dir: str,
     group_items: list[dict],
@@ -1253,27 +1343,49 @@ def _process_move_group(
     pending_links: list | None = None,
     chunk_hash_map: dict | None = None,
     target_locks: dict[str, threading.Lock] | None = None,
+    error_policy: str = "rollback",
 ) -> list[bool]:
     """Execute a bucket of move items targeting the same destination sequentially in plan order."""
     results: list[bool] = []
+    partial_commit = str(error_policy or "rollback").strip().lower() == "partial_commit"
     for item in group_items:
-        results.append(
-            _process_move_item(
-                base_dir,
-                item,
-                db,
-                path_map,
-                runtime_settings,
-                session_id,
-                history_manager,
-                db_lock,
-                db_updates_batch,
-                audit_records,
-                pending_links,
-                chunk_hash_map,
-                target_locks=target_locks,
+        try:
+            results.append(
+                _process_move_item(
+                    base_dir,
+                    item,
+                    db,
+                    path_map,
+                    runtime_settings,
+                    session_id,
+                    history_manager,
+                    db_lock,
+                    db_updates_batch,
+                    audit_records,
+                    pending_links,
+                    chunk_hash_map,
+                    target_locks=target_locks,
+                )
             )
-        )
+        except Exception as err:
+            if not partial_commit:
+                raise
+            logging.error(
+                f"Partial-commit move failure for {item.get('source_path')}: {err}"
+            )
+            _record_partial_commit_failure(
+                base_dir=base_dir,
+                item=item,
+                err=err,
+                session_id=session_id,
+                history_manager=history_manager,
+                db_lock=db_lock,
+                audit_records=audit_records,
+                chunk_hash_map=chunk_hash_map,
+                path_map=path_map,
+                pending_links=pending_links,
+            )
+            results.append(False)
     return results
 
 
@@ -2101,6 +2213,12 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
             )
 
             effective_priority = priority or getattr(runtime_settings, "priority", None)
+            raw_error_policy = (
+                kwargs.get("error_policy")
+                or getattr(runtime_settings, "MOVE_ERROR_POLICY", "rollback")
+                or "rollback"
+            )
+            effective_error_policy = str(raw_error_policy).strip().lower()
 
             from app.core.scanner import ScanFilter
 
@@ -2348,19 +2466,25 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                         pending_links,
                         chunk_hash_map,
                         target_locks,
+                        effective_error_policy,
                     )
                     for bucket_items in target_buckets.values()
                 ]
 
-                # Never leave moves in flight: on the first failure, cancel
-                # what hasn't started and wait for the rest before any rollback.
-                _done, not_done = concurrent.futures.wait(
-                    futures, return_when=concurrent.futures.FIRST_EXCEPTION
-                )
-                if not_done:
-                    for fut in not_done:
-                        fut.cancel()
-                    concurrent.futures.wait(not_done)
+                if effective_error_policy == "partial_commit":
+                    concurrent.futures.wait(
+                        futures, return_when=concurrent.futures.ALL_COMPLETED
+                    )
+                else:
+                    # Never leave moves in flight: on the first failure, cancel
+                    # what hasn't started and wait for the rest before any rollback.
+                    _done, not_done = concurrent.futures.wait(
+                        futures, return_when=concurrent.futures.FIRST_EXCEPTION
+                    )
+                    if not_done:
+                        for fut in not_done:
+                            fut.cancel()
+                        concurrent.futures.wait(not_done)
                 for fut in futures:
                     if not fut.cancelled() and fut.exception() is not None:
                         raise fut.exception()
@@ -2411,17 +2535,36 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                         if _is_cancelled(cancel_token):
                             summary.cancelled = True
                             break
-                        staged_entry = _stage_disposal_item(
-                            base_dir=base_dir,
-                            item=disp_item,
-                            db=db,
-                            path_map=path_map,
-                            session_id=session_id,
-                            history_manager=history_manager,
-                            db_lock=db_lock,
-                            db_updates_batch=db_updates_batch,
-                            audit_records=audit_records,
-                        )
+                        try:
+                            staged_entry = _stage_disposal_item(
+                                base_dir=base_dir,
+                                item=disp_item,
+                                db=db,
+                                path_map=path_map,
+                                session_id=session_id,
+                                history_manager=history_manager,
+                                db_lock=db_lock,
+                                db_updates_batch=db_updates_batch,
+                                audit_records=audit_records,
+                            )
+                        except Exception as disp_err:
+                            if effective_error_policy != "partial_commit":
+                                raise
+                            logging.error(
+                                f"Partial-commit staging failure for {disp_item.get('source_path')}: {disp_err}"
+                            )
+                            _record_partial_commit_failure(
+                                base_dir=base_dir,
+                                item=disp_item,
+                                err=disp_err,
+                                session_id=session_id,
+                                history_manager=history_manager,
+                                db_lock=db_lock,
+                                audit_records=audit_records,
+                                path_map=path_map,
+                                pending_links=pending_links,
+                            )
+                            staged_entry = None
                         if staged_entry is not None:
                             staged_duplicates.append(staged_entry)
                     if staged_duplicates:
@@ -2536,7 +2679,25 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                         db_updates_batch.clear()
                         has_flushed_db = True
 
-                real_move_count = len(audit_records)
+                has_failed_audit = any(
+                    r.get("status")
+                    in (
+                        MoveVerificationStatus.MOVE_FAIL.value,
+                        MoveVerificationStatus.MISMATCH_FAIL.value,
+                    )
+                    or bool(r.get("error"))
+                    for r in audit_records
+                )
+                real_move_count = sum(
+                    1
+                    for r in audit_records
+                    if r.get("status")
+                    not in (
+                        MoveVerificationStatus.MOVE_FAIL.value,
+                        MoveVerificationStatus.MISMATCH_FAIL.value,
+                    )
+                    and not r.get("error")
+                )
                 if session_id and history_manager:
                     ledger = getattr(history_manager, "moves", None)
                     if ledger is not None and hasattr(ledger, "list_moves"):
@@ -2550,7 +2711,7 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                                 if getattr(m, "state", None) in (DONE, VERIFIED)
                             )
                         except Exception:
-                            real_move_count = len(audit_records)
+                            pass
 
                 if (
                     session_id
@@ -2570,29 +2731,55 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                     and history_manager
                     and real_move_count == 0
                 ):
-                    try:
-                        if hasattr(history_manager, "_transition_session_status"):
-                            hm_db = getattr(history_manager, "db", None)
-                            hm_worker = getattr(hm_db, "worker", None)
-                            if hm_worker is not None and hasattr(
-                                hm_worker, "execute_write"
-                            ):
-                                hm_worker.execute_write(
-                                    lambda: history_manager._transition_session_status(
+                    if effective_error_policy == "partial_commit" and has_failed_audit:
+                        try:
+                            if hasattr(history_manager, "_transition_session_status"):
+                                hm_db = getattr(history_manager, "db", None)
+                                hm_worker = getattr(hm_db, "worker", None)
+                                if hm_worker is not None and hasattr(
+                                    hm_worker, "execute_write"
+                                ):
+                                    hm_worker.execute_write(
+                                        lambda: (
+                                            history_manager._transition_session_status(
+                                                session_id, "failed"
+                                            )
+                                        )
+                                    )
+                                else:
+                                    history_manager._transition_session_status(
+                                        session_id, "failed"
+                                    )
+                        except Exception as fail_err:
+                            logging.debug(
+                                f"Could not mark failed partial-commit session {session_id}: {fail_err}"
+                            )
+                    else:
+                        try:
+                            if hasattr(history_manager, "_transition_session_status"):
+                                hm_db = getattr(history_manager, "db", None)
+                                hm_worker = getattr(hm_db, "worker", None)
+                                if hm_worker is not None and hasattr(
+                                    hm_worker, "execute_write"
+                                ):
+                                    hm_worker.execute_write(
+                                        lambda: (
+                                            history_manager._transition_session_status(
+                                                session_id, "abandoned"
+                                            )
+                                        )
+                                    )
+                                else:
+                                    history_manager._transition_session_status(
                                         session_id, "abandoned"
                                     )
-                                )
-                            else:
-                                history_manager._transition_session_status(
-                                    session_id, "abandoned"
-                                )
-                    except Exception as abandon_err:
-                        logging.debug(
-                            f"Could not mark empty session {session_id} abandoned: {abandon_err}"
-                        )
-                    if not resume:
-                        session_id = None
-                        summary["session_id"] = None
+                        except Exception as abandon_err:
+                            logging.debug(
+                                f"Could not mark empty session {session_id} abandoned: {abandon_err}"
+                            )
+                        if not resume:
+                            session_id = None
+                            summary["session_id"] = None
 
                 self.transition_to(MoveEngineState.COMPLETED)
                 summary.state = self.state
@@ -2601,7 +2788,19 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
 
             if summary.get("cancelled"):
                 summary["lifecycle_state"] = PipelineLifecycleState.CANCELLED
-            summary["audit_report"] = generate_audit_report(base_dir, audit_records)
+            elif effective_error_policy == "partial_commit" and any(
+                r.get("status")
+                in (
+                    MoveVerificationStatus.MOVE_FAIL.value,
+                    MoveVerificationStatus.MISMATCH_FAIL.value,
+                )
+                or bool(r.get("error"))
+                for r in audit_records
+            ):
+                summary["lifecycle_state"] = PipelineLifecycleState.FAILED
+            summary["audit_report"] = generate_audit_report(
+                base_dir, audit_records, session_id=session_id
+            )
             self.emit_telemetry(
                 "move_finish",
                 {
@@ -2818,9 +3017,14 @@ def retry_failed_moves(
     history_manager=None,
     runtime_settings=None,
     progress_callback=None,
+    session_id: str | None = None,
     **kwargs,
 ) -> dict[str, Any]:
     """Re-attempt file move operations for selected or all failed items in mover engine.
+
+    Journals all retry attempts through ``MoveLedger`` and ``DBWorker`` (ADR 0003,
+    ADR 0006) while enforcing collision-safe no-replace renames via ``get_safe_path``
+    and ``resilient_move`` (ADR 0005).
 
     Args:
         base_dir: Target base directory path.
@@ -2829,16 +3033,46 @@ def retry_failed_moves(
         history_manager: Optional history manager instance.
         runtime_settings: Optional application runtime settings.
         progress_callback: Optional progress emission callback.
+        session_id: Optional sort session identifier to record retried moves into.
 
     Returns
     -------
         dict: Updated execution summary containing regenerated audit report.
     """
     from app.core.audit_reporter import generate_audit_report
+    from app.core.extractor import get_file_hash
+    from app.core.resilient_file_ops import resilient_move
 
     base_dir = os.path.normpath(base_dir) if base_dir else ""
     retried_records: list[dict[str, Any]] = []
+    db_updates_batch: list[dict[str, Any]] = []
     total = len(failed_items)
+
+    eff_session_id: str | None = session_id or kwargs.get("session_id")
+    if not eff_session_id:
+        for item in failed_items:
+            cand_sid = item.get("session_id")
+            if isinstance(cand_sid, str) and cand_sid:
+                eff_session_id = cand_sid
+                break
+
+    moves = getattr(history_manager, "moves", None) if history_manager else None
+    created_new_session = False
+    if (
+        history_manager is not None
+        and not eff_session_id
+        and failed_items
+        and base_dir
+        and hasattr(history_manager, "start_session")
+    ):
+        eff_session_id = history_manager.start_session(base_dir)
+        created_new_session = bool(eff_session_id)
+
+    quarantine_dir_name = (
+        getattr(runtime_settings, "QUARANTINE_DIR_NAME", "_Compliance_Quarantine")
+        or "_Compliance_Quarantine"
+    )
+    verified_count = 0
 
     for idx, item in enumerate(failed_items):
         src = item.get("source_path") or item.get("relative_source") or ""
@@ -2850,27 +3084,59 @@ def retry_failed_moves(
             dst = os.path.normpath(os.path.join(base_dir, dst))
 
         pre_hash = item.get("pre_hash") or ""
+        if src and os.path.isfile(src) and not os.path.islink(src):
+            try:
+                pre_hash = get_file_hash(src)
+            except Exception:
+                pass
+
         post_hash = None
         move_error = None
+        move_seq = None
+        target_dst = dst
 
-        if src and os.path.exists(src):
+        if src and os.path.lexists(src) and dst:
             try:
+                if base_dir and not is_subpath_or_equal(dst, base_dir):
+                    raise ValueError(
+                        f"Runtime boundary violation: Destination path '{dst}' attempts to escape target base directory '{base_dir}'."
+                    )
                 dst_dir = os.path.dirname(dst)
                 if dst_dir:
                     os.makedirs(dst_dir, exist_ok=True)
+                    target_dst = os.path.normpath(
+                        get_safe_path(dst_dir, os.path.basename(dst), src)
+                    )
+                else:
+                    target_dst = dst
 
-                from app.core.resilient_file_ops import resilient_move
-
-                dst = resilient_move(src, dst)
+                move_seq = _record_move_intent(
+                    moves, eff_session_id, src, target_dst, pre_hash
+                )
+                dst = resilient_move(src, target_dst)
             except Exception as err:
                 move_error = str(err)
-                logging.error(f"Retry move failed for {src} -> {dst}: {err}")
+                logging.error(f"Retry move failed for {src} -> {target_dst}: {err}")
+                _record_move_state(
+                    moves,
+                    eff_session_id,
+                    move_seq,
+                    MoveOpState.FAILED,
+                    required=False,
+                    error=move_error,
+                )
 
-        # Post-move verification
-        if not move_error and os.path.exists(dst):
+        # Post-move verification & ledger commit
+        if not move_error and dst and os.path.exists(dst):
+            _record_move_state(
+                moves,
+                eff_session_id,
+                move_seq,
+                MoveOpState.DONE,
+                dst=dst,
+                displaced=None,
+            )
             try:
-                from app.core.extractor import get_file_hash
-
                 post_hash = get_file_hash(dst)
             except Exception:
                 post_hash = None
@@ -2883,14 +3149,40 @@ def retry_failed_moves(
                 if (pre_hash == post_hash)
                 else MoveVerificationStatus.MISMATCH_FAIL
             )
-            if status == MoveVerificationStatus.MISMATCH_FAIL:
+            if status == MoveVerificationStatus.VERIFIED_PASS:
+                _record_move_state(
+                    moves,
+                    eff_session_id,
+                    move_seq,
+                    MoveOpState.VERIFIED,
+                    required=False,
+                )
+                verified_count += 1
+                if base_dir:
+                    src_rel = safe_relpath(src, base_dir).replace("\\", "/")
+                    dst_rel = safe_relpath(dst, base_dir).replace("\\", "/")
+                    dst_folder = os.path.dirname(dst_rel).replace("\\", "/")
+                    if post_hash and dst_folder != quarantine_dir_name:
+                        db_updates_batch.append(
+                            {
+                                "type": "verified_target",
+                                "args": (base_dir, post_hash, dst_folder),
+                            }
+                        )
+                    db_updates_batch.append(
+                        {
+                            "type": "document_path",
+                            "args": (base_dir, src_rel, dst_rel),
+                        }
+                    )
+            else:
                 move_error = "Pre-sort and post-sort SHA-256 hash mismatch"
         else:
             status = MoveVerificationStatus.MOVE_FAIL
             if not move_error:
                 move_error = "Source file does not exist or move failed"
 
-        rec = {
+        rec: dict[str, Any] = {
             "source_path": src,
             "destination_path": dst,
             "pre_hash": pre_hash,
@@ -2900,6 +3192,8 @@ def retry_failed_moves(
                 move_error if status != MoveVerificationStatus.VERIFIED_PASS else None
             ),
         }
+        if eff_session_id:
+            rec["session_id"] = eff_session_id
         retried_records.append(rec)
 
         if progress_callback:
@@ -2908,12 +3202,45 @@ def retry_failed_moves(
             except Exception:
                 pass
 
-    report = generate_audit_report(base_dir, retried_records)
-    return {
+    if db is not None and db_updates_batch and hasattr(db, "execute_batch_updates"):
+        db.execute_batch_updates(db_updates_batch)
+
+    if history_manager is not None and eff_session_id:
+        if verified_count > 0 and hasattr(history_manager, "complete_session"):
+            try:
+                history_manager.complete_session(eff_session_id)
+            except Exception as comp_err:
+                logging.debug(
+                    f"Session {eff_session_id} status kept as-is after retry: {comp_err}"
+                )
+        elif (
+            created_new_session
+            and verified_count == 0
+            and hasattr(history_manager, "_transition_session_status")
+        ):
+            try:
+                hm_db = getattr(history_manager, "db", None)
+                hm_worker = getattr(hm_db, "worker", None)
+                if hm_worker is not None and hasattr(hm_worker, "execute_write"):
+                    hm_worker.execute_write(
+                        lambda: history_manager._transition_session_status(
+                            eff_session_id, "failed"
+                        )
+                    )
+                else:
+                    history_manager._transition_session_status(eff_session_id, "failed")
+            except Exception:
+                pass
+
+    report = generate_audit_report(base_dir, retried_records, session_id=eff_session_id)
+    res: dict[str, Any] = {
         "base_dir": base_dir,
         "retried_count": total,
         "audit_report": report,
     }
+    if eff_session_id is not None:
+        res["session_id"] = eff_session_id
+    return res
 
 
 FileMover = AsyncMoveEngine
