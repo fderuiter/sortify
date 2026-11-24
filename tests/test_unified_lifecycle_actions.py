@@ -857,8 +857,11 @@ def test_tui_rule_modals_create_and_edit_copy_and_ignore_rules(tmp_path):
 
 def test_drop_zone_modal_executes_unified_policy_actions(tmp_path, monkeypatch):
     """Criterion 1: DropZoneModal executes copy, ignore, archive, unarchive, and redact policies."""
+    from textual.app import App
+    from textual.widgets import Label
+    from textual.worker import WorkerCancelled
+
     from app.ui.modals.drop_zone import DropPlanConfirmModal, DropZoneModal
-    from app.ui.tui import AutoSorterTUI
 
     app_dir = tmp_path / "dropzone_app"
     app_dir.mkdir()
@@ -926,35 +929,55 @@ def test_drop_zone_modal_executes_unified_policy_actions(tmp_path, monkeypatch):
     settings._save()
 
     async def _run_dropzone():
-        app = AutoSorterTUI(settings=settings, base_dir=str(ws))
+        dz = DropZoneModal(
+            settings=settings,
+            base_dir=str(ws),
+            initial_paths=[
+                str(f_part),
+                str(f_copy),
+                str(f_arch),
+                str(f_zip),
+                str(f_redact),
+            ],
+        )
+
+        class _DropHostApp(App):
+            def compose(self):
+                yield Label("Host")
+
+            def on_mount(self) -> None:
+                self.push_screen(dz)
+
+        async def _wait_for_drop(host_app: App, pilot, condition) -> None:
+            for _ in range(50):
+                await pilot.pause()
+                for worker in list(host_app.workers):
+                    try:
+                        await worker.wait()
+                    except WorkerCancelled:
+                        pass
+                if condition():
+                    await pilot.pause()
+                    return
+            pytest.fail("DropZoneModal worker did not reach expected state")
+
+        app = _DropHostApp()
         async with app.run_test(size=(110, 36)) as pilot:
-            await pilot.pause(0.1)
-            dz = DropZoneModal(
-                settings=settings,
-                base_dir=str(ws),
-                initial_paths=[
-                    str(f_part),
-                    str(f_copy),
-                    str(f_arch),
-                    str(f_zip),
-                    str(f_redact),
-                ],
-            )
-            app.push_screen(dz)
-            await pilot.pause(0.2)
+            await pilot.pause()
+            assert app.screen is dz
             dz.trigger_drop_triage()
 
-            for _ in range(60):
-                await pilot.pause(0.1)
-                if isinstance(app.screen, DropPlanConfirmModal):
-                    break
+            await _wait_for_drop(
+                app, pilot, lambda: isinstance(app.screen, DropPlanConfirmModal)
+            )
             assert isinstance(app.screen, DropPlanConfirmModal)
             app.screen.action_confirm()
 
-            for _ in range(60):
-                await pilot.pause(0.1)
-                if dz.processed_result is not None:
-                    break
+            await _wait_for_drop(
+                app,
+                pilot,
+                lambda: dz.processed_result is not None and app.screen is not dz,
+            )
             assert dz.processed_result is not None
             assert dz.processed_result["status"] == "success"
 
