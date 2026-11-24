@@ -2432,6 +2432,7 @@ class IncrementalAnalyzer:
                         node_data = {
                             "__type__": "file",
                             "routed_by": "jev_classifier",
+                            "match": str(cat_val) if cat_val else None,
                             "extraction_status": ext_status,
                             "category": cat_val,
                             "sensitivity_rating": sens_val,
@@ -2455,6 +2456,8 @@ class IncrementalAnalyzer:
                 for f, ext_status in unsupported_files:
                     plan["Miscellaneous"][f] = {
                         "__type__": "file",
+                        "routed_by": "fallback",
+                        "match": "none",
                         "extraction_status": ext_status,
                     }
 
@@ -2533,12 +2536,23 @@ class IncrementalAnalyzer:
                 pol_action = getattr(matched_pol, "action", None) or (
                     matched_pol.get("action") if isinstance(matched_pol, dict) else None
                 )
+                pol_priority = (
+                    getattr(matched_pol, "priority", None)
+                    if matched_pol is not None and not isinstance(matched_pol, dict)
+                    else (
+                        matched_pol.get("priority")
+                        if isinstance(matched_pol, dict)
+                        else None
+                    )
+                )
                 node_payload: dict[str, Any] = {
                     "__type__": "file",
                     "routed_by": rule_type,
                     "match": expression,
                     "status": status,
                 }
+                if pol_priority is not None:
+                    node_payload["policy_priority"] = int(pol_priority)
                 if pol_action == "trash":
                     node_payload["policy_action"] = "trash"
                     node_payload["duplicate_action"] = "trash"
@@ -2630,6 +2644,13 @@ class IncrementalAnalyzer:
                         if isinstance(matched_pol, dict)
                         else None
                     )
+                    pol_priority = (
+                        getattr(matched_pol, "priority", None)
+                        if not isinstance(matched_pol, dict)
+                        else matched_pol.get("priority")
+                    )
+                    if pol_priority is not None:
+                        info["policy_priority"] = int(pol_priority)
                     pol_action = getattr(matched_pol, "action", None) or (
                         matched_pol.get("action")
                         if isinstance(matched_pol, dict)
@@ -2778,10 +2799,13 @@ class IncrementalAnalyzer:
                             "source_path": raw_k,
                             "relative_source": rel_src,
                             "source_root": src_root,
+                            "routed_by": "clustering",
                             "status": None,
                         }
                     elif isinstance(v, dict):
                         if v.get("__type__") == "file":
+                            if not v.get("routed_by"):
+                                v["routed_by"] = "clustering"
                             raw_k = k.split("::", 1)[1] if "::" in k else k
                             if "::" in k and "source_root" not in v:
                                 s_root, _ = k.split("::", 1)

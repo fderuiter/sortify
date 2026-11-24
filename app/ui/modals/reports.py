@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 class ExtractionPreviewModal(ResponsiveModalScreen[Optional[int]]):
-    """Modal dialog for interactive visual inspection of PDF page extraction decisions."""
+    """Modal dialog for inspecting sanitized document text and PDF page extraction density."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
@@ -46,9 +46,25 @@ class ExtractionPreviewModal(ResponsiveModalScreen[Optional[int]]):
         padding: 0 1;
         width: 96%;
     }
+    .hidden {
+        display: none;
+    }
+    .compact .modal-title {
+        margin-bottom: 0;
+    }
     .file-path-label {
         color: $text-muted;
         margin-bottom: 1;
+    }
+    .compact .file-path-label {
+        margin-bottom: 0;
+    }
+    .field-label {
+        margin-top: 1;
+        text-style: bold;
+    }
+    .compact .field-label {
+        margin-top: 0;
     }
     .preview-table {
         height: auto;
@@ -58,29 +74,82 @@ class ExtractionPreviewModal(ResponsiveModalScreen[Optional[int]]):
         margin-bottom: 1;
         border: solid $primary-lighten-2;
     }
+    .compact .preview-table {
+        margin-top: 0;
+        margin-bottom: 0;
+    }
     .threshold-row {
         height: 3;
         align: left middle;
+    }
+    .compact .threshold-row {
+        height: 1;
     }
     .narrow-input {
         width: 12;
         margin-right: 1;
     }
+    .compact .narrow-input {
+        height: 1;
+        border: none;
+    }
+    .preview-text-box {
+        width: 100%;
+        height: auto;
+        min-height: 3;
+        max-height: 10;
+        margin-top: 0;
+        padding: 0 1;
+        border: solid $accent;
+        color: $text;
+    }
+    .compact .preview-text-box {
+        min-height: 2;
+        max-height: 4;
+    }
+    .compact .button-row {
+        margin-top: 0;
+    }
+    .compact .button-row Button {
+        height: 1;
+        min-height: 1;
+        border: none;
+        margin: 0;
+    }
     """
 
-    def __init__(self, file_path: str, settings: Any) -> None:
+    MAX_PREVIEW_CHARS: int = 8000
+
+    def __init__(
+        self,
+        file_path: str,
+        settings: Any,
+        db: Any = None,
+        base_dir: Optional[str] = None,
+    ) -> None:
         super().__init__()
         self.file_path = file_path
         self.settings = settings
+        self.db = db
+        self.base_dir = base_dir
+        self.is_pdf = str(file_path).lower().endswith(".pdf")
         self.initial_threshold = getattr(settings, "PDF_TEXT_DENSITY_THRESHOLD", 50)
         self.current_threshold = self.initial_threshold
         self.page_data: list[dict] = []
+        self.sanitized_text: str = ""
+        self.text_source: str = "missing"
 
     def compose(self) -> ComposeResult:
         """Compose modal dialog children widgets."""
+        heading_title = (
+            "PDF Extraction Strategy Preview"
+            if self.is_pdf
+            else "Document Extraction Preview"
+        )
+        pdf_section_cls = "" if self.is_pdf else "hidden"
         with ModalBox(classes="preview-modal-box modal-box"):
             yield Heading(
-                "PDF Extraction Strategy Preview",
+                heading_title,
                 level=1,
                 classes="modal-title",
                 id="modal-title",
@@ -91,61 +160,128 @@ class ExtractionPreviewModal(ResponsiveModalScreen[Optional[int]]):
                     classes="file-path-label",
                 )
 
-                yield Label("Density Threshold (chars/page):", classes="field-label")
-                with Horizontal(classes="threshold-row"):
-                    thresh_inp = Input(
-                        value=str(self.current_threshold),
-                        placeholder="Density Threshold (chars/page)",
-                        name="Density Threshold",
-                        id="preview-input-threshold",
-                        classes="narrow-input",
+                with Vertical(id="pdf-density-section", classes=pdf_section_cls):
+                    yield Label(
+                        "Density Threshold (chars/page):", classes="field-label"
                     )
-                    thresh_inp.tooltip = (
-                        "Adjust PDF text density threshold in characters per page"
-                    )
-                    setattr(thresh_inp, "label", "Density Threshold (chars/page)")
-                    yield thresh_inp
-                    slider = DensitySlider(
-                        value=self.current_threshold,
-                        min_value=0,
-                        max_value=500,
-                        step=5,
-                        announce_formatter=self._format_slider_announcement,
-                        id="preview-slider-threshold",
-                    )
-                    slider.tooltip = "Adjust PDF text density threshold slider"
-                    yield slider
+                    with Horizontal(classes="threshold-row"):
+                        thresh_inp = Input(
+                            value=str(self.current_threshold),
+                            placeholder="Density Threshold (chars/page)",
+                            name="Density Threshold",
+                            id="preview-input-threshold",
+                            classes="narrow-input",
+                        )
+                        thresh_inp.tooltip = (
+                            "Adjust PDF text density threshold in characters per page"
+                        )
+                        setattr(thresh_inp, "label", "Density Threshold (chars/page)")
+                        yield thresh_inp
+                        slider = DensitySlider(
+                            value=self.current_threshold,
+                            min_value=0,
+                            max_value=500,
+                            step=5,
+                            announce_formatter=self._format_slider_announcement,
+                            id="preview-slider-threshold",
+                        )
+                        slider.tooltip = "Adjust PDF text density threshold slider"
+                        yield slider
 
-                yield DataTable(id="preview-table", classes="preview-table")
-                yield Label("", id="preview-summary-label")
+                    yield DataTable(id="preview-table", classes="preview-table")
+                    yield Label("", id="preview-summary-label")
+
+                yield Label(
+                    "Sanitized Extracted Text:",
+                    classes="field-label",
+                    id="preview-text-heading",
+                )
+                yield Static(
+                    "",
+                    id="preview-extracted-text",
+                    classes="preview-text-box",
+                    markup=False,
+                )
 
             with Horizontal(classes="button-row"):
+                cancel_label = "Cancel" if self.is_pdf else "Close"
                 btn_cancel = Button(
-                    "Cancel", id="btn-preview-cancel", variant="default"
+                    cancel_label, id="btn-preview-cancel", variant="default"
                 )
                 btn_cancel.tooltip = "Close preview dialog without saving settings"
                 yield btn_cancel
-                btn_save = Button(
-                    "Save & Apply", id="btn-preview-save", variant="primary"
-                )
-                btn_save.tooltip = "Save density threshold to settings and apply"
-                yield btn_save
+                if self.is_pdf:
+                    btn_save = Button(
+                        "Save & Apply", id="btn-preview-save", variant="primary"
+                    )
+                    btn_save.tooltip = "Save density threshold to settings and apply"
+                    yield btn_save
+
+    def _load_sanitized_text(self) -> str:
+        """Read and scrub extracted document text without network calls."""
+        from app.core.extractor import _read_preview_text_offline
+        from app.core.path_utils import scrub_user_home_paths
+        from app.core.text_utils import sanitize_secret_patterns
+
+        eff_db = self.db if self.db is not None else getattr(self.app, "db", None)
+        eff_base = (
+            self.base_dir
+            if self.base_dir is not None
+            else getattr(self.app, "base_dir", None)
+        )
+
+        raw_text, source_kind = _read_preview_text_offline(
+            self.file_path,
+            settings=self.settings,
+            db=eff_db,
+            base_dir=eff_base,
+        )
+        self.text_source = source_kind
+
+        if not raw_text or not raw_text.strip():
+            return "(No extractable text found in document.)"
+
+        scrubbed = sanitize_secret_patterns(
+            scrub_user_home_paths(raw_text),
+            replacement="[REDACTED]",
+        ).strip()
+        if not scrubbed:
+            return "(No extractable text found in document.)"
+
+        if len(scrubbed) > self.MAX_PREVIEW_CHARS:
+            scrubbed = scrubbed[: self.MAX_PREVIEW_CHARS] + "\n... [Preview truncated]"
+        return scrubbed
 
     def on_mount(self) -> None:
         """Handle modal mount event and populate initial preview data."""
         super().on_mount()
-        self.announce("Opened PDF extraction strategy preview modal.")
         table = self.query_one("#preview-table", DataTable)
         table.add_columns("Page", "Embedded Chars", "Vector Paths", "Predicted Status")
 
-        from app.core.extractor_strategies import PdfExtractor
+        if self.is_pdf:
+            from app.core.extractor_strategies import PdfExtractor
 
-        extractor = PdfExtractor()
-        # Light structural analysis without EasyOCR model passes
-        self.page_data = extractor.preview_pdf_density(
-            self.file_path, density_threshold=self.current_threshold
-        )
-        self._update_table()
+            extractor = PdfExtractor()
+            # Light structural analysis without EasyOCR model passes
+            self.page_data = extractor.preview_pdf_density(
+                self.file_path, density_threshold=self.current_threshold
+            )
+            self._update_table()
+
+        self.sanitized_text = self._load_sanitized_text()
+        try:
+            text_widget = self.query_one("#preview-extracted-text", Static)
+            text_widget.update(self.sanitized_text)
+        except Exception:
+            pass
+
+        fname = os.path.basename(self.file_path)
+        if self.is_pdf:
+            self.announce(
+                f"Opened PDF extraction preview for '{fname}' ({len(self.page_data)} page(s))."
+            )
+        else:
+            self.announce(f"Opened document text preview for '{fname}'.")
 
     def _update_table(self) -> None:
         """Re-evaluate page extraction decisions and update table display."""

@@ -349,7 +349,12 @@ class TreeViewMixin:
                             suffix = f"{key} -> {target_filename}"
                         else:
                             suffix = f"{key}"
-                        if clean_txt.endswith(suffix):
+                        r_badge = data.get("routing_badge", "")
+                        suffix_with_badge = f"{suffix} {r_badge}" if r_badge else suffix
+                        if r_badge and clean_txt.endswith(suffix_with_badge):
+                            prefix = clean_txt[: -len(suffix_with_badge)]
+                            plain_txt = f"{prefix}[COLLISION: {pol.upper()}] {suffix_with_badge}"
+                        elif clean_txt.endswith(suffix):
                             prefix = clean_txt[: -len(suffix)]
                             plain_txt = f"{prefix}[COLLISION: {pol.upper()}] {suffix}"
                         else:
@@ -791,9 +796,39 @@ class TreeViewMixin:
                 elif rating == "negative":
                     label_parts.append("[-]")
 
-                routed_by = file_info.get("routed_by")
+                routed_by = str(file_info.get("routed_by") or "").strip().lower()
+                has_policy_prio = file_info.get("policy_priority") is not None
                 if routed_by == "jev_classifier" or file_info.get("is_jev"):
-                    label_parts.append("[JEV]")
+                    routing_badge = "[JEV]"
+                elif has_policy_prio or routed_by in {
+                    "policy",
+                    "compliance",
+                    "override",
+                    "action",
+                    "unarchive",
+                    "duplicate",
+                    "secret",
+                    "credential",
+                }:
+                    routing_badge = "[POLICY]"
+                elif routed_by == "keyword":
+                    routing_badge = "[KEYWORD]"
+                elif routed_by == "learned":
+                    routing_badge = "[LEARNED]"
+                elif routed_by == "pattern":
+                    routing_badge = "[PATTERN]"
+                elif routed_by == "extension_category":
+                    routing_badge = "[EXT]"
+                elif routed_by == "historical":
+                    routing_badge = "[HIST]"
+                elif routed_by == "similarity":
+                    routing_badge = "[SIM]"
+                elif routed_by == "existing_folder":
+                    routing_badge = "[FOLDER]"
+                elif routed_by == "fallback":
+                    routing_badge = "[FALLBACK]"
+                else:
+                    routing_badge = "[CLUSTER]"
 
                 sens_rating = file_info.get("sensitivity_rating")
                 if sens_rating:
@@ -887,6 +922,7 @@ class TreeViewMixin:
                 label_parts.append(file_key)
                 if target_filename and target_filename != file_key:
                     label_parts.append(f"-> {target_filename}")
+                label_parts.append(routing_badge)
 
                 label_str = cb_str + " 📄 " + " ".join(label_parts[1:])
                 text_obj = Text(label_str)
@@ -908,6 +944,7 @@ class TreeViewMixin:
                     "is_collision": is_collision,
                     "conflict_policy": pol,
                     "target_path": target_path,
+                    "routing_badge": routing_badge,
                 }
                 parent_item.add_leaf(text_obj, data=node_data)
                 added_count += 1
@@ -1108,6 +1145,17 @@ class TreeViewMixin:
             if routing_src:
                 lines.append(f"[bold]Routing Source:[/bold] {routing_src}")
 
+            pol_prio = info.get("policy_priority")
+            if pol_prio is not None:
+                lines.append(f"[bold]Policy Priority:[/bold] {pol_prio}")
+
+            match_val = info.get("match") or info.get("keyword")
+            if match_val and str(match_val).strip().lower() != "none":
+                if str(routing_src or "").strip().lower() == "clustering":
+                    lines.append(f"[bold]Cluster Keywords:[/bold] {match_val}")
+                else:
+                    lines.append(f"[bold]Matched Rule:[/bold] {match_val}")
+
             cat = info.get("category") or info.get("jev_category")
             if cat:
                 lines.append(f"[bold]Category:[/bold] {cat}")
@@ -1164,8 +1212,21 @@ class TreeViewMixin:
                 )
 
             if announce:
+                routing_detail = ""
+                if routing_src:
+                    routing_detail = f" Routed by {routing_src}"
+                    if pol_prio is not None:
+                        routing_detail += f" (priority {pol_prio})"
+                    if match_val and str(match_val).strip().lower() != "none":
+                        detail_lbl = (
+                            "cluster keywords"
+                            if str(routing_src).strip().lower() == "clustering"
+                            else "matched rule"
+                        )
+                        routing_detail += f", {detail_lbl}: {match_val}"
+                    routing_detail += "."
                 self.announce(
-                    f"Selected file '{key}' in folder '{folder}'. Locked: {locked}. Rating: {rating}."
+                    f"Selected file '{key}' in folder '{folder}'. Locked: {locked}. Rating: {rating}.{routing_detail}"
                 )
         else:
             key = data.get("key", "")
