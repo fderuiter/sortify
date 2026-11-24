@@ -379,6 +379,120 @@ def fast_triage_extract(
     )
 
 
+def _read_preview_text_offline(
+    file_path: str,
+    settings: Any = None,
+    db: Any = None,
+    base_dir: str | None = None,
+) -> tuple[str, str]:
+    """Read document text for UI previews using DB cache first and offline local fallback.
+
+    Enforces zero outbound network calls and never mutates database tables.
+    Returns a ``(raw_text, source_kind)`` tuple where ``source_kind`` is one of
+    ``'cache'``, ``'local'``, ``'provisional'``, or ``'missing'``.
+    """
+    from app.core.network_guard import block_external_network
+
+    if not file_path:
+        return "", "missing"
+
+    with block_external_network("inline document preview"):
+        abs_path = os.path.abspath(file_path)
+
+        # 1. Prefer cached decrypted document text from Database.get_document
+        if db is not None and hasattr(db, "get_document"):
+            lookup_pairs: list[tuple[str, str]] = []
+            if base_dir:
+                abs_base = os.path.abspath(base_dir)
+                rel_p = safe_relpath(abs_path, abs_base)
+                for b_cand in (base_dir, abs_base):
+                    lookup_pairs.append((b_cand, rel_p))
+                    lookup_pairs.append((b_cand, rel_p.replace("\\", "/")))
+                    lookup_pairs.append((b_cand, os.path.basename(abs_path)))
+            parent_dir = os.path.dirname(abs_path)
+            if parent_dir:
+                lookup_pairs.append((parent_dir, os.path.basename(abs_path)))
+
+            seen_pairs: set[tuple[str, str]] = set()
+            for b_cand, r_cand in lookup_pairs:
+                if not b_cand or not r_cand or (b_cand, r_cand) in seen_pairs:
+                    continue
+                seen_pairs.add((b_cand, r_cand))
+                try:
+                    cached = db.get_document(b_cand, r_cand)
+                except (OSError, ValueError, RuntimeError, AttributeError, TypeError):
+                    cached = None
+                if (
+                    isinstance(cached, dict)
+                    and cached.get("extracted_text") is not None
+                ):
+                    cached_text = str(cached["extracted_text"])
+                    if cached_text and not cached_text.startswith("[STATUS:"):
+                        return cached_text, "cache"
+
+        # 2. Local offline extraction fallback without heavy ML model downloads
+        if not os.path.isfile(abs_path):
+            return "", "missing"
+
+        ext = os.path.splitext(abs_path)[1].lower()
+        if ext == ".pdf":
+            try:
+                import pypdf
+
+                pages_text: list[str] = []
+                with open(abs_path, "rb") as f_pdf:
+                    reader = pypdf.PdfReader(f_pdf)
+                    for page in reader.pages:
+                        try:
+                            page_txt = page.extract_text() or ""
+                        except (
+                            pypdf.errors.PyPdfError,
+                            OSError,
+                            ValueError,
+                            KeyError,
+                            IndexError,
+                            TypeError,
+                            AttributeError,
+                        ):
+                            page_txt = ""
+                        if page_txt.strip():
+                            pages_text.append(page_txt.strip())
+                return sanitize_text("\n\n".join(pages_text)), "local"
+            except (
+                pypdf.errors.PyPdfError,
+                OSError,
+                ValueError,
+                KeyError,
+                IndexError,
+                TypeError,
+            ) as exc:
+                logger.debug(
+                    "Offline PDF text preview failed for %s: %s", abs_path, exc
+                )
+                return "", "missing"
+
+        if ext in (
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".bmp",
+            ".tiff",
+            ".webp",
+            ".mp3",
+            ".wav",
+            ".m4a",
+        ):
+            return "", "provisional"
+
+        if not registry.is_supported(ext):
+            return "", "missing"
+
+        res = extract_file_text(abs_path, settings=settings, fast_triage=False)
+        if isinstance(res, ExtractionResult):
+            return res.text or "", "local"
+        return str(res or ""), "local"
+
+
 def process_item_worker(
     base_dir: str, item: str, progress_callback: Callable, db, settings=None
 ) -> tuple[str, str, str]:

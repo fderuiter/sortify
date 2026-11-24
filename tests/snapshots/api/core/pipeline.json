@@ -1,8 +1,238 @@
 {
   "_metadata": {
-    "checksum": "bbc2f2d415d4e1e27a7e69cd5674931a27016150ac2e5b60044f12e9d02fa89d"
+    "checksum": "5f389ca3d4a5b8b133e36e699c48ba29f5154b1747a47f068ef17bd5433ab62f"
   },
   "classes": [
+    {
+      "class_name": "DropBatchCoordinator",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "settings"
+            },
+            {
+              "annotation": "Callable[..., Any] | None",
+              "default": "None",
+              "name": "session_factory"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "apply_user_overrides",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "DropBatchPlan",
+              "default": null,
+              "name": "batch_plan"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "conflict_policy"
+            },
+            {
+              "annotation": "dict[str, dict[str, Any]] | None",
+              "default": "None",
+              "name": "item_overrides"
+            }
+          ],
+          "returns": "DropBatchPlan"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "close_batch",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "DropBatchPlan",
+              "default": null,
+              "name": "batch_plan"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "execute_batch",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "DropBatchPlan",
+              "default": null,
+              "name": "batch_plan"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "dry_run"
+            },
+            {
+              "annotation": "Callable[[Any], None] | None",
+              "default": "None",
+              "name": "progress_callback"
+            },
+            {
+              "annotation": "Callable[[], bool] | None",
+              "default": "None",
+              "name": "cancel_check"
+            },
+            {
+              "annotation": "bool",
+              "default": "True",
+              "name": "close_sessions"
+            }
+          ],
+          "returns": "DropBatchResult"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "plan_batch",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Sequence[str]",
+              "default": null,
+              "name": "paths"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "dest_dir"
+            },
+            {
+              "annotation": "dict[str, str | None] | None",
+              "default": "None",
+              "name": "staged_roots"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "conflict_policy"
+            },
+            {
+              "annotation": "Callable[[Any], None] | None",
+              "default": "None",
+              "name": "progress_callback"
+            },
+            {
+              "annotation": "Callable[[], bool] | None",
+              "default": "None",
+              "name": "cancel_check"
+            }
+          ],
+          "returns": "DropBatchPlan"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "refresh_verification",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "DropBatchPlan",
+              "default": null,
+              "name": "batch_plan"
+            }
+          ],
+          "returns": "DropBatchPlan"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "validate",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Sequence[Any]",
+              "default": null,
+              "name": "paths"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "dest_dir"
+            },
+            {
+              "annotation": "Callable[[str], bool] | None",
+              "default": "None",
+              "name": "ignore_predicate"
+            }
+          ],
+          "returns": "tuple[list[str], list[DropPathIssue], str | None, str | None]"
+        }
+      ]
+    },
+    {
+      "class_name": "DropBatchGroupPlan",
+      "decorators": [
+        "@dataclass"
+      ],
+      "methods": []
+    },
+    {
+      "class_name": "DropBatchPlan",
+      "decorators": [
+        "@dataclass"
+      ],
+      "methods": []
+    },
+    {
+      "class_name": "DropBatchPlanItem",
+      "decorators": [
+        "@dataclass"
+      ],
+      "methods": []
+    },
+    {
+      "class_name": "DropBatchResult",
+      "decorators": [
+        "@dataclass"
+      ],
+      "methods": []
+    },
     {
       "class_name": "DropPathIssue",
       "decorators": [

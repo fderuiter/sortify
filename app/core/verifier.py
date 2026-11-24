@@ -835,8 +835,27 @@ class VerificationEngine:
             ):
                 continue
 
+            def _collision_entry_sort_key(
+                indexed_entry: tuple[int, dict[str, Any]],
+            ) -> tuple[int, float, int]:
+                idx, ent = indexed_entry
+                raw_qp = _get_val(ent.get("content"), "queue_priority")
+                if raw_qp is not None:
+                    try:
+                        return (0, float(raw_qp), idx)
+                    except (TypeError, ValueError):
+                        pass
+                return (1, 0.0, idx)
+
+            ordered_dst_entries = [
+                ent
+                for _, ent in sorted(
+                    enumerate(dst_entries), key=_collision_entry_sort_key
+                )
+            ]
+
             items = []
-            for entry in dst_entries:
+            for entry in ordered_dst_entries:
                 src_p = entry["source_path"]
                 rel_src = (
                     os.path.relpath(src_p, base_dir_abs)

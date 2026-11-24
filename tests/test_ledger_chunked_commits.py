@@ -1037,3 +1037,82 @@ def test_chunked_mover_intra_chunk_overwrite_and_filepath_fallback_undo(
         state["phase"] = "setup"
         session.close()
         db_conn.clear_connection_cache(only_current_and_inactive=False)
+
+
+def test_drop_batch_coordinator_multi_root_chunked_commits_and_undo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Multi-root DropBatchCoordinator (#1191) shares one MoveLedger session and undoes across roots via DBWorker batches."""
+    from app.core.pipeline import DropBatchCoordinator
+
+    app_dir = tmp_path / "app_data"
+    app_dir.mkdir()
+    root_a = tmp_path / "drop_root_a"
+    root_b = tmp_path / "drop_root_b"
+    root_a.mkdir()
+    root_b.mkdir()
+
+    file_a1 = root_a / "invoice_alpha_1.txt"
+    file_a2 = root_a / "invoice_alpha_2.txt"
+    file_b1 = root_b / "contract_beta_1.txt"
+    file_b2 = root_b / "contract_beta_2.txt"
+    file_a1.write_text("invoice billing statement alpha 1\n", encoding="utf-8")
+    file_a2.write_text("invoice billing statement alpha 2\n", encoding="utf-8")
+    file_b1.write_text("legal contract agreement beta 1\n", encoding="utf-8")
+    file_b2.write_text("legal contract agreement beta 2\n", encoding="utf-8")
+
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(app_dir))
+    state, _ = _install_sqlite_commit_tracer(monkeypatch)
+    store = open_store(app_dir, legacy_session_root=tmp_path / "none")
+
+    settings = AppSettings(filepath=str(tmp_path / "drop_settings.json"))
+    settings.AI_CONSENT_GRANTED = False
+    settings.KEYWORD_RULES = {
+        "invoice": "Finance",
+        "contract": "Legal",
+    }
+
+    coordinator = DropBatchCoordinator(
+        settings=settings,
+        session_factory=lambda s, base_dir: AppSession(s, base_dir, store=store),
+    )
+    batch_plan = None
+    try:
+        state["phase"] = "plan"
+        batch_plan = coordinator.plan_batch([str(root_a), str(root_b)])
+        assert len(batch_plan.groups) == 2
+
+        state["phase"] = "execute"
+        batch_res = coordinator.execute_batch(batch_plan)
+        assert batch_res.moved_count == 4
+        assert batch_res.failed_count == 0
+        assert batch_res.session_id is not None
+
+        assert (root_a / "Finance" / "invoice_alpha_1.txt").is_file()
+        assert (root_a / "Finance" / "invoice_alpha_2.txt").is_file()
+        assert (root_b / "Legal" / "contract_beta_1.txt").is_file()
+        assert (root_b / "Legal" / "contract_beta_2.txt").is_file()
+
+        verify_session = AppSession(settings, str(root_a), store=store)
+        try:
+            recorded = verify_session.history_manager.moves.list_moves(
+                batch_res.session_id
+            )
+            assert [m.seq for m in recorded] == [1, 2, 3, 4]
+
+            state["phase"] = "undo"
+            restored = verify_session.history_manager.rollback(batch_res.session_id)
+            assert restored == 4
+        finally:
+            verify_session.close()
+
+        assert file_a1.is_file()
+        assert file_a2.is_file()
+        assert file_b1.is_file()
+        assert file_b2.is_file()
+        assert state["non_worker_writes"] == []
+    finally:
+        state["phase"] = "setup"
+        if batch_plan is not None and not batch_plan.closed:
+            coordinator.close_batch(batch_plan)
+        db_conn.clear_connection_cache(only_current_and_inactive=False)

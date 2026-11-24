@@ -23,7 +23,7 @@ _WIN_DRIVE_RE = re.compile(r"^[a-zA-Z]:[/\\]")
 
 
 class DropPlanConfirmModal(ResponsiveModalScreen[bool]):
-    """Show the DropZone plan and ask before any file is moved."""
+    """Show the DropZone plan, surface collision warnings, and apply user overrides before moving."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
@@ -34,30 +34,177 @@ class DropPlanConfirmModal(ResponsiveModalScreen[bool]):
     MODAL_CSS = """
     .modal-box {
         max-width: 100;
+        max-height: 95%;
+    }
+    .modal-body {
+        height: auto;
+        overflow-y: auto;
+    }
+    #drop-plan-warnings {
+        height: auto;
+        max-height: 5;
+        overflow-y: auto;
+        border: solid $warning;
+        color: $warning;
+        padding: 0 1;
+        margin-bottom: 0;
+    }
+    #drop-plan-warnings.hidden {
+        display: none;
     }
     #drop-plan-tree {
         height: auto;
-        max-height: 20;
+        max-height: 10;
         overflow-y: auto;
         border: solid $secondary;
         padding: 0 1;
     }
+    #drop-plan-items-table {
+        height: 5;
+        min-height: 4;
+        max-height: 6;
+        border: solid $accent;
+        margin-top: 0;
+        margin-bottom: 0;
+    }
+    .plan-policy-row {
+        width: 100%;
+        height: auto;
+        layout: grid;
+        grid-size: 4;
+        grid-columns: 1fr 1fr 1fr 1fr;
+        grid-gutter: 0 1;
+        margin-top: 0;
+        margin-bottom: 0;
+    }
+    .plan-policy-row Button {
+        width: 100%;
+        min-width: 0;
+        margin: 0;
+    }
+    .plan-override-row {
+        width: 100%;
+        height: auto;
+        margin-top: 0;
+        margin-bottom: 0;
+        align: left middle;
+    }
+    #input-plan-folder-override {
+        width: 1fr;
+        margin: 0;
+    }
+    #btn-apply-folder-override {
+        width: auto;
+        min-width: 12;
+        margin: 0 0 0 1;
+    }
+    .compact .plan-policy-row Button,
+    .compact .plan-override-row Button,
+    .compact .button-row Button {
+        height: 1;
+        min-height: 1;
+        border: none;
+    }
     """
 
-    def __init__(self, summary: str, plan_lines: list[str]):
+    def __init__(
+        self,
+        summary: str,
+        plan_lines: list[str],
+        *,
+        warnings: Optional[list[str]] = None,
+        batch_plan: Any = None,
+        coordinator: Any = None,
+    ):
         super().__init__()
         self.summary = summary
-        self.plan_lines = plan_lines
+        self.plan_lines = list(plan_lines)
+        self.warnings: list[str] = list(
+            warnings
+            if warnings is not None
+            else (getattr(batch_plan, "warnings", None) or [])
+        )
+        self.batch_plan = batch_plan
+        self.coordinator = coordinator
+
+    def _format_warnings_text(self) -> str:
+        if not self.warnings:
+            return ""
+        return "\n".join(f"! {w}" for w in self.warnings)
 
     def compose(self) -> ComposeResult:
-        """Compose the plan preview with Move and Cancel buttons."""
+        """Compose the plan preview, collision warnings, override controls, and action buttons."""
         with ModalBox(classes="modal-box"):
             yield Heading("Review DropZone Plan", level=1, classes="modal-title")
             with Vertical(classes="modal-body"):
                 yield Label(self.summary, id="lbl-drop-plan-summary")
+                warn_classes = "" if self.warnings else "hidden"
+                yield Static(
+                    self._format_warnings_text(),
+                    id="drop-plan-warnings",
+                    classes=warn_classes,
+                    markup=False,
+                )
                 yield Static(
                     "\n".join(self.plan_lines), id="drop-plan-tree", markup=False
                 )
+                if self.batch_plan is not None:
+                    items_table = DataTable(id="drop-plan-items-table")
+                    items_table.cursor_type = "row"
+                    items_table.tooltip = "Planned drop items; select a row to override its folder or exclusion"
+                    yield items_table
+
+                    with Horizontal(classes="plan-policy-row"):
+                        btn_ren = Button(
+                            "Policy: Rename",
+                            id="btn-policy-rename",
+                            variant="default",
+                        )
+                        btn_ren.tooltip = "Auto-rename colliding files while keeping clean filenames for higher queue priority"
+                        yield btn_ren
+
+                        btn_ovr = Button(
+                            "Policy: Overwrite",
+                            id="btn-policy-overwrite",
+                            variant="warning",
+                        )
+                        btn_ovr.tooltip = "Overwrite colliding destination files (displaced originals are backed up for undo)"
+                        yield btn_ovr
+
+                        btn_skp = Button(
+                            "Policy: Skip",
+                            id="btn-policy-skip",
+                            variant="default",
+                        )
+                        btn_skp.tooltip = (
+                            "Skip moving files whose destination path already exists"
+                        )
+                        yield btn_skp
+
+                        btn_exc = Button(
+                            "Toggle Exclude",
+                            id="btn-toggle-plan-exclude",
+                            variant="error",
+                        )
+                        btn_exc.tooltip = "Exclude or re-include the selected file from this drop execution"
+                        yield btn_exc
+
+                    with Horizontal(classes="plan-override-row"):
+                        folder_inp = Input(
+                            placeholder="Override target folder for selected item (e.g. Finance or .)...",
+                            id="input-plan-folder-override",
+                        )
+                        folder_inp.tooltip = "Enter a target category folder override for the selected item"
+                        yield folder_inp
+
+                        btn_folder = Button(
+                            "Set Folder",
+                            id="btn-apply-folder-override",
+                            variant="primary",
+                        )
+                        btn_folder.tooltip = "Apply the entered target folder override to the selected item"
+                        yield btn_folder
+
             with Horizontal(classes="button-row"):
                 btn_cancel = Button("Cancel", id="btn-cancel-drop-plan")
                 btn_cancel.tooltip = "Close without moving any files"
@@ -65,19 +212,200 @@ class DropPlanConfirmModal(ResponsiveModalScreen[bool]):
                 btn_move = Button(
                     "Move Files", id="btn-confirm-drop-plan", variant="success"
                 )
-                btn_move.tooltip = (
-                    "Move the files as shown. You can undo it from History (Ctrl+Y)."
-                )
+                btn_move.tooltip = "Move the files as shown. You can undo it with Ctrl+Z or History (Ctrl+Y)."
                 yield btn_move
 
     def on_mount(self) -> None:
-        """Focus Cancel so Enter never moves files by accident."""
+        """Populate item table and focus Cancel so Enter never moves files by accident."""
         super().on_mount()
+        if self.batch_plan is not None:
+            self._refresh_plan_view()
         self.query_one("#btn-cancel-drop-plan", Button).focus()
+
+    def _selected_plan_item(self) -> Any:
+        if self.batch_plan is None or not getattr(self.batch_plan, "items", None):
+            return None
+        try:
+            table = self.query_one("#drop-plan-items-table", DataTable)
+            row_idx = table.cursor_row
+        except Exception:
+            row_idx = 0
+        items = list(self.batch_plan.items)
+        if row_idx is not None and 0 <= row_idx < len(items):
+            return items[row_idx]
+        return items[0] if items else None
+
+    def _refresh_plan_view(self) -> None:
+        """Synchronize summary, warnings, plan lines, and interactive item table from batch_plan."""
+        if self.batch_plan is not None:
+            self.warnings = list(getattr(self.batch_plan, "warnings", None) or [])
+            self.plan_lines = list(
+                getattr(self.batch_plan, "plan_lines", None) or self.plan_lines
+            )
+            active_items = [
+                it
+                for it in self.batch_plan.items
+                if not getattr(it, "is_excluded", False)
+            ]
+            folders = {(it.dest_base_dir, it.target_folder) for it in active_items}
+            self.summary = (
+                f"Move {len(active_items)} file(s) into {len(folders)} folder(s)? "
+                f"[Conflict policy: {self.batch_plan.conflict_policy}] "
+                "Nothing has been moved yet."
+            )
+
+        try:
+            self.query_one("#lbl-drop-plan-summary", Label).update(self.summary)
+        except Exception:
+            pass
+
+        try:
+            warn_widget = self.query_one("#drop-plan-warnings", Static)
+            warn_widget.update(self._format_warnings_text())
+            if self.warnings:
+                warn_widget.remove_class("hidden")
+            else:
+                warn_widget.add_class("hidden")
+        except Exception:
+            pass
+
+        try:
+            self.query_one("#drop-plan-tree", Static).update("\n".join(self.plan_lines))
+        except Exception:
+            pass
+
+        if self.batch_plan is not None:
+            try:
+                table = self.query_one("#drop-plan-items-table", DataTable)
+                prev_cursor = table.cursor_row or 0
+                table.clear(columns=True)
+                table.add_columns("State", "File", "Target Folder", "Policy")
+                for it in self.batch_plan.items:
+                    if it.is_excluded:
+                        state = "Excluded"
+                    elif it.has_collision:
+                        state = "Collision"
+                    else:
+                        state = "Include"
+                    table.add_row(
+                        state,
+                        os.path.basename(it.source_path),
+                        it.target_folder,
+                        it.conflict_policy,
+                    )
+                if self.batch_plan.items:
+                    table.move_cursor(
+                        row=min(prev_cursor, len(self.batch_plan.items) - 1)
+                    )
+            except Exception:
+                pass
+
+    def set_conflict_policy(self, policy: str, *, selected_only: bool = False) -> None:
+        """Apply ``policy`` ('rename', 'overwrite', 'skip') globally or to the selected item."""
+        if self.batch_plan is None or self.coordinator is None:
+            return
+        if selected_only:
+            sel = self._selected_plan_item()
+            if sel is None:
+                return
+            self.coordinator.apply_user_overrides(
+                self.batch_plan,
+                item_overrides={sel.item_id: {"conflict_policy": policy}},
+            )
+        else:
+            self.coordinator.apply_user_overrides(
+                self.batch_plan, conflict_policy=policy
+            )
+        self._refresh_plan_view()
+        self.announce(f"Set drop conflict policy to '{policy}'.")
+
+    def toggle_selected_exclusion(self) -> None:
+        """Toggle ``is_excluded`` on the currently highlighted plan item."""
+        if self.batch_plan is None or self.coordinator is None:
+            return
+        sel = self._selected_plan_item()
+        if sel is None:
+            return
+        new_excl = not bool(sel.is_excluded)
+        self.coordinator.apply_user_overrides(
+            self.batch_plan,
+            item_overrides={sel.item_id: {"is_excluded": new_excl}},
+        )
+        self._refresh_plan_view()
+        verb = "Excluded" if new_excl else "Included"
+        self.announce(f"{verb} '{os.path.basename(sel.source_path)}'.")
+
+    def apply_folder_override(self, folder: Optional[str] = None) -> None:
+        """Override the target category folder of the currently highlighted plan item."""
+        if self.batch_plan is None or self.coordinator is None:
+            return
+        sel = self._selected_plan_item()
+        if sel is None:
+            return
+        raw_folder = folder
+        if raw_folder is None:
+            try:
+                inp = self.query_one("#input-plan-folder-override", Input)
+                raw_folder = inp.value.strip()
+            except Exception:
+                raw_folder = ""
+        if raw_folder is None or raw_folder == "":
+            return
+        try:
+            self.coordinator.apply_user_overrides(
+                self.batch_plan,
+                item_overrides={sel.item_id: {"target_folder": raw_folder}},
+            )
+            try:
+                self.query_one("#input-plan-folder-override", Input).value = ""
+            except Exception:
+                pass
+            self._refresh_plan_view()
+            self.announce(
+                f"Overrode folder for '{os.path.basename(sel.source_path)}' to '{raw_folder}'."
+            )
+        except (ValueError, PermissionError) as exc:
+            self.announce(f"Invalid folder override: {exc}")
+
+    @on(Button.Pressed, "#btn-policy-rename")
+    def _on_policy_rename(self) -> None:
+        self.set_conflict_policy("rename")
+
+    @on(Button.Pressed, "#btn-policy-overwrite")
+    def _on_policy_overwrite(self) -> None:
+        self.set_conflict_policy("overwrite")
+
+    @on(Button.Pressed, "#btn-policy-skip")
+    def _on_policy_skip(self) -> None:
+        self.set_conflict_policy("skip")
+
+    @on(Button.Pressed, "#btn-toggle-plan-exclude")
+    def _on_toggle_exclude(self) -> None:
+        self.toggle_selected_exclusion()
+
+    @on(Button.Pressed, "#btn-apply-folder-override")
+    def _on_apply_folder_override(self) -> None:
+        self.apply_folder_override()
+
+    @on(Input.Submitted, "#input-plan-folder-override")
+    def _on_submit_folder_override(self, event: Input.Submitted) -> None:
+        if event.value.strip():
+            self.apply_folder_override(event.value.strip())
 
     @on(Button.Pressed, "#btn-confirm-drop-plan")
     def action_confirm(self) -> None:
         """Confirm the moves."""
+        if self.batch_plan is not None:
+            active_items = [
+                it
+                for it in self.batch_plan.items
+                if not getattr(it, "is_excluded", False)
+            ]
+            if not active_items:
+                self.announce(
+                    "All items are excluded; cancel or include at least one item."
+                )
+                return
         self.dismiss(True)
 
     @on(Button.Pressed, "#btn-cancel-drop-plan")
@@ -252,13 +580,18 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         settings: Any = None,
         base_dir: Optional[str] = None,
         initial_paths: Optional[list[str]] = None,
+        initial_dest_dir: Optional[str] = None,
     ):
         super().__init__()
         self.settings = settings
         self.base_dir = base_dir
+        self.initial_dest_dir = initial_dest_dir
         self.initial_paths: list[str] = list(initial_paths) if initial_paths else []
         self.processed_result: Optional[dict[str, Any]] = None
         self.staged_items: list[dict[str, Any]] = []
+        self._coordinator: Optional[Any] = None
+        self._pending_batch_plan: Optional[Any] = None
+        self._pending_drop: list[dict[str, Any]] = []
 
     def compose(self) -> ComposeResult:
         """Compose floating dropzone modal overlay controls."""
@@ -288,7 +621,7 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
 
                 with Horizontal(classes="dest-row"):
                     dest_inp = Input(
-                        value=self.base_dir or "",
+                        value=self.initial_dest_dir or "",
                         placeholder="Destination folder (optional, leave blank to sort in place)...",
                         id="input-dest-dir",
                     )
@@ -607,53 +940,39 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         return parsed_paths
 
     def _is_supported_file(self, abs_p: str) -> bool:
-        """Check whether the sorting pipeline can classify or route ``abs_p``."""
-        from app.core.extractor_strategies import registry
-        from app.core.jev_classifier import JevClassifierEngine
-        from app.core.metadata import evaluate_static_file_routing
+        """Check whether the sorting pipeline can classify or route ``abs_p``.
 
-        ext = os.path.splitext(abs_p)[1].lower()
-        ignored_raw = (
-            getattr(self.settings, "IGNORED_EXTENSIONS", []) if self.settings else []
-        ) or []
-        ignored_exts = {
-            s if s.startswith(".") else f".{s}"
-            for s in (str(x).strip().lower() for x in ignored_raw)
-            if s
-        }
-        if ext and ext in ignored_exts:
+        Accepts all non-ignored file extensions so uncategorized files route cleanly
+        into ``Miscellaneous`` unless explicitly ignored or halted by policy.
+        """
+        from app.core.metadata import evaluate_static_file_routing
+        from app.core.scanner import ScanFilter
+
+        scan_filter = ScanFilter.from_settings(settings=self.settings)
+        if scan_filter.has_ignored_extension(abs_p):
             return False
 
-        if ext and registry.is_supported(ext):
-            return True
-
-        jev_exts = {
-            s if s.startswith(".") else f".{s}"
-            for s in (
-                str(x).strip().lower()
-                for x in JevClassifierEngine.get_supported_extensions()
-            )
-            if s
-        }
-        if ext and ext in jev_exts:
-            return True
-
-        matched_target, matched_action, halt_evaluation = evaluate_static_file_routing(
+        _, _, halt_evaluation = evaluate_static_file_routing(
             abs_p,
             self.settings,
             check_extension_categories=True,
         )
         if halt_evaluation:
             return False
-        return bool(matched_target or matched_action)
+        return True
 
     def stage_paths(self, raw_text: str) -> None:
-        """Parse raw input string, expand directories, validate, and stage items."""
+        """Parse raw input string, validate dropped paths before expansion, and stage items."""
         raw_items = self._parse_raw_drop_input(raw_text)
         if not raw_items:
             return
 
-        from app.core.pipeline import drop_scope, expand_drop_scope_files
+        from app.core.mover import is_subpath_or_equal
+        from app.core.pipeline import (
+            drop_scope,
+            expand_drop_scope_files,
+            validate_drop_paths,
+        )
 
         protected = (
             getattr(self.settings, "PROTECTED_PATHS", []) if self.settings else []
@@ -662,6 +981,17 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
 
         for item in raw_items:
             abs_p = os.path.abspath(item)
+            _, issues = validate_drop_paths([abs_p], settings=self.settings)
+            issue = issues[0] if issues else None
+            is_prot = (issue is not None and issue.reason == "protected") or any(
+                prot and is_subpath_or_equal(abs_p, prot) for prot in (protected or ())
+            )
+
+            if is_prot or issue is not None:
+                self._stage_rejected_item(abs_p, issue=issue, is_protected=is_prot)
+                new_count += 1
+                continue
+
             scope_dir, scope_files = drop_scope(abs_p)
             if scope_files is None:
                 _, files = expand_drop_scope_files(abs_p, settings=self.settings)
@@ -685,6 +1015,58 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         msg = f"Staged {new_count} item(s). Queue total: {len(self.staged_items)} ({ready_cnt} ready)."
         self.update_status_msg(msg)
 
+    def _stage_rejected_item(
+        self,
+        abs_p: str,
+        *,
+        issue: Any = None,
+        is_protected: bool = False,
+    ) -> None:
+        """Stage a blocked, missing, or ignored dropped path without expanding internal files."""
+        cleaned_abs = abs_p.rstrip("/\\") or abs_p
+        filename = os.path.basename(cleaned_abs) or abs_p
+        ext = os.path.splitext(cleaned_abs)[1].lower()
+        group_root = os.path.dirname(cleaned_abs) or cleaned_abs
+        detail = getattr(issue, "detail", None)
+        reason = getattr(issue, "reason", None)
+
+        block_reason: Optional[str] = None
+        if is_protected or reason == "protected":
+            status = "BLOCKED"
+            block_reason = "protected"
+        elif detail in ("app_bundle", "quarantine"):
+            status = "BLOCKED"
+            block_reason = str(detail)
+        elif reason == "missing" or not os.path.exists(abs_p):
+            status = "Not Found"
+        else:
+            status = "Unsupported"
+
+        size_bytes = 0
+        if os.path.exists(abs_p) and os.path.isfile(abs_p):
+            try:
+                size_bytes = os.path.getsize(abs_p)
+            except OSError:
+                size_bytes = 0
+        size_str = self._format_size(size_bytes)
+
+        existing = next(
+            (item for item in self.staged_items if item["path"] == abs_p), None
+        )
+        if existing is None:
+            entry: dict[str, Any] = {
+                "path": abs_p,
+                "filename": filename,
+                "extension": ext,
+                "size": size_bytes,
+                "size_str": size_str,
+                "status": status,
+                "group_root": group_root,
+            }
+            if block_reason:
+                entry["block_reason"] = block_reason
+            self.staged_items.append(entry)
+
     def _add_single_file_to_staging(
         self,
         abs_p: str,
@@ -696,7 +1078,9 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         from app.core.pipeline import validate_drop_paths
 
         _, issues = validate_drop_paths([abs_p], settings=self.settings)
-        issue_reason = issues[0].reason if issues else None
+        issue = issues[0] if issues else None
+        issue_reason = issue.reason if issue else None
+        issue_detail = issue.detail if issue else None
         is_prot = issue_reason == "protected" or any(
             prot and is_subpath_or_equal(abs_p, prot) for prot in (protected or ())
         )
@@ -705,15 +1089,21 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         ext = os.path.splitext(abs_p)[1].lower()
         group_root = root_dir or os.path.dirname(abs_p)
 
+        block_reason: Optional[str] = None
         if is_prot:
             status = "BLOCKED"
-            size_bytes = os.path.getsize(abs_p) if os.path.exists(abs_p) else 0
+            block_reason = "protected"
+            size_bytes = os.path.getsize(abs_p) if os.path.isfile(abs_p) else 0
+        elif issue_detail in ("app_bundle", "quarantine"):
+            status = "BLOCKED"
+            block_reason = str(issue_detail)
+            size_bytes = 0
         elif issue_reason == "missing" or not os.path.exists(abs_p):
             status = "Not Found"
             size_bytes = 0
         elif issue_reason == "ignored" or not self._is_supported_file(abs_p):
             status = "Unsupported"
-            size_bytes = os.path.getsize(abs_p) if os.path.exists(abs_p) else 0
+            size_bytes = os.path.getsize(abs_p) if os.path.isfile(abs_p) else 0
         else:
             status = "Ready"
             size_bytes = os.path.getsize(abs_p)
@@ -724,17 +1114,18 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
             (item for item in self.staged_items if item["path"] == abs_p), None
         )
         if existing is None:
-            self.staged_items.append(
-                {
-                    "path": abs_p,
-                    "filename": filename,
-                    "extension": ext,
-                    "size": size_bytes,
-                    "size_str": size_str,
-                    "status": status,
-                    "group_root": group_root,
-                }
-            )
+            entry: dict[str, Any] = {
+                "path": abs_p,
+                "filename": filename,
+                "extension": ext,
+                "size": size_bytes,
+                "size_str": size_str,
+                "status": status,
+                "group_root": group_root,
+            }
+            if block_reason:
+                entry["block_reason"] = block_reason
+            self.staged_items.append(entry)
         elif root_dir and is_subpath_or_equal(abs_p, root_dir):
             existing["group_root"] = root_dir
 
@@ -986,7 +1377,7 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
             dest_inp = self.query_one("#input-dest-dir", Input)
             raw_dest = dest_inp.value.strip()
         except Exception:
-            raw_dest = (self.base_dir or "").strip()
+            raw_dest = (self.initial_dest_dir or "").strip()
 
         resolved_dest: Optional[str] = None
         if raw_dest:
@@ -1015,8 +1406,23 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
             blocked_items = [
                 item for item in filtered if item["status"] == "BLOCKED"
             ] or [item for item in self.staged_items if item["status"] == "BLOCKED"]
+            status_err_detail: Optional[str] = None
             if blocked_items:
-                err_text = f"Protected path blocked: {blocked_items[0]['filename']}"
+                first_blk = blocked_items[0]
+                blk_reason = first_blk.get("block_reason")
+                if blk_reason == "app_bundle":
+                    err_text = f"Application bundle blocked: {first_blk['filename']}"
+                    status_err_detail = (
+                        f"Application bundle blocked: {first_blk['path']}"
+                    )
+                elif blk_reason == "quarantine":
+                    err_text = f"Quarantine folder blocked: {first_blk['filename']}"
+                    status_err_detail = (
+                        f"Quarantine folder blocked: {first_blk['path']}"
+                    )
+                else:
+                    err_text = f"Protected path blocked: {first_blk['filename']}"
+                    status_err_detail = f"Protected path blocked: {first_blk['path']}"
             elif self.staged_items:
                 err_text = "No ready files to sort in queue."
             else:
@@ -1027,9 +1433,7 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
 
             notify(f"DropZone error: {err_text}", type="error", help_url=help_url)
             self.update_status_msg(
-                f"Protected path blocked: {blocked_items[0]['path']}"
-                if blocked_items
-                else f"Error: {err_text}",
+                status_err_detail if status_err_detail else f"Error: {err_text}",
                 help_url=help_url,
             )
             return
@@ -1049,6 +1453,14 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
 
     def _close_pending_drop(self) -> None:
         """Close the sessions of a planned but unexecuted drop."""
+        batch_plan = getattr(self, "_pending_batch_plan", None)
+        coord = getattr(self, "_coordinator", None)
+        if batch_plan is not None and coord is not None:
+            try:
+                coord.close_batch(batch_plan)
+            except Exception:
+                pass
+        self._pending_batch_plan = None
         for item in getattr(self, "_pending_drop", []):
             try:
                 item["session"].close()
@@ -1060,67 +1472,51 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
     def run_drop_worker(
         self, target_paths: list[str], dest_dir: Optional[str] = None
     ) -> None:
-        """Plan the dropped items in a worker thread, then ask before moving."""
+        """Plan the dropped items via DropBatchCoordinator in a worker thread, then ask before moving."""
         app_ref = getattr(self, "_app_ref", None)
         self._close_pending_drop()
-        pending: list[dict[str, Any]] = []
         try:
-            from app.core.pipeline import (
-                SortPipeline,
-                apply_drop_reroot,
-                group_drop_targets,
-                is_rerooted_destination,
-                validate_drop_destination,
-            )
-            from app.core.session import AppSession
+            from app.core.pipeline import DropBatchCoordinator
 
-            resolved_dest, _ = validate_drop_destination(
-                dest_dir, settings=self.settings
-            )
-
-            # Plan every staged file under its dropped root folder together so a
-            # dropped folder (including nested subfolders) stays in one session.
             staged_roots = {
                 item["path"]: item.get("group_root")
                 for item in list(self.staged_items)
                 if isinstance(item, dict) and "path" in item
             }
-            groups = group_drop_targets(
+            coordinator = DropBatchCoordinator(self.settings)
+
+            def _on_plan_progress(info: Any) -> None:
+                if app_ref is None:
+                    return
+                stage = (
+                    info.get("stage") if isinstance(info, dict) else None
+                ) or "Classifying dropped items..."
+                app_ref.call_from_thread(self.update_status_msg, str(stage))
+
+            batch_plan = coordinator.plan_batch(
                 target_paths,
-                settings=self.settings,
+                dest_dir=dest_dir,
                 staged_roots=staged_roots,
+                progress_callback=_on_plan_progress if app_ref else None,
             )
-
-            for base_dir, files in groups.items():
-                if app_ref:
-                    app_ref.call_from_thread(
-                        self.update_status_msg,
-                        f"Classifying {len(files)} file(s) in '{os.path.basename(base_dir)}'...",
-                    )
-
-                session = AppSession(self.settings, base_dir=base_dir)
-                re_rooted = is_rerooted_destination(base_dir, resolved_dest)
-                pending.append(
-                    {
-                        "path": base_dir,
-                        "session": session,
-                        "plan": None,
-                        "file_count": len(files),
-                        "re_rooted": re_rooted,
-                    }
-                )
-                plan = SortPipeline(session).plan(files, dest_dir=resolved_dest)
-                plan, _ = apply_drop_reroot(session, plan, base_dir, resolved_dest)
-                pending[-1]["plan"] = plan
-
-            self._pending_drop = pending
+            self._coordinator = coordinator
+            self._pending_batch_plan = batch_plan
+            self._pending_drop = [
+                {
+                    "path": grp.source_root,
+                    "session": grp.session,
+                    "plan": grp.plan,
+                    "file_count": len(grp.rel_files),
+                    "re_rooted": grp.re_rooted,
+                }
+                for grp in batch_plan.groups
+            ]
             if app_ref:
                 app_ref.call_from_thread(self._confirm_pending_drop)
             else:
                 self._confirm_pending_drop()
         except Exception as e:
             logger.exception(f"Error during dropzone classification: {e}")
-            self._pending_drop = pending
             self._close_pending_drop()
             if app_ref:
                 app_ref.call_from_thread(
@@ -1128,9 +1524,12 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
                 )
 
     def _confirm_pending_drop(self) -> None:
-        """Show what the drop would do and wait for the user's go-ahead."""
+        """Show what the drop would do, including collision warnings and overrides, and wait for go-ahead."""
         from app.core.domain_contracts import _make_json_serializable
         from app.core.plan_format import format_plan_tree
+
+        batch_plan = getattr(self, "_pending_batch_plan", None)
+        coordinator = getattr(self, "_coordinator", None)
 
         lines: list[str] = []
         total_files = total_folders = 0
@@ -1144,13 +1543,28 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
             lines.append(f"In {item['session'].base_dir}:")
             lines.extend(f"  {line}" for line in tree)
 
+        if batch_plan is not None and batch_plan.plan_lines and not lines:
+            lines = list(batch_plan.plan_lines)
+            total_files = sum(
+                1 for it in batch_plan.items if not getattr(it, "is_excluded", False)
+            )
+            total_folders = len(
+                {
+                    (it.dest_base_dir, it.target_folder)
+                    for it in batch_plan.items
+                    if not getattr(it, "is_excluded", False)
+                }
+            )
+
         if not total_files:
             self._close_pending_drop()
             self.update_status_msg("Nothing to sort: no files could be classified.")
             return
 
+        warnings = list(getattr(batch_plan, "warnings", None) or [])
+        warn_suffix = f" ({len(warnings)} warning(s) detected)" if warnings else ""
         summary = (
-            f"Move {total_files} file(s) into {total_folders} folder(s)? "
+            f"Move {total_files} file(s) into {total_folders} folder(s)?{warn_suffix} "
             "Nothing has been moved yet."
         )
         self.update_status_msg(f"Review the plan: {summary}")
@@ -1165,12 +1579,94 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
                 self._close_pending_drop()
                 self.update_status_msg("Cancelled. No files were moved.")
 
-        self.app.push_screen(DropPlanConfirmModal(summary, lines), _on_answer)
+        self.app.push_screen(
+            DropPlanConfirmModal(
+                summary,
+                lines,
+                warnings=warnings,
+                batch_plan=batch_plan,
+                coordinator=coordinator,
+            ),
+            _on_answer,
+        )
 
     @work(exclusive=True, thread=True)
     def run_drop_execute_worker(self) -> None:
-        """Execute the confirmed drop plans in a worker thread."""
+        """Execute the confirmed drop batch under one undo session in a worker thread."""
         app_ref = getattr(self, "_app_ref", None)
+        batch_plan = getattr(self, "_pending_batch_plan", None)
+        coordinator = getattr(self, "_coordinator", None)
+
+        if batch_plan is not None and coordinator is not None:
+            self._pending_batch_plan = None
+            self._pending_drop = []
+            try:
+                batch_result = coordinator.execute_batch(batch_plan)
+                active_items = [
+                    it
+                    for it in batch_plan.items
+                    if not getattr(it, "is_excluded", False)
+                ]
+                succeeded_files = batch_result.moved_count or (
+                    len(active_items) if batch_result.failed_count == 0 else 0
+                )
+                failed_files = batch_result.failed_count
+                processed_items = [
+                    {
+                        "path": tr.get("base_dir"),
+                        "summary": tr.get("summary"),
+                        "file_count": len(grp.rel_files),
+                        "status": "success",
+                    }
+                    for grp, tr in zip(batch_plan.groups, batch_result.target_results)
+                ]
+                if failed_files == 0:
+                    status = "success"
+                    final_msg = (
+                        f"Completed triage of {succeeded_files} dropped item(s)."
+                    )
+                elif succeeded_files > 0:
+                    status = "partial"
+                    final_msg = (
+                        f"Completed triage of {succeeded_files} item(s) "
+                        f"({failed_files} failed)."
+                    )
+                else:
+                    status = "failed"
+                    final_msg = f"Dropzone triage failed for {failed_files} item(s)."
+
+                if app_ref:
+                    app_ref.call_from_thread(self.update_status_msg, final_msg)
+
+                result_dict = {
+                    "status": status,
+                    "session_id": batch_result.session_id,
+                    "destination_dir": batch_result.resolved_dest,
+                    "processed_count": succeeded_files,
+                    "failed_files": failed_files,
+                    "items": processed_items,
+                    "failed_items": [],
+                    "succeeded_count": len(processed_items),
+                    "failed_count": 1 if failed_files > 0 else 0,
+                    "total_count": len(batch_plan.groups),
+                }
+                self.processed_result = result_dict
+                try:
+                    if app_ref:
+                        app_ref.call_from_thread(self.dismiss, result_dict)
+                    else:
+                        self.dismiss(result_dict)
+                except Exception:
+                    pass
+            except Exception as e:
+                logger.exception(f"Error during dropzone relocation: {e}")
+                coordinator.close_batch(batch_plan)
+                if app_ref:
+                    app_ref.call_from_thread(
+                        self.update_status_msg, f"Dropzone triage error: {e}"
+                    )
+            return
+
         pending = list(getattr(self, "_pending_drop", []))
         self._pending_drop = []
         processed_items = []

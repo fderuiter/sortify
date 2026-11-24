@@ -366,6 +366,7 @@ class AutoSorterTUI(
         db: Optional[Any] = None,
         open_dropzone: bool = False,
         initial_drop_paths: Optional[list[str]] = None,
+        initial_dest_dir: Optional[str] = None,
     ):
         super().__init__()
         self.settings = settings
@@ -392,6 +393,8 @@ class AutoSorterTUI(
         self.initial_drop_paths: list[str] = (
             list(initial_drop_paths) if initial_drop_paths else []
         )
+        self.initial_dest_dir: Optional[str] = initial_dest_dir
+        self._last_drop_session_id: Optional[str] = None
         self.plan: dict[str, Any] = {}
         self.locked_files: dict[str, str] = {}
         self._ratings_cache: dict[str, str] = {}
@@ -670,7 +673,13 @@ class AutoSorterTUI(
         self.run_worker(self._poll_daemon_status(), name="poll_daemon_startup")
 
         if self.open_dropzone or self.initial_drop_paths:
-            self.action_open_dropzone(initial_paths=self.initial_drop_paths, force=True)
+            launch_dest = self.initial_dest_dir
+            self.initial_dest_dir = None
+            self.action_open_dropzone(
+                initial_paths=self.initial_drop_paths,
+                initial_dest_dir=launch_dest,
+                force=True,
+            )
 
         env_non_interactive = os.environ.get("NON_INTERACTIVE")
         is_non_interactive_env = bool(
@@ -1411,6 +1420,11 @@ class AutoSorterTUI(
                         self.settings.QUARANTINE_DIR_NAME = res["QUARANTINE_DIR_NAME"]
                     except Exception:
                         pass
+                if "RENAME_PATTERN" in res:
+                    try:
+                        self.settings.RENAME_PATTERN = res["RENAME_PATTERN"]
+                    except Exception:
+                        pass
                 if hasattr(self.settings, "_save"):
                     self.settings._save()
                 self.update_status()
@@ -1421,35 +1435,69 @@ class AutoSorterTUI(
         self.push_screen(SettingsModal(self.settings), on_saved)
 
     def action_open_extraction_preview(self) -> None:
-        """Open visual extraction preview modal for active or selected PDF document [Ctrl+X]."""
+        """Open document extraction preview modal for active or selected supported file [Ctrl+X]."""
         if self._is_text_control_focused(allow_tree_search=True):
             return
 
-        pdf_path: Optional[str] = None
+        from app.core.extractor_strategies import registry
+
+        def _resolve_supported_path(
+            raw_fp: Any, src_root: Optional[str] = None
+        ) -> Optional[str]:
+            if not raw_fp:
+                return None
+            fp_str = str(raw_fp)
+            if "::" in fp_str and not os.path.exists(fp_str):
+                s_root, rel_part = fp_str.split("::", 1)
+                fp_str = os.path.join(s_root, rel_part)
+            ext = os.path.splitext(fp_str)[1].lower()
+            if not ext or not registry.is_supported(ext):
+                return None
+            if not os.path.isabs(fp_str):
+                eff_root = src_root or self.base_dir
+                if eff_root:
+                    cand = os.path.join(eff_root, fp_str)
+                    if os.path.exists(cand):
+                        return cand
+            return fp_str
+
+        preview_path: Optional[str] = None
 
         active_node = self._get_active_node()
         if active_node and active_node.data:
             data = active_node.data
             if data.get("is_file"):
+                info_dict = (
+                    data.get("info") if isinstance(data.get("info"), dict) else {}
+                )
                 fp = (
                     data.get("filepath")
-                    or data.get("info", {}).get("src_path")
-                    or data.get("info", {}).get("path")
+                    or info_dict.get("src_path")
+                    or info_dict.get("path")
+                    or info_dict.get("source_path")
+                    or data.get("key")
                 )
-                if fp and str(fp).lower().endswith(".pdf"):
-                    pdf_path = str(fp)
+                preview_path = _resolve_supported_path(
+                    fp, src_root=info_dict.get("source_root")
+                )
 
-        if not pdf_path:
+        if not preview_path:
             target_files = self._get_target_file_infos()
             for tf in target_files:
-                fp = tf.get("src_path") or tf.get("path") or tf.get("filepath")
-                if fp and str(fp).lower().endswith(".pdf"):
-                    pdf_path = str(fp)
+                fp = (
+                    tf.get("src_path")
+                    or tf.get("path")
+                    or tf.get("filepath")
+                    or tf.get("source_path")
+                )
+                resolved = _resolve_supported_path(fp, src_root=tf.get("source_root"))
+                if resolved:
+                    preview_path = resolved
                     break
 
-        if not pdf_path:
+        if not preview_path:
             self.announce(
-                "Please select a PDF document to preview extraction strategies [Ctrl+X]."
+                "Please select a supported document to preview extracted text [Ctrl+X]."
             )
             return
 
@@ -1458,7 +1506,13 @@ class AutoSorterTUI(
                 self.announce(f"Updated extraction density threshold to {saved_val}.")
 
         self.push_screen(
-            ExtractionPreviewModal(pdf_path, self.settings), on_preview_closed
+            ExtractionPreviewModal(
+                preview_path,
+                self.settings,
+                db=self.db,
+                base_dir=self.base_dir,
+            ),
+            on_preview_closed,
         )
 
     def action_open_command_palette(self) -> None:
@@ -1494,7 +1548,18 @@ class AutoSorterTUI(
         """Open active rule manager modal screen [Ctrl+R]."""
         if self._is_text_control_focused(allow_tree_search=True):
             return
-        self.push_screen(ActiveRuleManagerModal(self.settings))
+
+        def on_rules_closed(mutated: Optional[bool] = None) -> None:
+            try:
+                self.query_one("#plan-tree", Tree).focus()
+            except Exception:
+                pass
+            if mutated:
+                self.update_status()
+                if self.base_dir:
+                    self.action_scan_directory()
+
+        self.push_screen(ActiveRuleManagerModal(self.settings), on_rules_closed)
 
     def action_open_template_gallery(self) -> None:
         """Open starter rule template gallery modal screen."""
@@ -1606,6 +1671,7 @@ class AutoSorterTUI(
         self,
         initial_paths: Optional[list[str]] = None,
         force: bool = False,
+        initial_dest_dir: Optional[str] = None,
     ) -> None:
         """Open floating dropzone overlay modal screen."""
         if not force and self._is_text_control_focused(allow_tree_search=True):
@@ -1613,14 +1679,20 @@ class AutoSorterTUI(
 
         def on_drop_done(res: Optional[dict[str, Any]]) -> None:
             if res:
+                if res.get("session_id"):
+                    self._last_drop_session_id = str(res["session_id"])
                 cnt = res.get("processed_count", 0)
                 dest_used = res.get("destination_dir")
                 if dest_used and not self.base_dir and os.path.isdir(dest_used):
                     self.base_dir = dest_used
+                    if not self.source_dirs:
+                        self.source_dirs = [dest_used]
                 self.announce(f"DropZone triage finished: {cnt} item(s) organized.")
                 scan_dir = dest_used or self.base_dir
-                if scan_dir and os.path.exists(scan_dir):
-                    if scan_dir == self.base_dir:
+                if scan_dir and os.path.exists(scan_dir) and self.base_dir:
+                    if os.path.normcase(os.path.abspath(scan_dir)) == os.path.normcase(
+                        os.path.abspath(self.base_dir)
+                    ):
                         self.action_scan_directory()
 
         self.push_screen(
@@ -1628,6 +1700,7 @@ class AutoSorterTUI(
                 settings=self.settings,
                 base_dir=self.base_dir,
                 initial_paths=initial_paths,
+                initial_dest_dir=initial_dest_dir,
             ),
             on_drop_done,
         )
@@ -1730,12 +1803,16 @@ class AutoSorterTUI(
             else ""
         )
         target_sess = None
+        last_drop_sid = getattr(self, "_last_drop_session_id", None)
         for s in sessions:
             if (
                 str(s.get("status", "")).lower() != "completed"
                 or int(s.get("step_count") or 0) <= 0
             ):
                 continue
+            if last_drop_sid and s.get("session_id") == last_drop_sid:
+                target_sess = s
+                break
             if active_base:
                 sess_base_raw = str(s.get("base_dir", "") or "")
                 if not sess_base_raw:
@@ -2004,6 +2081,7 @@ def run_tui(
     non_interactive: bool = False,
     open_dropzone: bool = False,
     initial_drop_paths: Optional[list[str]] = None,
+    initial_dest_dir: Optional[str] = None,
 ) -> None:
     """Run the Textual full-screen terminal interface."""
     import shutil
@@ -2051,6 +2129,7 @@ def run_tui(
         non_interactive=non_interactive,
         open_dropzone=open_dropzone,
         initial_drop_paths=initial_drop_paths,
+        initial_dest_dir=initial_dest_dir,
     )
     app.run()
 

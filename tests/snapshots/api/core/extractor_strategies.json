@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "23e1185b43dbff579c8199bd4788e05f2edb20b098ffaebd3d31774112a45d26"
+    "checksum": "5493693347b166f029d1780b0aabaf7d42071f22b41dfc9f08c90892ad7e52a2"
   },
   "classes": [
     {
@@ -677,6 +677,19 @@
     }
   ],
   "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "extract_embedded_date",
+      "parameters": [
+        {
+          "annotation": "str | os.PathLike[str]",
+          "default": null,
+          "name": "file_path"
+        }
+      ],
+      "returns": "Optional[datetime]"
+    },
     {
       "async": false,
       "decorators": [],

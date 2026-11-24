@@ -1308,10 +1308,13 @@ def test_hazel_importer_normalizes_paths_filters_clauses_and_maps_unarchive(tmp_
     assert "rootfile" not in res.keyword_rules
     assert "pure size rule" not in res.keyword_rules
 
-    # 2. Unarchive rule mapped to built-in unarchive policy with normalized relative folder; Copy PDF rule skipped!
-    assert len(res.policies) == 1
-    pol = res.policies[0]
-    assert pol["type"] == "unarchive"
+    # 2. Single-condition Pure Size Rule and Unarchive rule mapped to built-in policies; Copy PDF rule skipped!
+    assert len(res.policies) == 2
+    size_pol = next(p for p in res.policies if p["type"] == "size")
+    assert size_pol["expression"] == "> 50MB"
+    assert size_pol["target_path"] == "LargeFiles"
+
+    pol = next(p for p in res.policies if p["type"] == "unarchive")
     assert pol["action"] == "unarchive"
     assert pol["expression"] == "*.zip"
     assert pol["target_path"] == "Downloads/Unpacked"

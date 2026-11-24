@@ -83,9 +83,10 @@ class TemplateGalleryModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
     }
     """
 
-    def __init__(self, settings):
+    def __init__(self, settings, defer_rescan: bool = False):
         super().__init__()
         self.settings = settings
+        self.defer_rescan = defer_rescan
 
     def compose(self) -> ComposeResult:
         """Compose template gallery children."""
@@ -204,9 +205,10 @@ class TemplateGalleryModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
                 self.announce(msg)
                 if hasattr(self.app, "notify"):
                     self.app.notify(msg)
-                scan_fn = getattr(self.app, "action_scan_directory", None)
-                if callable(scan_fn):
-                    scan_fn()
+                if not self.defer_rescan:
+                    scan_fn = getattr(self.app, "action_scan_directory", None)
+                    if callable(scan_fn):
+                        scan_fn()
             except Exception as exc:
                 err_msg = f"Failed to apply starter rule template pack(s): {exc}"
                 self.announce(err_msg)
@@ -1015,7 +1017,7 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Optional[Any]])
 
 
 class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
-    """Modal screen for adding or editing a keyword rule with path validation."""
+    """Modal screen for adding or editing keyword rules and policies with live sample preview."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
@@ -1025,15 +1027,50 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
 
     MODAL_CSS = """
     .rule-edit-box {
-        width: 80%;
-        max-width: 65;
+        width: 86%;
+        max-width: 76;
+        max-height: 92%;
     }
     .compact .rule-edit-box, .narrow .rule-edit-box {
-        width: 95%;
+        width: 96%;
+    }
+    .hidden {
+        display: none;
+    }
+    .compact .modal-title {
+        margin-bottom: 0;
     }
     .field-label {
         margin-top: 1;
         color: $text;
+        text-style: bold;
+    }
+    .compact .field-label {
+        margin-top: 0;
+    }
+    .policy-grid {
+        height: auto;
+        width: 100%;
+    }
+    .preview-box {
+        margin-top: 1;
+        padding: 0 1;
+        border: solid $accent;
+        height: auto;
+    }
+    .compact .preview-box {
+        margin-top: 0;
+    }
+    .preview-status {
+        color: $text;
+        margin-top: 0;
+    }
+    .preview-status.match {
+        color: $success;
+        text-style: bold;
+    }
+    .preview-status.no-match {
+        color: $warning;
         text-style: bold;
     }
     .error-label {
@@ -1045,42 +1082,210 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
     .error-label.visible {
         display: block;
     }
-    Button:focus, Input:focus {
+    .compact .button-row {
+        margin-top: 0;
+    }
+    .compact .button-row Button {
+        height: 1;
+        min-height: 1;
+        border: none;
+        margin: 0;
+    }
+    Button:focus, Input:focus, Select:focus, Checkbox:focus {
         border: heavy $accent;
         text-style: bold;
     }
     """
+
+    RULE_TYPE_OPTIONS: list[tuple[str, str]] = [
+        ("Keyword (substring)", "keyword"),
+        ("Pattern (regex / glob)", "pattern"),
+        ("Override", "override"),
+        ("Action", "action"),
+        ("File Age (e.g. > 30d)", "age"),
+        ("Modified Date (e.g. < 2025-01-01)", "modified_date"),
+        ("Created Date (e.g. > 2024-01-01)", "created_date"),
+        ("EXIF / PDF Date (e.g. < 2023-06-01)", "exif_date"),
+        ("File Size (e.g. > 10MB)", "size"),
+        ("Compliance", "compliance"),
+        ("Unarchive", "unarchive"),
+        ("Duplicate", "duplicate"),
+    ]
+    MAX_WORKSPACE_PREVIEW_FILES: int = 200
 
     def __init__(
         self,
         title: str = "Add Keyword Rule",
         pattern: str = "",
         target_folder: str = "",
+        rule_kind: str = "keyword",
+        policy_type: str = "keyword",
+        priority: int = 0,
+        halting: bool = False,
+        action: str = "",
+        enabled: bool = True,
+        settings: Any = None,
+        base_dir: Optional[str] = None,
+        source_dirs: Optional[list[str]] = None,
+        db: Any = None,
+        *,
+        rename_pattern: str = "",
+        rule_type: Optional[str] = None,
+        rule_action: Optional[str] = None,
     ):
         super().__init__()
         self.title_text = title
         self.initial_pattern = pattern
         self.initial_target = target_folder
+        norm_kind = str(rule_kind or "keyword").strip().lower()
+        if rule_type is not None:
+            legacy_rt = str(rule_type).strip().lower()
+            if norm_kind == "keyword" and legacy_rt and legacy_rt != "keyword":
+                norm_kind = "policy"
+            if policy_type == "keyword" and legacy_rt:
+                policy_type = legacy_rt
+        self.initial_kind = (
+            norm_kind if norm_kind in ("keyword", "policy", "learned") else "keyword"
+        )
+        self.initial_policy_type = str(policy_type or "keyword").strip().lower()
+        self.initial_priority = int(priority) if priority is not None else 0
+        self.initial_halting = bool(halting)
+        eff_action = action if action else (rule_action or "")
+        self.initial_action = str(eff_action).strip()
+        self.initial_rename_pattern = str(rename_pattern or "").strip()
+        self.initial_enabled = bool(enabled)
+        self.settings = settings
+        self.base_dir = base_dir
+        self.source_dirs = source_dirs
+        self.db = db
+        self._workspace_items: list[tuple[str, str, str]] = []
+        self._text_cache: dict[str, str] = {}
+        self._mounted_ready: bool = False
 
     def compose(self) -> ComposeResult:
-        """Compose rule editor inputs and action buttons."""
+        """Compose rule editor inputs, policy attributes, live sample preview, and action buttons."""
+        kind_options: list[tuple[str, str]] = [
+            ("Keyword Rule", "keyword"),
+            ("Policy Rule", "policy"),
+        ]
+        if self.initial_kind == "learned":
+            kind_options.insert(0, ("Learned Rule", "learned"))
+
+        policy_types: list[tuple[str, str]] = list(self.RULE_TYPE_OPTIONS)
+        known_pol_vals = {val for _lbl, val in policy_types}
+        if self.initial_policy_type and self.initial_policy_type not in known_pol_vals:
+            policy_types.append(
+                (self.initial_policy_type.title(), self.initial_policy_type)
+            )
+
+        pol_cls = (
+            "policy-grid" if self.initial_kind == "policy" else "policy-grid hidden"
+        )
+
         with ModalBox(classes="rule-edit-box modal-box"):
             yield Heading(
                 self.title_text, level=1, classes="modal-title", id="modal-title"
             )
             with Vertical(classes="modal-body"):
-                yield Label("Pattern / Keyword:", classes="field-label")
-                yield Input(
+                yield Label("Rule Category:", classes="field-label")
+                sel_kind = Select(
+                    kind_options,
+                    value=self.initial_kind,
+                    allow_blank=False,
+                    id="select-rule-kind",
+                )
+                sel_kind.tooltip = (
+                    "Select whether to save a keyword rule or a prioritized policy"
+                )
+                yield sel_kind
+
+                yield Label("Pattern / Expression:", classes="field-label")
+                inp_pattern = Input(
                     value=self.initial_pattern,
-                    placeholder="e.g. invoice or receipt",
+                    placeholder="e.g. invoice, ^INV-\\d+, > 30d, > 10MB, < 2025-01-01",
                     id="input-rule-pattern",
                 )
+                inp_pattern.tooltip = "Keyword substring or policy expression (regex, glob, age, date, or size)"
+                yield inp_pattern
+
                 yield Label("Target Folder:", classes="field-label")
-                yield Input(
+                inp_target = Input(
                     value=self.initial_target,
-                    placeholder="e.g. Finances/Invoices",
+                    placeholder="e.g. Finances/Invoices or Archive/{year}/{month}",
                     id="input-rule-target",
                 )
+                inp_target.tooltip = (
+                    "Relative destination folder inside the active workspace"
+                )
+                yield inp_target
+
+                yield Label("Rename Template (optional):", classes="field-label")
+                inp_rename = Input(
+                    value=self.initial_rename_pattern,
+                    placeholder="e.g. {date}_{stem}{extension}",
+                    id="input-rule-rename-pattern",
+                )
+                inp_rename.tooltip = (
+                    "Optional filename rename template (e.g. {date}_{stem}{extension})"
+                )
+                yield inp_rename
+
+                with Vertical(id="policy-fields-container", classes=pol_cls):
+                    yield Label("Policy Type:", classes="field-label")
+                    sel_ptype = Select(
+                        policy_types,
+                        value=self.initial_policy_type,
+                        allow_blank=False,
+                        id="select-policy-type",
+                    )
+                    sel_ptype.tooltip = "Select policy evaluation strategy"
+                    yield sel_ptype
+
+                    yield Label("Priority (integer):", classes="field-label")
+                    inp_prio = Input(
+                        value=str(self.initial_priority),
+                        placeholder="e.g. 10 (higher runs first)",
+                        id="input-policy-priority",
+                    )
+                    inp_prio.tooltip = (
+                        "Integer priority; higher-priority policies evaluate first"
+                    )
+                    yield inp_prio
+
+                    yield Label("Policy Action (optional):", classes="field-label")
+                    inp_action = Input(
+                        value=self.initial_action,
+                        placeholder="archive, retain, quarantine, redact, unarchive, trash",
+                        id="input-policy-action",
+                    )
+                    inp_action.tooltip = "Optional policy action (archive, retain, quarantine, redact, unarchive, trash)"
+                    yield inp_action
+
+                    chk_halt = Checkbox(
+                        "Halting (stop evaluating lower-priority rules on match)",
+                        value=self.initial_halting,
+                        id="chk-policy-halting",
+                    )
+                    chk_halt.tooltip = (
+                        "Stop evaluating lower-priority policies when this rule matches"
+                    )
+                    yield chk_halt
+
+                with Vertical(id="rule-preview-box", classes="preview-box"):
+                    yield Label("Sample File Preview:", classes="field-label")
+                    sel_sample = Select(
+                        [],
+                        allow_blank=True,
+                        prompt="Select workspace sample file...",
+                        id="select-sample-file",
+                    )
+                    sel_sample.tooltip = "Choose a workspace file to live-test this rule without moving files"
+                    yield sel_sample
+                    yield Label(
+                        "Enter a pattern to preview workspace matches.",
+                        classes="preview-status",
+                        id="lbl-rule-preview",
+                    )
                 yield Label("", classes="error-label", id="lbl-rule-error")
             with Horizontal(classes="button-row"):
                 btn_cancel = Button(
@@ -1089,22 +1294,506 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
                 btn_cancel.tooltip = "Cancel and discard rule changes"
                 yield btn_cancel
                 btn_save = Button("Save Rule", id="btn-save-rule", variant="primary")
-                btn_save.tooltip = "Validate target path and save rule"
+                btn_save.tooltip = "Validate rule definition and save"
                 yield btn_save
 
+    def _discover_workspace_files(self) -> list[tuple[str, str, str]]:
+        """Discover candidate workspace files as (item_id, src_root, rel_path) tuples."""
+        import os
+
+        from app.core.scanner import (
+            get_files_from_sources,
+            get_files_recursively,
+            parse_item_identifier,
+        )
+
+        eff_settings = self.settings or getattr(self.app, "settings", None)
+        eff_base = self.base_dir or getattr(self.app, "base_dir", None)
+        eff_sources = self.source_dirs or getattr(self.app, "source_dirs", None)
+
+        raw_items: list[str] = []
+        if eff_sources and isinstance(eff_sources, list) and len(eff_sources) > 0:
+            valid_sources = [s for s in eff_sources if s and os.path.isdir(str(s))]
+            if valid_sources:
+                raw_items = get_files_from_sources(valid_sources, settings=eff_settings)
+        if not raw_items and eff_base and os.path.isdir(str(eff_base)):
+            raw_items = get_files_recursively(str(eff_base), settings=eff_settings)
+
+        discovered: list[tuple[str, str, str]] = []
+        for item in raw_items[: self.MAX_WORKSPACE_PREVIEW_FILES]:
+            s_root, rel_p = parse_item_identifier(
+                item, default_base_dir=str(eff_base or "")
+            )
+            discovered.append((item, s_root, rel_p))
+        return discovered
+
+    def _get_item_text(self, src_root: str, rel_path: str) -> str:
+        """Load cached or local offline text for a workspace item."""
+        import os
+
+        from app.core.extractor import _read_preview_text_offline
+
+        abs_p = (
+            os.path.abspath(os.path.join(src_root, rel_path))
+            if src_root
+            else os.path.abspath(rel_path)
+        )
+        if abs_p in self._text_cache:
+            return self._text_cache[abs_p]
+
+        eff_settings = self.settings or getattr(self.app, "settings", None)
+        eff_db = self.db if self.db is not None else getattr(self.app, "db", None)
+        raw_text, _src = _read_preview_text_offline(
+            abs_p,
+            settings=eff_settings,
+            db=eff_db,
+            base_dir=src_root or self.base_dir or getattr(self.app, "base_dir", None),
+        )
+        self._text_cache[abs_p] = raw_text or ""
+        return self._text_cache[abs_p]
+
+    def _read_draft_state(self) -> dict[str, Any]:
+        """Collect current draft input values from form widgets."""
+        kind_val = self.initial_kind
+        try:
+            sel_k = self.query_one("#select-rule-kind", Select).value
+            if sel_k and sel_k != Select.BLANK:
+                kind_val = str(sel_k)
+        except Exception:
+            pass
+
+        pattern_val = self.query_one("#input-rule-pattern", Input).value.strip()
+        target_val = self.query_one("#input-rule-target", Input).value.strip()
+
+        rename_val = self.initial_rename_pattern
+        try:
+            rename_val = self.query_one(
+                "#input-rule-rename-pattern", Input
+            ).value.strip()
+        except Exception:
+            pass
+
+        pol_type = self.initial_policy_type
+        try:
+            sel_pt = self.query_one("#select-policy-type", Select).value
+            if sel_pt and sel_pt != Select.BLANK:
+                pol_type = str(sel_pt)
+        except Exception:
+            pass
+
+        prio_raw = str(self.initial_priority)
+        try:
+            prio_raw = self.query_one("#input-policy-priority", Input).value.strip()
+        except Exception:
+            pass
+
+        action_val = self.initial_action
+        try:
+            action_val = self.query_one("#input-policy-action", Input).value.strip()
+        except Exception:
+            pass
+
+        halting_val = self.initial_halting
+        try:
+            halting_val = bool(self.query_one("#chk-policy-halting", Checkbox).value)
+        except Exception:
+            pass
+
+        return {
+            "kind": kind_val,
+            "pattern": pattern_val,
+            "target": target_val,
+            "rename_pattern": rename_val,
+            "policy_type": pol_type,
+            "priority_raw": prio_raw,
+            "action": action_val,
+            "halting": halting_val,
+        }
+
+    def _matches_draft(
+        self, draft: dict[str, Any], src_root: str, rel_path: str
+    ) -> bool:
+        """Evaluate whether a workspace file matches the current draft rule locally."""
+        import os
+        import re
+
+        from app.core.network_guard import block_external_network
+        from app.core.policy_engine import METADATA_POLICY_TYPES, PolicyEngine
+
+        pattern = draft["pattern"]
+        kind = draft["kind"]
+        pol_type = draft["policy_type"]
+        eff_pattern = pattern
+        if not eff_pattern and kind == "policy" and pol_type == "duplicate":
+            eff_pattern = "*"
+        if not eff_pattern and not (
+            kind == "policy" and pol_type in ("unarchive", "duplicate")
+        ):
+            return False
+
+        with block_external_network("inline rule preview"):
+            abs_p = (
+                os.path.abspath(os.path.join(src_root, rel_path))
+                if src_root
+                else os.path.abspath(rel_path)
+            )
+            if kind == "policy" and pol_type in METADATA_POLICY_TYPES:
+                doc_text = ""
+                status_tag: Optional[str] = None
+            else:
+                doc_text = self._get_item_text(src_root, rel_path)
+                status_re = (
+                    re.match(r"^\[STATUS:(.*?)\]$", doc_text.strip())
+                    if doc_text
+                    else None
+                )
+                status_tag = status_re.group(1) if status_re else None
+
+            if kind == "policy":
+                try:
+                    prio_int = int(draft["priority_raw"] or "0")
+                except ValueError:
+                    prio_int = 0
+                pol_dict: dict[str, Any] = {
+                    "type": pol_type,
+                    "expression": eff_pattern,
+                    "target_path": draft["target"],
+                    "priority": prio_int,
+                    "halting": draft["halting"],
+                    "enabled": True,
+                }
+                if draft["action"]:
+                    pol_dict["action"] = draft["action"]
+                try:
+                    return bool(
+                        PolicyEngine.match_policy(
+                            pol_dict,
+                            rel_path,
+                            doc_text,
+                            status_tag,
+                            abs_file_path=abs_p,
+                        )
+                    )
+                except Exception:
+                    return False
+
+            filename_only = os.path.basename(rel_path).lower()
+            doc_lower = (doc_text or "").lower()
+            text_to_search = (
+                filename_only if status_tag else f"{filename_only} {doc_lower}"
+            )
+            if kind == "learned":
+                try:
+                    return bool(re.search(pattern, text_to_search, re.IGNORECASE))
+                except re.error:
+                    return pattern.lower() in text_to_search
+            return pattern.lower() in text_to_search
+
+    def _refresh_preview(self, announce_change: bool = False) -> None:
+        """Recompute sample file match status and total workspace match count."""
+        from app.core.policy_engine import (
+            METADATA_POLICY_TYPES,
+            validate_metadata_expression,
+        )
+
+        try:
+            lbl = self.query_one("#lbl-rule-preview", Label)
+        except Exception:
+            return
+
+        draft = self._read_draft_state()
+        pattern = draft["pattern"]
+        kind = draft["kind"]
+        pol_type = draft["policy_type"]
+
+        # Validate regex or metadata expression early so user gets live syntax feedback
+        if kind == "policy" and pol_type == "pattern" and pattern:
+            import re
+
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                msg = f"Invalid regex expression: {exc}"
+                lbl.update(msg)
+                lbl.remove_class("match")
+                lbl.add_class("no-match")
+                if announce_change:
+                    self.announce(msg)
+                return
+        elif kind == "policy" and pol_type in METADATA_POLICY_TYPES and pattern:
+            try:
+                validate_metadata_expression(pol_type, pattern)
+            except ValueError as exc:
+                msg = f"Invalid {pol_type} expression: {exc}"
+                lbl.update(msg)
+                lbl.remove_class("match")
+                lbl.add_class("no-match")
+                if announce_change:
+                    self.announce(msg)
+                return
+
+        selected_item: Optional[str] = None
+        try:
+            sel_val = self.query_one("#select-sample-file", Select).value
+            if sel_val and sel_val != Select.BLANK:
+                selected_item = str(sel_val)
+        except Exception:
+            selected_item = None
+
+        total_files = len(self._workspace_items)
+        if not pattern and not (
+            kind == "policy" and pol_type in ("unarchive", "duplicate")
+        ):
+            if selected_item:
+                disp = selected_item.split("::", 1)[-1]
+                msg = f"Enter a pattern to test against '{disp}' ({total_files} workspace file(s))."
+            elif total_files > 0:
+                msg = f"Select a sample file or enter a pattern ({total_files} workspace file(s))."
+            else:
+                msg = "No active workspace folder loaded for sample preview."
+            lbl.update(msg)
+            lbl.remove_class("match")
+            lbl.remove_class("no-match")
+            if announce_change:
+                self.announce(msg)
+            return
+
+        match_count = sum(
+            1
+            for _item_id, s_root, rel_p in self._workspace_items
+            if self._matches_draft(draft, s_root, rel_p)
+        )
+
+        if selected_item:
+            sample_tuple = next(
+                (t for t in self._workspace_items if t[0] == selected_item), None
+            )
+            if sample_tuple is not None:
+                _id, s_root, rel_p = sample_tuple
+                is_hit = self._matches_draft(draft, s_root, rel_p)
+                if is_hit:
+                    msg = f"✓ MATCH on '{rel_p}' | Workspace matches: {match_count} of {total_files} file(s)"
+                    lbl.remove_class("no-match")
+                    lbl.add_class("match")
+                else:
+                    msg = f"✗ NO MATCH on '{rel_p}' | Workspace matches: {match_count} of {total_files} file(s)"
+                    lbl.remove_class("match")
+                    lbl.add_class("no-match")
+            else:
+                msg = f"Workspace matches: {match_count} of {total_files} file(s)"
+                lbl.remove_class("match")
+                lbl.remove_class("no-match")
+        elif total_files > 0:
+            msg = f"Workspace matches: {match_count} of {total_files} file(s)"
+            lbl.remove_class("match")
+            lbl.remove_class("no-match")
+        else:
+            msg = "No workspace files available to preview."
+            lbl.remove_class("match")
+            lbl.remove_class("no-match")
+
+        lbl.update(msg)
+        if announce_change:
+            self.announce(msg)
+
     def on_mount(self) -> None:
-        """Focus initial input on mount."""
+        """Focus initial input on mount and load workspace sample file options."""
         super().on_mount()
+        self._workspace_items = self._discover_workspace_files()
+        try:
+            sel_sample = self.query_one("#select-sample-file", Select)
+            options = [(rel_p, item_id) for item_id, _s, rel_p in self._workspace_items]
+            sel_sample.set_options(options)
+        except Exception:
+            pass
+
+        self._mounted_ready = True
+        self._refresh_preview(announce_change=False)
         self.query_one("#input-rule-pattern", Input).focus()
+
+    @on(Select.Changed, "#select-rule-kind")
+    def _on_rule_kind_changed(self, event: Select.Changed) -> None:
+        """Show or hide policy-specific fields when switching rule category."""
+        if not self._mounted_ready:
+            return
+        kind_str = (
+            str(event.value)
+            if event.value and event.value != Select.BLANK
+            else "keyword"
+        )
+        try:
+            pol_box = self.query_one("#policy-fields-container", Vertical)
+            if kind_str == "policy":
+                pol_box.remove_class("hidden")
+            else:
+                pol_box.add_class("hidden")
+        except Exception:
+            pass
+        self._refresh_preview(announce_change=True)
+
+    @on(Select.Changed, "#select-policy-type")
+    @on(Select.Changed, "#select-sample-file")
+    def _on_preview_select_changed(self, event: Select.Changed) -> None:
+        """Re-evaluate sample preview when policy type or sample file selection changes."""
+        if not self._mounted_ready:
+            return
+        self._refresh_preview(announce_change=True)
+
+    @on(Input.Changed, "#input-rule-pattern")
+    @on(Input.Changed, "#input-rule-target")
+    @on(Input.Changed, "#input-policy-priority")
+    @on(Input.Changed, "#input-policy-action")
+    def _on_preview_input_changed(self, event: Input.Changed) -> None:
+        """Re-evaluate sample preview immediately as draft rule inputs change."""
+        if not self._mounted_ready:
+            return
+        self._refresh_preview(announce_change=True)
+
+    @on(Checkbox.Changed, "#chk-policy-halting")
+    def _on_preview_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        """Re-evaluate preview when halting checkbox toggles."""
+        if not self._mounted_ready:
+            return
+        self._refresh_preview(announce_change=False)
 
     @on(Button.Pressed, "#btn-save-rule")
     def action_save(self) -> None:
-        """Validate inputs and dismiss modal with rule definition."""
-        from app.core.path_utils import validate_target_path
+        """Validate inputs and dismiss modal with keyword rule or policy definition."""
+        from app.config import Settings
+        from app.core.path_utils import ILLEGAL_PATH_CHARS_SET, validate_target_path
+        from app.core.pattern_formatter import PatternTokenFormatter
+        from app.core.policy_engine import PolicyEngine
 
-        pattern = self.query_one("#input-rule-pattern", Input).value.strip()
-        target = self.query_one("#input-rule-target", Input).value.strip()
+        draft = self._read_draft_state()
+        kind = draft["kind"]
+        pattern = draft["pattern"]
+        target = draft["target"]
+        rename_pat = draft["rename_pattern"]
         err_lbl = self.query_one("#lbl-rule-error", Label)
+
+        if rename_pat:
+            if (
+                "/" in rename_pat
+                or "\\" in rename_pat
+                or ".." in rename_pat
+                or "\x00" in rename_pat
+                or any(ch in ILLEGAL_PATH_CHARS_SET for ch in rename_pat)
+            ):
+                msg = (
+                    "Rename template cannot contain path separators, '..', null bytes, "
+                    "or illegal filename characters."
+                )
+                err_lbl.update(msg)
+                err_lbl.add_class("visible")
+                self.announce(msg, priority="assertive")
+                if hasattr(self.app, "notify"):
+                    self.app.notify(msg, severity="error")
+                return
+            preview_fn = PatternTokenFormatter.format_pattern(
+                rename_pat,
+                metadata={
+                    "date": "2026-01-15",
+                    "category": "sample",
+                    "original": "document",
+                    "stem": "document",
+                    "extension": ".pdf",
+                },
+                seq=1,
+                fallback_original="",
+            )
+            if not preview_fn or "/" in preview_fn or "\\" in preview_fn:
+                msg = (
+                    f"Rename template '{rename_pat}' does not produce a valid filename."
+                )
+                err_lbl.update(msg)
+                err_lbl.add_class("visible")
+                self.announce(msg, priority="assertive")
+                if hasattr(self.app, "notify"):
+                    self.app.notify(msg, severity="error")
+                return
+
+        if kind == "policy" or (kind in ("keyword", "learned") and rename_pat):
+            pol_type = draft["policy_type"] if kind == "policy" else "keyword"
+            action_raw = draft["action"] if kind == "policy" else ""
+
+            if not pattern and pol_type == "duplicate":
+                pattern = "*"
+
+            if not pattern and pol_type not in ("unarchive", "duplicate"):
+                err_lbl.update("Policy expression cannot be empty.")
+                err_lbl.add_class("visible")
+                self.announce(
+                    "Policy expression cannot be empty.", priority="assertive"
+                )
+                return
+
+            try:
+                prio_int = int(draft["priority_raw"] or "0")
+                if kind != "policy" and prio_int == 0:
+                    prio_int = 75
+            except ValueError:
+                err_lbl.update("Policy priority must be a valid integer.")
+                err_lbl.add_class("visible")
+                self.announce(
+                    "Policy priority must be a valid integer.", priority="assertive"
+                )
+                return
+
+            normalized_action: Optional[str] = None
+            if action_raw:
+                if not PolicyEngine.validate_policy_action(action_raw):
+                    supported = ", ".join(sorted(PolicyEngine.SUPPORTED_ACTIONS))
+                    msg = f"Unsupported policy action '{action_raw}'. Supported actions: {supported}."
+                    err_lbl.update(msg)
+                    err_lbl.add_class("visible")
+                    self.announce(msg, priority="assertive")
+                    if hasattr(self.app, "notify"):
+                        self.app.notify(msg, severity="error")
+                    return
+                normalized_action = str(action_raw).strip().lower()
+            elif pol_type == "unarchive":
+                normalized_action = "unarchive"
+            elif pol_type == "duplicate" and not target:
+                normalized_action = "trash"
+
+            candidate_pol: dict[str, Any] = {
+                "type": pol_type,
+                "expression": pattern,
+                "target_path": target,
+                "priority": prio_int,
+                "halting": draft["halting"] if kind == "policy" else False,
+                "enabled": self.initial_enabled,
+            }
+            if normalized_action:
+                candidate_pol["action"] = normalized_action
+            if rename_pat:
+                candidate_pol["rename_pattern"] = rename_pat
+
+            try:
+                validated_list = Settings.validate_policies([candidate_pol])
+                validated_pol = dict(validated_list[0])
+            except (ValueError, Exception) as exc:
+                err_lbl.update(f"Invalid policy: {exc}")
+                err_lbl.add_class("visible")
+                self.announce(f"Invalid policy: {exc}", priority="assertive")
+                if hasattr(self.app, "notify"):
+                    self.app.notify(str(exc), severity="error")
+                return
+
+            self.dismiss(
+                {
+                    "kind": "policy",
+                    "type": str(validated_pol.get("type", pol_type)),
+                    "pattern": str(validated_pol.get("expression", pattern)),
+                    "target": str(validated_pol.get("target_path", target)),
+                    "rename_pattern": str(
+                        validated_pol.get("rename_pattern", "") or ""
+                    ),
+                    "priority": int(validated_pol.get("priority", prio_int)),
+                    "policy": validated_pol,
+                }
+            )
+            return
 
         if not pattern:
             err_lbl.update("Rule pattern/keyword cannot be empty.")
@@ -1119,7 +1808,20 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
             return
 
         try:
-            validate_target_path(target, keyword=pattern)
+            if "{" in target and "}" in target:
+                PatternTokenFormatter.format_target_path(
+                    target,
+                    metadata={
+                        "date": "2026-01-15",
+                        "category": "sample",
+                        "original": "document",
+                        "stem": "document",
+                        "extension": ".pdf",
+                    },
+                    seq=1,
+                )
+            else:
+                validate_target_path(target, keyword=pattern)
         except (ValueError, Exception) as exc:
             err_lbl.update(f"Invalid path: {exc}")
             err_lbl.add_class("visible")
@@ -1128,7 +1830,15 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
                 self.app.notify(str(exc), severity="error")
             return
 
-        self.dismiss({"pattern": pattern, "target": target})
+        self.dismiss(
+            {
+                "kind": kind,
+                "type": kind,
+                "pattern": pattern,
+                "target": target,
+                "rename_pattern": "",
+            }
+        )
 
     @on(Button.Pressed, "#btn-cancel-edit-rule")
     def action_cancel_button(self) -> None:
@@ -1212,7 +1922,7 @@ class DeleteRuleConfirmModal(ResponsiveModalScreen[bool]):
         self.dismiss(False)
 
 
-class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
+class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
     """Dedicated modal screen for viewing, adding, editing, toggling, and deleting rules."""
 
     BINDINGS = [
@@ -1284,6 +1994,7 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
         super().__init__()
         self.settings = settings
         self._rules_data: list[dict] = []
+        self._mutated: bool = False
 
     def compose(self) -> ComposeResult:
         """Compose active rule manager children."""
@@ -1322,7 +2033,7 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
                     )
                     yield btn_edit
                     btn_add = Button("Add Rule", id="btn-add-rule", variant="primary")
-                    btn_add.tooltip = "Add a new keyword rule"
+                    btn_add.tooltip = "Add a new keyword rule or policy"
                     yield btn_add
 
                 with Horizontal(classes="button-row"):
@@ -1357,10 +2068,18 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
         table.add_columns("Status", "Type", "Pattern", "Target Folder", "Priority")
         self._refresh_table()
         table.focus()
-        self.announce("Opened active rule manager.")
+        masked_rows = [r for r in self._rules_data if r.get("masked_by")]
+        if masked_rows:
+            self.announce(
+                f"Opened active rule manager. Warning: {len(masked_rows)} policy rule(s) masked by higher-priority rules."
+            )
+        else:
+            self.announce("Opened active rule manager.")
 
     def _load_rules_data(self) -> list[dict]:
-        """Aggregate active keyword rules, disabled keyword rules, and policies."""
+        """Aggregate active keyword rules, disabled keyword rules, learned rules, and policies with masking detection."""
+        from app.core.policy_engine import is_masked_by
+
         rules = []
         kw_rules = getattr(self.settings, "KEYWORD_RULES", {}) or {}
         for kw, target in sorted(kw_rules.items()):
@@ -1368,6 +2087,7 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
                 {
                     "kind": "keyword",
                     "status": "Active",
+                    "enabled": True,
                     "type": "keyword",
                     "pattern": str(kw),
                     "target_folder": str(target),
@@ -1382,6 +2102,7 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
                 {
                     "kind": "keyword",
                     "status": "Disabled",
+                    "enabled": False,
                     "type": "keyword",
                     "pattern": str(kw),
                     "target_folder": str(target),
@@ -1396,6 +2117,7 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
                 {
                     "kind": "learned",
                     "status": "Active",
+                    "enabled": True,
                     "type": "learned",
                     "pattern": str(kw),
                     "target_folder": str(target),
@@ -1405,17 +2127,48 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
             )
 
         policies = getattr(self.settings, "POLICIES", []) or []
+        enabled_indexed = [
+            (idx, pol)
+            for idx, pol in enumerate(policies)
+            if isinstance(pol, dict) and pol.get("enabled", True)
+        ]
+        enabled_sorted = sorted(
+            enabled_indexed,
+            key=lambda pair: pair[1].get("priority", 0),
+            reverse=True,
+        )
+        masked_by_idx: dict[int, str] = {}
+        for pos, (low_idx, low_pol) in enumerate(enabled_sorted):
+            for _high_idx, high_pol in enabled_sorted[:pos]:
+                if is_masked_by(high_pol, low_pol) or bool(
+                    high_pol.get("halting", False)
+                ):
+                    masked_by_idx[low_idx] = str(high_pol.get("expression", ""))
+                    break
+
         for idx, pol in enumerate(policies):
             if isinstance(pol, dict):
-                is_enabled = pol.get("enabled", True)
+                is_enabled = bool(pol.get("enabled", True))
+                masker = masked_by_idx.get(idx) if is_enabled else None
+                if not is_enabled:
+                    status_str = "Disabled"
+                elif masker is not None:
+                    status_str = f"⚠ Masked by '{masker}'"
+                else:
+                    status_str = "Active"
                 rules.append(
                     {
                         "kind": "policy",
-                        "status": "Active" if is_enabled else "Disabled",
+                        "status": status_str,
+                        "enabled": is_enabled,
+                        "masked_by": masker,
                         "type": str(pol.get("type", "policy")),
                         "pattern": str(pol.get("expression", "")),
                         "target_folder": str(pol.get("target_path", "")),
+                        "rename_pattern": str(pol.get("rename_pattern", "") or ""),
                         "priority": pol.get("priority", 0),
+                        "halting": bool(pol.get("halting", False)),
+                        "action": str(pol.get("action") or ""),
                         "policy_idx": idx,
                         "original": pol,
                     }
@@ -1482,7 +2235,7 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
             kw_rules = dict(getattr(self.settings, "KEYWORD_RULES", {}) or {})
             dis_rules = dict(getattr(self.settings, "DISABLED_KEYWORD_RULES", {}) or {})
 
-            if rule["status"] == "Active":
+            if rule.get("enabled", rule["status"] == "Active"):
                 target = kw_rules.pop(kw, rule["target_folder"])
                 dis_rules[kw] = target
                 new_status = "Disabled"
@@ -1523,6 +2276,7 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
         else:
             return
 
+        self._mutated = True
         self._refresh_table(preserve_focus=True)
         self.announce(msg)
         if hasattr(self.app, "notify"):
@@ -1530,29 +2284,70 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
 
     @on(Button.Pressed, "#btn-add-rule")
     def action_add_rule(self) -> None:
-        """Open editor modal to add a new keyword rule."""
+        """Open editor modal to add a new keyword rule or policy."""
 
         def on_rule_added(result: Optional[dict]) -> None:
             if not result:
                 return
+            res_kind = result.get("kind", "keyword")
             pattern = result["pattern"]
             target = result["target"]
-            kw_rules = dict(getattr(self.settings, "KEYWORD_RULES", {}) or {})
-            kw_rules[pattern] = target
-            self.settings.KEYWORD_RULES = kw_rules
-            if hasattr(self.settings, "flush"):
-                self.settings.flush()
+
+            if res_kind == "policy":
+                pol_payload = dict(
+                    result.get("policy")
+                    or {
+                        "type": "keyword",
+                        "expression": pattern,
+                        "target_path": target,
+                        "priority": 0,
+                        "halting": False,
+                        "enabled": True,
+                    }
+                )
+                policies = [
+                    dict(p) for p in getattr(self.settings, "POLICIES", []) or []
+                ]
+                policies.append(pol_payload)
+                self.settings.POLICIES = policies
+                if hasattr(self.settings, "flush"):
+                    self.settings.flush()
+                msg = f"Added policy '{pattern}' (priority {pol_payload.get('priority', 0)})."
+            else:
+                kw_rules = dict(getattr(self.settings, "KEYWORD_RULES", {}) or {})
+                kw_rules[pattern] = target
+                self.settings.KEYWORD_RULES = kw_rules
+                if hasattr(self.settings, "flush"):
+                    self.settings.flush()
+                msg = f"Added rule '{pattern}' routing to '{target}'."
+
+            self._mutated = True
             self._refresh_table(preserve_focus=False)
-            msg = f"Added rule '{pattern}' routing to '{target}'."
+            masked_now = [
+                r
+                for r in self._rules_data
+                if r.get("masked_by") and r.get("pattern") == pattern
+            ]
+            if masked_now:
+                msg = f"{msg} Warning: masked by higher-priority rule '{masked_now[0]['masked_by']}'."
             self.announce(msg)
             if hasattr(self.app, "notify"):
                 self.app.notify(msg)
 
-        self.app.push_screen(RuleEditModal(title="Add Keyword Rule"), on_rule_added)
+        self.app.push_screen(
+            RuleEditModal(
+                title="Add Rule",
+                settings=self.settings,
+                base_dir=getattr(self.app, "base_dir", None),
+                source_dirs=getattr(self.app, "source_dirs", None),
+                db=getattr(self.app, "db", None),
+            ),
+            on_rule_added,
+        )
 
     @on(Button.Pressed, "#btn-edit-rule")
     def action_edit_rule(self) -> None:
-        """Open editor modal to edit the selected rule."""
+        """Open editor modal to edit the selected keyword rule or policy."""
         rule = self._get_selected_rule()
         if not rule:
             self.announce("No rule selected to edit.")
@@ -1561,12 +2356,76 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
         def on_rule_edited(result: Optional[dict]) -> None:
             if not result:
                 return
+            res_kind = result.get("kind", rule["kind"])
             new_pattern = result["pattern"]
             new_target = result["target"]
 
-            if rule["kind"] == "keyword":
+            if rule["kind"] == "policy" and res_kind == "policy":
+                policies = [
+                    dict(p) for p in getattr(self.settings, "POLICIES", []) or []
+                ]
+                idx = rule["policy_idx"]
+                if 0 <= idx < len(policies):
+                    if "policy" in result and isinstance(result["policy"], dict):
+                        updated_pol = dict(policies[idx])
+                        updated_pol.update(result["policy"])
+                        if "action" not in result["policy"]:
+                            updated_pol.pop("action", None)
+                        if "rename_pattern" not in result["policy"]:
+                            updated_pol.pop("rename_pattern", None)
+                        policies[idx] = updated_pol
+                    else:
+                        policies[idx]["expression"] = new_pattern
+                        policies[idx]["target_path"] = new_target
+                    self.settings.POLICIES = policies
+                    if hasattr(self.settings, "flush"):
+                        self.settings.flush()
+                    msg = f"Updated policy '{new_pattern}'."
+                else:
+                    return
+            elif rule["kind"] in ("keyword", "learned") and res_kind == "policy":
                 old_key = rule["original_key"]
-                is_active = rule["status"] == "Active"
+                if rule["kind"] == "learned":
+                    l_dict = dict(getattr(self.settings, "LEARNED_RULES", {}) or {})
+                    l_dict.pop(old_key, None)
+                    self.settings.LEARNED_RULES = l_dict
+                else:
+                    is_active = rule.get("enabled", rule["status"] == "Active")
+                    d_name = "KEYWORD_RULES" if is_active else "DISABLED_KEYWORD_RULES"
+                    r_dict = dict(getattr(self.settings, d_name, {}) or {})
+                    r_dict.pop(old_key, None)
+                    setattr(self.settings, d_name, r_dict)
+                policies = [
+                    dict(p) for p in getattr(self.settings, "POLICIES", []) or []
+                ]
+                policies.append(dict(result["policy"]))
+                self.settings.POLICIES = policies
+                if hasattr(self.settings, "flush"):
+                    self.settings.flush()
+                msg = f"Converted rule '{new_pattern}' into a policy."
+            elif rule["kind"] == "policy" and res_kind == "keyword":
+                policies = [
+                    dict(p) for p in getattr(self.settings, "POLICIES", []) or []
+                ]
+                idx = rule["policy_idx"]
+                if 0 <= idx < len(policies):
+                    was_enabled = bool(policies[idx].get("enabled", True))
+                    policies.pop(idx)
+                    self.settings.POLICIES = policies
+                    d_name = (
+                        "KEYWORD_RULES" if was_enabled else "DISABLED_KEYWORD_RULES"
+                    )
+                    r_dict = dict(getattr(self.settings, d_name, {}) or {})
+                    r_dict[new_pattern] = new_target
+                    setattr(self.settings, d_name, r_dict)
+                    if hasattr(self.settings, "flush"):
+                        self.settings.flush()
+                    msg = f"Converted policy '{new_pattern}' into a keyword rule."
+                else:
+                    return
+            elif rule["kind"] == "keyword":
+                old_key = rule["original_key"]
+                is_active = rule.get("enabled", rule["status"] == "Active")
                 dict_name = "KEYWORD_RULES" if is_active else "DISABLED_KEYWORD_RULES"
                 rules_dict = dict(getattr(self.settings, dict_name, {}) or {})
                 if old_key in rules_dict and old_key != new_pattern:
@@ -1586,33 +2445,35 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
                 if hasattr(self.settings, "flush"):
                     self.settings.flush()
                 msg = f"Updated learned rule '{new_pattern}' target folder to '{new_target}'."
-            elif rule["kind"] == "policy":
-                policies = [
-                    dict(p) for p in getattr(self.settings, "POLICIES", []) or []
-                ]
-                idx = rule["policy_idx"]
-                if 0 <= idx < len(policies):
-                    policies[idx]["expression"] = new_pattern
-                    policies[idx]["target_path"] = new_target
-                    self.settings.POLICIES = policies
-                    if hasattr(self.settings, "flush"):
-                        self.settings.flush()
-                    msg = f"Updated policy '{new_pattern}' target folder to '{new_target}'."
-                else:
-                    return
             else:
                 return
 
+            self._mutated = True
             self._refresh_table(preserve_focus=True)
             self.announce(msg)
             if hasattr(self.app, "notify"):
                 self.app.notify(msg)
 
+        orig_raw = rule.get("original")
+        orig_pol: dict[str, Any] = dict(orig_raw) if isinstance(orig_raw, dict) else {}
         self.app.push_screen(
             RuleEditModal(
                 title=f"Edit Rule: {rule['pattern']}",
                 pattern=rule["pattern"],
                 target_folder=rule["target_folder"],
+                rule_kind=rule["kind"],
+                policy_type=str(orig_pol.get("type", rule.get("type", "keyword"))),
+                priority=int(orig_pol.get("priority", rule.get("priority", 0)) or 0),
+                halting=bool(orig_pol.get("halting", False)),
+                action=str(orig_pol.get("action") or ""),
+                enabled=bool(rule.get("enabled", True)),
+                settings=self.settings,
+                base_dir=getattr(self.app, "base_dir", None),
+                source_dirs=getattr(self.app, "source_dirs", None),
+                db=getattr(self.app, "db", None),
+                rename_pattern=str(
+                    orig_pol.get("rename_pattern") or rule.get("rename_pattern") or ""
+                ),
             ),
             on_rule_edited,
         )
@@ -1633,7 +2494,7 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
 
             if rule["kind"] == "keyword":
                 key = rule["original_key"]
-                is_active = rule["status"] == "Active"
+                is_active = rule.get("enabled", rule["status"] == "Active")
                 dict_name = "KEYWORD_RULES" if is_active else "DISABLED_KEYWORD_RULES"
                 rules_dict = dict(getattr(self.settings, dict_name, {}) or {})
                 rules_dict.pop(key, None)
@@ -1665,6 +2526,7 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
             else:
                 return
 
+            self._mutated = True
             self._refresh_table(preserve_focus=True)
             self.announce(msg)
             if hasattr(self.app, "notify"):
@@ -1677,9 +2539,9 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
 
     @on(Button.Pressed, "#btn-close-rules")
     def action_close(self) -> None:
-        """Close active rule manager dialog."""
+        """Close active rule manager dialog and report whether rules changed."""
         self.announce("Closed active rule manager.")
-        self.dismiss(None)
+        self.dismiss(self._mutated)
 
     def action_close_rules(self) -> None:
         """Close active rule manager (legacy alias)."""
@@ -1714,6 +2576,7 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
 
         def on_import_closed(result: Optional[Any] = None) -> None:
             if result is not None:
+                self._mutated = True
                 self._refresh_table(preserve_focus=True)
                 msg = f"Imported rules merged into settings. Active rules count: {len(self._rules_data)}."
                 self.announce(msg)
@@ -1738,13 +2601,27 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
     def action_browse_templates(self) -> None:
         """Open starter rule template gallery modal."""
         self.announce("Opening starter rule template gallery modal.")
+        before_snapshot = (
+            dict(getattr(self.settings, "KEYWORD_RULES", {}) or {}),
+            dict(getattr(self.settings, "DISABLED_KEYWORD_RULES", {}) or {}),
+            [dict(p) for p in (getattr(self.settings, "POLICIES", []) or [])],
+        )
 
         def on_gallery_closed(result: Any = None) -> None:
+            after_snapshot = (
+                dict(getattr(self.settings, "KEYWORD_RULES", {}) or {}),
+                dict(getattr(self.settings, "DISABLED_KEYWORD_RULES", {}) or {}),
+                [dict(p) for p in (getattr(self.settings, "POLICIES", []) or [])],
+            )
+            if after_snapshot != before_snapshot:
+                self._mutated = True
             self._refresh_table(preserve_focus=True)
             msg = f"Updated rules table from settings. Total rules: {len(self._rules_data)}."
             self.announce(msg)
 
-        self.app.push_screen(TemplateGalleryModal(self.settings), on_gallery_closed)
+        self.app.push_screen(
+            TemplateGalleryModal(self.settings, defer_rescan=True), on_gallery_closed
+        )
 
     action_browse_rule_templates = action_browse_templates
     action_open_templates = action_browse_templates

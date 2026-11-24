@@ -586,3 +586,268 @@ def test_reroot_plan_binds_sources_and_executes_nested_drop_into_dest(
         assert not [p for p in src.rglob("*") if p.is_file()]
     finally:
         s.close()
+
+
+def test_plan_scoped_single_file_does_not_sweep_cached_siblings(tmp_path, monkeypatch):
+    """Dropping one file into an already-scanned folder plans and moves only that file."""
+    from app.core.pipeline import DropBatchCoordinator
+
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path / "app_dir"))
+    downloads = tmp_path / "Downloads"
+    downloads.mkdir()
+    sibling_a = downloads / "sibling_invoice.txt"
+    sibling_a.write_text("Annual accounting tax invoice statement")
+    sibling_b = downloads / "sibling_archive.zip"
+    sibling_b.write_bytes(b"PK\x03\x04")
+
+    settings = AppSettings()
+    settings.AI_CONSENT_GRANTED = False
+
+    # Pre-scan the folder so sibling rows exist in SQLite documents cache
+    s_warm = AppSession(settings, base_dir=str(downloads))
+    try:
+        warm_plan = SortPipeline(s_warm).plan()
+        assert warm_plan
+    finally:
+        s_warm.close()
+
+    # Now drop a single new file into the populated folder
+    dropped_receipt = downloads / "coffee_receipt.txt"
+    dropped_receipt.write_text("Bank payment receipt total USD 14.50")
+
+    coord = DropBatchCoordinator(settings)
+    batch_plan = coord.plan_batch([str(dropped_receipt)])
+    assert [it.source_path for it in batch_plan.items] == [
+        str(dropped_receipt.resolve())
+    ]
+    res = coord.execute_batch(batch_plan)
+    assert res.moved_count == 1
+    assert res.failed_count == 0
+
+    # Siblings remain untouched in Downloads root
+    assert sibling_a.exists()
+    assert sibling_b.exists()
+    assert not dropped_receipt.exists()
+    moved_receipts = list(downloads.rglob("coffee_receipt.txt"))
+    assert len(moved_receipts) == 1
+    assert moved_receipts[0].parent != downloads
+
+
+def test_scan_filter_root_segments_and_drop_coordinator_bundle_quarantine_misc(
+    tmp_path, monkeypatch
+):
+    """Root .app bundles and quarantine folders are blocked while .sketch/.fig route to Miscellaneous."""
+    import os
+
+    from app.core.pipeline import DropBatchCoordinator, validate_drop_paths
+    from app.core.scanner import ScanFilter
+
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path / "app_dir"))
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    calc_app = workspace / "Calculator.app"
+    (calc_app / "Contents" / "MacOS").mkdir(parents=True)
+    app_bin = calc_app / "Contents" / "MacOS" / "Calculator"
+    app_bin.write_text("mach-o binary")
+
+    quarantine_dir = workspace / "_Compliance_Quarantine"
+    quarantine_dir.mkdir()
+    quarantine_doc = quarantine_dir / "flagged.txt"
+    quarantine_doc.write_text("quarantined pii")
+
+    protected_dir = workspace / "ProtectedVault"
+    protected_dir.mkdir()
+    vault_doc = protected_dir / "secret.txt"
+    vault_doc.write_text("top secret")
+
+    ignored_tmp = workspace / "download.tmp"
+    ignored_tmp.write_text("partial")
+
+    sketch_file = workspace / "hero_banner.sketch"
+    sketch_file.write_bytes(b"\x89SKETCH\x00\x01")
+    fig_file = workspace / "wireframe.fig"
+    fig_file.write_bytes(b"\x89FIGMA\x00\x01")
+
+    settings = AppSettings()
+    settings.AI_CONSENT_GRANTED = False
+    settings.PROTECTED_PATHS = [str(protected_dir)]
+
+    # Root-level ScanFilter checks must detect bundle and quarantine even when base_dir == target
+    sf_bundle = ScanFilter.from_settings(settings=settings, base_dir=str(calc_app))
+    assert sf_bundle.is_app_bundle(str(calc_app)) is True
+    sf_quar = ScanFilter.from_settings(settings=settings, base_dir=str(quarantine_dir))
+    assert sf_quar.is_quarantine(str(quarantine_dir)) is True
+
+    valid, issues = validate_drop_paths(
+        [
+            str(calc_app),
+            str(quarantine_dir),
+            str(protected_dir),
+            str(ignored_tmp),
+            str(sketch_file),
+            str(fig_file),
+        ],
+        settings=settings,
+    )
+    assert valid == [str(sketch_file.resolve()), str(fig_file.resolve())]
+    issue_details = {os.path.basename(i.abs_path): (i.reason, i.detail) for i in issues}
+    assert issue_details == {
+        "Calculator.app": ("ignored", "app_bundle"),
+        "_Compliance_Quarantine": ("ignored", "quarantine"),
+        "ProtectedVault": ("protected", "protected"),
+        "download.tmp": ("ignored", "ignored_extension"),
+    }
+
+    coord = DropBatchCoordinator(settings)
+    bplan = coord.plan_batch(valid)
+    bres = coord.execute_batch(bplan)
+    assert bres.moved_count == 2
+    assert (workspace / "Miscellaneous" / "hero_banner.sketch").exists()
+    assert (workspace / "Miscellaneous" / "wireframe.fig").exists()
+    assert app_bin.exists()
+    assert quarantine_doc.exists()
+    assert vault_doc.exists()
+    assert ignored_tmp.exists()
+
+
+def test_drop_batch_coordinator_priority_overrides_overwrite_and_multi_folder_undo(
+    tmp_path, monkeypatch
+):
+    """Queue priority, folder/exclusion/conflict overrides, displaced overwrite restore, and single-session undo."""
+    from app.core.pipeline import DropBatchCoordinator
+
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path / "app_dir"))
+    settings = AppSettings()
+    settings.AI_CONSENT_GRANTED = False
+    coord = DropBatchCoordinator(settings)
+
+    # 1. Queue priority: second folder passed first wins clean filename on collision
+    dir_a = tmp_path / "dir_a"
+    dir_b = tmp_path / "dir_b"
+    dest = tmp_path / "dest_priority"
+    dir_a.mkdir()
+    dir_b.mkdir()
+    dest.mkdir()
+    file_a = dir_a / "deck.sketch"
+    file_b = dir_b / "deck.sketch"
+    file_extra = dir_b / "skip_me.fig"
+    file_custom = dir_a / "custom_route.fig"
+    file_a.write_text("from_A")
+    file_b.write_text("from_B_higher_priority")
+    file_extra.write_text("excluded_payload")
+    file_custom.write_text("custom_folder_payload")
+
+    # Pass file_b BEFORE file_a so file_b has higher queue priority (0 < 1)
+    bplan = coord.plan_batch(
+        [str(file_b), str(file_a), str(file_extra), str(file_custom)],
+        dest_dir=str(dest),
+    )
+    assert bplan.warnings
+    assert any("deck.sketch" in w for w in bplan.warnings)
+
+    # Verify traversal escape in folder override is rejected
+    try:
+        coord.apply_user_overrides(
+            bplan,
+            item_overrides={
+                str(file_custom.resolve()): {"target_folder": "../outside"}
+            },
+        )
+        raise AssertionError("Expected ValueError for parent traversal")
+    except ValueError:
+        pass
+
+    coord.apply_user_overrides(
+        bplan,
+        conflict_policy="rename",
+        item_overrides={
+            str(file_extra.resolve()): {"is_excluded": True},
+            str(file_custom.resolve()): {"target_folder": "DesignOverrides/Sub"},
+        },
+    )
+    bres = coord.execute_batch(bplan)
+    assert bres.session_id is not None
+    assert bres.moved_count == 3
+    assert (
+        dest / "Miscellaneous" / "deck.sketch"
+    ).read_text() == "from_B_higher_priority"
+    assert (dest / "Miscellaneous" / "deck_1.sketch").read_text() == "from_A"
+    assert (
+        dest / "DesignOverrides" / "Sub" / "custom_route.fig"
+    ).read_text() == "custom_folder_payload"
+    assert file_extra.exists()
+
+    # Single undo restores both dir_a and dir_b sources
+    undo_res = SortPipeline(None, settings=settings).undo(bres.session_id)
+    assert undo_res.ok
+    assert file_a.read_text() == "from_A"
+    assert file_b.read_text() == "from_B_higher_priority"
+    assert file_custom.read_text() == "custom_folder_payload"
+
+    # 2. Overwrite policy records displaced target in MoveLedger and restores it on undo
+    dest_ow = tmp_path / "dest_overwrite"
+    (dest_ow / "Miscellaneous").mkdir(parents=True)
+    existing_target = dest_ow / "Miscellaneous" / "deck.sketch"
+    existing_target.write_text("preexisting_on_disk")
+
+    ow_plan = coord.plan_batch([str(file_b)], dest_dir=str(dest_ow))
+    assert any("already exists" in w or "deck.sketch" in w for w in ow_plan.warnings)
+    coord.apply_user_overrides(ow_plan, conflict_policy="overwrite")
+    ow_res = coord.execute_batch(ow_plan)
+    assert ow_res.session_id is not None
+    assert existing_target.read_text() == "from_B_higher_priority"
+    assert not file_b.exists()
+
+    ow_undo = SortPipeline(None, settings=settings).undo(ow_res.session_id)
+    assert ow_undo.ok
+    assert file_b.read_text() == "from_B_higher_priority"
+    assert existing_target.read_text() == "preexisting_on_disk"
+
+    # 3. Multi-folder in-place drop (no dest_dir) shares one session_id and rolls back all folders
+    multi_1 = tmp_path / "multi_1"
+    multi_2 = tmp_path / "multi_2"
+    multi_1.mkdir()
+    multi_2.mkdir()
+    m1_doc = multi_1 / "alpha.sketch"
+    m2_doc = multi_2 / "beta.fig"
+    m1_doc.write_text("alpha")
+    m2_doc.write_text("beta")
+
+    in_place_plan = coord.plan_batch([str(m1_doc), str(m2_doc)], dest_dir=None)
+    in_place_res = coord.execute_batch(in_place_plan)
+    assert in_place_res.session_id is not None
+    assert (multi_1 / "Miscellaneous" / "alpha.sketch").exists()
+    assert (multi_2 / "Miscellaneous" / "beta.fig").exists()
+
+    in_place_undo = SortPipeline(None, settings=settings).undo(in_place_res.session_id)
+    assert in_place_undo.ok
+    assert m1_doc.exists()
+    assert m2_doc.exists()
+    assert not (multi_1 / "Miscellaneous").exists()
+    assert not (multi_2 / "Miscellaneous").exists()
+
+
+def test_app_session_lock_folders_sorted_canonical_order(tmp_path, monkeypatch):
+    """AppSession.lock_folders acquires unique canonical FolderLocks in ascending order."""
+    import os
+
+    from app.core.folder_lock import FolderLock
+
+    z_dir = tmp_path / "zzz_folder"
+    a_dir = tmp_path / "aaa_folder"
+    z_dir.mkdir()
+    a_dir.mkdir()
+
+    entered: list[str] = []
+    orig_enter = FolderLock.__enter__
+
+    def tracking_enter(self):
+        entered.append(self.folder)
+        return orig_enter(self)
+
+    monkeypatch.setattr(FolderLock, "__enter__", tracking_enter)
+    with AppSession.lock_folders([str(z_dir), str(a_dir), str(z_dir)]):
+        assert entered == sorted(
+            [os.path.realpath(str(a_dir)), os.path.realpath(str(z_dir))]
+        )
