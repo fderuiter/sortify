@@ -26,6 +26,32 @@ _UNSPECIFIED = object()
 _SortingPlanNodeSchema = SortingPlanNodeModel
 
 
+def _extract_policy_priority(matched_pol: Any) -> Optional[int]:
+    """Extract an integer priority from a policy rule or matched_policies_map entry."""
+    if matched_pol is None:
+        return None
+    raw_prio: Any
+    if isinstance(matched_pol, dict):
+        raw_prio = matched_pol.get("priority")
+        if raw_prio is None and matched_pol.get("rule") is not None:
+            rule_obj = matched_pol["rule"]
+            raw_prio = (
+                rule_obj.get("priority")
+                if isinstance(rule_obj, dict)
+                else getattr(rule_obj, "priority", None)
+            )
+    else:
+        raw_prio = getattr(matched_pol, "priority", None)
+    if isinstance(raw_prio, bool) or raw_prio is None:
+        return None
+    if isinstance(raw_prio, (int, float, str)):
+        try:
+            return int(raw_prio)
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
 class SortingPlanNode(dict):
     """Pydantic-validated dict node representing a file or directory in a sorting plan."""
 
@@ -1495,6 +1521,7 @@ class IncrementalAnalyzer:
                     pol_action = (
                         str(pol_action_raw).strip().lower() if pol_action_raw else None
                     )
+                    pol_priority = _extract_policy_priority(matched_policy)
                     post_unarchive_act = (
                         getattr(matched_policy, "post_unarchive_action", None)
                         or (
@@ -1580,6 +1607,7 @@ class IncrementalAnalyzer:
                         "type": pol_type,
                         "expression": pol_expr,
                         "target_path": resolved_pol_target,
+                        "priority": pol_priority,
                         "action": pol_action,
                         "policy_action": pol_action,
                         "post_unarchive_action": (
@@ -2496,12 +2524,15 @@ class IncrementalAnalyzer:
             ) in policy_plan_files:
                 if cancel_check and cancel_check():
                     return SortingPlan()
+                pol_priority = _extract_policy_priority(matched_policies_map.get(f))
                 pol_node_info: dict[str, Any] = {
                     "__type__": "file",
                     "routed_by": rule_type,
                     "keyword": expression,
                     "extraction_status": ext_status,
                 }
+                if pol_priority is not None:
+                    pol_node_info["policy_priority"] = pol_priority
                 if pol_action:
                     pol_node_info["policy_action"] = pol_action
                     if pol_action == "trash":
@@ -2570,6 +2601,7 @@ class IncrementalAnalyzer:
                         node_data = {
                             "__type__": "file",
                             "routed_by": "jev_classifier",
+                            "match": str(cat_val) if cat_val else None,
                             "extraction_status": ext_status,
                             "category": cat_val,
                             "sensitivity_rating": sens_val,
@@ -2593,6 +2625,8 @@ class IncrementalAnalyzer:
                 for f, ext_status in unsupported_files:
                     plan["Miscellaneous"][f] = {
                         "__type__": "file",
+                        "routed_by": "fallback",
+                        "match": "none",
                         "extraction_status": ext_status,
                     }
 
@@ -2685,12 +2719,15 @@ class IncrementalAnalyzer:
                     return SortingPlan()
                 if target_folder not in plan:
                     plan[target_folder] = {}
+                pol_priority = _extract_policy_priority(matched_policies_map.get(f))
                 pol_flat_info: dict[str, Any] = {
                     "__type__": "file",
                     "routed_by": rule_type,
                     "match": expression,
                     "status": status,
                 }
+                if pol_priority is not None:
+                    pol_flat_info["policy_priority"] = pol_priority
                 if pol_action:
                     pol_flat_info["policy_action"] = pol_action
                     if pol_action == "trash":
@@ -2787,6 +2824,9 @@ class IncrementalAnalyzer:
                         if isinstance(matched_pol, dict)
                         else None
                     )
+                    pol_priority = _extract_policy_priority(matched_pol)
+                    if pol_priority is not None:
+                        info["policy_priority"] = pol_priority
                     pol_act_override = (
                         matched_pol.get("policy_action") or matched_pol.get("action")
                         if isinstance(matched_pol, dict)
@@ -2956,10 +2996,13 @@ class IncrementalAnalyzer:
                             "source_path": raw_k,
                             "relative_source": rel_src,
                             "source_root": src_root,
+                            "routed_by": "clustering",
                             "status": None,
                         }
                     elif isinstance(v, dict):
                         if v.get("__type__") == "file":
+                            if not v.get("routed_by"):
+                                v["routed_by"] = "clustering"
                             raw_k = k.split("::", 1)[1] if "::" in k else k
                             if "::" in k and "source_root" not in v:
                                 s_root, _ = k.split("::", 1)
