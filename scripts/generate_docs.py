@@ -28,11 +28,6 @@ def _resolve_output_path(rel_path: str) -> str:
     return rel_path
 
 
-def get_python_executable():
-    """Dynamically determine the best Python command/executable."""
-    return sys.executable
-
-
 def generate_tutorial_docs():
     """Ensure tutorial documentation directory exists."""
     tutorials_dir = Path(_resolve_output_path(os.path.join("docs", "tutorials")))
@@ -1074,10 +1069,6 @@ def audit_model_hosts(
             )
 
     return errors
-
-
-audit_model_host_docs = audit_model_hosts
-validate_model_hosts = audit_model_hosts
 
 
 REQUIRED_PRIVACY_HOST_TOKENS = (
