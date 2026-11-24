@@ -25,7 +25,8 @@ INTENT = "intent"
 DONE = "done"
 VERIFIED = "verified"
 FAILED = "failed"
-MOVE_STATES = (INTENT, DONE, VERIFIED, FAILED)
+EXPORTED_TO_TRASH = "exported_to_trash"
+MOVE_STATES = (INTENT, DONE, VERIFIED, FAILED, EXPORTED_TO_TRASH)
 
 STATUS_PENDING = "PENDING"
 STATUS_ABORTED = "ABORTED"
@@ -56,6 +57,7 @@ _ALLOWED_FROM = {
     DONE: (INTENT,),
     VERIFIED: (DONE,),
     FAILED: (INTENT,),
+    EXPORTED_TO_TRASH: (DONE, VERIFIED),
 }
 
 
@@ -121,7 +123,7 @@ def create_moves_table(conn) -> None:
             size INTEGER,
             displaced TEXT,
             state TEXT NOT NULL
-                CHECK (state IN ('intent', 'done', 'verified', 'failed')),
+                CHECK (state IN ('intent', 'done', 'verified', 'failed', 'exported_to_trash')),
             error TEXT,
             created_at REAL,
             updated_at REAL,
@@ -389,16 +391,61 @@ def migrate_import_legacy_moves(conn) -> None:
     import_transaction_ledger(conn)
 
 
+def migrate_moves_exported_to_trash(conn) -> None:
+    """Migration: expand ``moves.state`` CHECK constraint to allow ``exported_to_trash``."""
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='moves'"
+    ).fetchone()
+    if not row or not row[0]:
+        return
+    if "exported_to_trash" in str(row[0]):
+        return
+    conn.execute("DROP TABLE IF EXISTS moves_new")
+    conn.execute("""
+        CREATE TABLE moves_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            seq INTEGER NOT NULL,
+            src TEXT NOT NULL,
+            dst TEXT NOT NULL,
+            src_sha256 TEXT,
+            size INTEGER,
+            displaced TEXT,
+            state TEXT NOT NULL
+                CHECK (state IN ('intent', 'done', 'verified', 'failed', 'exported_to_trash')),
+            error TEXT,
+            created_at REAL,
+            updated_at REAL,
+            UNIQUE (session_id, seq)
+        )
+    """)
+    conn.execute(
+        """
+        INSERT INTO moves_new (
+            id, session_id, seq, src, dst, src_sha256, size, displaced, state,
+            error, created_at, updated_at
+        )
+        SELECT id, session_id, seq, src, dst, src_sha256, size, displaced, state,
+               error, created_at, updated_at
+        FROM moves
+        """
+    )
+    conn.execute("DROP TABLE moves")
+    conn.execute("ALTER TABLE moves_new RENAME TO moves")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_moves_session ON moves(session_id)")
+
+
 def query_session_summaries(
     db_path: str,
-) -> list[tuple[str, float | None, str | None, str | None, int, int]]:
-    """Return ``(session_id, timestamp, base_dir, status, step_count, file_count)`` newest first."""
+) -> list[tuple[str, float | None, str | None, str | None, int, int, int]]:
+    """Return ``(session_id, timestamp, base_dir, status, step_count, file_count, trashed_count)`` newest first."""
     conn = get_db_connection(db_path)
     query = (
         "SELECT "
         "s.session_id, s.timestamp, s.base_dir, s.status, "
-        "COUNT(m.id) AS step_count, "
-        "COUNT(DISTINCT m.src) AS file_count "
+        "COALESCE(SUM(CASE WHEN m.id IS NOT NULL AND m.state != 'exported_to_trash' THEN 1 ELSE 0 END), 0) AS step_count, "
+        "COUNT(DISTINCT CASE WHEN m.state != 'exported_to_trash' THEN m.src END) AS file_count, "
+        "COALESCE(SUM(CASE WHEN m.state = 'exported_to_trash' THEN 1 ELSE 0 END), 0) AS trashed_count "
         "FROM sessions s "
         "LEFT JOIN moves m ON s.session_id = m.session_id "
         "GROUP BY s.session_id "
@@ -409,7 +456,7 @@ def query_session_summaries(
     except DB_ERRORS:
         fallback = (
             "SELECT s.session_id, s.timestamp, s.base_dir, s.status, "
-            "0 AS step_count, 0 AS file_count "
+            "0 AS step_count, 0 AS file_count, 0 AS trashed_count "
             "FROM sessions s ORDER BY s.timestamp DESC"
         )
         return conn.execute(fallback).fetchall()
@@ -450,6 +497,8 @@ class MoveLedger(LifecycleTelemetryMixin):
             ).fetchone()
             if not has_moves:
                 create_moves_table(conn)
+            else:
+                migrate_moves_exported_to_trash(conn)
             migrate_import_legacy_moves(conn)
 
     def record_intent(
@@ -480,6 +529,10 @@ class MoveLedger(LifecycleTelemetryMixin):
     def mark_verified(self, session_id: str, seq: int) -> None:
         """Record that the file at the move's destination has the source's hash."""
         self._change_state(session_id, seq, VERIFIED)
+
+    def mark_exported_to_trash(self, session_id: str, seq: int) -> None:
+        """Record that a staged duplicate move was handed off to the OS Trash."""
+        self._change_state(session_id, seq, EXPORTED_TO_TRASH)
 
     def mark_failed(self, session_id: str, seq: int, error: str | None = None) -> None:
         """Record that the move did not happen."""
@@ -827,15 +880,17 @@ class MoveLedger(LifecycleTelemetryMixin):
         )
 
     def purge_completed(self, session_id: str | None = None) -> int:
-        """Delete completed (``done`` and ``verified``) move records."""
+        """Delete completed (``done``, ``verified``, and ``exported_to_trash``) move records."""
         if session_id is not None:
             return self._writer.execute_write(
                 self._delete_where,
-                "state IN ('done', 'verified') AND session_id = ?",
+                "state IN ('done', 'verified', 'exported_to_trash') AND session_id = ?",
                 (str(session_id),),
             )
         return self._writer.execute_write(
-            self._delete_where, "state IN ('done', 'verified')", ()
+            self._delete_where,
+            "state IN ('done', 'verified', 'exported_to_trash')",
+            (),
         )
 
     def purge_failed(

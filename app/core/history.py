@@ -18,12 +18,14 @@ from app.core.exceptions import InvalidStateTransitionError
 from app.core.lifecycle import LifecycleTelemetryMixin
 from app.core.migrations import Migration, add_missing_columns, migrate
 from app.core.moves import (
+    EXPORTED_TO_TRASH,
     FAILED,
     INTENT,
     Move,
     MoveLedger,
     migrate_add_moves,
     migrate_import_legacy_moves,
+    migrate_moves_exported_to_trash,
 )
 from app.core.path_utils import safe_relpath
 
@@ -461,7 +463,7 @@ def _find_moved_file(move: Move, claimed: set[str]) -> str | None:
     if it did, or at a suffixed name next to ``dst`` if the move had to pick
     another name. ``claimed`` holds paths other rows account for.
     """
-    if move.state == FAILED:
+    if move.state in (FAILED, EXPORTED_TO_TRASH):
         return None
     if move.state != INTENT:
         return move.dst if os.path.lexists(move.dst) else None
@@ -624,6 +626,7 @@ HISTORY_DB_MIGRATIONS = (
     Migration(1, "baseline", _history_db_baseline),
     Migration(2, "moves", migrate_add_moves),
     Migration(3, "legacy_moves", migrate_import_legacy_moves),
+    Migration(4, "moves_exported_to_trash", migrate_moves_exported_to_trash),
 )
 
 
@@ -821,14 +824,17 @@ class HistoryManager:
                 "status": status,
                 "step_count": step_count,
                 "file_count": file_count,
+                "trashed_count": trashed_count,
             }
-            for sid, ts, b_dir, status, step_count, file_count in rows
+            for sid, ts, b_dir, status, step_count, file_count, trashed_count in rows
         ]
 
     def get_session_moves(self, session_id: str) -> list[dict[str, Any]]:
-        """Retrieve itemized recorded file moves for ``session_id`` from canonical ``moves``."""
+        """Retrieve itemized reversible file moves for ``session_id`` from canonical ``moves``."""
         moves = self.moves.list_moves(session_id)
-        active_moves = [m for m in moves if m.state not in (INTENT, FAILED)]
+        active_moves = [
+            m for m in moves if m.state not in (INTENT, FAILED, EXPORTED_TO_TRASH)
+        ]
         items = []
         for m in active_moves:
             sz = m.size
@@ -928,6 +934,8 @@ class HistoryManager:
                                 pass
                         if state in ("done", "verified"):
                             audit_status = "completed"
+                        elif state == EXPORTED_TO_TRASH:
+                            audit_status = "exported_to_trash"
                         elif state == INTENT:
                             audit_status = "pending"
                         else:
@@ -1041,17 +1049,26 @@ class HistoryManager:
         if db and hasattr(db, "invalidate_cache"):
             db.invalidate_cache()
         moves = self.moves.list_moves(session_id)
+        reversible_moves = [m for m in moves if m.state != EXPORTED_TO_TRASH]
+        trashed_moves = [m for m in moves if m.state == EXPORTED_TO_TRASH]
         if selected_step_ids is not None:
             sel_set = {str(x) for x in selected_step_ids}
-            moves_to_unwind = [m for m in moves if str(m.seq) in sel_set]
-            active_moves = [m for m in moves if m.state not in (INTENT, FAILED)]
+            moves_to_unwind = [m for m in reversible_moves if str(m.seq) in sel_set]
+            active_moves = [
+                m for m in reversible_moves if m.state not in (INTENT, FAILED)
+            ]
             is_partial = len(moves_to_unwind) < len(active_moves) or not active_moves
             if not moves_to_unwind:
+                if not active_moves and trashed_moves:
+                    return 0
                 self._transition_session_status(session_id, PARTIALLY_ROLLED_BACK)
                 return 0
         else:
-            moves_to_unwind = moves
+            moves_to_unwind = reversible_moves
             is_partial = False
+            if not moves_to_unwind and trashed_moves:
+                self._transition_session_status(session_id, ROLLED_BACK)
+                return 0
 
         return self._replay_moves_backwards(
             session_id, moves_to_unwind, db=db, is_partial=is_partial
@@ -1091,7 +1108,9 @@ class HistoryManager:
             ).fetchone()
         base_dir = row[0] if row else None
 
-        claimed = {m.dst for m in moves if m.state not in (INTENT, FAILED)}
+        claimed = {
+            m.dst for m in moves if m.state not in (INTENT, FAILED, EXPORTED_TO_TRASH)
+        }
         docs_conn = get_db_connection(self.db.db_path)
 
         candidate_roots: list[str] = []
@@ -1496,19 +1515,8 @@ class HistoryManager:
                         )
 
             if flushed_seqs:
-
-                def _delete_flushed_rows(
-                    target_sid: str = sid, seqs: list[int] = list(flushed_seqs)
-                ) -> None:
-                    conn = get_db_connection(self.db_path)
-                    placeholders = ",".join("?" for _ in seqs)
-                    with conn:
-                        conn.execute(
-                            f"DELETE FROM moves WHERE session_id = ? AND seq IN ({placeholders})",
-                            [target_sid, *seqs],
-                        )
-
-                self.db.worker.execute_write(_delete_flushed_rows)
+                for seq in flushed_seqs:
+                    self.moves.mark_exported_to_trash(sid, seq)
 
             if dirs_to_prune:
                 _prune_emptied_dirs(dirs_to_prune, b_dir)

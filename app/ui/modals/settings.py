@@ -337,6 +337,74 @@ class SettingsModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
                     sel_conflict.tooltip = "Select collision handling strategy for conflicting target files"
                     yield sel_conflict
 
+                    yield Heading("Duplicate Handling:", level=2, classes="field-label")
+                    dup_act_raw = str(
+                        getattr(self.settings, "DUPLICATE_ACTION", "off") or "off"
+                    ).lower()
+                    dup_options = [
+                        ("Off (ignore byte-identical duplicates)", "off"),
+                        ("Interactive Review (confirm before execution)", "review"),
+                        ("Skip Redundant Copies (keep original only)", "skip"),
+                        ("Stage Copies for Undo (.sortify_duplicates)", "stage"),
+                        ("Trash Copies (two-step staging)", "trash"),
+                    ]
+                    valid_dup_acts = {val for _lbl, val in dup_options}
+                    dup_act_val = (
+                        dup_act_raw if dup_act_raw in valid_dup_acts else "off"
+                    )
+                    sel_dup = Select(
+                        dup_options,
+                        value=dup_act_val,
+                        allow_blank=False,
+                        id="select-duplicate-action",
+                    )
+                    sel_dup.tooltip = (
+                        "Select how byte-identical duplicate files are handled"
+                    )
+                    setattr(
+                        sel_dup,
+                        "aria_label",
+                        "Byte-identical duplicate handling mode",
+                    )
+                    yield sel_dup
+
+                    yield Heading(
+                        "Original Selection Criterion:",
+                        level=2,
+                        classes="field-label",
+                    )
+                    det_orig_raw = str(
+                        getattr(self.settings, "DETECT_ORIGINAL_BY", "first_seen")
+                        or "first_seen"
+                    ).lower()
+                    det_orig_options = [
+                        ("First Seen (discovery order)", "first_seen"),
+                        ("Last Seen (reverse discovery order)", "-first_seen"),
+                        ("Filename (A -> Z)", "name"),
+                        ("Filename (Z -> A)", "-name"),
+                        ("Oldest Created Timestamp", "created"),
+                        ("Newest Created Timestamp", "-created"),
+                        ("Oldest Modified Timestamp", "lastmodified"),
+                        ("Newest Modified Timestamp", "-lastmodified"),
+                    ]
+                    valid_det_orig = {val for _lbl, val in det_orig_options}
+                    det_orig_val = (
+                        det_orig_raw if det_orig_raw in valid_det_orig else "first_seen"
+                    )
+                    sel_det_orig = Select(
+                        det_orig_options,
+                        value=det_orig_val,
+                        allow_blank=False,
+                        id="select-detect-original-by",
+                    )
+                    sel_det_orig.tooltip = "Select tie-breaker criterion for choosing the surviving original file"
+                    setattr(
+                        sel_det_orig,
+                        "aria_label",
+                        "Surviving original selection criterion",
+                    )
+                    yield sel_det_orig
+
                     yield LabeledSwitch(
                         label="Cleanup Empty Folders",
                         value=bool(
@@ -892,6 +960,34 @@ class SettingsModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
             conflict_pol = getattr(self.settings, "CONFLICT_POLICY", "rename")
 
         try:
+            dup_sel_val = self.query_one("#select-duplicate-action", Select).value
+            duplicate_action = (
+                str(dup_sel_val)
+                if dup_sel_val is not None and dup_sel_val != Select.BLANK
+                else str(getattr(self.settings, "DUPLICATE_ACTION", "off") or "off")
+            )
+        except Exception:
+            duplicate_action = str(
+                getattr(self.settings, "DUPLICATE_ACTION", "off") or "off"
+            )
+
+        try:
+            det_sel_val = self.query_one("#select-detect-original-by", Select).value
+            detect_original_by = (
+                str(det_sel_val)
+                if det_sel_val is not None and det_sel_val != Select.BLANK
+                else str(
+                    getattr(self.settings, "DETECT_ORIGINAL_BY", "first_seen")
+                    or "first_seen"
+                )
+            )
+        except Exception:
+            detect_original_by = str(
+                getattr(self.settings, "DETECT_ORIGINAL_BY", "first_seen")
+                or "first_seen"
+            )
+
+        try:
             q_dir_raw = self.query_one("#input-quarantine-dir", Input).value.strip()
         except Exception:
             q_dir_raw = getattr(
@@ -1023,6 +1119,8 @@ class SettingsModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
             "MAX_FOLDERS": max_f,
             "PDF_TEXT_DENSITY_THRESHOLD": pdf_density,
             "CONFLICT_POLICY": conflict_pol,
+            "DUPLICATE_ACTION": duplicate_action,
+            "DETECT_ORIGINAL_BY": detect_original_by,
             "SORTING_STRATEGY": strat,
             "AI_ASSISTED_NAMING": ai_assisted_naming,
             "CLINICAL_SMART_RENAMING": clin_renaming,

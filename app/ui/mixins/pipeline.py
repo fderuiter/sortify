@@ -277,6 +277,11 @@ class SortPipelineMixin:
         detect_original_by = str(
             getattr(self.settings, "DETECT_ORIGINAL_BY", "first_seen") or "first_seen"
         )
+        dup_mode = (
+            str(getattr(self.settings, "DUPLICATE_ACTION", "off") or "off")
+            .strip()
+            .lower()
+        )
 
         def _continue_with_collision_check() -> None:
             refreshed_exec = self._get_executable_plan()
@@ -321,41 +326,71 @@ class SortPipelineMixin:
                 self.announce("Executing file moves according to plan...")
                 self.run_execute_worker()
 
-        normalized_exec_plan = self._normalize_plan_for_verification(
-            exec_plan, base_dir
-        )
-        duplicate_groups = VerificationEngine.get_duplicate_groups(
-            base_dir,
-            normalized_exec_plan,
-            detect_original_by=detect_original_by,
-        )
-        if duplicate_groups:
+        if dup_mode == "review":
+            normalized_exec_plan = self._normalize_plan_for_verification(
+                exec_plan, base_dir
+            )
+            duplicate_groups = VerificationEngine.get_duplicate_groups(
+                base_dir,
+                normalized_exec_plan,
+                detect_original_by=detect_original_by,
+            )
+            if duplicate_groups:
 
-            def handle_duplicate_modal_result(
-                selections: dict[str, str] | None,
-            ) -> None:
-                if selections is None:
-                    self.announce("Move execution cancelled during duplicate review.")
-                    return
+                def handle_duplicate_modal_result(
+                    selections: dict[str, str] | None,
+                ) -> None:
+                    if selections is None:
+                        self.announce(
+                            "Move execution cancelled during duplicate review."
+                        )
+                        return
 
-                if any(val == "trash" for val in selections.values()):
-                    self._pending_flush_trash = True
+                    if any(val == "trash" for val in selections.values()):
+                        self._pending_flush_trash = True
 
+                    VerificationEngine.apply_deduplication_selections(
+                        base_dir,
+                        self.plan,
+                        selections,
+                        groups=duplicate_groups,
+                        detect_original_by=detect_original_by,
+                    )
+                    _continue_with_collision_check()
+
+                self.push_screen(
+                    DuplicateReviewModal(duplicate_groups=duplicate_groups),
+                    handle_duplicate_modal_result,
+                )
+                return
+        elif dup_mode in ("skip", "stage", "trash"):
+            normalized_exec_plan = self._normalize_plan_for_verification(
+                exec_plan, base_dir
+            )
+            unresolved_groups = VerificationEngine.get_duplicate_groups(
+                base_dir,
+                normalized_exec_plan,
+                detect_original_by=detect_original_by,
+            )
+            if unresolved_groups:
+                auto_choice = "keep" if dup_mode == "skip" else dup_mode
+                auto_selections = {
+                    g["group_id"]: auto_choice for g in unresolved_groups
+                }
                 VerificationEngine.apply_deduplication_selections(
                     base_dir,
                     self.plan,
-                    selections,
-                    groups=duplicate_groups,
+                    auto_selections,
+                    groups=unresolved_groups,
                     detect_original_by=detect_original_by,
                 )
-                _continue_with_collision_check()
+            if dup_mode == "trash":
+                from app.core.plan_format import count_plan_actions
 
-            self.push_screen(
-                DuplicateReviewModal(duplicate_groups=duplicate_groups),
-                handle_duplicate_modal_result,
-            )
-        else:
-            _continue_with_collision_check()
+                if count_plan_actions(self._get_executable_plan())["trashed"] > 0:
+                    self._pending_flush_trash = True
+
+        _continue_with_collision_check()
 
     def _normalize_plan_for_verification(
         self: TUIHostProtocol, plan_dict: dict[str, Any], base_dir: str
@@ -819,8 +854,40 @@ class SortPipelineMixin:
             summary = result.summary
             if not (isinstance(summary, dict) and summary.get("cancelled")):
                 self._clear_manual_plan_edits()
-            msg = f"Execution completed successfully! [Ctrl+Z] Undo available. Summary: {summary}"
+            reversible_count = (
+                len(result.moved) + len(result.quarantined) + len(result.staged)
+            )
+            if (
+                reversible_count == 0
+                and isinstance(summary, dict)
+                and not (summary.get("audit_report") or {}).get("records")
+            ):
+                raw_moves = int(summary.get("moves") or 0)
+                reversible_count = max(0, raw_moves - len(result.trashed))
+            undo_hint = " [Ctrl+Z] Undo available." if reversible_count > 0 else ""
+            msg = (
+                f"Execution completed successfully! {result.describe()}{undo_hint} "
+                f"Summary: {summary}"
+            )
             self.call_from_thread(self.announce, msg)
+            trash_handoff = (
+                summary.get("trash_handoff") if isinstance(summary, dict) else None
+            )
+            trash_errors = (
+                dict((trash_handoff or {}).get("errors") or {})
+                if isinstance(trash_handoff, dict)
+                else {}
+            )
+            if trash_errors:
+                from app.ui.notifications import notify
+
+                first_err = next(iter(trash_errors.values()))
+                warn_msg = (
+                    f"Warning: OS Trash handoff failed for {len(trash_errors)} duplicate "
+                    f"item(s) ({first_err}); kept in reversible staging."
+                )
+                self.call_from_thread(self.announce, warn_msg)
+                self.call_from_thread(lambda: notify(warn_msg, type="warning"))
 
             from app.core.audit_reporter import resolve_audit_report
 

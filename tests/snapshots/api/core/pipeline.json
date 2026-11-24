@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "5f389ca3d4a5b8b133e36e699c48ba29f5154b1747a47f068ef17bd5433ab62f"
+    "checksum": "456c3d2df70d1f1ce46dd823a1bbf0fd5b8a325dfc6a6a19b781b893d010a03d"
   },
   "classes": [
     {
@@ -110,6 +110,21 @@
               "annotation": "bool",
               "default": "True",
               "name": "close_sessions"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "flush_trash"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "flush_trashed_only"
+            },
+            {
+              "annotation": "Callable[[str], Any] | None",
+              "default": "None",
+              "name": "trash_fn"
             }
           ],
           "returns": "DropBatchResult"

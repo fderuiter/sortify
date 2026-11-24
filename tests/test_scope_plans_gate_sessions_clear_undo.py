@@ -404,7 +404,7 @@ def test_preexisting_blank_targets_zero_step_sessions_and_reconciliation_safety(
         conn = get_db_connection(str(store.path))
         with conn:
             baseline_user_version = conn.execute("PRAGMA user_version").fetchone()[0]
-        assert baseline_user_version == 3
+        assert baseline_user_version == 4
 
         ws = tmp_path / "ws_legacy"
         ws.mkdir()

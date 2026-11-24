@@ -233,6 +233,7 @@ async def test_tui_action_execute_sort_intercepts_duplicates(tmp_path):
 
     settings = AppSettings()
     settings._settings_model.AI_CONSENT_GRANTED = True
+    settings.override("DUPLICATE_ACTION", "review")
     app = AutoSorterTUI(settings=settings)
 
     mock_session = mock.MagicMock()

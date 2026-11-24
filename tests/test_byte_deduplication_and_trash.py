@@ -282,6 +282,7 @@ async def test_ctrl_e_chains_duplicate_modal_and_collision_modal_and_skips_exclu
 
     settings = AppSettings()
     settings._settings_model.AI_CONSENT_GRANTED = True
+    settings.override("DUPLICATE_ACTION", "review")
     app = AutoSorterTUI(settings=settings)
     mock_session = mock.MagicMock()
     mock_session.base_dir = str(tmp_path)

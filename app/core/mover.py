@@ -2444,11 +2444,12 @@ def _stage_disposal_item(
             )
             return None
 
+        src_root = str(_get_val(content, "source_root") or base_dir)
         dup_of_str = str(dup_of)
         if os.path.isabs(dup_of_str) and "::" not in dup_of_str:
             primary_orig_abs = os.path.normpath(dup_of_str)
         else:
-            p_root, p_rel = parse_item_identifier(dup_of_str, base_dir)
+            p_root, p_rel = parse_item_identifier(dup_of_str, src_root)
             primary_orig_abs = os.path.normpath(
                 os.path.abspath(os.path.join(p_root, p_rel))
             )
@@ -2458,10 +2459,16 @@ def _stage_disposal_item(
         primary_moved_in_ledger = False
         if moves is not None and session_id:
             session_moves = moves.list_moves(session_id)
+            cand_norms = {norm_primary_orig}
+            if src_root != base_dir and not os.path.isabs(dup_of_str):
+                alt_root, alt_rel = parse_item_identifier(dup_of_str, base_dir)
+                cand_norms.add(
+                    os.path.normcase(os.path.abspath(os.path.join(alt_root, alt_rel)))
+                )
             matching_rows = [
                 m
                 for m in session_moves
-                if os.path.normcase(os.path.abspath(m.src)) == norm_primary_orig
+                if os.path.normcase(os.path.abspath(m.src)) in cand_norms
             ]
             if matching_rows:
                 primary_moved_in_ledger = True

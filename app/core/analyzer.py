@@ -3256,6 +3256,11 @@ class IncrementalAnalyzer:
             _ensure_relative_source(clean_plan)
 
             def _tag_byte_duplicates(node: dict[str, Any]) -> None:
+                auto_resolved_mode = configured_dup_action in (
+                    "skip",
+                    "stage",
+                    "trash",
+                )
                 for k, v in list(node.items()):
                     if not isinstance(v, dict):
                         continue
@@ -3275,6 +3280,8 @@ class IncrementalAnalyzer:
                             v["is_duplicate"] = False
                             v["is_duplicate_primary"] = True
                             v["duplicate_group_id"] = primary_group_map[abs_src]
+                            if auto_resolved_mode:
+                                v["duplicate_resolved"] = True
                         elif abs_src in primary_by_abs:
                             orig_abs, gid = primary_by_abs[abs_src]
                             orig_key = abs_to_doc_key.get(orig_abs) or safe_relpath(
@@ -3286,18 +3293,45 @@ class IncrementalAnalyzer:
                             v["duplicate_group_id"] = gid
                             if v.get("policy_action") == "trash":
                                 v["duplicate_action"] = "trash"
+                                v["duplicate_resolved"] = True
                             elif configured_dup_action == "skip":
                                 v["duplicate_action"] = "skip"
                                 v["is_excluded"] = True
                                 v["is_checked"] = False
                                 v["status"] = "Skipped"
+                                v["duplicate_resolved"] = True
                             elif configured_dup_action in ("stage", "trash"):
                                 v["duplicate_action"] = configured_dup_action
+                                v["duplicate_resolved"] = True
+                            elif configured_dup_action == "review":
+                                v.setdefault("duplicate_action", "stage")
+                                v["duplicate_resolved"] = False
                     else:
                         _tag_byte_duplicates(v)
 
             if primary_group_map or primary_by_abs:
                 _tag_byte_duplicates(clean_plan)
+                if configured_dup_action not in ("skip", "stage", "trash"):
+                    # Mark primary resolved if every copy in its group was resolved by a trash policy rule.
+                    group_nodes: dict[str, list[dict[str, Any]]] = {}
+
+                    def _collect_group_nodes(node: dict[str, Any]) -> None:
+                        for v in node.values():
+                            if not isinstance(v, dict):
+                                continue
+                            if v.get("__type__") == "file":
+                                gid = v.get("duplicate_group_id")
+                                if gid:
+                                    group_nodes.setdefault(str(gid), []).append(v)
+                            else:
+                                _collect_group_nodes(v)
+
+                    _collect_group_nodes(clean_plan)
+                    for nodes in group_nodes.values():
+                        copies = [n for n in nodes if not n.get("is_duplicate_primary")]
+                        if copies and all(n.get("duplicate_resolved") for n in copies):
+                            for n in nodes:
+                                n["duplicate_resolved"] = True
 
             if runtime_settings and (
                 getattr(runtime_settings, "CONTEXTUAL_RENAMING", False)
