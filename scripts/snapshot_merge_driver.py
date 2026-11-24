@@ -34,32 +34,6 @@ def is_conflicted_svg_payload(svg_str: str) -> bool:
     return False
 
 
-def sanitize_xml_comment_text(text: str) -> str:
-    """Sanitize text inside XML comments so '--' sequences do not break XML grammar."""
-    return text.replace("--", "- -")
-
-
-def build_svg_conflict_payload(
-    ours_str: str, theirs_str: str, pathname: str = ""
-) -> str:
-    """Construct a valid SVG XML document wrapping conflicting local and incoming definitions in XML comment blocks."""
-    safe_ours = sanitize_xml_comment_text(ours_str)
-    safe_theirs = sanitize_xml_comment_text(theirs_str)
-    path_comment = f" FOR '{pathname}'" if pathname else ""
-
-    return (
-        '<?xml version="1.0" encoding="utf-8"?>\n'
-        '<svg xmlns="http://www.w3.org/2000/svg" data-conflict="true">\n'
-        f"  <!-- CONFLICT: UNRESOLVED SVG SNAPSHOT COLLISION{path_comment} -->\n"
-        "  <!-- <<<<<<< LOCAL (OURS) -->\n"
-        f"  <!--\n{safe_ours}\n  -->\n"
-        "  <!-- ======= -->\n"
-        "  <!-- >>>>>>> INCOMING (THEIRS) -->\n"
-        f"  <!--\n{safe_theirs}\n  -->\n"
-        "</svg>\n"
-    )
-
-
 def parse_annotation_ast(annotation_str: str | None):
     """Safely validate annotation string using AST parsing."""
     if annotation_str and isinstance(annotation_str, str):
@@ -308,7 +282,7 @@ def merge_class_item(
     }
 
 
-def merge_cli_calls(base_cli: list, ours_cli: list, theirs_cli: list) -> list:
+def merge_cli_calls(ours_cli: list, theirs_cli: list) -> list:
     """Merge list of CLI argument call dictionaries preserving additions."""
     merged = list(ours_cli)
     for item in theirs_cli:
@@ -361,7 +335,7 @@ def three_way_json_merge(
     theirs_cli = theirs_payload.get("cli", [])
 
     if base_cli or ours_cli or theirs_cli:
-        merged_payload["cli"] = merge_cli_calls(base_cli, ours_cli, theirs_cli)
+        merged_payload["cli"] = merge_cli_calls(ours_cli, theirs_cli)
 
     # Merge any remaining arbitrary dict keys
     all_keys = (
@@ -572,7 +546,7 @@ def run_git_setup():
     sys.exit(0)
 
 
-def run_cli_resolver(file_path: str | None = None, diff_only: bool = False):
+def run_cli_resolver(file_path: str | None = None):
     """Run interactive CLI resolution tool for inspecting snapshot diffs and fields."""
     print("==================================================================")
     print("         Interactive Snapshot Conflict & Diff Resolver            ")

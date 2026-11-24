@@ -20,7 +20,6 @@ from scripts.snapshot_utils import (
 
 BASE_DIR = os.path.realpath(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SNAPSHOT_DIR = os.path.join(BASE_DIR, "tests", "snapshots", "api")
-SNAPSHOT_PATH = SNAPSHOT_DIR  # Backwards-compatibility alias
 
 MAIN_CLI_PATH = os.path.join(BASE_DIR, "app", "main.py")
 SANDBOX_CLI_PATH = os.path.join(BASE_DIR, "sandbox_cli.py")
@@ -514,18 +513,6 @@ def source_path_to_snapshot_path(source_rel_path: str) -> str:
         rel_snap = norm.removesuffix(".py") + ".json"
 
     return os.path.join(SNAPSHOT_DIR, rel_snap)
-
-
-def snapshot_path_to_source_path(snapshot_abs_path: str) -> str:
-    """Map an absolute snapshot JSON path back to its corresponding relative source file path."""
-    rel_snap = safe_relpath(snapshot_abs_path, SNAPSHOT_DIR).replace("\\", "/")
-    if rel_snap == "cli/main.json":
-        return "app/main.py"
-    if rel_snap == "cli/sandbox_cli.json":
-        return "sandbox_cli.py"
-    if rel_snap.startswith("cli/"):
-        return f"app/cli/{rel_snap[len('cli/') :].removesuffix('.json')}.py"
-    return f"app/{rel_snap.removesuffix('.json')}.py"
 
 
 def verify_snapshot_integrity(

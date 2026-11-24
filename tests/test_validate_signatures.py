@@ -276,6 +276,11 @@ class AsyncGenericProtocol(Protocol[T]):
     assert methods[1]["async"] is False
     assert methods[1]["returns"] == "str"
 
+    mod_sigs = extract_module_signatures(str(protocol_file))
+    assert len(mod_sigs["classes"]) == 1
+    assert mod_sigs["classes"][0]["class_name"] == "AsyncGenericProtocol"
+    assert mod_sigs["classes"][0]["methods"] == methods
+
 
 def test_extract_typing_variations(tmp_path):
     protocol_file = tmp_path / "typing_variations.py"
@@ -312,6 +317,11 @@ class TypingVariationProtocol(typing.Protocol):
     assert params[2]["default"] == "42"
     assert params[3]["name"] == "**kwargs"
     assert params[3]["annotation"] == "typing.Any"
+
+    mod_sigs = extract_module_signatures(str(protocol_file))
+    assert len(mod_sigs["classes"]) == 1
+    assert mod_sigs["classes"][0]["class_name"] == "TypingVariationProtocol"
+    assert mod_sigs["classes"][0]["methods"] == methods
 
 
 def test_signature_mismatch_detection():
@@ -425,7 +435,6 @@ def test_validation_runner_detects_mismatch(tmp_path, monkeypatch):
     }
 
     monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(fake_snap_dir))
-    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snap_dir))
     monkeypatch.setattr(
         validate_signatures, "collect_current_definitions", lambda: changed_defs
     )
@@ -491,7 +500,6 @@ def test_validation_local_fails_by_default_on_mismatch(tmp_path, monkeypatch):
     }
 
     monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(fake_snap_dir))
-    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snap_dir))
     monkeypatch.setattr(
         validate_signatures, "collect_current_definitions", lambda: changed_defs
     )
@@ -562,7 +570,6 @@ def test_validation_local_success_on_regenerate(tmp_path, monkeypatch):
     }
 
     monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(fake_snap_dir))
-    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snap_dir))
     monkeypatch.setattr(
         validate_signatures, "collect_current_definitions", lambda: changed_defs
     )
@@ -646,7 +653,6 @@ def test_validation_partial_update_preserves_other_snapshots(tmp_path, monkeypat
     }
 
     monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(fake_snap_dir))
-    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snap_dir))
     monkeypatch.setattr(
         validate_signatures, "collect_current_definitions", lambda: changed_defs
     )
@@ -689,7 +695,6 @@ def test_validation_ci_fails_on_regenerate(tmp_path, monkeypatch):
     initial_defs = {"cli": {}, "core": {}}
 
     monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(fake_snap_dir))
-    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snap_dir))
     monkeypatch.setattr(
         validate_signatures, "collect_current_definitions", lambda: initial_defs
     )
@@ -721,7 +726,6 @@ def test_validation_fails_on_missing_snapshot(tmp_path, monkeypatch):
     }
 
     monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(fake_snap_dir))
-    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snap_dir))
     monkeypatch.setattr(
         validate_signatures, "collect_current_definitions", lambda: current_defs
     )
@@ -774,7 +778,6 @@ def test_snapshot_integrity_checksum_mismatch(tmp_path, monkeypatch, capsys):
     }
 
     monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(fake_snap_dir))
-    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snap_dir))
     monkeypatch.setattr(
         validate_signatures, "collect_current_definitions", lambda: current_defs
     )
@@ -821,7 +824,6 @@ def test_snapshot_integrity_missing_metadata(tmp_path, monkeypatch):
     }
 
     monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(fake_snap_dir))
-    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snap_dir))
     monkeypatch.setattr(
         validate_signatures, "collect_current_definitions", lambda: current_defs
     )
@@ -860,7 +862,6 @@ def test_validation_runner_detects_orphaned_snapshot(tmp_path, monkeypatch):
     current_defs = {"cli": {}, "core": {"app/core/analyzer_strategies.py": payload}}
 
     monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(fake_snap_dir))
-    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snap_dir))
     monkeypatch.setattr(
         validate_signatures, "collect_current_definitions", lambda: current_defs
     )
@@ -918,7 +919,6 @@ def test_validation_runner_detects_orphaned_snapshot_across_subdirectories(
     current_defs = {"cli": {}, "core": {"app/core/analyzer_strategies.py": payload}}
 
     monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(api_dir))
-    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(api_dir))
     monkeypatch.setattr(
         validate_signatures, "collect_current_definitions", lambda: current_defs
     )
@@ -1046,7 +1046,6 @@ def test_validate_signatures_detects_structured_conflict_payload(
     }
 
     monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(api_dir))
-    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(api_dir))
     monkeypatch.setattr(
         validate_signatures, "collect_current_definitions", lambda: current_defs
     )

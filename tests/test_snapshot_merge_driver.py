@@ -74,9 +74,17 @@ def test_concurrent_json_additions_and_checksum_update(tmp_path):
                 "returns": None,
             }
         ],
+        "cli": [
+            {
+                "args": ["--verbose"],
+                "caller": "parser",
+                "keywords": {"action": "store_true"},
+                "method": "add_argument",
+            }
+        ],
     }
 
-    # Branch A adds method to BaseClass and new class AClass
+    # Branch A adds method to BaseClass, new class AClass, and CLI flag --alpha
     a_data = json.loads(json.dumps(o_data))
     a_data["classes"][0]["methods"].append(
         {
@@ -94,8 +102,16 @@ def test_concurrent_json_additions_and_checksum_update(tmp_path):
             "methods": [],
         }
     )
+    a_data["cli"].append(
+        {
+            "args": ["--alpha"],
+            "caller": "parser",
+            "keywords": {"action": "store_true"},
+            "method": "add_argument",
+        }
+    )
 
-    # Branch B adds function BFunc
+    # Branch B adds function BFunc and CLI flag --beta
     b_data = json.loads(json.dumps(o_data))
     b_data["functions"].append(
         {
@@ -104,6 +120,14 @@ def test_concurrent_json_additions_and_checksum_update(tmp_path):
             "name": "b_func",
             "parameters": [],
             "returns": "int",
+        }
+    )
+    b_data["cli"].append(
+        {
+            "args": ["--beta"],
+            "caller": "parser",
+            "keywords": {"action": "store_true"},
+            "method": "add_argument",
         }
     )
 
@@ -135,9 +159,26 @@ def test_concurrent_json_additions_and_checksum_update(tmp_path):
     assert "base_func" in func_names
     assert "b_func" in func_names
 
+    cli_args = [c["args"] for c in payload["cli"]]
+    assert ["--verbose"] in cli_args
+    assert ["--alpha"] in cli_args
+    assert ["--beta"] in cli_args
+    assert len(payload["cli"]) == 3
+
     # Check checksum updated correctly
     computed_cs = compute_payload_checksum(payload)
     assert meta["checksum"] == computed_cs
+
+    # Empty CLI lists on both branches still emit "cli": [] when base_cli was non-empty
+    empty_a = json.loads(json.dumps(o_data))
+    empty_b = json.loads(json.dumps(o_data))
+    empty_a["cli"] = []
+    empty_b["cli"] = []
+    f_a.write_text(json.dumps(empty_a, indent=2))
+    f_b.write_text(json.dumps(empty_b, indent=2))
+    assert run_json_merge_driver(str(f_o), str(f_a), str(f_b), "test_api.json") == 0
+    _, empty_cli_payload = extract_metadata_and_payload(json.loads(f_a.read_text()))
+    assert empty_cli_payload["cli"] == []
 
 
 def test_contract_breaking_change_detection(tmp_path):
