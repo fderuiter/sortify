@@ -12,7 +12,7 @@ import hashlib
 import logging
 import os
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -56,6 +56,15 @@ _ALLOWED_FROM = {
     DONE: (INTENT,),
     VERIFIED: (DONE,),
     FAILED: (INTENT,),
+}
+
+# Batch completion commits a move's post-chunk terminal state in one write, so a
+# verified move transitions directly from ``intent`` (or ``done``) to ``verified``.
+_BATCH_ALLOWED_FROM = {
+    INTENT: (INTENT,),
+    DONE: (INTENT, DONE),
+    VERIFIED: (INTENT, DONE, VERIFIED),
+    FAILED: (INTENT, FAILED),
 }
 
 
@@ -407,12 +416,163 @@ def query_session_summaries(
     try:
         return conn.execute(query).fetchall()
     except DB_ERRORS:
+        for legacy_query in (
+            (
+                "SELECT s.session_id, s.timestamp, s.base_dir, s.status, "
+                "COUNT(m.step_id) AS step_count, "
+                "COUNT(DISTINCT COALESCE(m.source_path, m.original_path)) AS file_count "
+                "FROM sessions s "
+                "LEFT JOIN step_ledger m ON s.session_id = m.session_id "
+                "GROUP BY s.session_id ORDER BY s.timestamp DESC"
+            ),
+            (
+                "SELECT s.session_id, s.timestamp, s.base_dir, s.status, "
+                "COUNT(m.rowid) AS step_count, "
+                "COUNT(DISTINCT m.source_path) AS file_count "
+                "FROM sessions s "
+                "LEFT JOIN transaction_ledger m ON s.session_id = m.session_id "
+                "GROUP BY s.session_id ORDER BY s.timestamp DESC"
+            ),
+        ):
+            try:
+                return conn.execute(legacy_query).fetchall()
+            except DB_ERRORS:
+                continue
         fallback = (
             "SELECT s.session_id, s.timestamp, s.base_dir, s.status, "
             "0 AS step_count, 0 AS file_count "
             "FROM sessions s ORDER BY s.timestamp DESC"
         )
         return conn.execute(fallback).fetchall()
+
+
+def _read_legacy_moves_for_session(conn: Any, session_id: str) -> list[Move]:
+    """Read legacy ``step_ledger`` or ``transaction_ledger`` rows without mutating ``conn``."""
+    sid = str(session_id)
+    step_cols = {row[1] for row in conn.execute('PRAGMA table_info("step_ledger")')}
+    if step_cols and "session_id" in step_cols and "target_path" in step_cols:
+        src_expr = (
+            "COALESCE(source_path, original_path)"
+            if "original_path" in step_cols
+            else "source_path"
+        )
+        hash_expr = "file_hash" if "file_hash" in step_cols else "NULL"
+        ts_expr = "timestamp" if "timestamp" in step_cols else "NULL"
+        order_col = "step_id" if "step_id" in step_cols else "rowid"
+        rows = conn.execute(
+            f"SELECT {src_expr}, target_path, {hash_expr}, {ts_expr} "
+            f"FROM step_ledger WHERE session_id = ? "
+            f"AND {src_expr} IS NOT NULL AND target_path IS NOT NULL "
+            f"ORDER BY {order_col} ASC",
+            (sid,),
+        ).fetchall()
+        if rows:
+            return [
+                Move(
+                    session_id=sid,
+                    seq=idx,
+                    src=str(src),
+                    dst=str(dst),
+                    src_sha256=fhash or None,
+                    size=None,
+                    displaced=None,
+                    state=DONE,
+                    error=None,
+                    created_at=float(ts) if ts is not None else None,
+                    updated_at=float(ts) if ts is not None else None,
+                )
+                for idx, (src, dst, fhash, ts) in enumerate(rows, start=1)
+            ]
+
+    tx_cols = {
+        row[1] for row in conn.execute('PRAGMA table_info("transaction_ledger")')
+    }
+    if not tx_cols or "session_id" not in tx_cols or "source_path" not in tx_cols:
+        return []
+
+    if "dest_path" in tx_cols:
+        dst_expr = (
+            "COALESCE(current_dest, dest_path)"
+            if "current_dest" in tx_cols
+            else "dest_path"
+        )
+        bdir_expr = "base_dir" if "base_dir" in tx_cols else "NULL"
+        hash_expr = "file_hash" if "file_hash" in tx_cols else "NULL"
+        status_expr = "status" if "status" in tx_cols else "'COMPLETED'"
+        created_expr = "created_at" if "created_at" in tx_cols else "NULL"
+        updated_expr = "updated_at" if "updated_at" in tx_cols else "NULL"
+        rows = conn.execute(
+            f"SELECT {bdir_expr}, source_path, {dst_expr}, {hash_expr}, "
+            f"{status_expr}, {created_expr}, {updated_expr} "
+            f"FROM transaction_ledger WHERE session_id = ? "
+            f"AND source_path IS NOT NULL AND dest_path IS NOT NULL "
+            f"ORDER BY rowid ASC",
+            (sid,),
+        ).fetchall()
+        legacy_moves: list[Move] = []
+        for idx, (bdir, src, dst, fhash, status_raw, c_at, u_at) in enumerate(
+            rows, start=1
+        ):
+            st_upper = str(status_raw or "").upper()
+            if st_upper in (STATUS_PENDING, "INTENT"):
+                st = INTENT
+                err = None
+            elif st_upper in ("MOVED_PHYSICAL", "COMPLETED", "RECONCILED_SUCCESS"):
+                st = DONE
+                err = None
+            elif st_upper in _STRUCTURED_FAILURE_PREFIXES:
+                st = FAILED
+                err = format_move_failure(st_upper)
+            else:
+                st = FAILED
+                err = str(status_raw) if status_raw else None
+            legacy_moves.append(
+                Move(
+                    session_id=sid,
+                    seq=idx,
+                    src=_resolve_legacy_path(bdir, str(src)),
+                    dst=_resolve_legacy_path(bdir, str(dst)),
+                    src_sha256=fhash or None,
+                    size=None,
+                    displaced=None,
+                    state=st,
+                    error=err,
+                    created_at=float(c_at) if c_at is not None else None,
+                    updated_at=float(u_at) if u_at is not None else None,
+                )
+            )
+        return legacy_moves
+
+    if "destination_path" in tx_cols:
+        bdir_expr = "base_dir" if "base_dir" in tx_cols else "NULL"
+        hash_expr = "file_hash" if "file_hash" in tx_cols else "NULL"
+        ts_expr = "timestamp" if "timestamp" in tx_cols else "NULL"
+        order_col = "step_number" if "step_number" in tx_cols else "rowid"
+        rows = conn.execute(
+            f"SELECT {bdir_expr}, source_path, destination_path, {hash_expr}, {ts_expr} "
+            f"FROM transaction_ledger WHERE session_id = ? "
+            f"AND source_path IS NOT NULL AND destination_path IS NOT NULL "
+            f"ORDER BY {order_col} ASC, rowid ASC",
+            (sid,),
+        ).fetchall()
+        return [
+            Move(
+                session_id=sid,
+                seq=idx,
+                src=_resolve_legacy_path(bdir, str(src)),
+                dst=_resolve_legacy_path(bdir, str(dst)),
+                src_sha256=fhash or None,
+                size=None,
+                displaced=None,
+                state=DONE,
+                error=None,
+                created_at=float(ts) if ts is not None else None,
+                updated_at=float(ts) if ts is not None else None,
+            )
+            for idx, (bdir, src, dst, fhash, ts) in enumerate(rows, start=1)
+        ]
+
+    return []
 
 
 class _InlineWriter:
@@ -467,6 +627,56 @@ class MoveLedger(LifecycleTelemetryMixin):
             self._insert_intent, str(session_id), src, dst, src_sha256 or None, size
         )
 
+    def record_intents(
+        self,
+        session_id: str,
+        intents: Sequence[tuple[str, str, str | None, int | None]],
+    ) -> list[int]:
+        """Record a batch of pre-move ``intent`` rows in one commit and return their ``seq`` list."""
+        if not session_id:
+            raise ValueError("A move needs a session id.")
+        items = list(intents)
+        if not items:
+            return []
+        if "record_intent" in self.__dict__:
+            return [
+                self.record_intent(session_id, src, dst, src_sha256=sha, size=sz)
+                for src, dst, sha, sz in items
+            ]
+        return self._writer.execute_write(self._insert_intents, str(session_id), items)
+
+    def complete_moves(
+        self,
+        session_id: str,
+        completions: Sequence[dict[str, Any]],
+    ) -> None:
+        """Apply a batch of post-move state transitions (``done``, ``verified``, ``failed``) in one commit."""
+        items = list(completions)
+        if not items:
+            return
+        if (
+            "mark_done" in self.__dict__
+            or "mark_verified" in self.__dict__
+            or "mark_failed" in self.__dict__
+        ):
+            for item in items:
+                sid = str(item.get("session_id") or session_id)
+                seq = int(item["seq"])
+                st = str(item["state"])
+                if st == VERIFIED:
+                    self.mark_done(
+                        sid, seq, item.get("dst") or "", displaced=item.get("displaced")
+                    )
+                    self.mark_verified(sid, seq)
+                elif st == DONE:
+                    self.mark_done(
+                        sid, seq, item.get("dst") or "", displaced=item.get("displaced")
+                    )
+                elif st == FAILED:
+                    self.mark_failed(sid, seq, error=item.get("error"))
+            return
+        self._writer.execute_write(self._complete_batch, str(session_id), items)
+
     def mark_done(
         self, session_id: str, seq: int, dst: str, displaced: str | None = None
     ) -> None:
@@ -486,14 +696,22 @@ class MoveLedger(LifecycleTelemetryMixin):
         self._change_state(session_id, seq, FAILED, error=error)
 
     def list_moves(self, session_id: str) -> list[Move]:
-        """Return the session's moves in the order they were recorded."""
+        """Return the session's moves in the order they were recorded, with read-only legacy fallback."""
         conn = get_db_connection(self.db_path)
         with conn:
-            rows = conn.execute(
-                f"SELECT {_COLUMNS} FROM moves WHERE session_id = ? ORDER BY seq",
-                (str(session_id),),
-            ).fetchall()
-        return [Move(*row) for row in rows]
+            try:
+                rows = conn.execute(
+                    f"SELECT {_COLUMNS} FROM moves WHERE session_id = ? ORDER BY seq",
+                    (str(session_id),),
+                ).fetchall()
+            except DB_ERRORS:
+                rows = []
+            if rows:
+                return [Move(*row) for row in rows]
+            try:
+                return _read_legacy_moves_for_session(conn, session_id)
+            except DB_ERRORS:
+                return []
 
     def get_pending_entries(
         self,
@@ -504,7 +722,13 @@ class MoveLedger(LifecycleTelemetryMixin):
     ) -> list[dict[str, Any]]:
         """Retrieve incomplete (``intent``) and/or ``failed`` move entries."""
         conn = get_db_connection(self.db_path)
-        with conn:
+        has_moves = bool(
+            conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='moves'"
+            ).fetchone()
+        )
+        rows: list[Any] = []
+        if has_moves:
             has_sessions = bool(
                 conn.execute(
                     "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'"
@@ -542,6 +766,68 @@ class MoveLedger(LifecycleTelemetryMixin):
                 """,
                 params,
             ).fetchall()
+
+        if not rows:
+            tx_cols = {
+                r[1] for r in conn.execute('PRAGMA table_info("transaction_ledger")')
+            }
+            if tx_cols and "session_id" in tx_cols and "source_path" in tx_cols:
+                dst_col = (
+                    "COALESCE(current_dest, dest_path)"
+                    if "current_dest" in tx_cols and "dest_path" in tx_cols
+                    else ("dest_path" if "dest_path" in tx_cols else "destination_path")
+                )
+                bdir_expr = "COALESCE(base_dir, '')" if "base_dir" in tx_cols else "''"
+                hash_expr = "file_hash" if "file_hash" in tx_cols else "NULL"
+                status_expr = "status" if "status" in tx_cols else "'PENDING'"
+                created_expr = "created_at" if "created_at" in tx_cols else "NULL"
+                updated_expr = "updated_at" if "updated_at" in tx_cols else "NULL"
+                tx_params: list[Any] = []
+                tx_where = ""
+                if session_id is not None:
+                    tx_where = " WHERE session_id = ?"
+                    tx_params.append(str(session_id))
+                tx_rows = conn.execute(
+                    f"""
+                    SELECT session_id, rowid, source_path, {dst_col}, {hash_expr},
+                           {status_expr}, {created_expr}, {updated_expr}, {bdir_expr}
+                    FROM transaction_ledger{tx_where}
+                    ORDER BY rowid ASC
+                    """,
+                    tx_params,
+                ).fetchall()
+                for sid, rid, src, dst, fhash, st_raw, c_at, u_at, bdir in tx_rows:
+                    st_up = str(st_raw or "").upper()
+                    if st_up in (STATUS_PENDING, "INTENT"):
+                        mapped_state = INTENT
+                        mapped_err = None
+                    elif st_up in ("MOVED_PHYSICAL", "COMPLETED", "RECONCILED_SUCCESS"):
+                        continue
+                    elif st_up in _STRUCTURED_FAILURE_PREFIXES:
+                        mapped_state = FAILED
+                        mapped_err = format_move_failure(st_up)
+                    else:
+                        mapped_state = FAILED
+                        mapped_err = str(st_raw) if st_raw else None
+                    if (aborted_only or failed_only) and mapped_state != FAILED:
+                        continue
+                    if not include_failed and mapped_state != INTENT:
+                        continue
+                    rows.append(
+                        (
+                            sid,
+                            int(rid),
+                            _resolve_legacy_path(bdir, str(src or "")),
+                            _resolve_legacy_path(bdir, str(dst or "")),
+                            fhash,
+                            None,
+                            mapped_state,
+                            mapped_err,
+                            c_at,
+                            u_at,
+                            bdir or "",
+                        )
+                    )
 
         results: list[dict[str, Any]] = []
         for (
@@ -623,6 +909,75 @@ class MoveLedger(LifecycleTelemetryMixin):
             len(incomplete),
         )
         reconciled_count = 0
+        batch_size = 50
+        pending_completions: list[dict[str, Any]] = []
+        pending_db_updates: list[dict[str, Any]] = []
+
+        def _flush_reconcile_batch() -> None:
+            if not pending_completions and not pending_db_updates:
+                return
+            completions_to_commit = list(pending_completions)
+            db_updates_to_commit = list(pending_db_updates)
+            pending_completions.clear()
+            pending_db_updates.clear()
+
+            can_coalesce = (
+                db is not None
+                and hasattr(db, "execute_batch_updates")
+                and "execute_batch_updates" not in getattr(db, "__dict__", {})
+                and hasattr(db, "db_path")
+                and os.path.abspath(str(db.db_path)) == os.path.abspath(self.db_path)
+                and "mark_done" not in self.__dict__
+                and "mark_verified" not in self.__dict__
+                and "mark_failed" not in self.__dict__
+            )
+            if can_coalesce:
+                try:
+                    db.execute_batch_updates(
+                        db_updates_to_commit,
+                        extra_conn_ops=lambda conn: self._apply_completions_on_conn(
+                            conn, "", completions_to_commit
+                        ),
+                    )
+                    return
+                except Exception as exc:  # noqa: BLE001 - fall back to independent commits if DB sync fails
+                    logger.warning(
+                        "Coalesced reconciliation batch failed (%s); retrying ledger update separately.",
+                        exc,
+                    )
+
+            if db and db_updates_to_commit:
+                if hasattr(db, "execute_batch_updates"):
+                    try:
+                        db.execute_batch_updates(db_updates_to_commit)
+                    except Exception as exc:  # noqa: BLE001 - best-effort DB sync on crash recovery
+                        logger.warning(
+                            "Reconciliation batch DB roll-forward failed: %s", exc
+                        )
+                else:
+                    for upd in db_updates_to_commit:
+                        try:
+                            if upd["type"] == "verified_target" and hasattr(
+                                db, "set_user_verified_target"
+                            ):
+                                db.set_user_verified_target(*upd["args"])
+                            elif upd["type"] == "document_path" and hasattr(
+                                db, "update_document_path"
+                            ):
+                                if upd.get("clear_verified_target"):
+                                    try:
+                                        db.update_document_path(
+                                            *upd["args"], clear_verified_target=True
+                                        )
+                                    except TypeError:
+                                        db.update_document_path(*upd["args"])
+                                else:
+                                    db.update_document_path(*upd["args"])
+                        except Exception as exc:  # noqa: BLE001
+                            logger.debug("Reconciliation DB update skipped: %s", exc)
+
+            if completions_to_commit:
+                self.complete_moves("", completions_to_commit)
 
         for entry in incomplete:
             entry_id = entry["entry_id"]
@@ -653,40 +1008,47 @@ class MoveLedger(LifecycleTelemetryMixin):
                         hash_ok = False
 
                 if not hash_ok:
-                    self.mark_failed(
-                        sid,
-                        seq,
-                        format_move_failure(
-                            STATUS_FAILED_CONFLICT,
-                            "Destination file content does not match recorded source hash; file preserved.",
-                        ),
+                    pending_completions.append(
+                        {
+                            "session_id": sid,
+                            "seq": seq,
+                            "state": FAILED,
+                            "error": format_move_failure(
+                                STATUS_FAILED_CONFLICT,
+                                "Destination file content does not match recorded source hash; file preserved.",
+                            ),
+                        }
                     )
                 else:
                     if db and base_dir:
-                        try:
-                            raw_folder = (
-                                os.path.dirname(dst_rel).replace("\\", "/").strip("/")
+                        raw_folder = (
+                            os.path.dirname(dst_rel).replace("\\", "/").strip("/")
+                        )
+                        target_folder = (
+                            raw_folder if raw_folder and raw_folder != "." else None
+                        )
+                        if expected_hash:
+                            pending_db_updates.append(
+                                {
+                                    "type": "verified_target",
+                                    "args": (base_dir, expected_hash, target_folder),
+                                }
                             )
-                            target_folder = (
-                                raw_folder if raw_folder and raw_folder != "." else None
-                            )
-                            if expected_hash and hasattr(
-                                db, "set_user_verified_target"
-                            ):
-                                db.set_user_verified_target(
-                                    base_dir, expected_hash, target_folder
-                                )
-                            if hasattr(db, "update_document_path"):
-                                db.update_document_path(base_dir, src_rel, dst_rel)
-                        except Exception as exc:  # noqa: BLE001 - best-effort DB sync on crash recovery
-                            logger.warning(
-                                "Reconciliation DB roll-forward failed for %s: %s",
-                                entry_id,
-                                exc,
-                            )
-                    self.mark_done(sid, seq, dst=dst, displaced=displaced)
-                    if verified:
-                        self.mark_verified(sid, seq)
+                        pending_db_updates.append(
+                            {
+                                "type": "document_path",
+                                "args": (base_dir, src_rel, dst_rel),
+                            }
+                        )
+                    pending_completions.append(
+                        {
+                            "session_id": sid,
+                            "seq": seq,
+                            "state": VERIFIED if verified else DONE,
+                            "dst": dst,
+                            "displaced": displaced,
+                        }
+                    )
                 reconciled_count += 1
 
             elif src_exists and not dst_exists:
@@ -702,21 +1064,22 @@ class MoveLedger(LifecycleTelemetryMixin):
                             dst,
                             exc,
                         )
-                if db and base_dir and hasattr(db, "update_document_path"):
-                    try:
-                        try:
-                            db.update_document_path(
-                                base_dir, src_rel, src_rel, clear_verified_target=True
-                            )
-                        except TypeError:
-                            db.update_document_path(base_dir, src_rel, src_rel)
-                    except Exception as exc:  # noqa: BLE001 - best-effort DB sync on crash recovery
-                        logger.debug(
-                            "Reconciliation DB path check skipped for %s: %s",
-                            entry_id,
-                            exc,
-                        )
-                self.mark_failed(sid, seq, format_move_failure(STATUS_ABORTED))
+                if db and base_dir:
+                    pending_db_updates.append(
+                        {
+                            "type": "document_path",
+                            "args": (base_dir, src_rel, src_rel),
+                            "clear_verified_target": True,
+                        }
+                    )
+                pending_completions.append(
+                    {
+                        "session_id": sid,
+                        "seq": seq,
+                        "state": FAILED,
+                        "error": format_move_failure(STATUS_ABORTED),
+                    }
+                )
                 reconciled_count += 1
 
             elif src_exists and dst_exists:
@@ -726,43 +1089,40 @@ class MoveLedger(LifecycleTelemetryMixin):
                             os.unlink(dst)
                         else:
                             resilient_remove(dst)
-                        if db and base_dir and hasattr(db, "update_document_path"):
-                            try:
-                                try:
-                                    db.update_document_path(
-                                        base_dir,
-                                        src_rel,
-                                        src_rel,
-                                        clear_verified_target=True,
-                                    )
-                                except TypeError:
-                                    db.update_document_path(base_dir, src_rel, src_rel)
-                            except Exception as exc:  # noqa: BLE001 - best-effort DB sync on crash recovery
-                                logger.debug(
-                                    "Reconciliation DB path check skipped for %s: %s",
-                                    entry_id,
-                                    exc,
-                                )
-                        self.mark_failed(
-                            sid,
-                            seq,
-                            format_move_failure(
-                                STATUS_ABORTED,
-                                "Incomplete move left duplicate destination; duplicate removed and source preserved.",
-                            ),
+                        if db and base_dir:
+                            pending_db_updates.append(
+                                {
+                                    "type": "document_path",
+                                    "args": (base_dir, src_rel, src_rel),
+                                    "clear_verified_target": True,
+                                }
+                            )
+                        pending_completions.append(
+                            {
+                                "session_id": sid,
+                                "seq": seq,
+                                "state": FAILED,
+                                "error": format_move_failure(
+                                    STATUS_ABORTED,
+                                    "Incomplete move left duplicate destination; duplicate removed and source preserved.",
+                                ),
+                            }
                         )
                     except OSError as exc:
                         logger.warning(
                             "Could not remove duplicate destination during reconciliation: %s",
                             exc,
                         )
-                        self.mark_failed(
-                            sid,
-                            seq,
-                            format_move_failure(
-                                STATUS_FAILED_CONFLICT,
-                                f"Reconciliation conflict for {entry_id}: duplicate destination could not be removed: {exc}",
-                            ),
+                        pending_completions.append(
+                            {
+                                "session_id": sid,
+                                "seq": seq,
+                                "state": FAILED,
+                                "error": format_move_failure(
+                                    STATUS_FAILED_CONFLICT,
+                                    f"Reconciliation conflict for {entry_id}: duplicate destination could not be removed: {exc}",
+                                ),
+                            }
                         )
                 else:
                     logger.warning(
@@ -771,31 +1131,37 @@ class MoveLedger(LifecycleTelemetryMixin):
                         dst,
                         src,
                     )
-                    if db and base_dir and hasattr(db, "update_document_path"):
-                        try:
-                            try:
-                                db.update_document_path(
-                                    base_dir,
-                                    src_rel,
-                                    src_rel,
-                                    clear_verified_target=True,
-                                )
-                            except TypeError:
-                                db.update_document_path(base_dir, src_rel, src_rel)
-                        except Exception as exc:  # noqa: BLE001 - best-effort DB sync on crash recovery
-                            logger.debug(
-                                "Reconciliation DB path check skipped for %s: %s",
-                                entry_id,
-                                exc,
-                            )
-                    self.mark_failed(
-                        sid, seq, format_move_failure(STATUS_FAILED_CONFLICT)
+                    if db and base_dir:
+                        pending_db_updates.append(
+                            {
+                                "type": "document_path",
+                                "args": (base_dir, src_rel, src_rel),
+                                "clear_verified_target": True,
+                            }
+                        )
+                    pending_completions.append(
+                        {
+                            "session_id": sid,
+                            "seq": seq,
+                            "state": FAILED,
+                            "error": format_move_failure(STATUS_FAILED_CONFLICT),
+                        }
                     )
                 reconciled_count += 1
 
             else:
-                self.mark_failed(sid, seq, format_move_failure(STATUS_FAILED_MISSING))
+                pending_completions.append(
+                    {
+                        "session_id": sid,
+                        "seq": seq,
+                        "state": FAILED,
+                        "error": format_move_failure(STATUS_FAILED_MISSING),
+                    }
+                )
                 reconciled_count += 1
+
+            if len(pending_completions) >= batch_size:
+                _flush_reconcile_batch()
 
             self.emit_telemetry(
                 "reconciliation_progress",
@@ -806,6 +1172,8 @@ class MoveLedger(LifecycleTelemetryMixin):
                     "timestamp": time.time(),
                 },
             )
+
+        _flush_reconcile_batch()
 
         self.emit_telemetry(
             "reconciliation_finish",
@@ -882,6 +1250,77 @@ class MoveLedger(LifecycleTelemetryMixin):
                 "SELECT seq FROM moves WHERE id = ?", (cursor.lastrowid,)
             ).fetchone()
         return int(row[0])
+
+    def _insert_intents(
+        self,
+        session_id: str,
+        items: list[tuple[str, str, str | None, int | None]],
+    ) -> list[int]:
+        now = time.time()
+        conn = get_db_connection(self.db_path)
+        with conn:
+            row = conn.execute(
+                "SELECT COALESCE(MAX(seq), 0) FROM moves WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            base_seq = int(row[0]) if row else 0
+            seqs: list[int] = []
+            rows_to_insert: list[tuple[Any, ...]] = []
+            for offset, (src, dst, src_sha256, size) in enumerate(items, start=1):
+                seq = base_seq + offset
+                seqs.append(seq)
+                rows_to_insert.append(
+                    (session_id, seq, src, dst, src_sha256 or None, size, now, now)
+                )
+            conn.executemany(
+                """
+                INSERT INTO moves (
+                    session_id, seq, src, dst, src_sha256, size, state,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 'intent', ?, ?)
+                """,
+                rows_to_insert,
+            )
+        return seqs
+
+    def _complete_batch(
+        self, session_id: str, completions: list[dict[str, Any]]
+    ) -> None:
+        conn = get_db_connection(self.db_path)
+        with conn:
+            self._apply_completions_on_conn(conn, session_id, completions)
+
+    def _apply_completions_on_conn(
+        self,
+        conn: Any,
+        session_id: str,
+        completions: Sequence[dict[str, Any]],
+    ) -> None:
+        now = time.time()
+        for item in completions:
+            sid = str(item.get("session_id") or session_id)
+            seq = int(item["seq"])
+            state = str(item["state"])
+            dst = item.get("dst")
+            displaced = item.get("displaced")
+            error = item.get("error")
+            allowed = _BATCH_ALLOWED_FROM[state]
+            cursor = conn.execute(
+                f"""
+                UPDATE moves
+                SET state = ?, dst = COALESCE(?, dst),
+                    displaced = COALESCE(?, displaced),
+                    error = COALESCE(?, error), updated_at = ?
+                WHERE session_id = ? AND seq = ?
+                  AND state IN ({", ".join("?" for _ in allowed)})
+                """,
+                (state, dst, displaced, error, now, sid, seq, *allowed),
+            )
+            if cursor.rowcount != 1 and item.get("required", True):
+                raise ValueError(
+                    f"Move {sid}#{seq} cannot become {state!r}: "
+                    f"it is missing or not in {allowed}."
+                )
 
     def _change_state(self, session_id, seq, state, **fields) -> None:
         # Raised here, not on the writer, where an exception rolls back its open session.

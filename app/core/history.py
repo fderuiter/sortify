@@ -22,10 +22,13 @@ from app.core.moves import (
     INTENT,
     Move,
     MoveLedger,
+    _read_legacy_moves_for_session,
     migrate_add_moves,
     migrate_import_legacy_moves,
 )
 from app.core.path_utils import safe_relpath
+
+UNDO_BATCH_SIZE = 50
 
 # Valid session lifecycle statuses
 ACTIVE = "active"
@@ -287,7 +290,11 @@ class SessionStateMachine(LifecycleTelemetryMixin):
             close_conn = True
 
         try:
-            _ensure_lifecycle_audit_schema(conn)
+            has_audit = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_lifecycle_audit'"
+            ).fetchone()
+            if not has_audit:
+                return []
             if session_id:
                 cur = conn.execute(
                     """
@@ -391,7 +398,12 @@ def _purge_duplicate_staging(base_dir: str, session_id: str) -> None:
         logging.warning(f"Could not purge duplicate staging in {stage_dir}: {err}")
 
 
-def _move_aside_blocking_parents(path: str, base_dir: str, db_conn) -> None:
+def _move_aside_blocking_parents(
+    path: str,
+    base_dir: str,
+    db_conn=None,
+    doc_updates: list[dict[str, Any]] | None = None,
+) -> None:
     """Move any file standing where a parent folder of ``path`` must go.
 
     The user may have saved a file named like a folder that a sort emptied and
@@ -416,19 +428,27 @@ def _move_aside_blocking_parents(path: str, base_dir: str, db_conn) -> None:
         _robust_move(current, safe_current)
         rel_current = safe_relpath(current, base_dir).replace("\\", "/")
         rel_safe = safe_relpath(safe_current, base_dir).replace("\\", "/")
-        if getattr(db_conn, "in_transaction", False) or not hasattr(
-            db_conn, "__enter__"
-        ):
-            db_conn.execute(
-                "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                (rel_safe, base_dir, rel_current, rel_current),
+        if doc_updates is not None:
+            doc_updates.append(
+                {
+                    "type": "document_path",
+                    "args": (base_dir, rel_current, rel_safe),
+                }
             )
-        else:
-            with db_conn:
+        elif db_conn is not None:
+            if getattr(db_conn, "in_transaction", False) or not hasattr(
+                db_conn, "__enter__"
+            ):
                 db_conn.execute(
                     "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
                     (rel_safe, base_dir, rel_current, rel_current),
                 )
+            else:
+                with db_conn:
+                    db_conn.execute(
+                        "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                        (rel_safe, base_dir, rel_current, rel_current),
+                    )
 
 
 def _normalize_restored_path(path: str) -> str:
@@ -493,6 +513,7 @@ def _restore_trapped_branch_files(
     session_id: str,
     docs_conn,
     failures: list[Exception],
+    doc_updates: list[dict[str, Any]] | None = None,
 ) -> int:
     """Restore any files parked in ``<base_dir>/.branches/<session_id>`` back into ``base_dir``."""
     from app.core.resilient_file_ops import resilient_move, resilient_rmtree
@@ -508,7 +529,12 @@ def _restore_trapped_branch_files(
             rel_path = os.path.relpath(trapped_src, branch_dir)
             restore_dst = os.path.join(base_dir, rel_path)
             try:
-                _move_aside_blocking_parents(restore_dst, base_dir, docs_conn)
+                _move_aside_blocking_parents(
+                    restore_dst,
+                    base_dir,
+                    docs_conn,
+                    doc_updates=doc_updates,
+                )
                 os.makedirs(os.path.dirname(restore_dst), exist_ok=True)
                 resilient_move(trapped_src, restore_dst)
                 restored_count += 1
@@ -643,9 +669,18 @@ class HistoryManager:
         self.moves = MoveLedger(self.db_path, getattr(db, "worker", None))
 
     def _init_db(self):
-        conn = get_db_connection(self.db_path)
-        with conn:
-            migrate(conn, self.migrations, label=f"History {self.db_path}")
+        def _write() -> None:
+            conn = get_db_connection(self.db_path)
+            with conn:
+                migrate(conn, self.migrations, label=f"History {self.db_path}")
+
+        self._run_write(_write)
+
+    def _run_write(self, fn: Callable[[], Any]) -> Any:
+        worker = getattr(self.db, "worker", None)
+        if worker is not None and hasattr(worker, "execute_write"):
+            return worker.execute_write(fn)
+        return fn()
 
     def _transition_session_status(
         self,
@@ -657,13 +692,27 @@ class HistoryManager:
         metadata: Optional[dict[str, Any]] = None,
     ) -> tuple[str, str]:
         """Atomically validate and execute a session status transition."""
-        return self.state_machine.transition(
-            session_id,
-            new_status,
-            conn=conn,
-            error_details=error_details,
-            metadata=metadata,
-        )
+        if conn is not None:
+            return self.state_machine.transition(
+                session_id,
+                new_status,
+                conn=conn,
+                error_details=error_details,
+                metadata=metadata,
+            )
+
+        def _write() -> tuple[str, str]:
+            managed_conn = get_db_connection(self.db_path)
+            with managed_conn:
+                return self.state_machine.transition(
+                    session_id,
+                    new_status,
+                    conn=managed_conn,
+                    error_details=error_details,
+                    metadata=metadata,
+                )
+
+        return self._run_write(_write)
 
     def _start_session_internal(
         self, base_dir: str, session_id: Optional[str] = None
@@ -861,9 +910,10 @@ class HistoryManager:
 
         if self.db_path:
             db_p = str(Path(self.db_path).resolve())
+            conn = None
             try:
                 conn = get_db_connection(db_p)
-                with conn:
+                try:
                     if session_id:
                         cur_sess = conn.execute(
                             "SELECT session_id, timestamp, base_dir, status FROM sessions WHERE session_id = ?",
@@ -882,7 +932,57 @@ class HistoryManager:
                                 "base_dir": row[2],
                                 "status": row[3],
                             }
+                except DB_ERRORS:
+                    pass
 
+                def _append_step_row(
+                    seq_val: int,
+                    sid_val: str,
+                    src_val: str | None,
+                    dst_val: str | None,
+                    sha_val: str | None,
+                    state_val: str,
+                    c_at: float | None,
+                    u_at: float | None,
+                ) -> None:
+                    ts = u_at if u_at is not None else (c_at or 0.0)
+                    ts_iso = ""
+                    if ts:
+                        try:
+                            ts_iso = datetime.fromtimestamp(
+                                ts, tz=timezone.utc
+                            ).isoformat()
+                        except Exception:
+                            pass
+                    if state_val in ("done", "verified"):
+                        audit_status = "completed"
+                    elif state_val == INTENT:
+                        audit_status = "pending"
+                    else:
+                        audit_status = "failed"
+
+                    src_str = src_val or ""
+                    dst_str = dst_val or ""
+                    steps.append(
+                        {
+                            "step_id": int(seq_val),
+                            "session_id": sid_val,
+                            "source_path": src_str,
+                            "target_path": dst_str,
+                            "original_path": src_str,
+                            "original_filename": os.path.basename(src_str),
+                            "is_cross_volume": False,
+                            "is_collision_renamed": os.path.basename(src_str)
+                            != os.path.basename(dst_str),
+                            "file_hash": sha_val or "",
+                            "timestamp": ts,
+                            "timestamp_iso": ts_iso,
+                            "status": audit_status,
+                        }
+                    )
+
+                moves_sids: set[str] = set()
+                try:
                     if session_id:
                         cur_moves = conn.execute(
                             """
@@ -913,44 +1013,55 @@ class HistoryManager:
                         created_at,
                         updated_at,
                     ) in cur_moves.fetchall():
-                        ts = (
-                            updated_at
-                            if updated_at is not None
-                            else (created_at or 0.0)
+                        moves_sids.add(str(sid))
+                        _append_step_row(
+                            seq,
+                            sid,
+                            src,
+                            dst,
+                            src_sha256,
+                            state,
+                            created_at,
+                            updated_at,
                         )
-                        ts_iso = ""
-                        if ts:
-                            try:
-                                ts_iso = datetime.fromtimestamp(
-                                    ts, tz=timezone.utc
-                                ).isoformat()
-                            except Exception:
-                                pass
-                        if state in ("done", "verified"):
-                            audit_status = "completed"
-                        elif state == INTENT:
-                            audit_status = "pending"
-                        else:
-                            audit_status = "failed"
+                except DB_ERRORS:
+                    pass
 
-                        src_str = src or ""
-                        dst_str = dst or ""
-                        steps.append(
-                            {
-                                "step_id": int(seq),
-                                "session_id": sid,
-                                "source_path": src_str,
-                                "target_path": dst_str,
-                                "original_path": src_str,
-                                "original_filename": os.path.basename(src_str),
-                                "is_cross_volume": False,
-                                "is_collision_renamed": os.path.basename(src_str)
-                                != os.path.basename(dst_str),
-                                "file_hash": src_sha256 or "",
-                                "timestamp": ts,
-                                "timestamp_iso": ts_iso,
-                                "status": audit_status,
-                            }
+                # Read-only legacy fallback for step_ledger / transaction_ledger sessions.
+                candidate_legacy_sids: list[str] = []
+                if session_id:
+                    if str(session_id) not in moves_sids:
+                        candidate_legacy_sids.append(str(session_id))
+                else:
+                    for sid in sessions_map:
+                        if sid not in moves_sids:
+                            candidate_legacy_sids.append(sid)
+                    for legacy_table in ("step_ledger", "transaction_ledger"):
+                        try:
+                            lrows = conn.execute(
+                                f"SELECT DISTINCT session_id FROM {legacy_table} WHERE session_id IS NOT NULL"
+                            ).fetchall()
+                            for (lsid,) in lrows:
+                                lsid_str = str(lsid)
+                                if (
+                                    lsid_str not in moves_sids
+                                    and lsid_str not in candidate_legacy_sids
+                                ):
+                                    candidate_legacy_sids.append(lsid_str)
+                        except DB_ERRORS:
+                            pass
+
+                for lsid in candidate_legacy_sids:
+                    for lm in _read_legacy_moves_for_session(conn, lsid):
+                        _append_step_row(
+                            lm.seq,
+                            lm.session_id,
+                            lm.src,
+                            lm.dst,
+                            lm.src_sha256,
+                            lm.state,
+                            lm.created_at,
+                            lm.updated_at,
                         )
             except DB_ERRORS:
                 pass
@@ -1085,14 +1196,14 @@ class HistoryManager:
         )
 
         conn = get_db_connection(self.db_path)
-        with conn:
-            row = conn.execute(
-                "SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,)
-            ).fetchone()
+        row = conn.execute(
+            "SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,)
+        ).fetchone()
         base_dir = row[0] if row else None
 
         claimed = {m.dst for m in moves if m.state not in (INTENT, FAILED)}
-        docs_conn = get_db_connection(self.db.db_path)
+        docs_db_path = getattr(self.db, "db_path", None) or self.db_path
+        docs_conn = get_db_connection(docs_db_path) if docs_db_path else None
 
         candidate_roots: list[str] = []
         seen_root_keys: set[str] = set()
@@ -1116,26 +1227,29 @@ class HistoryManager:
                     _add_candidate_root(br)
         except Exception:
             pass
-        try:
-            doc_base_rows = docs_conn.execute(
-                "SELECT DISTINCT base_dir FROM documents WHERE base_dir IS NOT NULL"
-            ).fetchall()
-            for (doc_bdir,) in doc_base_rows:
-                if not doc_bdir:
-                    continue
-                norm_db = os.path.normcase(os.path.normpath(os.path.abspath(doc_bdir)))
-                prefix = norm_db.rstrip("/\\") + os.sep
-                for m in moves:
-                    for p_cand in (m.src, m.dst):
-                        if p_cand:
-                            norm_p = os.path.normcase(
-                                os.path.normpath(os.path.abspath(p_cand))
-                            )
-                            if norm_p == norm_db or norm_p.startswith(prefix):
-                                _add_candidate_root(doc_bdir)
-                                break
-        except DB_ERRORS:
-            pass
+        if docs_conn is not None:
+            try:
+                doc_base_rows = docs_conn.execute(
+                    "SELECT DISTINCT base_dir FROM documents WHERE base_dir IS NOT NULL"
+                ).fetchall()
+                for (doc_bdir,) in doc_base_rows:
+                    if not doc_bdir:
+                        continue
+                    norm_db = os.path.normcase(
+                        os.path.normpath(os.path.abspath(doc_bdir))
+                    )
+                    prefix = norm_db.rstrip("/\\") + os.sep
+                    for m in moves:
+                        for p_cand in (m.src, m.dst):
+                            if p_cand:
+                                norm_p = os.path.normcase(
+                                    os.path.normpath(os.path.abspath(p_cand))
+                                )
+                                if norm_p == norm_db or norm_p.startswith(prefix):
+                                    _add_candidate_root(doc_bdir)
+                                    break
+            except DB_ERRORS:
+                pass
 
         effective_roots = candidate_roots or ([base_dir] if base_dir else [])
         session_backup_roots = [
@@ -1166,6 +1280,85 @@ class HistoryManager:
         restored = 0
         conflicts = []
         failures: list[Exception] = []
+        doc_path_updates: list[dict[str, Any]] = []
+
+        def _flush_doc_updates(
+            *, extra_conn_ops: Callable[[Any], None] | None = None
+        ) -> None:
+            batch = list(doc_path_updates)
+            doc_path_updates.clear()
+            if not batch and extra_conn_ops is None:
+                return
+
+            shares_store = (
+                db is not None
+                and hasattr(db, "execute_batch_updates")
+                and "execute_batch_updates" not in getattr(db, "__dict__", {})
+                and "update_document_path" not in getattr(db, "__dict__", {})
+                and hasattr(db, "db_path")
+                and bool(self.db_path)
+                and os.path.abspath(str(db.db_path))
+                == os.path.abspath(str(self.db_path))
+            )
+            if extra_conn_ops is not None and shares_store:
+                db.execute_batch_updates(batch, extra_conn_ops=extra_conn_ops)
+                return
+
+            handled_deletes = False
+            if batch and db is not None:
+                try:
+                    if hasattr(
+                        db, "execute_batch_updates"
+                    ) and "update_document_path" not in getattr(db, "__dict__", {}):
+                        db.execute_batch_updates(batch)
+                        handled_deletes = True
+                    elif hasattr(db, "update_document_path"):
+                        for upd in batch:
+                            if upd.get("type") != "document_path":
+                                continue
+                            if upd.get("clear_verified_target"):
+                                try:
+                                    db.update_document_path(
+                                        *upd["args"], clear_verified_target=True
+                                    )
+                                except TypeError:
+                                    db.update_document_path(*upd["args"])
+                            else:
+                                db.update_document_path(*upd["args"])
+                except Exception as err:
+                    logging.warning(
+                        f"Could not batch-update document paths during undo: {err}"
+                    )
+
+            pending_deletes = (
+                []
+                if handled_deletes
+                else [u["args"] for u in batch if u.get("type") == "document_delete"]
+            )
+            if extra_conn_ops is not None or pending_deletes:
+
+                def _write_extra() -> None:
+                    del_db_path = (
+                        getattr(db, "db_path", None)
+                        or getattr(self.db, "db_path", None)
+                        or self.db_path
+                    )
+                    if pending_deletes and del_db_path:
+                        dconn = get_db_connection(del_db_path)
+                        with dconn:
+                            for del_base, del_rel in pending_deletes:
+                                with contextlib.suppress(*DB_ERRORS):
+                                    dconn.execute(
+                                        "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                        (del_base, del_rel, del_rel),
+                                    )
+                    if extra_conn_ops is not None:
+                        wconn = get_db_connection(self.db_path)
+                        with wconn:
+                            extra_conn_ops(wconn)
+
+                self._run_write(_write_extra)
+
         for move in reversed(moves):
             # The sort may have created the destination folder even if the move failed.
             dirs_to_prune.add(os.path.dirname(move.dst))
@@ -1192,23 +1385,24 @@ class HistoryManager:
                         restored += 1
                         doc_root = _best_root_for(moved)
                         if doc_root:
-                            try:
-                                rel_moved = safe_relpath(moved, doc_root).replace(
-                                    "\\", "/"
-                                )
-                                with docs_conn:
-                                    docs_conn.execute(
-                                        "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                        (doc_root, rel_moved, rel_moved),
-                                    )
-                            except Exception as err:
-                                logging.warning(
-                                    f"Could not delete synthetic document row for {moved}: {err}"
-                                )
+                            rel_moved = safe_relpath(moved, doc_root).replace("\\", "/")
+                            doc_path_updates.append(
+                                {
+                                    "type": "document_delete",
+                                    "args": (doc_root, rel_moved),
+                                }
+                            )
+                            if len(doc_path_updates) >= UNDO_BATCH_SIZE:
+                                _flush_doc_updates()
                     else:
                         src_root = _best_root_for(move.src)
                         if src_root:
-                            _move_aside_blocking_parents(move.src, src_root, docs_conn)
+                            _move_aside_blocking_parents(
+                                move.src,
+                                src_root,
+                                None,
+                                doc_updates=doc_path_updates if db else None,
+                            )
                         os.makedirs(os.path.dirname(move.src), exist_ok=True)
                         restored_to = move.src
                         if os.path.lexists(move.src) and same_file_content(
@@ -1228,26 +1422,23 @@ class HistoryManager:
                         restored += 1
                         doc_root = _best_root_for(restored_to) or _best_root_for(moved)
                         if db and doc_root:
-                            try:
-                                old_rel = safe_relpath(moved, doc_root).replace(
-                                    "\\", "/"
-                                )
-                                new_rel = safe_relpath(restored_to, doc_root).replace(
-                                    "\\", "/"
-                                )
-                                try:
-                                    db.update_document_path(
+                            doc_path_updates.append(
+                                {
+                                    "type": "document_path",
+                                    "args": (
                                         doc_root,
-                                        old_rel,
-                                        new_rel,
-                                        clear_verified_target=True,
-                                    )
-                                except TypeError:
-                                    db.update_document_path(doc_root, old_rel, new_rel)
-                            except Exception as err:
-                                logging.warning(
-                                    f"Could not update the document path for {restored_to}: {err}"
-                                )
+                                        safe_relpath(moved, doc_root).replace(
+                                            "\\", "/"
+                                        ),
+                                        safe_relpath(restored_to, doc_root).replace(
+                                            "\\", "/"
+                                        ),
+                                    ),
+                                    "clear_verified_target": True,
+                                }
+                            )
+                            if len(doc_path_updates) >= UNDO_BATCH_SIZE:
+                                _flush_doc_updates()
                 if move.displaced and os.path.lexists(move.displaced):
                     dirs_to_prune.add(os.path.dirname(move.displaced))
                     put_back = resilient_move(move.displaced, move.dst)
@@ -1265,7 +1456,11 @@ class HistoryManager:
                 continue
             if not is_partial:
                 restored += _restore_trapped_branch_files(
-                    root_dir, session_id, docs_conn, failures
+                    root_dir,
+                    session_id,
+                    None,
+                    failures,
+                    doc_updates=doc_path_updates if db else None,
                 )
             if os.path.exists(root_dir):
                 _remove_staging_leftovers(root_dir)
@@ -1274,6 +1469,8 @@ class HistoryManager:
                     _purge_overwrite_backups(root_dir, session_id)
 
         if failures:
+            if doc_path_updates:
+                _flush_doc_updates()
             try:
                 self._transition_session_status(
                     session_id,
@@ -1285,11 +1482,15 @@ class HistoryManager:
                 logging.warning(
                     f"Could not transition session {session_id} to failed: {st_err}"
                 )
-            raise PermissionError(
+            perm_err = PermissionError(
                 f"Recovery incomplete: {len(failures)} move(s) failed to undo. "
                 f"Error: {failures[0]}"
             )
+            setattr(perm_err, "_session_marked_failed", True)
+            raise perm_err
         if conflicts:
+            if doc_path_updates:
+                _flush_doc_updates()
             try:
                 self._transition_session_status(
                     session_id,
@@ -1301,22 +1502,26 @@ class HistoryManager:
                 logging.warning(
                     f"Could not transition session {session_id} to failed: {st_err}"
                 )
-            raise ValueError(
+            val_err = ValueError(
                 f"Rollback incomplete: file hash mismatch for {len(conflicts)} file(s) "
                 f"that changed since the sort, left in place (e.g. {conflicts[0]})."
             )
+            setattr(val_err, "_session_marked_failed", True)
+            raise val_err
 
         status_to_set = PARTIALLY_ROLLED_BACK if is_partial else ROLLED_BACK
         unwound_seqs = [m.seq for m in moves]
 
-        with conn:
-            self._transition_session_status(session_id, status_to_set, conn=conn)
+        def _finish_session_status(wconn) -> None:
+            self._transition_session_status(session_id, status_to_set, conn=wconn)
             if is_partial and unwound_seqs:
                 placeholders = ",".join("?" for _ in unwound_seqs)
-                conn.execute(
+                wconn.execute(
                     f"DELETE FROM moves WHERE session_id = ? AND seq IN ({placeholders})",
                     [session_id] + unwound_seqs,
                 )
+
+        _flush_doc_updates(extra_conn_ops=_finish_session_status)
 
         if db and hasattr(db, "invalidate_cache"):
             db.invalidate_cache()
@@ -1340,28 +1545,26 @@ class HistoryManager:
         if hasattr(self.db, "invalidate_cache"):
             self.db.invalidate_cache()
 
-        def _write():
-            conn = get_db_connection(self.db_path)
-            row = conn.execute(
-                "SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,)
-            ).fetchone()
-            if not row:
-                raise ValueError("Session not found")
+        conn = get_db_connection(self.db_path)
+        row = conn.execute(
+            "SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,)
+        ).fetchone()
+        if not row:
+            raise ValueError("Session not found")
 
-            try:
-                return self._unwind_session_internal(
-                    session_id, db=self.db, selected_step_ids=selected_step_ids
-                )
-            except Exception as exc:
+        try:
+            return self._unwind_session_internal(
+                session_id, db=self.db, selected_step_ids=selected_step_ids
+            )
+        except Exception as exc:
+            if not getattr(exc, "_session_marked_failed", False):
                 try:
                     self._transition_session_status(
                         session_id, FAILED_STATUS, error_details=str(exc)
                     )
                 except Exception:
                     pass
-                raise
-
-        return self.db.worker.execute_write(_write)
+            raise
 
     def flush_staged_duplicates(
         self,
@@ -1408,11 +1611,10 @@ class HistoryManager:
             resolved_base = base_dir
             if not resolved_base:
                 conn = get_db_connection(self.db_path)
-                with conn:
-                    row = conn.execute(
-                        "SELECT base_dir FROM sessions WHERE session_id = ?",
-                        (session_id,),
-                    ).fetchone()
+                row = conn.execute(
+                    "SELECT base_dir FROM sessions WHERE session_id = ?",
+                    (session_id,),
+                ).fetchone()
                 resolved_base = row[0] if row else None
             if resolved_base:
                 target_sessions.append((session_id, resolved_base))
@@ -1508,7 +1710,7 @@ class HistoryManager:
                             [target_sid, *seqs],
                         )
 
-                self.db.worker.execute_write(_delete_flushed_rows)
+                self._run_write(_delete_flushed_rows)
 
             if dirs_to_prune:
                 _prune_emptied_dirs(dirs_to_prune, b_dir)

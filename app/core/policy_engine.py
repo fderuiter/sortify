@@ -1103,8 +1103,10 @@ class PolicyEngine:
 
         if (
             rule_type in ("compliance", "secret", "credential")
-            or action in ("quarantine", "redact")
-            and rule_type not in METADATA_POLICY_TYPES
+            or (
+                action in ("quarantine", "redact")
+                and rule_type not in METADATA_POLICY_TYPES
+            )
             or expr_lower in ("secret", "credential")
         ):
             return True
@@ -1850,7 +1852,7 @@ def is_masked_by(higher_rule: Any, lower_rule: Any) -> bool:
 
     ha_raw = str(_rule_attr(higher_rule, "expression", "") or "")
     lo_raw = str(_rule_attr(lower_rule, "expression", "") or "")
-    if not ha_raw or not lo_raw:
+    if not ha_raw.strip() or not lo_raw.strip():
         return False
 
     ha_eff_neg = ha_neg ^ (ha_mode == "none")
@@ -1877,8 +1879,8 @@ def is_masked_by(higher_rule: Any, lower_rule: Any) -> bool:
     if ha_case and not lo_case:
         return False
 
-    ha_cmp = ha_raw if ha_case else ha_raw.lower()
-    lo_cmp = lo_raw if ha_case else lo_raw.lower()
+    ha_cmp = ha_raw.strip() if ha_case else ha_raw.lower().strip()
+    lo_cmp = lo_raw.strip() if ha_case else lo_raw.lower().strip()
 
     if ha_eff_neg:
         return ha_cmp == lo_cmp

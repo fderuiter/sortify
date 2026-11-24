@@ -876,3 +876,120 @@ async def test_ac5_tui_author_edit_toggle_export_and_cli_reimport(tmp_path):
     assert reimp_pol["target_path"] == "Finance/VerifiedInvoices"
     assert PolicyEngine.match_policy(reimp_pol, "final_invoice.pdf", "", None) is True
     assert PolicyEngine.match_policy(reimp_pol, "draft_invoice.pdf", "", None) is False
+
+
+@pytest.mark.anyio
+async def test_compound_policy_coexistence_with_rename_templates_and_live_preview(
+    tmp_path,
+):
+    """Verify compound rules coexist cleanly with #1193 rename_pattern/{year} templates and #1190 live sample preview + a11y."""
+    workspace = tmp_path / "live_ws"
+    workspace.mkdir()
+    (workspace / "invoice_final.txt").write_text(
+        "Invoice #8841 due immediately", encoding="utf-8"
+    )
+    (workspace / "invoice_draft.txt").write_text(
+        "Invoice #8842 draft copy", encoding="utf-8"
+    )
+    (workspace / "notes.md").write_text("Team meeting notes", encoding="utf-8")
+
+    settings = AppSettings(filepath=str(tmp_path / "coexist_settings.json"))
+    settings.KEYWORD_RULES = {}
+    settings.POLICIES = []
+
+    manager = ActiveRuleManagerModal(settings)
+    app = AutoSorterTUI(settings=settings, base_dir=str(workspace))
+
+    async with app.run_test(size=(110, 40)) as pilot:
+        await pilot.pause()
+        app.push_screen(manager)
+        await pilot.pause()
+
+        manager.action_add_rule()
+        await pilot.pause()
+        assert isinstance(app.screen, RuleEditModal)
+        editor = app.screen
+
+        # Switch to compound AND mode and configure extension==txt AND content contains invoice
+        editor.query_one("#sel-rule-match-mode", Select).value = "all"
+        await pilot.pause()
+
+        rows = list(editor.query(_PolicyClauseRow))
+        r0 = rows[0].row_index
+        editor.query_one(f"#sel-clause-field-{r0}", Select).value = "extension"
+        editor.query_one(f"#sel-clause-op-{r0}", Select).value = "equals"
+        editor.query_one(f"#input-clause-val-{r0}", Input).value = "txt"
+        editor.add_clause_row(
+            {"field": "content", "operator": "contains", "value": "invoice"}
+        )
+        await pilot.pause()
+
+        # Select invoice_draft.txt as sample file — initially matches 2 of 3 workspace files
+        sample_sel = editor.query_one("#select-sample-file", Select)
+        draft_opt = next(
+            item_id
+            for item_id, _src, rel_p in editor._workspace_items
+            if rel_p == "invoice_draft.txt"
+        )
+        sample_sel.value = draft_opt
+        await pilot.pause()
+
+        preview_lbl = editor.query_one("#lbl-rule-preview", Label)
+        preview_before = str(preview_lbl.render())
+        assert "MATCH on 'invoice_draft.txt'" in preview_before
+        assert "Workspace matches: 2 of 3 file(s)" in preview_before
+
+        # Add negated 'draft' clause -> live preview updates immediately to NO MATCH and 1 of 3 files!
+        editor.add_clause_row(
+            {
+                "field": "name",
+                "operator": "contains",
+                "value": "draft",
+                "negate": True,
+            }
+        )
+        editor._refresh_preview(announce_change=False)
+        await pilot.pause()
+        preview_after = str(preview_lbl.render())
+        assert "NO MATCH on 'invoice_draft.txt'" in preview_after
+        assert "Workspace matches: 1 of 3 file(s)" in preview_after
+
+        # Verify #1190 accessibility audit passes with compound clause rows mounted
+        a11y_report = editor.audit_a11y_compliance()
+        assert a11y_report["violations"] == []
+
+        # Combine compound rule with #1193 {year}/{month} target template and rename_pattern
+        editor.query_one("#input-rule-target", Input).value = "Finance/{year}/{month}"
+        editor.query_one(
+            "#input-rule-rename-pattern", Input
+        ).value = "{date}_{stem}{extension}"
+        editor.action_save()
+        await pilot.pause()
+
+        assert isinstance(app.screen, ActiveRuleManagerModal)
+        assert len(settings.POLICIES) == 1
+        saved = settings.POLICIES[0]
+        assert saved["match_mode"] == "all"
+        assert saved["target_path"] == "Finance/{year}/{month}"
+        assert saved["rename_pattern"] == "{date}_{stem}{extension}"
+
+    # Verify PolicyEngine.evaluate_policies preserves rename_pattern alongside compound match
+    eval_res = PolicyEngine.evaluate_policies(
+        "invoice_final.txt",
+        "Invoice #8841 due immediately",
+        None,
+        settings.POLICIES,
+        abs_file_path=str(workspace / "invoice_final.txt"),
+    )
+    assert eval_res is not None
+    assert eval_res.halt_evaluation is False
+    assert eval_res.target_path == "Finance/{year}/{month}"
+    assert eval_res.rename_pattern == "{date}_{stem}{extension}"
+
+    # Verify Hazel & Sortify JSON export/import round-trip both compound conditions and rename_pattern
+    hz_path = tmp_path / "coexist.hazelrules"
+    export_active_rules(settings, "hazel", hz_path)
+    hz_reimp = HazelRuleImporter().parse_file(hz_path)
+    assert len(hz_reimp.policies) == 1
+    assert hz_reimp.policies[0]["match_mode"] == "all"
+    assert hz_reimp.policies[0]["rename_pattern"] == "{date}_{stem}{extension}"

@@ -1309,12 +1309,6 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
     }
     """
 
-    MATCH_MODE_OPTIONS: list[tuple[str, str]] = [
-        ("Simple Keyword / Pattern", "simple"),
-        ("All conditions (AND)", "all"),
-        ("Any condition (OR)", "any"),
-        ("No conditions (NONE)", "none"),
-    ]
     RULE_TYPE_OPTIONS: list[tuple[str, str]] = [
         ("Keyword (substring)", "keyword"),
         ("Pattern (regex / glob)", "pattern"),
@@ -2106,12 +2100,15 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
     def on_mount(self) -> None:
         """Focus initial input on mount, seed compound clause if needed, and load workspace sample file options."""
         super().on_mount()
-        if (
-            self.initial_match_mode != "simple"
-            and not self._initial_leaf_clauses
-            and not self._nested_groups
-        ):
-            self.add_clause_row()
+        try:
+            if (
+                self.initial_match_mode != "simple"
+                and not self._initial_leaf_clauses
+                and not self._nested_groups
+            ):
+                self.add_clause_row()
+        except Exception:
+            return
 
         self._workspace_items = self._discover_workspace_files()
         try:
@@ -2123,7 +2120,10 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
 
         self._mounted_ready = True
         self._refresh_preview(announce_change=False)
-        self.query_one("#input-rule-pattern", Input).focus()
+        try:
+            self.query_one("#input-rule-pattern", Input).focus()
+        except Exception:
+            pass
 
     def add_clause_row(
         self, clause: Optional[dict[str, Any]] = None
