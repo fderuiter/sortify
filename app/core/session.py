@@ -381,10 +381,12 @@ class AppSession:
         from app.core.mover import execute_moves
 
         move_kwargs: dict[str, Any] = dict(kwargs)
+        acquire_locks = bool(move_kwargs.pop("acquire_locks", True))
         if chunk_size is not None:
             move_kwargs["chunk_size"] = chunk_size
 
-        with self._lock_folders():
+        lock_ctx = self._lock_folders() if acquire_locks else contextlib.nullcontext()
+        with lock_ctx:
             try:
                 summary = execute_moves(
                     effective_base_dir,
@@ -439,21 +441,33 @@ class AppSession:
                 **kwargs,
             )
 
-    def _lock_folders(self) -> contextlib.ExitStack:
-        """Hold a FolderLock on every source folder while files move."""
+    @staticmethod
+    def lock_folders(
+        folders: list[str] | tuple[str, ...] | set[str],
+        timeout: float = 0.0,
+    ) -> contextlib.ExitStack:
+        """Acquire exclusive FolderLocks across unique folders in deterministic sorted order."""
         from app.core.folder_lock import FolderLock
 
         stack = contextlib.ExitStack()
-        folders = self.source_dirs or ([self.base_dir] if self.base_dir else [])
+        deduped: dict[str, str] = {}
+        for folder in folders:
+            if not folder:
+                continue
+            key = os.path.normcase(os.path.realpath(os.path.abspath(str(folder))))
+            deduped.setdefault(key, str(folder))
         try:
-            for folder in sorted(folders):
-                stack.enter_context(
-                    FolderLock(folder, timeout=self.folder_lock_timeout)
-                )
+            for key in sorted(deduped):
+                stack.enter_context(FolderLock(deduped[key], timeout=timeout))
         except BaseException:
             stack.close()
             raise
         return stack
+
+    def _lock_folders(self) -> contextlib.ExitStack:
+        """Hold a FolderLock on every source folder while files move."""
+        folders = self.source_dirs or ([self.base_dir] if self.base_dir else [])
+        return self.lock_folders(folders, timeout=self.folder_lock_timeout)
 
     def close(self):
         """Release session services without stopping another active consumer."""

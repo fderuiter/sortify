@@ -47,6 +47,8 @@ class TUIHostProtocol(Protocol):
     _tree_expansion_memory: dict[str, bool]
     _last_cursor_key: Optional[str]
     _pending_flush_trash: bool
+    initial_dest_dir: Optional[str]
+    _last_drop_session_id: Optional[str]
 
     @overload
     def query_one(self, selector: str) -> Widget: ...

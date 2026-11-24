@@ -127,6 +127,7 @@ class DropPathIssue:
     clean_path: str
     abs_path: str
     reason: str
+    detail: str | None = None
 
 
 def validate_drop_paths(
@@ -150,20 +151,38 @@ def validate_drop_paths(
             continue
         abs_path = os.path.abspath(clean_path)
         if not os.path.exists(abs_path):
-            issues.append(DropPathIssue(raw_path, clean_path, abs_path, "missing"))
+            issues.append(
+                DropPathIssue(raw_path, clean_path, abs_path, "missing", "missing")
+            )
             continue
         if scan_filter.is_protected(abs_path):
-            issues.append(DropPathIssue(raw_path, clean_path, abs_path, "protected"))
+            issues.append(
+                DropPathIssue(raw_path, clean_path, abs_path, "protected", "protected")
+            )
             continue
         if ignore_predicate is not None and ignore_predicate(abs_path):
-            issues.append(DropPathIssue(raw_path, clean_path, abs_path, "ignored"))
+            issues.append(
+                DropPathIssue(
+                    raw_path, clean_path, abs_path, "ignored", "ignored_predicate"
+                )
+            )
             continue
-        if (
-            scan_filter.is_app_bundle(abs_path)
-            or scan_filter.has_ignored_extension(abs_path)
-            or scan_filter.is_quarantine(abs_path)
-        ):
-            issues.append(DropPathIssue(raw_path, clean_path, abs_path, "ignored"))
+        if scan_filter.is_app_bundle(abs_path):
+            issues.append(
+                DropPathIssue(raw_path, clean_path, abs_path, "ignored", "app_bundle")
+            )
+            continue
+        if scan_filter.is_quarantine(abs_path):
+            issues.append(
+                DropPathIssue(raw_path, clean_path, abs_path, "ignored", "quarantine")
+            )
+            continue
+        if scan_filter.has_ignored_extension(abs_path):
+            issues.append(
+                DropPathIssue(
+                    raw_path, clean_path, abs_path, "ignored", "ignored_extension"
+                )
+            )
             continue
         validated_paths.append(abs_path)
 
@@ -768,6 +787,7 @@ class SortPipeline(LifecycleTelemetryMixin):
             scan_filter = ScanFilter.from_settings(
                 settings=self.settings, base_dir=self.base_dir
             )
+            explicit_items = items is not None
             if items is None:
                 if len(resolved_source_dirs) > 1:
                     items = get_files_from_sources(
@@ -904,7 +924,11 @@ class SortPipeline(LifecycleTelemetryMixin):
                     self.base_dir, dest_dir=dest_dir, settings=self.settings
                 )
             )
-            effective_target_paths = items if target_paths is None else target_paths
+            effective_target_paths = (
+                list(items)
+                if (target_paths is None and explicit_items)
+                else target_paths
+            )
             try:
                 gen_sig = inspect.signature(self.session.generate_sorting_plan)
                 has_var_kw = any(
@@ -1186,3 +1210,912 @@ class SortPipeline(LifecycleTelemetryMixin):
             flush_trash=flush_trash,
             trash_fn=trash_fn,
         )
+
+
+@dataclass
+class DropBatchPlanItem:
+    """Preview and override state for one file in a planned drop batch."""
+
+    item_id: str
+    queue_priority: int
+    source_root: str
+    source_path: str
+    dest_base_dir: str
+    target_folder: str
+    target_filename: str
+    dest_path: str
+    conflict_policy: str = "rename"
+    is_excluded: bool = False
+    has_collision: bool = False
+    node_ref: dict[str, Any] = field(default_factory=dict, repr=False)
+
+
+@dataclass
+class DropBatchGroupPlan:
+    """Planned drop unit for one source root directory."""
+
+    source_root: str
+    rel_files: list[str]
+    target_paths: list[str]
+    session: Any
+    pipeline: SortPipeline
+    plan: dict[str, Any]
+    re_rooted: bool = False
+    was_dir: bool = False
+
+
+@dataclass
+class DropBatchPlan:
+    """Aggregated drop plan, verification warnings, and item previews across all roots."""
+
+    validated_paths: list[str]
+    issues: list[DropPathIssue]
+    resolved_dest: str | None
+    groups: list[DropBatchGroupPlan]
+    unified_plan: dict[str, Any] | None = None
+    conflict_policy: str = "rename"
+    warnings: list[str] = field(default_factory=list)
+    collisions: list[dict[str, Any]] = field(default_factory=list)
+    collision_groups: list[dict[str, Any]] = field(default_factory=list)
+    items: list[DropBatchPlanItem] = field(default_factory=list)
+    plan_lines: list[str] = field(default_factory=list)
+    closed: bool = False
+
+
+@dataclass
+class DropBatchResult:
+    """Outcome of executing (or dry-running) a ``DropBatchPlan``."""
+
+    session_id: str | None
+    resolved_dest: str | None
+    moved_count: int = 0
+    failed_count: int = 0
+    skipped_count: int = 0
+    cancelled: bool = False
+    dry_run: bool = False
+    target_results: list[dict[str, Any]] = field(default_factory=list)
+    audit_records: list[dict[str, Any]] = field(default_factory=list)
+
+
+def _unwrap_plan_dict(plan_obj: Any) -> dict[str, Any]:
+    if hasattr(plan_obj, "plan") and isinstance(plan_obj.plan, dict):
+        return dict(plan_obj.plan)
+    if isinstance(plan_obj, dict):
+        return dict(plan_obj)
+    return {}
+
+
+def _is_file_leaf_node(content: Any) -> bool:
+    from app.core.domain_contracts import _get_val
+
+    node_type = _get_val(content, "node_type") or _get_val(content, "__type__")
+    if content is None or node_type == "file":
+        return True
+    if hasattr(content, "model_dump") and node_type != "directory":
+        return True
+    if isinstance(content, dict) and node_type != "directory":
+        return (
+            "relative_source" in content
+            or "target_filename" in content
+            or "routed_by" in content
+            or "source_path" in content
+        )
+    return False
+
+
+def _annotate_drop_plan_nodes(
+    node: Any,
+    *,
+    source_root: str,
+    queue_priority_by_abs: dict[str, int],
+    conflict_policy: str | None = None,
+    fallback_counter: list[int] | None = None,
+) -> dict[str, Any]:
+    """Attach ``queue_priority``, ``source_root``, ``source_path``, and ``target_filename`` to leaf file dicts."""
+    from app.core.scanner import parse_item_identifier
+
+    if not isinstance(node, dict):
+        return {}
+    counter = fallback_counter if fallback_counter is not None else [100000]
+    annotated: dict[str, Any] = {}
+    for key, content in node.items():
+        if str(key).startswith("__"):
+            annotated[key] = content
+            continue
+        if _is_file_leaf_node(content):
+            copied: dict[str, Any] = (
+                content.model_dump(by_alias=True)
+                if hasattr(content, "model_dump") and not isinstance(content, dict)
+                else (dict(content) if isinstance(content, dict) else {})
+            )
+            copied.setdefault("__type__", "file")
+            copied.setdefault("source_root", source_root)
+            _, rel_key = parse_item_identifier(str(key), source_root)
+            raw_sp = copied.get("source_path")
+            if raw_sp and os.path.isabs(str(raw_sp)):
+                abs_sp = os.path.normpath(str(raw_sp))
+            else:
+                rel_sp = str(copied.get("relative_source") or rel_key)
+                _, clean_rel = parse_item_identifier(rel_sp, source_root)
+                abs_sp = os.path.normpath(os.path.join(source_root, clean_rel))
+            copied["source_path"] = abs_sp
+            if not copied.get("relative_source"):
+                try:
+                    copied["relative_source"] = os.path.relpath(
+                        abs_sp, source_root
+                    ).replace("\\", "/")
+                except ValueError:
+                    copied["relative_source"] = rel_key
+            if not copied.get("target_filename"):
+                copied["target_filename"] = os.path.basename(rel_key)
+            norm_abs = os.path.normcase(os.path.abspath(abs_sp))
+            qp = queue_priority_by_abs.get(norm_abs)
+            if qp is None:
+                qp = counter[0]
+                counter[0] += 1
+            copied["queue_priority"] = int(qp)
+            if conflict_policy in ("rename", "overwrite", "skip"):
+                copied["conflict_policy"] = conflict_policy
+                copied["overwrite"] = conflict_policy == "overwrite"
+            annotated[key] = copied
+        elif isinstance(content, dict):
+            annotated[key] = _annotate_drop_plan_nodes(
+                content,
+                source_root=source_root,
+                queue_priority_by_abs=queue_priority_by_abs,
+                conflict_policy=conflict_policy,
+                fallback_counter=counter,
+            )
+        else:
+            annotated[key] = content
+    return annotated
+
+
+def _merge_rerooted_plans_into_dest(
+    groups: Sequence[DropBatchGroupPlan],
+) -> dict[str, Any]:
+    """Merge re-rooted group plans into a single plan using namespaced ``root::rel`` leaf keys."""
+    from app.core.scanner import parse_item_identifier
+
+    merged: dict[str, Any] = {}
+
+    def _merge_into(
+        target_dict: dict[str, Any], src_dict: dict[str, Any], source_root: str
+    ) -> None:
+        norm_root = os.path.normpath(source_root) if source_root else ""
+        for key, content in src_dict.items():
+            if str(key).startswith("__"):
+                target_dict.setdefault(key, content)
+                continue
+            if _is_file_leaf_node(content) and isinstance(content, dict):
+                _, rel_key = parse_item_identifier(str(key), source_root)
+                rel_src = str(content.get("relative_source") or rel_key)
+                _, clean_rel = parse_item_identifier(rel_src, source_root)
+                if not content.get("target_filename"):
+                    content["target_filename"] = os.path.basename(rel_key)
+                ns_key = f"{norm_root}::{clean_rel}" if norm_root else clean_rel
+                if ns_key in target_dict:
+                    suffix = 1
+                    while f"{ns_key}#{suffix}" in target_dict:
+                        suffix += 1
+                    ns_key = f"{ns_key}#{suffix}"
+                target_dict[ns_key] = content
+            elif isinstance(content, dict):
+                bucket = target_dict.get(key)
+                if not isinstance(bucket, dict) or _is_file_leaf_node(bucket):
+                    bucket = {}
+                    target_dict[key] = bucket
+                _merge_into(bucket, content, source_root)
+            else:
+                target_dict[key] = content
+
+    for grp in groups:
+        _merge_into(merged, grp.plan, grp.source_root)
+    return merged
+
+
+def _collect_all_leaf_nodes(
+    node: Any,
+    dest_base_dir: str,
+    current_dest: str = "",
+) -> list[tuple[str, dict[str, Any], str, str]]:
+    """Collect ``(key, leaf_dict, dest_base_dir, current_dest)`` across all leaf nodes, including excluded ones."""
+    if not isinstance(node, dict):
+        return []
+    found: list[tuple[str, dict[str, Any], str, str]] = []
+    for key, content in node.items():
+        if str(key).startswith("__"):
+            continue
+        if _is_file_leaf_node(content) and isinstance(content, dict):
+            found.append((str(key), content, dest_base_dir, current_dest))
+        elif isinstance(content, dict):
+            next_dest = (
+                str(key)
+                if (not current_dest and os.path.isabs(str(key)))
+                else os.path.join(current_dest, str(key))
+            )
+            found.extend(_collect_all_leaf_nodes(content, dest_base_dir, next_dest))
+    return found
+
+
+class DropBatchCoordinator:
+    """Single orchestration coordinator for CLI and TUI drop triage batches."""
+
+    def __init__(
+        self,
+        settings: Any = None,
+        *,
+        session_factory: Callable[..., Any] | None = None,
+    ) -> None:
+        self.settings = settings
+        self._session_factory = session_factory
+
+    def _create_session(self, base_dir: str) -> Any:
+        if self._session_factory is not None:
+            return self._session_factory(self.settings, base_dir=base_dir)
+        from app.core.session import AppSession
+
+        return AppSession(self.settings, base_dir=base_dir)
+
+    def validate(
+        self,
+        paths: Sequence[Any],
+        *,
+        dest_dir: str | None = None,
+        ignore_predicate: Callable[[str], bool] | None = None,
+    ) -> tuple[list[str], list[DropPathIssue], str | None, str | None]:
+        """Validate dropped paths and optional destination directory."""
+        validated_paths, issues = validate_drop_paths(
+            paths,
+            settings=self.settings,
+            ignore_predicate=ignore_predicate,
+        )
+        resolved_dest, dest_err = validate_drop_destination(
+            dest_dir, settings=self.settings
+        )
+        return validated_paths, issues, resolved_dest, dest_err
+
+    def plan_batch(
+        self,
+        paths: Sequence[str],
+        *,
+        dest_dir: str | None = None,
+        staged_roots: dict[str, str | None] | None = None,
+        conflict_policy: str | None = None,
+        progress_callback: Callable[[Any], None] | None = None,
+        cancel_check: Callable[[], bool] | None = None,
+    ) -> DropBatchPlan:
+        """Expand, scope-plan, re-root, and pre-verify a batch of dropped paths."""
+        validated_paths, issues, resolved_dest, dest_err = self.validate(
+            paths, dest_dir=dest_dir
+        )
+        if dest_err == "protected":
+            raise PermissionError(f"Destination path '{dest_dir}' is protected.")
+        if dest_err == "not_directory":
+            raise NotADirectoryError(
+                f"Destination path '{dest_dir}' is not a directory."
+            )
+
+        default_policy = str(
+            conflict_policy
+            or getattr(self.settings, "CONFLICT_POLICY", None)
+            or "rename"
+        ).lower()
+        if default_policy not in ("rename", "overwrite", "skip"):
+            default_policy = "rename"
+
+        root_lookup = staged_roots or {}
+        queue_priority_by_abs: dict[str, int] = {}
+        group_files: dict[str, list[str]] = {}
+        group_targets: dict[str, list[str]] = {}
+        group_was_dir: dict[str, bool] = {}
+        seen_rel_by_root: dict[str, set[str]] = {}
+        next_qp = 0
+
+        for raw_target in validated_paths:
+            explicit_root = root_lookup.get(raw_target)
+            group_root, rel_files = expand_drop_scope_files(
+                raw_target,
+                settings=self.settings,
+                group_root=explicit_root,
+            )
+            norm_root = os.path.normpath(os.path.abspath(group_root))
+            is_dir_drop = os.path.isdir(raw_target) or (explicit_root is not None)
+            if is_dir_drop:
+                group_was_dir[norm_root] = True
+            else:
+                group_was_dir.setdefault(norm_root, False)
+            group_targets.setdefault(norm_root, []).append(raw_target)
+            bucket = group_files.setdefault(norm_root, [])
+            seen_rels = seen_rel_by_root.setdefault(norm_root, set())
+
+            for rel_f in rel_files:
+                abs_f = os.path.normpath(os.path.join(norm_root, rel_f))
+                norm_abs = os.path.normcase(os.path.abspath(abs_f))
+                if norm_abs not in queue_priority_by_abs:
+                    queue_priority_by_abs[norm_abs] = next_qp
+                    next_qp += 1
+                norm_rel_key = os.path.normcase(rel_f.replace("\\", "/"))
+                if norm_rel_key not in seen_rels:
+                    seen_rels.add(norm_rel_key)
+                    bucket.append(rel_f)
+
+        groups: list[DropBatchGroupPlan] = []
+        total_groups = max(1, len(group_files))
+        try:
+            for idx, (group_root, rel_files) in enumerate(group_files.items()):
+                if cancel_check and cancel_check():
+                    break
+                session = self._create_session(group_root)
+                pipeline = SortPipeline(session)
+
+                def _group_progress(
+                    info: Any, _idx: int = idx, _total: int = total_groups
+                ) -> None:
+                    if progress_callback is None:
+                        return
+                    if isinstance(info, dict):
+                        scaled = dict(info)
+                        raw_p = float(info.get("progress", 0.0) or 0.0)
+                        scaled["progress"] = (_idx + raw_p) / _total
+                        progress_callback(scaled)
+                    else:
+                        progress_callback(info)
+
+                raw_plan = pipeline.plan(
+                    rel_files,
+                    progress_callback=_group_progress
+                    if progress_callback is not None
+                    else None,
+                    cancel_check=cancel_check,
+                    dest_dir=resolved_dest,
+                )
+                plan_dict = _unwrap_plan_dict(raw_plan)
+                bound_plan = _bind_plan_sources(plan_dict, group_root)
+                annotated_plan = _annotate_drop_plan_nodes(
+                    bound_plan,
+                    source_root=group_root,
+                    queue_priority_by_abs=queue_priority_by_abs,
+                    conflict_policy=conflict_policy,
+                )
+                final_plan, re_rooted = apply_drop_reroot(
+                    session,
+                    annotated_plan,
+                    group_root,
+                    resolved_dest,
+                    force_reroot=resolved_dest is not None,
+                )
+                groups.append(
+                    DropBatchGroupPlan(
+                        source_root=group_root,
+                        rel_files=rel_files,
+                        target_paths=group_targets.get(group_root, []),
+                        session=session,
+                        pipeline=pipeline,
+                        plan=_unwrap_plan_dict(final_plan),
+                        re_rooted=re_rooted,
+                        was_dir=group_was_dir.get(group_root, False),
+                    )
+                )
+        except Exception:
+            for grp in groups:
+                try:
+                    grp.session.close()
+                except Exception as close_err:  # noqa: BLE001
+                    logger.debug(
+                        "Failed to close session after batch plan error: %s",
+                        close_err,
+                    )
+            raise
+
+        batch_plan = DropBatchPlan(
+            validated_paths=validated_paths,
+            issues=issues,
+            resolved_dest=resolved_dest,
+            groups=groups,
+            conflict_policy=default_policy,
+        )
+        self.refresh_verification(batch_plan)
+        return batch_plan
+
+    def refresh_verification(self, batch_plan: DropBatchPlan) -> DropBatchPlan:
+        """Run ``VerificationEngine.verify_plan_integrity`` and rebuild preview items in queue order."""
+        from app.core.domain_contracts import _get_val
+        from app.core.path_utils import safe_relpath
+        from app.core.verifier import VerificationEngine
+
+        all_warnings: list[str] = []
+        all_collisions: list[dict[str, Any]] = []
+        all_collision_groups: list[dict[str, Any]] = []
+        colliding_sources: set[str] = set()
+        colliding_dests: set[str] = set()
+
+        if batch_plan.resolved_dest and batch_plan.groups:
+            os.makedirs(batch_plan.resolved_dest, exist_ok=True)
+            unified = (
+                batch_plan.unified_plan
+                if batch_plan.unified_plan is not None
+                else _merge_rerooted_plans_into_dest(batch_plan.groups)
+            )
+            vres = VerificationEngine.verify_plan_integrity(
+                batch_plan.resolved_dest,
+                unified,
+                conflict_policy=batch_plan.conflict_policy,
+            )
+            batch_plan.unified_plan = unified
+            all_warnings.extend(vres.get("warnings") or [])
+            all_collisions.extend(vres.get("collisions") or [])
+            cgroups = VerificationEngine.get_collision_groups(
+                batch_plan.resolved_dest, unified, include_resolved=True
+            )
+            all_collision_groups.extend(cgroups)
+            leaf_records = _collect_all_leaf_nodes(unified, batch_plan.resolved_dest)
+        else:
+            batch_plan.unified_plan = None
+            leaf_records = []
+            for grp in batch_plan.groups:
+                vres = VerificationEngine.verify_plan_integrity(
+                    grp.source_root,
+                    grp.plan,
+                    conflict_policy=batch_plan.conflict_policy,
+                )
+                all_warnings.extend(vres.get("warnings") or [])
+                all_collisions.extend(vres.get("collisions") or [])
+                cgroups = VerificationEngine.get_collision_groups(
+                    grp.source_root, grp.plan, include_resolved=True
+                )
+                all_collision_groups.extend(cgroups)
+                leaf_records.extend(_collect_all_leaf_nodes(grp.plan, grp.source_root))
+
+        for col in all_collisions:
+            src_c = col.get("source")
+            tgt_c = col.get("target")
+            if src_c:
+                colliding_sources.add(os.path.normcase(os.path.abspath(str(src_c))))
+            if tgt_c:
+                colliding_dests.add(os.path.normcase(os.path.abspath(str(tgt_c))))
+        for cg in all_collision_groups:
+            tgt_p = cg.get("target_path")
+            if tgt_p:
+                colliding_dests.add(os.path.normcase(os.path.abspath(str(tgt_p))))
+            for it in cg.get("items") or []:
+                sp = it.get("source_path")
+                if sp:
+                    colliding_sources.add(os.path.normcase(os.path.abspath(str(sp))))
+
+        for cg in all_collision_groups:
+            tgt_p = cg.get("target_path") or cg.get("target_filename") or ""
+            n_items = len(cg.get("items") or [])
+            if cg.get("existing_file_on_disk"):
+                msg = f"Destination collision: '{tgt_p}' already exists on disk."
+            else:
+                msg = f"Destination collision: {n_items} items target '{tgt_p}'."
+            if msg not in all_warnings:
+                all_warnings.append(msg)
+
+        preview_items: list[DropBatchPlanItem] = []
+        for idx, (key, leaf_dict, dest_base_dir, current_dest) in enumerate(
+            leaf_records
+        ):
+            src_root = str(leaf_dict.get("source_root") or dest_base_dir)
+            src_path = str(
+                leaf_dict.get("source_path") or os.path.join(src_root, str(key))
+            )
+            abs_src = os.path.normpath(os.path.abspath(src_path))
+            item_id = os.path.normcase(abs_src)
+            raw_qp = _get_val(leaf_dict, "queue_priority")
+            try:
+                qp = int(raw_qp) if raw_qp is not None else idx
+            except (TypeError, ValueError):
+                qp = idx
+            tgt_fn = str(leaf_dict.get("target_filename") or os.path.basename(abs_src))
+            dest_override = leaf_dict.get("destination_override")
+            eff_folder_raw = (
+                str(dest_override) if dest_override else str(current_dest or "")
+            )
+            if eff_folder_raw and os.path.isabs(eff_folder_raw):
+                abs_dest_folder = os.path.normpath(eff_folder_raw)
+            elif eff_folder_raw:
+                abs_dest_folder = os.path.normpath(
+                    os.path.join(dest_base_dir, eff_folder_raw)
+                )
+            else:
+                abs_dest_folder = os.path.normpath(dest_base_dir)
+            dest_path = os.path.normpath(os.path.join(abs_dest_folder, tgt_fn))
+            rel_folder = safe_relpath(abs_dest_folder, dest_base_dir).replace("\\", "/")
+            if not rel_folder:
+                rel_folder = "."
+            node_pol = str(
+                leaf_dict.get("conflict_policy") or batch_plan.conflict_policy
+            ).lower()
+            if bool(leaf_dict.get("overwrite") or leaf_dict.get("allow_overwrite")):
+                node_pol = "overwrite"
+            is_excl = bool(
+                leaf_dict.get("is_excluded")
+                or leaf_dict.get("excluded")
+                or leaf_dict.get("is_checked") is False
+            )
+            norm_dest = os.path.normcase(os.path.abspath(dest_path))
+            has_col = item_id in colliding_sources or norm_dest in colliding_dests
+            preview_items.append(
+                DropBatchPlanItem(
+                    item_id=item_id,
+                    queue_priority=qp,
+                    source_root=src_root,
+                    source_path=abs_src,
+                    dest_base_dir=dest_base_dir,
+                    target_folder=rel_folder,
+                    target_filename=tgt_fn,
+                    dest_path=dest_path,
+                    conflict_policy=node_pol,
+                    is_excluded=is_excl,
+                    has_collision=has_col,
+                    node_ref=leaf_dict,
+                )
+            )
+
+        preview_items.sort(key=lambda it: (it.queue_priority, it.source_path))
+        plan_lines: list[str] = []
+        for it in preview_items:
+            if it.is_excluded:
+                plan_lines.append(f"[EXCLUDED] {os.path.basename(it.source_path)}")
+                continue
+            pol_tag = (
+                f" [{it.conflict_policy}]"
+                if it.has_collision or it.conflict_policy != "rename"
+                else ""
+            )
+            col_tag = " [COLLISION]" if it.has_collision else ""
+            plan_lines.append(
+                f"{os.path.basename(it.source_path)}  ->  {it.dest_path}{col_tag}{pol_tag}"
+            )
+
+        batch_plan.warnings = list(dict.fromkeys(all_warnings))
+        batch_plan.collisions = all_collisions
+        batch_plan.collision_groups = all_collision_groups
+        batch_plan.items = preview_items
+        batch_plan.plan_lines = plan_lines
+        return batch_plan
+
+    def apply_user_overrides(
+        self,
+        batch_plan: DropBatchPlan,
+        *,
+        conflict_policy: str | None = None,
+        item_overrides: dict[str, dict[str, Any]] | None = None,
+    ) -> DropBatchPlan:
+        """Apply conflict policy, folder overrides, and exclusions onto planned nodes and re-verify."""
+        from app.core.mover import is_subpath_or_equal
+        from app.core.scanner import ScanFilter
+
+        scan_filter = ScanFilter.from_settings(settings=self.settings)
+
+        if conflict_policy is not None:
+            pol = str(conflict_policy).strip().lower()
+            if pol not in ("rename", "overwrite", "skip"):
+                raise ValueError(f"Unsupported conflict policy: {conflict_policy}")
+            batch_plan.conflict_policy = pol
+            for it in batch_plan.items:
+                it.node_ref["conflict_policy"] = pol
+                it.node_ref["overwrite"] = pol == "overwrite"
+
+        if item_overrides:
+            by_id = {it.item_id: it for it in batch_plan.items}
+            by_src = {it.source_path: it for it in batch_plan.items}
+            for raw_key, spec in item_overrides.items():
+                if not isinstance(spec, dict):
+                    continue
+                norm_key = os.path.normcase(os.path.abspath(str(raw_key)))
+                target_item = by_id.get(norm_key) or by_src.get(str(raw_key))
+                if target_item is None:
+                    continue
+                node = target_item.node_ref
+                if "is_excluded" in spec:
+                    excl = bool(spec["is_excluded"])
+                    node["is_excluded"] = excl
+                    node["is_checked"] = not excl
+                if "conflict_policy" in spec and spec["conflict_policy"]:
+                    item_pol = str(spec["conflict_policy"]).strip().lower()
+                    if item_pol not in ("rename", "overwrite", "skip"):
+                        raise ValueError(
+                            f"Unsupported item conflict policy: {spec['conflict_policy']}"
+                        )
+                    node["conflict_policy"] = item_pol
+                    node["overwrite"] = item_pol == "overwrite"
+                if "target_folder" in spec and spec["target_folder"] is not None:
+                    raw_folder = str(spec["target_folder"]).strip()
+                    if not raw_folder or raw_folder == ".":
+                        resolved_folder = os.path.normpath(target_item.dest_base_dir)
+                    else:
+                        parts = [
+                            p
+                            for p in raw_folder.replace("\\", "/").split("/")
+                            if p and p != "."
+                        ]
+                        if ".." in parts:
+                            raise ValueError(
+                                f"Folder override '{raw_folder}' cannot traverse parent directories."
+                            )
+                        if os.path.isabs(raw_folder):
+                            resolved_folder = os.path.normpath(raw_folder)
+                        else:
+                            resolved_folder = os.path.normpath(
+                                os.path.join(target_item.dest_base_dir, *parts)
+                            )
+                    if not is_subpath_or_equal(
+                        resolved_folder, target_item.dest_base_dir
+                    ):
+                        raise ValueError(
+                            f"Folder override '{raw_folder}' escapes base directory '{target_item.dest_base_dir}'."
+                        )
+                    if scan_filter.is_protected(resolved_folder):
+                        raise PermissionError(
+                            f"Folder override '{resolved_folder}' is a protected path."
+                        )
+                    node["destination_override"] = resolved_folder
+
+        return self.refresh_verification(batch_plan)
+
+    def close_batch(self, batch_plan: DropBatchPlan) -> None:
+        """Close all ``AppSession`` instances owned by ``batch_plan``."""
+        if batch_plan.closed:
+            return
+        batch_plan.closed = True
+        for grp in batch_plan.groups:
+            try:
+                grp.session.close()
+            except Exception as close_err:  # noqa: BLE001
+                logger.debug("Failed to close batch session: %s", close_err)
+
+    def execute_batch(
+        self,
+        batch_plan: DropBatchPlan,
+        *,
+        dry_run: bool = False,
+        progress_callback: Callable[[Any], None] | None = None,
+        cancel_check: Callable[[], bool] | None = None,
+        close_sessions: bool = True,
+    ) -> DropBatchResult:
+        """Execute ``batch_plan`` under sorted folder locks and a single shared undo ``session_id``."""
+        from app.core.domain_contracts import _make_json_serializable
+        from app.core.mover import execute_moves
+        from app.core.moves import DONE, VERIFIED
+        from app.core.session import AppSession
+
+        try:
+            if not batch_plan.groups:
+                return DropBatchResult(
+                    session_id=None,
+                    resolved_dest=batch_plan.resolved_dest,
+                    dry_run=dry_run,
+                )
+
+            if dry_run:
+                target_results: list[dict[str, Any]] = []
+                for grp in batch_plan.groups:
+                    serializable_plan = _make_json_serializable(grp.plan)
+                    targets = grp.target_paths or [grp.source_root]
+                    for tgt in targets:
+                        target_results.append(
+                            {
+                                "target": tgt,
+                                "base_dir": grp.source_root,
+                                "plan": serializable_plan,
+                                "summary": {
+                                    "status": "dry_run",
+                                    "plan": serializable_plan,
+                                },
+                            }
+                        )
+                active_count = sum(1 for it in batch_plan.items if not it.is_excluded)
+                return DropBatchResult(
+                    session_id=None,
+                    resolved_dest=batch_plan.resolved_dest,
+                    moved_count=active_count,
+                    dry_run=True,
+                    target_results=target_results,
+                )
+
+            lock_targets: list[str] = [grp.source_root for grp in batch_plan.groups]
+            if batch_plan.resolved_dest:
+                os.makedirs(batch_plan.resolved_dest, exist_ok=True)
+                lock_targets.append(batch_plan.resolved_dest)
+
+            primary_session = batch_plan.groups[0].session
+            lock_timeout = float(
+                getattr(primary_session, "folder_lock_timeout", 10.0) or 10.0
+            )
+            history_manager = getattr(primary_session, "history_manager", None)
+            db = getattr(primary_session, "db", None)
+
+            active_items = [it for it in batch_plan.items if not it.is_excluded]
+            batch_base_dir = (
+                batch_plan.resolved_dest
+                if batch_plan.resolved_dest
+                else batch_plan.groups[0].source_root
+            )
+            batch_roots: list[str] = []
+            for r in lock_targets:
+                if r and r not in batch_roots:
+                    batch_roots.append(r)
+
+            with AppSession.lock_folders(lock_targets, timeout=lock_timeout):
+                shared_session_id: str | None = None
+                if active_items and history_manager is not None:
+                    shared_session_id = history_manager.start_session(batch_base_dir)
+
+                audit_records: list[dict[str, Any]] = []
+                failed_count = 0
+                cancelled = False
+                group_summaries: dict[str, dict[str, Any]] = {}
+
+                try:
+                    if batch_plan.resolved_dest and batch_plan.unified_plan is not None:
+                        summary = dict(
+                            execute_moves(
+                                batch_plan.resolved_dest,
+                                batch_plan.unified_plan,
+                                db,
+                                history_manager,
+                                self.settings,
+                                priority="queue",
+                                progress_callback=progress_callback,
+                                cancel_check=cancel_check,
+                                source_dirs=[
+                                    grp.source_root for grp in batch_plan.groups
+                                ],
+                                session_id=shared_session_id,
+                                manage_session_lifecycle=False,
+                            )
+                        )
+                        cancelled = bool(summary.get("cancelled"))
+                        report = summary.get("audit_report") or {}
+                        audit_records.extend(report.get("records") or [])
+                        failed_count += int(report.get("mismatch_fail_count", 0) or 0)
+                        failed_count += len(report.get("failed_items") or [])
+                        for grp in batch_plan.groups:
+                            group_summaries[grp.source_root] = dict(summary)
+                    else:
+                        total_groups = max(1, len(batch_plan.groups))
+                        for idx, grp in enumerate(batch_plan.groups):
+                            if cancel_check and cancel_check():
+                                cancelled = True
+                                break
+
+                            def _exec_progress(
+                                info: Any, _idx: int = idx, _total: int = total_groups
+                            ) -> None:
+                                if progress_callback is None:
+                                    return
+                                if isinstance(info, dict):
+                                    scaled = dict(info)
+                                    raw_p = float(info.get("progress", 0.0) or 0.0)
+                                    scaled["progress"] = (_idx + raw_p) / _total
+                                    progress_callback(scaled)
+                                else:
+                                    progress_callback(info)
+
+                            summary = dict(
+                                grp.session.execute_moves(
+                                    grp.plan,
+                                    acquire_locks=False,
+                                    priority="queue",
+                                    progress_callback=_exec_progress
+                                    if progress_callback is not None
+                                    else None,
+                                    cancel_check=cancel_check,
+                                    session_id=shared_session_id,
+                                    manage_session_lifecycle=False,
+                                )
+                            )
+                            group_summaries[grp.source_root] = summary
+                            if summary.get("cancelled"):
+                                cancelled = True
+                                break
+                            report = summary.get("audit_report") or {}
+                            audit_records.extend(report.get("records") or [])
+                            failed_count += int(
+                                report.get("mismatch_fail_count", 0) or 0
+                            )
+                            failed_count += len(report.get("failed_items") or [])
+                except Exception:
+                    if (
+                        shared_session_id
+                        and history_manager is not None
+                        and hasattr(history_manager, "unwind_session")
+                    ):
+                        try:
+                            history_manager.unwind_session(shared_session_id, db=db)
+                        except Exception as unwind_err:  # noqa: BLE001
+                            logger.error(
+                                "Batch rollback failed for session %s: %s",
+                                shared_session_id,
+                                unwind_err,
+                            )
+                    raise
+
+                real_move_count = 0
+                if shared_session_id and history_manager is not None:
+                    ledger = getattr(history_manager, "moves", None)
+                    if ledger is not None and hasattr(ledger, "list_moves"):
+                        recorded = ledger.list_moves(shared_session_id)
+                        real_move_count = sum(
+                            1
+                            for m in recorded
+                            if getattr(m, "state", None) in (DONE, VERIFIED)
+                        )
+
+                final_session_id = shared_session_id
+                if shared_session_id and history_manager is not None:
+                    if real_move_count > 0:
+                        try:
+                            history_manager.complete_session(
+                                shared_session_id,
+                                metadata={"batch_roots": batch_roots},
+                            )
+                        except TypeError:
+                            history_manager.complete_session(shared_session_id)
+                    else:
+                        try:
+                            hm_db = getattr(history_manager, "db", None)
+                            hm_worker = getattr(hm_db, "worker", None)
+                            if hm_worker is not None and hasattr(
+                                hm_worker, "execute_write"
+                            ):
+                                hm_worker.execute_write(
+                                    lambda: history_manager._transition_session_status(
+                                        shared_session_id, "abandoned"
+                                    )
+                                )
+                            elif hasattr(history_manager, "_transition_session_status"):
+                                history_manager._transition_session_status(
+                                    shared_session_id, "abandoned"
+                                )
+                        except Exception as ab_err:  # noqa: BLE001
+                            logger.debug(
+                                "Failed to mark empty batch session %s abandoned: %s",
+                                shared_session_id,
+                                ab_err,
+                            )
+                        final_session_id = None
+
+                for grp in batch_plan.groups:
+                    restore_rerooted_source_dir(
+                        grp.source_root,
+                        was_dir=grp.was_dir,
+                        re_rooted=grp.re_rooted,
+                    )
+
+                target_results = []
+                for grp in batch_plan.groups:
+                    grp_sum = dict(group_summaries.get(grp.source_root) or {})
+                    grp_sum["session_id"] = final_session_id
+                    serializable_plan = _make_json_serializable(grp.plan)
+                    targets = grp.target_paths or [grp.source_root]
+                    for tgt in targets:
+                        target_results.append(
+                            {
+                                "target": tgt,
+                                "base_dir": grp.source_root,
+                                "plan": serializable_plan,
+                                "summary": _make_json_serializable(grp_sum),
+                            }
+                        )
+
+                skipped_count = max(
+                    0, len(active_items) - real_move_count - failed_count
+                )
+                return DropBatchResult(
+                    session_id=final_session_id,
+                    resolved_dest=batch_plan.resolved_dest,
+                    moved_count=real_move_count,
+                    failed_count=failed_count,
+                    skipped_count=skipped_count,
+                    cancelled=cancelled,
+                    dry_run=False,
+                    target_results=target_results,
+                    audit_records=audit_records,
+                )
+        finally:
+            if close_sessions:
+                self.close_batch(batch_plan)

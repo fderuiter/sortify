@@ -813,11 +813,11 @@ def test_drop_subcommand_dest_dir_live_and_undo(tmp_path):
     assert not standalone_doc.exists()
     assert not nested_zip.exists()
 
-    # Roll back both drop sessions (latest first, then the preceding session)
-    for _ in range(2):
-        u_code, u_out, u_err = run_cli(["undo", "--latest", "--json"], env=env)
-        assert u_code == 0, f"undo failed: {u_err}"
-        assert json.loads(u_out)["status"] == "success"
+    # Single undo --latest restores all dropped files and folders from the unified batch session
+    assert payload.get("session_id")
+    u_code, u_out, u_err = run_cli(["undo", "--latest", "--json"], env=env)
+    assert u_code == 0, f"undo failed: {u_err}"
+    assert json.loads(u_out)["status"] == "success"
 
     assert standalone_doc.exists()
     assert nested_zip.exists()
@@ -888,6 +888,7 @@ def test_drop_subcommand_tui_resolves_directory_and_passes_dropzone_args(
     assert captured[0]["initial_dir"] == str(src_dir.resolve())
     assert captured[0]["open_dropzone"] is True
     assert captured[0]["initial_drop_paths"] == [str(dropped_file)]
+    assert captured[0].get("initial_dest_dir") is None
 
     code2, _, stderr2 = run_cli(
         [
@@ -905,3 +906,67 @@ def test_drop_subcommand_tui_resolves_directory_and_passes_dropzone_args(
     assert captured[1]["initial_dir"] == str(dest_dir.resolve())
     assert captured[1]["open_dropzone"] is True
     assert captured[1]["initial_drop_paths"] == [str(dropped_file)]
+    assert captured[1]["initial_dest_dir"] == str(dest_dir.resolve())
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_drop_subcommand_blocks_bundle_and_quarantine_and_sorts_multi_folder_in_place(
+    tmp_path,
+):
+    """CLI drop rejects .app/quarantine targets and sorts multi-folder .sketch/.fig in place under one undo."""
+    env = {"AUTOSORTER_APP_DIR": str(tmp_path / "app_drop_guards")}
+    calc_app = tmp_path / "Calculator.app"
+    (calc_app / "Contents" / "MacOS").mkdir(parents=True)
+    bin_file = calc_app / "Contents" / "MacOS" / "Calculator"
+    bin_file.write_text("binary")
+
+    quarantine_dir = tmp_path / "_Compliance_Quarantine"
+    quarantine_dir.mkdir()
+    quar_file = quarantine_dir / "item.pdf"
+    quar_file.write_text("quarantined")
+
+    # Dropping only blocked bundle/quarantine exits with code 1 and moves zero internal files
+    b_code, b_out, b_err = run_cli(
+        ["drop", str(calc_app), str(quarantine_dir), "--json"],
+        env=env,
+    )
+    assert b_code == 1
+    assert json.loads(b_out or b_err)["status"] == "error"
+    assert bin_file.exists()
+    assert quar_file.exists()
+
+    # Multi-folder drop without --dest-dir sorts each folder in place under one session_id
+    folder_a = tmp_path / "folder_a"
+    folder_b = tmp_path / "folder_b"
+    folder_a.mkdir()
+    folder_b.mkdir()
+    sketch_a = folder_a / "mockup.sketch"
+    fig_b = folder_b / "prototype.fig"
+    sketch_a.write_bytes(b"\x89SKETCH")
+    fig_b.write_bytes(b"\x89FIGMA")
+
+    m_code, m_out, m_err = run_cli(
+        [
+            "drop",
+            str(calc_app),
+            str(quarantine_dir),
+            str(sketch_a),
+            str(fig_b),
+            "--json",
+        ],
+        env=env,
+    )
+    assert m_code == 0, m_err
+    m_payload = json.loads(m_out)
+    assert m_payload["status"] == "success"
+    assert m_payload["session_id"]
+    assert bin_file.exists()
+    assert quar_file.exists()
+    assert (folder_a / "Miscellaneous" / "mockup.sketch").exists()
+    assert (folder_b / "Miscellaneous" / "prototype.fig").exists()
+
+    u_code, u_out, u_err = run_cli(["undo", "--latest", "--json"], env=env)
+    assert u_code == 0, u_err
+    assert json.loads(u_out)["status"] == "success"
+    assert sketch_a.exists()
+    assert fig_b.exists()

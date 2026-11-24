@@ -626,6 +626,7 @@ def _maybe_launch_tui(
     *,
     open_dropzone: bool = False,
     initial_drop_paths: list[str] | None = None,
+    initial_dest_dir: str | None = None,
 ) -> None:
     """Launch the interactive TUI and exit when ``--tui`` or ``--interactive`` is set."""
     if getattr(args, "tui", False) or getattr(args, "interactive", False):
@@ -639,6 +640,8 @@ def _maybe_launch_tui(
             tui_kwargs["open_dropzone"] = True
         if initial_drop_paths is not None:
             tui_kwargs["initial_drop_paths"] = initial_drop_paths
+        if initial_dest_dir is not None:
+            tui_kwargs["initial_dest_dir"] = initial_dest_dir
         run_tui(
             settings,
             initial_dir,
@@ -1234,9 +1237,14 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
     raw_p = getattr(args, "paths", None)
     dest_arg = getattr(args, "dest_dir", None)
     dir_arg = getattr(args, "directory", None)
+    resolved_dest_arg: str | None = (
+        str(Path(dest_arg).expanduser().resolve())
+        if dest_arg and str(dest_arg).strip()
+        else None
+    )
     init_dir: str | None = None
-    if dest_arg:
-        init_dir = str(Path(dest_arg).expanduser().resolve())
+    if resolved_dest_arg:
+        init_dir = resolved_dest_arg
     elif dir_arg:
         abs_dir = os.path.abspath(os.path.expanduser(str(dir_arg)))
         init_dir = abs_dir if os.path.isdir(abs_dir) else os.path.dirname(abs_dir)
@@ -1254,6 +1262,7 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
         init_dir,
         open_dropzone=True,
         initial_drop_paths=list(raw_p) if raw_p else [],
+        initial_dest_dir=resolved_dest_arg,
     )
 
     if getattr(args, "preset", None):
@@ -1270,41 +1279,51 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
             exit_code=1,
         )
 
-    from app.core.pipeline import (
-        SortPipeline,
-        apply_drop_reroot,
-        expand_drop_scope_files,
-        restore_rerooted_source_dir,
-        validate_drop_destination,
-        validate_drop_paths,
+    from app.core.pipeline import DropBatchCoordinator
+
+    coordinator = DropBatchCoordinator(settings)
+    dest_dir = getattr(args, "dest_dir", None)
+    validated_paths, issues, resolved_dest, dest_err = coordinator.validate(
+        raw_paths, dest_dir=dest_dir
     )
-    from app.core.session import AppSession
-
-    validated_paths, issues = validate_drop_paths(raw_paths, settings=settings)
-    if issues:
-        first_issue = issues[0]
-        if first_issue.reason == "missing":
-            emit_cli_error(
-                f"Error: Target path '{first_issue.clean_path}' does not exist.",
-                json_mode=json_output,
-                exit_code=1,
-            )
-        elif first_issue.reason == "protected":
-            emit_cli_error(
-                f"Error: Target path '{first_issue.clean_path}' is protected.",
-                json_mode=json_output,
-                exit_code=1,
-            )
-
-    if not validated_paths:
+    missing_issue = next((i for i in issues if i.reason == "missing"), None)
+    if missing_issue is not None:
         emit_cli_error(
-            "Error: No valid target paths to process.",
+            f"Error: Target path '{missing_issue.clean_path}' does not exist.",
+            json_mode=json_output,
+            exit_code=1,
+        )
+    protected_issue = next((i for i in issues if i.reason == "protected"), None)
+    if protected_issue is not None:
+        emit_cli_error(
+            f"Error: Target path '{protected_issue.clean_path}' is protected.",
             json_mode=json_output,
             exit_code=1,
         )
 
-    dest_dir = getattr(args, "dest_dir", None)
-    resolved_dest, dest_err = validate_drop_destination(dest_dir, settings=settings)
+    if not validated_paths:
+        blocked_detail = next(
+            (
+                i
+                for i in issues
+                if i.detail in ("app_bundle", "quarantine", "ignored_extension")
+            ),
+            None,
+        )
+        reason_msg = "Error: No valid target paths to process."
+        if blocked_detail is not None:
+            if blocked_detail.detail == "app_bundle":
+                reason_msg = f"Error: Application bundle '{blocked_detail.clean_path}' cannot be sorted."
+            elif blocked_detail.detail == "quarantine":
+                reason_msg = f"Error: Quarantine folder '{blocked_detail.clean_path}' cannot be sorted."
+            elif blocked_detail.detail == "ignored_extension":
+                reason_msg = f"Error: Ignored file extension '{blocked_detail.clean_path}' cannot be sorted."
+        emit_cli_error(
+            reason_msg,
+            json_mode=json_output,
+            exit_code=1,
+        )
+
     if dest_err == "protected":
         emit_cli_error(
             f"Error: Destination path '{dest_dir}' is protected.",
@@ -1321,51 +1340,16 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
     dry_run = getattr(args, "dry_run", False)
     quiet = getattr(args, "quiet", False)
 
-    processed_results = []
-    for path in validated_paths:
-        base_dir, norm_files = expand_drop_scope_files(path, settings=settings)
-
-        session = None
-        try:
-            session = AppSession(settings, base_dir=base_dir)
-            pipeline = SortPipeline(session)
-            plan = pipeline.plan(norm_files, dest_dir=resolved_dest)
-            plan, re_rooted = apply_drop_reroot(
-                session,
-                plan,
-                base_dir,
-                resolved_dest,
-                force_reroot=True,
-            )
-
-            serializable_plan = _make_json_serializable(plan)
-            if dry_run:
-                summary = {"status": "dry_run", "plan": serializable_plan}
-            else:
-                src_was_dir = os.path.isdir(base_dir)
-                summary = pipeline.execute(plan).summary
-                restore_rerooted_source_dir(
-                    base_dir,
-                    was_dir=src_was_dir,
-                    re_rooted=re_rooted,
-                )
-
-            processed_results.append(
-                {
-                    "target": path,
-                    "base_dir": base_dir,
-                    "plan": serializable_plan,
-                    "summary": summary,
-                }
-            )
-        finally:
-            if session:
-                session.close()
+    batch_plan = coordinator.plan_batch(validated_paths, dest_dir=resolved_dest)
+    batch_result = coordinator.execute_batch(batch_plan, dry_run=dry_run)
+    processed_results = batch_result.target_results
 
     result = {
         "status": "success",
         "command": "drop",
         "dry_run": dry_run,
+        "session_id": batch_result.session_id,
+        "destination_dir": batch_result.resolved_dest,
         "processed_count": len(processed_results),
         "results": processed_results,
     }

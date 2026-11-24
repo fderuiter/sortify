@@ -1089,8 +1089,27 @@ def _get_item_age_tier(item):
     return (tier, mtime)
 
 
+def _get_item_queue_priority_key(
+    item: dict, fallback_index: int = 0
+) -> tuple[int, float, int]:
+    content = item.get("content")
+    raw_qp = _get_val(content, "queue_priority")
+    if raw_qp is not None:
+        try:
+            return (0, float(raw_qp), fallback_index)
+        except (TypeError, ValueError):
+            pass
+    return (1, 0.0, fallback_index)
+
+
 def _get_item_priority_key(item: dict) -> tuple[int, float, float]:
     content = item.get("content")
+    raw_qp = _get_val(content, "queue_priority")
+    if raw_qp is not None:
+        try:
+            return (-1000, float(raw_qp), 0.0)
+        except (TypeError, ValueError):
+            pass
     if isinstance(content, dict):
         prio = content.get("archival_priority")
         try:
@@ -1127,12 +1146,16 @@ def _collect_move_items(
     if not isinstance(curr_plan, dict):
         return items
 
-    sorted_plan_items = sorted(
-        curr_plan.items(),
-        key=lambda item: _get_node_priority_key(
-            base_dir, item[0], item[1], active_parent_path, depth
-        ),
-    )
+    p_mode_norm = priority.strip().lower() if isinstance(priority, str) else None
+    if p_mode_norm in ("queue", "queue_order", "standard", "traversal", "none"):
+        sorted_plan_items = list(curr_plan.items())
+    else:
+        sorted_plan_items = sorted(
+            curr_plan.items(),
+            key=lambda item: _get_node_priority_key(
+                base_dir, item[0], item[1], active_parent_path, depth
+            ),
+        )
 
     for key, content in sorted_plan_items:
         node_type = _get_val(content, "node_type") or _get_val(content, "__type__")
@@ -1181,13 +1204,16 @@ def _collect_move_items(
                 _, rel_key = parse_item_identifier(str(key), base_dir)
                 filename = os.path.basename(rel_key)
 
+            dest_override = _get_val(content, "destination_override")
+            effective_dest = str(dest_override) if dest_override else current_dest
+
             items.append(
                 {
                     "key": key,
                     "content": content,
                     "source_path": source_path,
                     "filename": filename,
-                    "current_dest": current_dest,
+                    "current_dest": effective_dest,
                     "active_parent_path": active_parent_path,
                     "depth": depth,
                 }
@@ -1214,6 +1240,14 @@ def _collect_move_items(
             items.sort(key=_get_item_mtime)
         elif p_mode in ("newest_first", "recent"):
             items.sort(key=lambda x: -_get_item_mtime(x))
+        elif p_mode in ("queue", "queue_order"):
+            items = [
+                it
+                for _, it in sorted(
+                    enumerate(items),
+                    key=lambda pair: _get_item_queue_priority_key(pair[1], pair[0]),
+                )
+            ]
         elif p_mode in ("standard", "traversal", "none"):
             pass
         else:
@@ -2018,6 +2052,8 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
         priority: str | None = None,
         progress_callback=None,
         pipeline: Any = None,
+        session_id: str | None = None,
+        manage_session_lifecycle: bool = True,
         **kwargs: Any,
     ) -> MoveResult:
         """Partition relocation plan into bounded worker chunks and execute file moves off-thread.
@@ -2050,7 +2086,8 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
         base_dir = os.path.normpath(base_dir)
         self.transition_to(MoveEngineState.PREPARING)
 
-        session_id = None
+        external_session_id = str(session_id) if session_id else None
+        session_id = external_session_id
         db_lock = threading.Lock()
         db_updates_batch: list[Any] = []
         audit_records: list[dict] = []
@@ -2172,7 +2209,14 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
             ) or bool(disposal_items)
 
             registered_session = False
-            if not resume and history_manager and has_candidate_moves:
+            if session_id:
+                pass
+            elif (
+                manage_session_lifecycle
+                and not resume
+                and history_manager
+                and has_candidate_moves
+            ):
                 # Without a registered session nothing could undo or roll back the
                 # moves, so refuse to start rather than move files untracked.
                 try:
@@ -2552,8 +2596,10 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                         except Exception:
                             real_move_count = len(audit_records)
 
+                summary["real_move_count"] = real_move_count
                 if (
-                    session_id
+                    manage_session_lifecycle
+                    and session_id
                     and history_manager
                     and real_move_count > 0
                     and hasattr(history_manager, "complete_session")
@@ -2565,7 +2611,8 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                             f"Failed to mark session {session_id} completed: {complete_err}"
                         )
                 elif (
-                    session_id
+                    manage_session_lifecycle
+                    and session_id
                     and registered_session
                     and history_manager
                     and real_move_count == 0
@@ -2631,7 +2678,8 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
             self.transition_to(MoveEngineState.FAILED)
             rollback_succeeded = False
             if (
-                session_id
+                manage_session_lifecycle
+                and session_id
                 and history_manager
                 and hasattr(history_manager, "unwind_session")
             ):
@@ -2708,6 +2756,8 @@ def execute_moves(
     progress_callback=None,
     source_dirs: list[str] | None = None,
     pipeline: Any = None,
+    session_id: str | None = None,
+    manage_session_lifecycle: bool = True,
     **kwargs: Any,
 ) -> MoveResult:
     """Create directories and safely move files using chunked asynchronous execution.
@@ -2750,6 +2800,8 @@ def execute_moves(
         priority=priority,
         progress_callback=progress_callback,
         pipeline=pipeline,
+        session_id=session_id,
+        manage_session_lifecycle=manage_session_lifecycle,
         **kwargs,
     )
 

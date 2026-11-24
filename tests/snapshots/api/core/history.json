@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "ee0b3980d236b52c1138d9d96e1534344bb9d79e6ed73aca9ecde202db55b062"
+    "checksum": "0beec251e4217067c086739994a1d424f2b236190e255795e3e4e5d975f9b809"
   },
   "classes": [
     {
@@ -54,6 +54,11 @@
               "annotation": "str",
               "default": null,
               "name": "session_id"
+            },
+            {
+              "annotation": "Optional[dict[str, Any]]",
+              "default": "None",
+              "name": "metadata"
             }
           ],
           "returns": "None"

@@ -397,9 +397,14 @@ def _move_aside_blocking_parents(path: str, base_dir: str, db_conn) -> None:
     The user may have saved a file named like a folder that a sort emptied and
     removed; undo moves it to a free name instead of failing to recreate the folder.
     """
+    if not path or not base_dir:
+        return
     from app.core.mover import get_safe_path
 
-    parts = safe_relpath(path, base_dir).replace("\\", "/").split("/")
+    rel_str = safe_relpath(path, base_dir).replace("\\", "/")
+    parts = [p for p in rel_str.split("/") if p and p != "."]
+    if not parts or ".." in parts or os.path.isabs(rel_str):
+        return
     current = base_dir
     for part in parts[:-1]:
         current = os.path.join(current, part)
@@ -694,7 +699,9 @@ class HistoryManager:
 
         return self.db.worker.execute_write(_write)
 
-    def complete_session(self, session_id: str) -> None:
+    def complete_session(
+        self, session_id: str, metadata: Optional[dict[str, Any]] = None
+    ) -> None:
         """Mark ``session_id`` as ``completed`` while keeping its ``moves`` ledger intact."""
         if not session_id:
             return
@@ -702,7 +709,9 @@ class HistoryManager:
         def _write() -> None:
             conn = get_db_connection(self.db_path)
             with conn:
-                self._transition_session_status(session_id, COMPLETED, conn=conn)
+                self._transition_session_status(
+                    session_id, COMPLETED, conn=conn, metadata=metadata
+                )
 
         self.db.worker.execute_write(_write)
 
@@ -1080,6 +1089,63 @@ class HistoryManager:
 
         claimed = {m.dst for m in moves if m.state not in (INTENT, FAILED)}
         docs_conn = get_db_connection(self.db.db_path)
+
+        candidate_roots: list[str] = []
+        seen_root_keys: set[str] = set()
+
+        def _add_candidate_root(raw_root: Optional[str]) -> None:
+            if not raw_root or not isinstance(raw_root, str):
+                return
+            norm_root = os.path.normpath(os.path.abspath(raw_root))
+            key = os.path.normcase(norm_root)
+            if key not in seen_root_keys:
+                seen_root_keys.add(key)
+                candidate_roots.append(norm_root)
+
+        _add_candidate_root(base_dir)
+        try:
+            for ev in self.state_machine.get_audit_events(
+                session_id=session_id, conn=conn
+            ):
+                meta = ev.get("metadata") or {}
+                for br in meta.get("batch_roots") or []:
+                    _add_candidate_root(br)
+        except Exception:
+            pass
+        try:
+            doc_base_rows = docs_conn.execute(
+                "SELECT DISTINCT base_dir FROM documents WHERE base_dir IS NOT NULL"
+            ).fetchall()
+            for (doc_bdir,) in doc_base_rows:
+                if not doc_bdir:
+                    continue
+                norm_db = os.path.normcase(os.path.normpath(os.path.abspath(doc_bdir)))
+                prefix = norm_db.rstrip("/\\") + os.sep
+                for m in moves:
+                    for p_cand in (m.src, m.dst):
+                        if p_cand:
+                            norm_p = os.path.normcase(
+                                os.path.normpath(os.path.abspath(p_cand))
+                            )
+                            if norm_p == norm_db or norm_p.startswith(prefix):
+                                _add_candidate_root(doc_bdir)
+                                break
+        except DB_ERRORS:
+            pass
+
+        def _best_root_for(path_str: str) -> Optional[str]:
+            if not path_str:
+                return base_dir
+            norm_p = os.path.normcase(os.path.normpath(os.path.abspath(path_str)))
+            best: Optional[str] = None
+            for cand in candidate_roots:
+                norm_c = os.path.normcase(cand)
+                prefix = norm_c.rstrip("/\\") + os.sep
+                if norm_p == norm_c or norm_p.startswith(prefix):
+                    if best is None or len(norm_c) > len(os.path.normcase(best)):
+                        best = cand
+            return best or base_dir
+
         dirs_to_prune = set()
         restored = 0
         conflicts = []
@@ -1104,8 +1170,9 @@ class HistoryManager:
                 if moved:
                     claimed.add(moved)
                     dirs_to_prune.add(os.path.dirname(moved))
-                    if base_dir:
-                        _move_aside_blocking_parents(move.src, base_dir, docs_conn)
+                    src_root = _best_root_for(move.src)
+                    if src_root:
+                        _move_aside_blocking_parents(move.src, src_root, docs_conn)
                     os.makedirs(os.path.dirname(move.src), exist_ok=True)
                     restored_to = move.src
                     if os.path.lexists(move.src) and same_file_content(move.src, moved):
@@ -1119,21 +1186,22 @@ class HistoryManager:
                                 f"restored {moved} to {restored_to} instead."
                             )
                     restored += 1
-                    if db and base_dir:
+                    doc_root = _best_root_for(restored_to) or _best_root_for(moved)
+                    if db and doc_root:
                         try:
-                            old_rel = safe_relpath(moved, base_dir).replace("\\", "/")
-                            new_rel = safe_relpath(restored_to, base_dir).replace(
+                            old_rel = safe_relpath(moved, doc_root).replace("\\", "/")
+                            new_rel = safe_relpath(restored_to, doc_root).replace(
                                 "\\", "/"
                             )
                             try:
                                 db.update_document_path(
-                                    base_dir,
+                                    doc_root,
                                     old_rel,
                                     new_rel,
                                     clear_verified_target=True,
                                 )
                             except TypeError:
-                                db.update_document_path(base_dir, old_rel, new_rel)
+                                db.update_document_path(doc_root, old_rel, new_rel)
                         except Exception as err:
                             logging.warning(
                                 f"Could not update the document path for {restored_to}: {err}"
@@ -1150,14 +1218,16 @@ class HistoryManager:
                 logging.error(f"Failed to undo move {session_id}#{move.seq}: {err}")
                 failures.append(err)
 
-        if base_dir and not is_partial:
-            restored += _restore_trapped_branch_files(
-                base_dir, session_id, docs_conn, failures
-            )
-
-        if base_dir and os.path.exists(base_dir):
-            _remove_staging_leftovers(base_dir)
-            _prune_emptied_dirs(dirs_to_prune, base_dir)
+        for root_dir in candidate_roots or ([base_dir] if base_dir else []):
+            if not root_dir:
+                continue
+            if not is_partial:
+                restored += _restore_trapped_branch_files(
+                    root_dir, session_id, docs_conn, failures
+                )
+            if os.path.exists(root_dir):
+                _remove_staging_leftovers(root_dir)
+                _prune_emptied_dirs(dirs_to_prune, root_dir)
 
         if failures:
             try:
