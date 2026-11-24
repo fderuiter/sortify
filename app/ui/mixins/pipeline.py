@@ -179,6 +179,7 @@ class SortPipelineMixin:
             except Exception:
                 pass
 
+            self._reapply_manual_plan_edits()
             self.call_from_thread(self.rebuild_tree)
             model_status = getattr(self.plan, "model_status", "HEALTHY")
             invalid_locks = getattr(self.plan, "invalid_locks", {}) or {}
@@ -282,8 +283,11 @@ class SortPipelineMixin:
             if not self._has_file_nodes(refreshed_exec):
                 self.announce("No remaining checked files to execute after review.")
                 return
+            normalized_refreshed = self._normalize_plan_for_verification(
+                refreshed_exec, base_dir
+            )
             collision_groups = VerificationEngine.get_collision_groups(
-                base_dir, refreshed_exec
+                base_dir, normalized_refreshed
             )
             if collision_groups:
 
@@ -317,9 +321,12 @@ class SortPipelineMixin:
                 self.announce("Executing file moves according to plan...")
                 self.run_execute_worker()
 
+        normalized_exec_plan = self._normalize_plan_for_verification(
+            exec_plan, base_dir
+        )
         duplicate_groups = VerificationEngine.get_duplicate_groups(
             base_dir,
-            exec_plan,
+            normalized_exec_plan,
             detect_original_by=detect_original_by,
         )
         if duplicate_groups:
@@ -377,6 +384,196 @@ class SortPipelineMixin:
                 normalized[k] = v
         return normalized
 
+    def _reapply_manual_plan_edits(self: TUIHostProtocol) -> None:
+        """Reapply cached manual renames, folder reassignments, and exclusions after rescan."""
+        from app.core.path_utils import _disambiguate_key, safe_relpath
+        from app.ui.mixins.selection import (
+            _make_manual_edit_key,
+            _resolve_plan_folder_dict,
+            _resolve_source_identity,
+        )
+
+        raw_plan: Any = self.plan
+        plan_dict = (
+            raw_plan.plan
+            if hasattr(raw_plan, "plan") and isinstance(raw_plan.plan, dict)
+            else raw_plan
+        )
+        if not isinstance(plan_dict, dict):
+            return
+
+        manual_folders = getattr(self, "_manual_empty_folders", set())
+        for folder_name in list(manual_folders):
+            if folder_name:
+                created = _resolve_plan_folder_dict(plan_dict, folder_name, create=True)
+                if created is None:
+                    plan_dict[folder_name] = {}
+
+        edits_map = getattr(self, "_manual_plan_edits", None)
+        if not edits_map:
+            return
+
+        by_relpath: dict[str, dict[str, Any]] = {}
+        for edit_val in edits_map.values():
+            rel_p = edit_val.get("doc_relpath")
+            if rel_p and rel_p not in by_relpath:
+                by_relpath[rel_p] = edit_val
+
+        collected: list[tuple[str, dict[str, Any], str, dict[str, Any]]] = []
+
+        def _walk_plan(curr: dict[str, Any], folder_path: str = "") -> None:
+            for k, v in list(curr.items()):
+                if isinstance(v, dict):
+                    if v.get("__type__") == "file":
+                        collected.append((folder_path, curr, k, v))
+                    else:
+                        sub = f"{folder_path}/{k}" if folder_path else k
+                        _walk_plan(v, sub)
+
+        _walk_plan(plan_dict)
+
+        matched_edit_keys: set[str] = set()
+        for current_folder, container, key, file_info in collected:
+            db_base, doc_relpath, abs_fp = _resolve_source_identity(
+                self,
+                file_key=key,
+                filepath=file_info.get("filepath"),
+                info=file_info,
+            )
+            if not doc_relpath:
+                continue
+
+            scoped_key = _make_manual_edit_key(db_base, doc_relpath)
+            edit = edits_map.get(scoped_key) or by_relpath.get(doc_relpath)
+            if not edit:
+                continue
+            matched_edit_keys.add(scoped_key)
+
+            if doc_relpath and not file_info.get("source_path"):
+                file_info["source_path"] = doc_relpath
+            if abs_fp and not file_info.get("filepath"):
+                file_info["filepath"] = abs_fp
+
+            target_folder = current_folder
+            if edit.get("folder") and not file_info.get("is_overridden"):
+                target_folder = str(edit["folder"])
+
+            manual_tf = edit.get("target_filename")
+            dest_key = str(manual_tf) if manual_tf else key
+
+            if target_folder != current_folder or dest_key != key:
+                container.pop(key, None)
+                dest_container = _resolve_plan_folder_dict(
+                    plan_dict, target_folder, create=True
+                )
+                if dest_container is None:
+                    plan_dict[target_folder] = {}
+                    dest_container = plan_dict[target_folder]
+                if (
+                    dest_key in dest_container
+                    and dest_container[dest_key] is not file_info
+                ):
+                    dest_key = _disambiguate_key(dest_container, dest_key, is_file=True)
+                dest_container[dest_key] = file_info
+                file_info["folder"] = target_folder
+                if abs_fp and db_base:
+                    dest_base = (
+                        os.path.join(db_base, target_folder)
+                        if target_folder
+                        else db_base
+                    )
+                    file_info["relative_source"] = safe_relpath(
+                        abs_fp, dest_base
+                    ).replace("\\", "/")
+
+            if manual_tf:
+                file_info["target_filename"] = dest_key
+                file_info["confirmed"] = bool(edit.get("confirmed", True))
+                self.locked_files[dest_key] = target_folder
+
+            if "is_locked" in edit:
+                is_locked_val = bool(edit["is_locked"])
+                file_info["is_locked"] = is_locked_val
+                if is_locked_val:
+                    self.locked_files[doc_relpath] = target_folder
+                else:
+                    self.locked_files.pop(doc_relpath, None)
+
+            if "is_excluded" in edit:
+                file_info["is_excluded"] = bool(edit["is_excluded"])
+            if "is_checked" in edit:
+                file_info["is_checked"] = bool(edit["is_checked"])
+            if file_info.get("is_excluded"):
+                file_info["is_checked"] = False
+
+        # Re-insert renamed files that were pruned as in-place no-ops before target_filename was applied
+        for scoped_key, edit in list(edits_map.items()):
+            if scoped_key in matched_edit_keys:
+                continue
+            manual_tf = edit.get("target_filename")
+            target_folder = str(edit.get("folder") or "")
+            abs_fp = str(edit.get("abs_filepath") or "")
+            doc_relpath = str(edit.get("doc_relpath") or "")
+            db_base = str(edit.get("db_base_dir") or self.base_dir or "")
+            if not (manual_tf and abs_fp and os.path.lexists(abs_fp)):
+                continue
+            planned_dst = os.path.normcase(
+                os.path.normpath(
+                    os.path.abspath(
+                        os.path.join(
+                            self.base_dir or db_base, target_folder, str(manual_tf)
+                        )
+                    )
+                )
+            )
+            if planned_dst == os.path.normcase(
+                os.path.normpath(os.path.abspath(abs_fp))
+            ):
+                continue
+            dest_container = _resolve_plan_folder_dict(
+                plan_dict, target_folder, create=True
+            )
+            if dest_container is None:
+                plan_dict[target_folder] = {}
+                dest_container = plan_dict[target_folder]
+            dest_key = str(manual_tf)
+            if dest_key in dest_container:
+                dest_key = _disambiguate_key(dest_container, dest_key, is_file=True)
+            dest_base = (
+                os.path.join(db_base, target_folder) if target_folder else db_base
+            )
+            restored_node: dict[str, Any] = {
+                "__type__": "file",
+                "source_path": doc_relpath,
+                "source_root": db_base,
+                "filepath": abs_fp,
+                "relative_source": safe_relpath(abs_fp, dest_base).replace("\\", "/")
+                if db_base
+                else doc_relpath,
+                "target_filename": dest_key,
+                "folder": target_folder,
+                "is_locked": bool(edit.get("is_locked", True)),
+                "confirmed": bool(edit.get("confirmed", True)),
+                "is_excluded": bool(edit.get("is_excluded", False)),
+                "is_checked": bool(
+                    edit.get("is_checked", not edit.get("is_excluded", False))
+                ),
+            }
+            dest_container[dest_key] = restored_node
+            self.locked_files[dest_key] = target_folder
+            if doc_relpath and restored_node["is_locked"]:
+                self.locked_files[doc_relpath] = target_folder
+
+        def _prune_empty_auto_folders(curr: dict[str, Any], prefix: str = "") -> None:
+            for k, v in list(curr.items()):
+                if isinstance(v, dict) and v.get("__type__") != "file":
+                    full = f"{prefix}/{k}" if prefix else k
+                    _prune_empty_auto_folders(v, full)
+                    if not v and full not in manual_folders and k not in manual_folders:
+                        curr.pop(k, None)
+
+        _prune_empty_auto_folders(plan_dict)
+
     @work(group="validation", exclusive=True, thread=True)
     def run_validation_worker(self: TUIHostProtocol) -> None:
         """Asynchronously verify plan integrity in background worker thread."""
@@ -421,6 +618,7 @@ class SortPipelineMixin:
         circular = result.get("circular_renames", [])
         invalid = result.get("invalid_renames", [])
         long_paths = result.get("long_paths", [])
+        escaping = result.get("escaping_paths", [])
 
         broken_links = result.get("broken_links", [])
         unconfirmed = result.get("unconfirmed_renames", [])
@@ -428,7 +626,7 @@ class SortPipelineMixin:
         has_critical = bool(
             result.get("has_critical_errors")
             if "has_critical_errors" in result
-            else (critical_collisions or circular or invalid or long_paths)
+            else (critical_collisions or circular or invalid or long_paths or escaping)
         )
         has_warnings = bool(recoverable_collisions or broken_links or unconfirmed)
 
@@ -458,6 +656,11 @@ class SortPipelineMixin:
                 crit_paths.add(os.path.normpath(lp["path"]))
             if lp.get("source"):
                 crit_paths.add(os.path.normpath(lp["source"]))
+        for ep in escaping:
+            if ep.get("path"):
+                crit_paths.add(os.path.normpath(ep["path"]))
+            if ep.get("source"):
+                crit_paths.add(os.path.normpath(ep["source"]))
 
         warn_paths = set()
         for rc in recoverable_collisions:
@@ -541,6 +744,10 @@ class SortPipelineMixin:
                     msgs.append("⛔ EXCEEDS PATH LENGTH LIMIT:")
                     for lp in long_paths:
                         msgs.append(f"  • {lp.get('message')}")
+                if escaping:
+                    msgs.append("⛔ PATH TRAVERSAL / ESCAPING TARGET DETECTED:")
+                    for ep in escaping:
+                        msgs.append(f"  • {ep.get('message')}")
 
                 alert_str = "\n".join(msgs)
                 alert_banner.update(alert_str)
@@ -610,6 +817,8 @@ class SortPipelineMixin:
                 flush_trashed_only=flush_trash,
             )
             summary = result.summary
+            if not (isinstance(summary, dict) and summary.get("cancelled")):
+                self._clear_manual_plan_edits()
             msg = f"Execution completed successfully! [Ctrl+Z] Undo available. Summary: {summary}"
             self.call_from_thread(self.announce, msg)
 

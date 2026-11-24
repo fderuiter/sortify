@@ -77,7 +77,7 @@ smart-autosorter sort ~/Downloads --dest-dir ~/Sorted
 Useful options for `sort` and `scan`:
 - `--max-folders N`: maximum folders per level (default 12, up to 50).
 - `--strategy`: `default` (keyword clustering), `generative` (local LLM folder names, needs the `ml` extra), or the clinical `clinical_tmf` / `clinical_isf` strategies.
-- `--conflict-policy skip|rename`: what to do when a destination file already exists.
+- `--conflict-policy skip|rename|overwrite`: what to do when a destination file already exists (`overwrite` moves the existing file to `.sortify_overwritten/<session_id>/` so `undo` restores it).
 - `--export-report FILE --report-format html|json`: save an audit report of the run.
 - `--preset demo|downloads|documents`: use a standard folder instead of naming one.
 - `-q` / `--quiet` and `--no-color`: less output, and plain text for logs or terminals without color.

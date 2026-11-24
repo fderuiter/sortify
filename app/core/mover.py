@@ -869,7 +869,7 @@ def _resolve_source_path(
     depth: int = 0,
 ) -> str:
     """Resolve normalized absolute source path for a plan node."""
-    src_p = _get_val(content, "source_path")
+    src_p = _get_val(content, "source_path") or _get_val(content, "filepath")
     src_root = _get_val(content, "source_root")
     rel_src = _get_val(content, "relative_source") or key
     raw_key = key
@@ -2063,7 +2063,12 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                 runtime_settings, "progress_callback", None
             )
 
-            integrity_result = VerificationEngine.verify_plan_integrity(base_dir, plan)
+            active_conflict_policy = str(
+                getattr(runtime_settings, "CONFLICT_POLICY", "rename") or "rename"
+            ).lower()
+            integrity_result = VerificationEngine.verify_plan_integrity(
+                base_dir, plan, conflict_policy=active_conflict_policy
+            )
             if (
                 integrity_result.get("invalid_renames")
                 or integrity_result.get("unconfirmed_renames")
