@@ -282,3 +282,25 @@ def test_head_passes_live_ty_warning_ratchet() -> None:
     assert main(["prog"]) == 0
     for platform in PLATFORMS:
         assert main(["prog", "--platform", platform]) == 0
+
+
+def test_ty_rejects_invalid_parameter_default_probe(tmp_path: Path) -> None:
+    """Verify ty fails on invalid-parameter-default and invalid IncrementalAnalyzer model_path types."""
+    from scripts.check_ty_warnings import _ty_command
+
+    probe = tmp_path / "probe_invalid_default.py"
+    probe.write_text(
+        "from app.core.analyzer import IncrementalAnalyzer\n\n"
+        "def bad_default(x: str = None) -> str | None:\n"
+        "    return x\n\n"
+        "def bad_caller(db: object) -> None:\n"
+        "    IncrementalAnalyzer(3, set(), db, model_path=123)\n",
+        encoding="utf-8",
+    )
+    cmd = [arg for arg in _ty_command() if arg not in ("--output-format", "gitlab")]
+    cmd.extend(["--project", str(REPO_ROOT), str(probe)])
+    res = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True)
+    assert res.returncode == 1
+    combined = f"{res.stdout}\n{res.stderr}"
+    assert "invalid-parameter-default" in combined
+    assert "invalid-argument-type" in combined

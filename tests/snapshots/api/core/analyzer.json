@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "bfd3d27ff99ab945d0ceea869eabff7f9f6919237903f0b9b001636416b53883"
+    "checksum": "bbda8f9585e3bf5011cba4ad4dd51531fdabf17a9ce42c5da86501360e145cef"
   },
   "classes": [
     {
@@ -38,7 +38,7 @@
               "name": "strategy_name"
             },
             {
-              "annotation": "str | object | None",
+              "annotation": "str | None | _Unspecified",
               "default": "_UNSPECIFIED",
               "name": "model_path"
             }
