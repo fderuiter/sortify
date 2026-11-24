@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "95e133eb1ba5303fc1842515da85e55e2818b2fce8b2a47b0da11ed32a4e3933"
+    "checksum": "54238df7b38dc6db72db47d5c145eed1fe51efed191db74940505b41d2b77ced"
   },
   "classes": [],
   "functions": [
@@ -85,6 +85,24 @@
           "annotation": "int",
           "default": "260",
           "name": "limit"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "is_subpath_or_equal",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "child"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "parent"
         }
       ],
       "returns": "bool"

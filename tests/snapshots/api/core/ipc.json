@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "63f581adb0fd76e33e7a42b6e60f1e08b3019f3c5d602b5b6659236f304184ed"
+    "checksum": "a84d9dabef7bdd03ce64aa6302168a4abca1b94155447813d7b76d787da4a7c5"
   },
   "classes": [
     {
@@ -18,12 +18,17 @@
               "name": "self"
             },
             {
-              "annotation": "str",
-              "default": null,
+              "annotation": "Optional[str | Path]",
+              "default": "None",
               "name": "base_dir"
+            },
+            {
+              "annotation": "Optional[str | Path]",
+              "default": "None",
+              "name": "control_dir"
             }
           ],
-          "returns": null
+          "returns": "None"
         },
         {
           "async": true,
@@ -41,7 +46,7 @@
               "name": "method"
             },
             {
-              "annotation": "Optional[dict]",
+              "annotation": "Optional[dict[str, Any]]",
               "default": "None",
               "name": "params"
             },
@@ -70,12 +75,30 @@
               "name": "self"
             },
             {
-              "annotation": null,
+              "annotation": "Any",
               "default": null,
               "name": "daemon"
+            },
+            {
+              "annotation": "Optional[str | Path]",
+              "default": "None",
+              "name": "control_dir"
             }
           ],
-          "returns": null
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "refresh_pid_file",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
         },
         {
           "async": true,
@@ -88,7 +111,7 @@
               "name": "self"
             }
           ],
-          "returns": null
+          "returns": "None"
         },
         {
           "async": false,
@@ -101,12 +124,19 @@
               "name": "self"
             }
           ],
-          "returns": null
+          "returns": "None"
         }
       ]
     }
   ],
   "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_ipc_dir",
+      "parameters": [],
+      "returns": "str"
+    },
     {
       "async": false,
       "decorators": [],
@@ -126,8 +156,8 @@
       "name": "read_pid_file",
       "parameters": [
         {
-          "annotation": "str",
-          "default": null,
+          "annotation": "Optional[str | Path]",
+          "default": "None",
           "name": "base_dir"
         }
       ],

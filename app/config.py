@@ -448,6 +448,15 @@ class Settings(BaseSettings):
             "or modification. Relative paths and wildcard or glob characters ('*', '?', '[', ']') are rejected."
         ),
     )
+    WATCHED_FOLDERS: list[str] = Field(
+        default_factory=list,
+        description=(
+            "List of absolute directory paths monitored concurrently by the background "
+            "watchdog daemon. Entries are normalized with symlinks resolved; relative paths, "
+            "wildcards, filesystem roots, overlapping parent/child folders, app config "
+            "directories, and protected paths are rejected."
+        ),
+    )
     AUTO_QUARANTINE_RATINGS: list[str] = Field(
         default_factory=list,
         description=(
@@ -915,6 +924,125 @@ class Settings(BaseSettings):
                     f"Wildcard patterns or glob characters are not allowed in protected path: '{path}'"
                 )
         return v
+
+    @field_validator("WATCHED_FOLDERS", mode="before")
+    @classmethod
+    def validate_watched_folders(cls, v: list[str]) -> list[str]:
+        """Validate and normalize WATCHED_FOLDERS, rejecting relative, missing, root, wildcard, or nested paths."""
+        from app.core.path_utils import is_subpath_or_equal
+
+        if not isinstance(v, list):
+            raise ValueError("WATCHED_FOLDERS must be a list of directory paths.")
+
+        normalized: list[str] = []
+        normalized_pairs: list[tuple[str, str]] = []
+        seen_norm_keys: set[str] = set()
+        seen_real_keys: set[str] = set()
+
+        for raw_path in v:
+            if not isinstance(raw_path, str):
+                raise ValueError("Each watched folder path must be a string.")
+            cleaned = raw_path.strip()
+            if not cleaned:
+                raise ValueError("Watched folder path cannot be empty.")
+            if "\x00" in cleaned:
+                raise ValueError("Watched folder path cannot contain null bytes.")
+            if any(char in cleaned for char in ("*", "?", "[", "]")):
+                raise ValueError(
+                    f"Wildcard patterns or glob characters are not allowed in watched folder: '{raw_path}'"
+                )
+
+            expanded = os.path.expanduser(cleaned)
+            if not os.path.isabs(expanded):
+                raise ValueError(
+                    f"Watched folder must be an absolute path: '{raw_path}'"
+                )
+            if not os.path.exists(expanded):
+                raise ValueError(f"Watched folder path does not exist: '{raw_path}'")
+            if not os.path.isdir(expanded):
+                raise ValueError(
+                    f"Watched folder path must be an existing directory: '{raw_path}'"
+                )
+
+            norm_path = os.path.normpath(os.path.abspath(expanded))
+            real_path = os.path.normpath(os.path.realpath(norm_path))
+
+            # Reject filesystem root (e.g. '/', 'C:\\', '\\\\server\\share')
+            if (
+                os.path.dirname(norm_path) == norm_path
+                or os.path.dirname(real_path) == real_path
+            ):
+                raise ValueError(
+                    f"Filesystem root cannot be registered as a watched folder: '{raw_path}'"
+                )
+
+            norm_key = os.path.normcase(norm_path)
+            real_key = os.path.normcase(real_path)
+            if norm_key in seen_norm_keys or real_key in seen_real_keys:
+                continue
+
+            for existing_norm, existing_real in normalized_pairs:
+                if (
+                    is_subpath_or_equal(norm_path, existing_norm)
+                    or is_subpath_or_equal(existing_norm, norm_path)
+                    or is_subpath_or_equal(real_path, existing_real)
+                    or is_subpath_or_equal(existing_real, real_path)
+                ):
+                    raise ValueError(
+                        f"Watched folders cannot nest inside or contain one another: "
+                        f"'{norm_path}' overlaps with '{existing_norm}'."
+                    )
+
+            seen_norm_keys.add(norm_key)
+            seen_real_keys.add(real_key)
+            normalized_pairs.append((norm_path, real_path))
+            normalized.append(norm_path)
+
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_watched_folders_against_protected(self) -> "Settings":
+        """Ensure watched folders do not overlap protected directories or the app config directory."""
+        from app.core.path_utils import _resolve_path, is_subpath_or_equal
+
+        if not self.WATCHED_FOLDERS:
+            return self
+
+        app_dir_raw = os.path.normpath(os.path.abspath(str(_resolve_app_dir())))
+        app_dir_real = os.path.normpath(str(_resolve_path(_resolve_app_dir())))
+
+        for watched in self.WATCHED_FOLDERS:
+            watched_abs = os.path.normpath(os.path.abspath(watched))
+            watched_real = os.path.normpath(os.path.realpath(watched_abs))
+
+            if (
+                is_subpath_or_equal(watched_abs, app_dir_raw)
+                or is_subpath_or_equal(app_dir_raw, watched_abs)
+                or is_subpath_or_equal(watched_real, app_dir_real)
+                or is_subpath_or_equal(app_dir_real, watched_real)
+            ):
+                raise ValueError(
+                    f"Watched folder '{watched}' conflicts with the application configuration directory '{app_dir_raw}'."
+                )
+
+            for prot in self.PROTECTED_PATHS:
+                prot_abs = os.path.normpath(os.path.abspath(prot))
+                prot_real = (
+                    os.path.normpath(os.path.realpath(prot_abs))
+                    if os.path.exists(prot_abs)
+                    else prot_abs
+                )
+                if (
+                    is_subpath_or_equal(watched_abs, prot_abs)
+                    or is_subpath_or_equal(prot_abs, watched_abs)
+                    or is_subpath_or_equal(watched_real, prot_real)
+                    or is_subpath_or_equal(prot_real, watched_real)
+                ):
+                    raise ValueError(
+                        f"Watched folder '{watched}' overlaps protected path '{prot}'."
+                    )
+
+        return self
 
     @field_validator("RENAME_PATTERN")
     @classmethod
@@ -1396,6 +1524,9 @@ class AppSettings:
                     )
 
             data_keys = list(data.keys())
+            if "PROTECTED_PATHS" in data_keys and "WATCHED_FOLDERS" in data_keys:
+                data_keys.remove("PROTECTED_PATHS")
+                data_keys.insert(0, "PROTECTED_PATHS")
             if "MAX_DEBOUNCE_DELAY" in data_keys and "DEBOUNCE_DELAY" in data_keys:
                 data_keys.remove("MAX_DEBOUNCE_DELAY")
                 data_keys.insert(0, "MAX_DEBOUNCE_DELAY")

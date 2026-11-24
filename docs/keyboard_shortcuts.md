@@ -26,6 +26,7 @@ Press `?` or `F1` in the app to see these shortcuts.
 | `Ctrl+W` | Wizard |
 | `Ctrl+D` | DropZone |
 | `Ctrl+T` / `p` | Toggle Daemon |
+| `Ctrl+Shift+T` / `Shift+P` | Stop Daemon |
 | `Ctrl+S` | Scan |
 | `Ctrl+Y` | History View |
 | `Ctrl+U` | Quarantine Vault |

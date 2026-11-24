@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import time
+from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -11,6 +12,7 @@ from app.core.daemon import ContinuousWatchdogDaemon
 from app.core.ipc import (
     DaemonIPCClient,
     DaemonIPCServer,
+    get_ipc_dir,
     is_process_alive,
     read_pid_file,
 )
@@ -51,13 +53,16 @@ async def test_ipc_server_lifecycle_and_lockfile(tmp_path):
 
     try:
         assert server.is_running is True
-        pid_file = tmp_path / ".autosorter.pid"
+        pid_file = Path(get_ipc_dir()) / ".autosorter.pid"
         assert pid_file.exists()
+        assert not (tmp_path / ".autosorter.pid").exists()
+        assert not (tmp_path / ".autosorter.sock").exists()
 
         pid_info = read_pid_file(str(tmp_path))
         assert pid_info is not None
         assert pid_info["pid"] == os.getpid()
         assert pid_info["base_dir"] == str(tmp_path)
+        assert pid_info["watched_folders"] == [str(tmp_path)]
         assert "socket_path" in pid_info
 
         if sys.platform != "win32":
@@ -79,16 +84,18 @@ async def test_ipc_server_lifecycle_and_lockfile(tmp_path):
 
     finally:
         server.stop()
+        assert not (Path(get_ipc_dir()) / ".autosorter.pid").exists()
         assert not (tmp_path / ".autosorter.pid").exists()
 
 
 @pytest.mark.anyio
 async def test_ipc_stale_lockfile_cleanup(tmp_path):
-    # Write a fake stale lockfile with non-existent PID
+    # Write a fake stale lockfile with non-existent PID in user-scoped IPC dir
     stale_pid = 999999
-    fake_sock = tmp_path / ".autosorter.sock"
+    ipc_dir = Path(get_ipc_dir())
+    fake_sock = ipc_dir / ".autosorter.sock"
     fake_sock.write_text("")
-    pid_file = tmp_path / ".autosorter.pid"
+    pid_file = ipc_dir / ".autosorter.pid"
     pid_file.write_text(
         json.dumps(
             {

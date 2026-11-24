@@ -13,7 +13,6 @@ import threading
 import unicodedata
 import uuid
 from enum import Enum
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
@@ -22,7 +21,16 @@ from app.core.domain_contracts import _get_val
 from app.core.exceptions import SortifyBaseError
 from app.core.lifecycle import LifecycleTelemetryMixin
 from app.core.link_manager import LinkManager
-from app.core.path_utils import is_junction_path, safe_relpath
+from app.core.path_utils import (
+    _resolve_path as _resolve_path,
+)
+from app.core.path_utils import (
+    is_junction_path,
+    safe_relpath,
+)
+from app.core.path_utils import (
+    is_subpath_or_equal as is_subpath_or_equal,
+)
 from app.core.pipeline import PipelineLifecycleState
 from app.core.progress import emit_progress
 from app.core.verifier import VerificationEngine
@@ -276,105 +284,6 @@ def _is_same_path(p1: str, p2: str) -> bool:
     return os.path.normcase(os.path.abspath(p1)) == os.path.normcase(
         os.path.abspath(p2)
     )
-
-
-def _resolve_path(p: Path) -> Path:
-    """Resolve symlinks and Windows 8.3 short paths, even if trailing components do not exist.
-
-    Args:
-        p: Path object to resolve.
-
-    Returns
-    -------
-        Resolved Path object with symlinks and 8.3 short names expanded for existing ancestors.
-    """
-    try:
-        p = p.expanduser()
-    except Exception:
-        pass
-
-    try:
-        if p.exists():
-            return p.resolve()
-    except Exception:
-        pass
-
-    parts = []
-    curr = p
-    while True:
-        try:
-            if curr.exists():
-                break
-        except Exception:
-            pass
-        parent_curr = curr.parent
-        if parent_curr == curr:
-            break
-        parts.append(curr.name)
-        curr = parent_curr
-
-    try:
-        curr_resolved = curr.resolve()
-    except Exception:
-        curr_resolved = curr
-
-    for part in reversed(parts):
-        curr_resolved = curr_resolved / part
-
-    return curr_resolved
-
-
-def is_subpath_or_equal(child: str, parent: str) -> bool:
-    """Check if child path is equal to or nested within parent path (case-insensitive and cross-platform).
-
-    Args:
-        child: Candidate child path to check for subpath containment.
-        parent: Boundary parent path to evaluate child against.
-
-    Returns
-    -------
-        True if child is identical to or located within parent directory boundary, False otherwise.
-    """
-    if child is None or parent is None:
-        return False
-
-    clean_child = str(child).replace("\\", "/")
-    clean_parent = str(parent).replace("\\", "/")
-
-    try:
-        p_child = _resolve_path(Path(clean_child))
-        p_parent = _resolve_path(Path(clean_parent))
-
-        if p_child == p_parent:
-            return True
-        try:
-            if p_child.is_relative_to(p_parent):
-                return True
-        except (AttributeError, ValueError):
-            pass
-
-        s_child = str(p_child).replace("\\", "/").rstrip("/").lower()
-        s_parent = str(p_parent).replace("\\", "/").rstrip("/").lower()
-
-        if s_child == s_parent:
-            return True
-        if s_child.startswith(s_parent + "/"):
-            return True
-    except Exception:
-        pass
-
-    try:
-        abs_c = os.path.abspath(clean_child).replace("\\", "/").rstrip("/").lower()
-        abs_p = os.path.abspath(clean_parent).replace("\\", "/").rstrip("/").lower()
-
-        if abs_c == abs_p:
-            return True
-        if abs_c.startswith(abs_p + "/"):
-            return True
-    except Exception:
-        pass
-
-    return False
 
 
 def get_safe_path(dest_dir: str, filename: str, source_path: str | None = None) -> str:
@@ -3222,6 +3131,8 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
         self.transition_to(MoveEngineState.PREPARING)
 
         parent_session_id = kwargs.get("parent_session_id")
+        if "complete_session" in kwargs and kwargs["complete_session"] is not None:
+            manage_session_lifecycle = bool(kwargs["complete_session"])
         external_session_id = (
             str(session_id)
             if session_id
@@ -3229,6 +3140,14 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
         )
         session_id = external_session_id
         is_child_session = bool(parent_session_id) or not manage_session_lifecycle
+        pre_existing_seqs: set[int] = set()
+        if session_id and history_manager:
+            ledger_pre = getattr(history_manager, "moves", None)
+            if ledger_pre is not None and hasattr(ledger_pre, "list_moves"):
+                with contextlib.suppress(Exception):
+                    pre_existing_seqs = {
+                        m.seq for m in ledger_pre.list_moves(session_id)
+                    }
         db_lock = threading.Lock()
         db_updates_batch: list[Any] = []
         audit_records: list[dict] = []
@@ -4048,6 +3967,38 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                         f"Automatic rollback failed for session {session_id}: {rollback_err}",
                         exc_info=True,
                     )
+            elif (
+                not manage_session_lifecycle
+                and external_session_id
+                and session_id
+                and history_manager
+                and hasattr(history_manager, "unwind_session")
+            ):
+                ledger_err = getattr(history_manager, "moves", None)
+                new_seqs: list[int] = []
+                if ledger_err is not None and hasattr(ledger_err, "list_moves"):
+                    with contextlib.suppress(Exception):
+                        new_seqs = [
+                            m.seq
+                            for m in ledger_err.list_moves(session_id)
+                            if m.seq not in pre_existing_seqs
+                        ]
+                if new_seqs:
+                    self.transition_to(MoveEngineState.ROLLING_BACK)
+                    logging.error(
+                        f"Error during batched background sorting: {e}. Unwinding {len(new_seqs)} move(s) for session {session_id}"
+                    )
+                    try:
+                        history_manager.unwind_session(
+                            session_id, db=db, selected_step_ids=new_seqs
+                        )
+                        self.transition_to(MoveEngineState.ROLLED_BACK)
+                        rollback_succeeded = True
+                    except Exception as rollback_err:
+                        logging.error(
+                            f"Partial batch rollback failed for session {session_id}: {rollback_err}",
+                            exc_info=True,
+                        )
             if summary is not None:
                 summary["lifecycle_state"] = PipelineLifecycleState.FAILED
                 summary["rollback_completed"] = rollback_succeeded

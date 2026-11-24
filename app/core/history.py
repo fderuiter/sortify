@@ -1190,11 +1190,13 @@ class HistoryManager:
             overwrite_backup_dir,
         )
         from app.core.resilient_file_ops import (
+            _set_posix_mode,
             resilient_move,
             resilient_remove,
             same_file_content,
         )
 
+        target_db = db if db is not None else self.db
         conn = get_db_connection(self.db_path)
         row = conn.execute(
             "SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,)
@@ -1281,6 +1283,7 @@ class HistoryManager:
         conflicts = []
         failures: list[Exception] = []
         doc_path_updates: list[dict[str, Any]] = []
+        restored_quarantine_pairs: list[tuple[str, str]] = []
 
         def _flush_doc_updates(
             *, extra_conn_ops: Callable[[Any], None] | None = None
@@ -1291,40 +1294,42 @@ class HistoryManager:
                 return
 
             shares_store = (
-                db is not None
-                and hasattr(db, "execute_batch_updates")
-                and "execute_batch_updates" not in getattr(db, "__dict__", {})
-                and "update_document_path" not in getattr(db, "__dict__", {})
-                and hasattr(db, "db_path")
+                target_db is not None
+                and hasattr(target_db, "execute_batch_updates")
+                and "execute_batch_updates" not in getattr(target_db, "__dict__", {})
+                and "update_document_path" not in getattr(target_db, "__dict__", {})
+                and hasattr(target_db, "db_path")
                 and bool(self.db_path)
-                and os.path.abspath(str(db.db_path))
+                and os.path.abspath(str(target_db.db_path))
                 == os.path.abspath(str(self.db_path))
             )
             if extra_conn_ops is not None and shares_store:
-                db.execute_batch_updates(batch, extra_conn_ops=extra_conn_ops)
+                target_db.execute_batch_updates(batch, extra_conn_ops=extra_conn_ops)
                 return
 
             handled_deletes = False
-            if batch and db is not None:
+            if batch and target_db is not None:
                 try:
                     if hasattr(
-                        db, "execute_batch_updates"
-                    ) and "update_document_path" not in getattr(db, "__dict__", {}):
-                        db.execute_batch_updates(batch)
+                        target_db, "execute_batch_updates"
+                    ) and "update_document_path" not in getattr(
+                        target_db, "__dict__", {}
+                    ):
+                        target_db.execute_batch_updates(batch)
                         handled_deletes = True
-                    elif hasattr(db, "update_document_path"):
+                    elif hasattr(target_db, "update_document_path"):
                         for upd in batch:
                             if upd.get("type") != "document_path":
                                 continue
                             if upd.get("clear_verified_target"):
                                 try:
-                                    db.update_document_path(
+                                    target_db.update_document_path(
                                         *upd["args"], clear_verified_target=True
                                     )
                                 except TypeError:
-                                    db.update_document_path(*upd["args"])
+                                    target_db.update_document_path(*upd["args"])
                             else:
-                                db.update_document_path(*upd["args"])
+                                target_db.update_document_path(*upd["args"])
                 except Exception as err:
                     logging.warning(
                         f"Could not batch-update document paths during undo: {err}"
@@ -1339,7 +1344,7 @@ class HistoryManager:
 
                 def _write_extra() -> None:
                     del_db_path = (
-                        getattr(db, "db_path", None)
+                        getattr(target_db, "db_path", None)
                         or getattr(self.db, "db_path", None)
                         or self.db_path
                     )
@@ -1401,7 +1406,7 @@ class HistoryManager:
                                 move.src,
                                 src_root,
                                 None,
-                                doc_updates=doc_path_updates if db else None,
+                                doc_updates=doc_path_updates if target_db else None,
                             )
                         os.makedirs(os.path.dirname(move.src), exist_ok=True)
                         restored_to = move.src
@@ -1417,11 +1422,16 @@ class HistoryManager:
                                     f"Undo conflict: {move.src} is occupied by a different file; "
                                     f"restored {moved} to {restored_to} instead."
                                 )
+                        if "_Quarantine_Staging" in str(moved):
+                            _set_posix_mode(restored_to, 0o644)
+                        restored_quarantine_pairs.append(
+                            (os.path.abspath(moved), os.path.abspath(move.src))
+                        )
                         if _is_in_session_backup(move.dst):
                             dirs_to_prune.add(os.path.dirname(move.dst))
                         restored += 1
                         doc_root = _best_root_for(restored_to) or _best_root_for(moved)
-                        if db and doc_root:
+                        if target_db and doc_root:
                             doc_path_updates.append(
                                 {
                                     "type": "document_path",
@@ -1460,7 +1470,7 @@ class HistoryManager:
                     session_id,
                     None,
                     failures,
-                    doc_updates=doc_path_updates if db else None,
+                    doc_updates=doc_path_updates if target_db else None,
                 )
             if os.path.exists(root_dir):
                 _remove_staging_leftovers(root_dir)
@@ -1512,6 +1522,66 @@ class HistoryManager:
         status_to_set = PARTIALLY_ROLLED_BACK if is_partial else ROLLED_BACK
         unwound_seqs = [m.seq for m in moves]
 
+        def _dismiss_restored_quarantine_records(qconn: Any) -> None:
+            if not restored_quarantine_pairs:
+                return
+            with contextlib.suppress(*DB_ERRORS):
+                rows = qconn.execute(
+                    "SELECT job_id, base_dir, original_filepath, staged_filepath, status, audit_log "
+                    "FROM quarantine_records WHERE status IN ('QUARANTINED', 'ARCHIVED')"
+                ).fetchall()
+                if not rows:
+                    return
+                moved_norm_set = {
+                    os.path.normcase(os.path.abspath(dst_p))
+                    for dst_p, _src_p in restored_quarantine_pairs
+                }
+                src_norm_set = {
+                    os.path.normcase(os.path.abspath(src_p))
+                    for _dst_p, src_p in restored_quarantine_pairs
+                }
+                now_ts = time.time()
+                for q_job_id, q_base, q_orig, q_staged, _q_status, q_audit_raw in rows:
+                    matched_q = False
+                    if q_staged:
+                        cand_s = (
+                            os.path.join(q_base, q_staged)
+                            if q_base and not os.path.isabs(q_staged)
+                            else q_staged
+                        )
+                        if os.path.normcase(os.path.abspath(cand_s)) in moved_norm_set:
+                            matched_q = True
+                    if not matched_q and q_base and q_orig:
+                        cand_o = (
+                            os.path.join(q_base, q_orig)
+                            if not os.path.isabs(q_orig)
+                            else q_orig
+                        )
+                        if os.path.normcase(os.path.abspath(cand_o)) in src_norm_set:
+                            matched_q = True
+                    if matched_q:
+                        try:
+                            audit_list = (
+                                json.loads(q_audit_raw)
+                                if isinstance(q_audit_raw, str) and q_audit_raw
+                                else []
+                            )
+                            if not isinstance(audit_list, list):
+                                audit_list = []
+                        except Exception:
+                            audit_list = []
+                        audit_list.append(
+                            {
+                                "timestamp": now_ts,
+                                "status": "DISMISSED",
+                                "details": f"Compliance hold or archival rolled back via session {session_id}",
+                            }
+                        )
+                        qconn.execute(
+                            "UPDATE quarantine_records SET status = ?, audit_log = ?, updated_at = ? WHERE job_id = ?",
+                            ("DISMISSED", json.dumps(audit_list), now_ts, q_job_id),
+                        )
+
         def _finish_session_status(wconn) -> None:
             self._transition_session_status(session_id, status_to_set, conn=wconn)
             if is_partial and unwound_seqs:
@@ -1520,8 +1590,31 @@ class HistoryManager:
                     f"DELETE FROM moves WHERE session_id = ? AND seq IN ({placeholders})",
                     [session_id] + unwound_seqs,
                 )
+            if (
+                restored_quarantine_pairs
+                and docs_db_path
+                and os.path.abspath(str(docs_db_path))
+                == os.path.abspath(str(self.db_path))
+            ):
+                _dismiss_restored_quarantine_records(wconn)
 
         _flush_doc_updates(extra_conn_ops=_finish_session_status)
+        if (
+            restored_quarantine_pairs
+            and docs_db_path
+            and os.path.abspath(str(docs_db_path)) != os.path.abspath(str(self.db_path))
+        ):
+            q_worker = getattr(target_db, "worker", None)
+
+            def _update_separate_qdb() -> None:
+                qconn = get_db_connection(docs_db_path)
+                with qconn:
+                    _dismiss_restored_quarantine_records(qconn)
+
+            if q_worker is not None and hasattr(q_worker, "execute_write"):
+                q_worker.execute_write(_update_separate_qdb)
+            else:
+                _update_separate_qdb()
 
         if db and hasattr(db, "invalidate_cache"):
             db.invalidate_cache()

@@ -251,7 +251,11 @@ class ShortcutCheatSheetModal(ResponsiveModalScreen[None]):
                     classes="shortcut-row",
                 )
                 yield Label(
-                    "  Ctrl+T / p  - Toggle background daemon pause / resume",
+                    "  Ctrl+T / p  - Start, pause, or resume background daemon",
+                    classes="shortcut-row",
+                )
+                yield Label(
+                    "  Ctrl+Shift+T / P - Stop running background daemon",
                     classes="shortcut-row",
                 )
                 yield Label(

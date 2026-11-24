@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "9df6ca195407120bb09c71a435bec487589fb3b8d12f848dc27bc7a7e58837ea"
+    "checksum": "7a6bd52da4bbf3427d335c94e3d38f82f632f1ef758a12279c572181b57901b0"
   },
   "classes": [
     {
@@ -23,9 +23,14 @@
               "name": "settings"
             },
             {
-              "annotation": "str",
-              "default": null,
+              "annotation": "str | Sequence[str] | None",
+              "default": "None",
               "name": "base_dir"
+            },
+            {
+              "annotation": "Optional[Sequence[str]]",
+              "default": "None",
+              "name": "watched_folders"
             }
           ],
           "returns": null
@@ -51,6 +56,19 @@
         {
           "async": false,
           "decorators": [],
+          "name": "flush_all_undo_batches",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "list[str]"
+        },
+        {
+          "async": false,
+          "decorators": [],
           "name": "get_health_telemetry",
           "parameters": [
             {
@@ -59,7 +77,7 @@
               "name": "self"
             }
           ],
-          "returns": "dict"
+          "returns": "dict[str, Any]"
         },
         {
           "async": false,
@@ -72,7 +90,20 @@
               "name": "self"
             }
           ],
-          "returns": "dict"
+          "returns": "dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_paused_folders",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "list[str]"
         },
         {
           "async": false,
@@ -85,7 +116,20 @@
               "name": "self"
             }
           ],
-          "returns": "dict"
+          "returns": "dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_watched_folders",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "list[str]"
         },
         {
           "async": false,
@@ -143,7 +187,7 @@
               "name": "self"
             },
             {
-              "annotation": null,
+              "annotation": "Any",
               "default": null,
               "name": "event"
             }
@@ -161,7 +205,7 @@
               "name": "self"
             }
           ],
-          "returns": null
+          "returns": "None"
         },
         {
           "async": false,
@@ -174,7 +218,25 @@
               "name": "self"
             }
           ],
-          "returns": null
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "pause_folders",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Sequence[str]",
+              "default": null,
+              "name": "folders"
+            }
+          ],
+          "returns": "dict[str, Any]"
         },
         {
           "async": false,
@@ -222,6 +284,34 @@
         {
           "async": false,
           "decorators": [],
+          "name": "reload_watched_folders",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[Sequence[str]]",
+              "default": "None",
+              "name": "watched_folders"
+            },
+            {
+              "annotation": "Optional[Sequence[str]]",
+              "default": "None",
+              "name": "add_folders"
+            },
+            {
+              "annotation": "Optional[Sequence[str]]",
+              "default": "None",
+              "name": "remove_folders"
+            }
+          ],
+          "returns": "dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [],
           "name": "resume",
           "parameters": [
             {
@@ -230,7 +320,25 @@
               "name": "self"
             }
           ],
-          "returns": null
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "resume_folders",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Sequence[str]",
+              "default": null,
+              "name": "folders"
+            }
+          ],
+          "returns": "dict[str, Any]"
         },
         {
           "async": false,
@@ -245,14 +353,19 @@
               "name": "self"
             },
             {
-              "annotation": null,
+              "annotation": "Any",
               "default": "None",
               "name": "plan"
             },
             {
-              "annotation": null,
+              "annotation": "Any",
               "default": "None",
               "name": "active_paths"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "base_dir"
             }
           ],
           "returns": null
@@ -301,7 +414,7 @@
               "name": "self"
             }
           ],
-          "returns": null
+          "returns": "None"
         },
         {
           "async": false,
@@ -349,7 +462,25 @@
               "name": "self"
             }
           ],
-          "returns": null
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "stop_watching_folders",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Sequence[str]",
+              "default": null,
+              "name": "folders"
+            }
+          ],
+          "returns": "dict[str, Any]"
         },
         {
           "async": false,
@@ -362,7 +493,60 @@
               "name": "self"
             }
           ],
-          "returns": null
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "update_watched_folders",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Sequence[str]",
+              "default": null,
+              "name": "folders"
+            }
+          ],
+          "returns": "dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "watched_folders",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "list[str]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@watched_folders.setter"
+          ],
+          "name": "watched_folders",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Sequence[str]",
+              "default": null,
+              "name": "folders"
+            }
+          ],
+          "returns": "None"
         }
       ]
     },
@@ -381,7 +565,7 @@
               "name": "self"
             },
             {
-              "annotation": null,
+              "annotation": "Any",
               "default": null,
               "name": "daemon"
             }
@@ -399,12 +583,12 @@
               "name": "self"
             },
             {
-              "annotation": null,
+              "annotation": "Any",
               "default": null,
               "name": "event"
             }
           ],
-          "returns": null
+          "returns": "None"
         }
       ]
     },
@@ -445,12 +629,22 @@
           "name": "settings"
         },
         {
-          "annotation": "str | None",
+          "annotation": "str | Sequence[str] | None",
           "default": "None",
           "name": "base_dir"
+        },
+        {
+          "annotation": "Optional[Sequence[str]]",
+          "default": "None",
+          "name": "watched_folders"
+        },
+        {
+          "annotation": "Optional[Sequence[str]]",
+          "default": "None",
+          "name": "extra_dirs"
         }
       ],
-      "returns": null
+      "returns": "None"
     }
   ]
 }

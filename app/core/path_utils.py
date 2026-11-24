@@ -1115,3 +1115,90 @@ def safe_extract_path(
         )
 
     return candidate_path
+
+
+def _resolve_path(p: Path) -> Path:
+    """Resolve symlinks and Windows 8.3 short paths, even if trailing components do not exist.
+
+    Args:
+        p: Path object to resolve.
+
+    Returns
+    -------
+        Resolved Path object with symlinks and 8.3 short names expanded for existing ancestors.
+    """
+    with contextlib.suppress(Exception):
+        p = p.expanduser()
+
+    with contextlib.suppress(Exception):
+        if p.exists():
+            return p.resolve()
+
+    parts = []
+    curr = p
+    while True:
+        with contextlib.suppress(Exception):
+            if curr.exists():
+                break
+        parent_curr = curr.parent
+        if parent_curr == curr:
+            break
+        parts.append(curr.name)
+        curr = parent_curr
+
+    try:
+        curr_resolved = curr.resolve()
+    except (OSError, RuntimeError, ValueError):
+        curr_resolved = curr
+
+    for part in reversed(parts):
+        curr_resolved = curr_resolved / part
+
+    return curr_resolved
+
+
+def is_subpath_or_equal(child: str, parent: str) -> bool:
+    """Check if child path is equal to or nested within parent path (case-insensitive and cross-platform).
+
+    Args:
+        child: Candidate child path to check for subpath containment.
+        parent: Boundary parent path to evaluate child against.
+
+    Returns
+    -------
+        True if child is identical to or located within parent directory boundary, False otherwise.
+    """
+    if child is None or parent is None:
+        return False
+
+    clean_child = str(child).replace("\\", "/")
+    clean_parent = str(parent).replace("\\", "/")
+
+    with contextlib.suppress(Exception):
+        p_child = _resolve_path(Path(clean_child))
+        p_parent = _resolve_path(Path(clean_parent))
+
+        if p_child == p_parent:
+            return True
+        with contextlib.suppress(AttributeError, ValueError):
+            if p_child.is_relative_to(p_parent):
+                return True
+
+        s_child = str(p_child).replace("\\", "/").rstrip("/").lower()
+        s_parent = str(p_parent).replace("\\", "/").rstrip("/").lower()
+
+        if s_child == s_parent:
+            return True
+        if s_child.startswith(s_parent + "/"):
+            return True
+
+    with contextlib.suppress(Exception):
+        abs_c = os.path.abspath(clean_child).replace("\\", "/").rstrip("/").lower()
+        abs_p = os.path.abspath(clean_parent).replace("\\", "/").rstrip("/").lower()
+
+        if abs_c == abs_p:
+            return True
+        if abs_c.startswith(abs_p + "/"):
+            return True
+
+    return False

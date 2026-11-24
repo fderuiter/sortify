@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "189966a96a97b5b0871ca366a1e54181eb416fd961fdb4a5f6dfdf129a237d61"
+    "checksum": "fb7b921a9bd18e0dedab187c32a1e149dac5a3130d65efdc719000f2524d93da"
   },
   "classes": [
     {
@@ -46,6 +46,11 @@
               "annotation": "Optional[Any]",
               "default": "None",
               "name": "runtime_settings"
+            },
+            {
+              "annotation": "Optional[Any]",
+              "default": "None",
+              "name": "history_manager"
             }
           ],
           "returns": null
@@ -110,6 +115,21 @@
               "annotation": "Optional[float]",
               "default": "None",
               "name": "timeout_override"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "session_id"
+            },
+            {
+              "annotation": "bool",
+              "default": "True",
+              "name": "complete_session"
+            },
+            {
+              "annotation": "Optional[Any]",
+              "default": "None",
+              "name": "history_manager"
             }
           ],
           "returns": "QuarantineRecordModel"

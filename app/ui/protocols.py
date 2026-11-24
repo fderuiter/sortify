@@ -44,6 +44,10 @@ class TUIHostProtocol(Protocol):
     collision_paths: set[str]
     _daemon_state: str
     _daemon_is_moving: bool
+    _daemon_watched_folders: list[str]
+    _daemon_queue_depth: Optional[int]
+    _daemon_max_queue: Optional[int]
+    _daemon_active_workers: Optional[int]
     _tree_expansion_memory: dict[str, bool]
     _last_cursor_key: Optional[str]
     _pending_flush_trash: bool

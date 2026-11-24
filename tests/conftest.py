@@ -161,6 +161,8 @@ def reset_shared_registry():
                 "sortify.db",
                 "rollback_journal.json",
                 "transaction_ledger.db",
+                ".autosorter.pid",
+                ".autosorter.sock",
             ):
                 target = app_dir / filename
                 if target.exists():

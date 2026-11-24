@@ -237,6 +237,8 @@ class QuarantineRecordModel(DictCompatMixin, BaseModel):
     updated_at: Optional[float] = None
     error_message: Optional[str] = None
     error: Optional[str] = None
+    move_session_id: Optional[str] = None
+    move_seq: Optional[int] = None
 
     model_config = ConfigDict(extra="allow")
 

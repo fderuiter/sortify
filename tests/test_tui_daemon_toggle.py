@@ -277,10 +277,30 @@ def test_pipeline_busy_guard_prevents_moves_when_daemon_is_moving(temp_workspace
     assert conflict_announcements[0]["priority"] == "assertive"
 
 
-def test_daemon_toggle_hotkey_idle_announces_no_daemon(temp_workspace):
-    """Test pressing toggle hotkey when no daemon runs emits assertive announcement."""
+def test_daemon_toggle_hotkey_idle_starts_daemon_or_warns_without_workspace(
+    temp_workspace,
+):
+    """Pressing Ctrl+T when idle warns if no workspace is set, and starts the daemon when a workspace exists."""
 
-    async def _test():
+    async def _test_no_workspace():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, skip_wizard=True)
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("ctrl+t")
+            await pilot.pause()
+
+            no_ws_announcements = [
+                a
+                for a in app.announcements
+                if "No workspace folder selected for daemon monitoring." in a["message"]
+            ]
+            assert len(no_ws_announcements) >= 1
+            assert no_ws_announcements[-1]["priority"] == "assertive"
+
+    async def _test_starts_idle_daemon():
         settings = AppSettings()
         settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(
@@ -288,20 +308,27 @@ def test_daemon_toggle_hotkey_idle_announces_no_daemon(temp_workspace):
         )
 
         async with app.run_test() as pilot:
-            await pilot.pause()
-            await pilot.press("ctrl+t")
-            await pilot.pause()
+            try:
+                await pilot.pause()
+                await pilot.press("ctrl+t")
+                for _ in range(20):
+                    if app._daemon_state == "active":
+                        break
+                    await pilot.pause(0.05)
 
-            idle_announcements = [
-                a
-                for a in app.announcements
-                if "No background watchdog daemon is running for this workspace."
-                in a["message"]
-            ]
-            assert len(idle_announcements) >= 1
-            assert idle_announcements[-1]["priority"] == "assertive"
+                assert app._daemon_state == "active"
+                started_announcements = [
+                    a
+                    for a in app.announcements
+                    if "Watchdog daemon started" in a["message"]
+                ]
+                assert len(started_announcements) >= 1
+                assert started_announcements[-1]["priority"] == "assertive"
+            finally:
+                await app.action_stop_daemon()
 
-    asyncio.run(_test())
+    asyncio.run(_test_no_workspace())
+    asyncio.run(_test_starts_idle_daemon())
 
 
 def test_scan_pipeline_aborts_when_daemon_is_moving(temp_workspace):
