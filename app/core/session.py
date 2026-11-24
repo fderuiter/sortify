@@ -455,7 +455,12 @@ class AppSession:
                 ):
                     if summary.get("cancelled"):
                         _transition_exec_state(PipelineLifecycleState.CANCELLED)
-                    elif summary.get("error"):
+                    elif (
+                        summary.get("error")
+                        or summary.get("lifecycle_state")
+                        == PipelineLifecycleState.FAILED
+                        or bool((summary.get("audit_report") or {}).get("failed_items"))
+                    ):
                         _transition_exec_state(PipelineLifecycleState.FAILED)
                     else:
                         _transition_exec_state(PipelineLifecycleState.COMPLETED)
@@ -468,7 +473,13 @@ class AppSession:
                         _transition_exec_state(PipelineLifecycleState.FAILED)
                 raise
 
-    def retry_failed_moves(self, failed_items, progress_callback=None, **kwargs):
+    def retry_failed_moves(
+        self,
+        failed_items,
+        progress_callback=None,
+        session_id: str | None = None,
+        **kwargs,
+    ):
         """Re-attempt move operations for failed items."""
         effective_base_dir = self.base_dir or (
             self.source_dirs[0] if self.source_dirs else None
@@ -485,6 +496,7 @@ class AppSession:
                 history_manager=self.history_manager,
                 runtime_settings=self.settings,
                 progress_callback=progress_callback,
+                session_id=session_id,
                 **kwargs,
             )
 

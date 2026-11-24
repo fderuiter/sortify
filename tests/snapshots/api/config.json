@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "6bcacd4329b91048ae1f3fbbc0ac30cf62ef6f295eded28baa7feaddfe5b9379"
+    "checksum": "fa8765609b83ae3e6fc11a46395c922fe1ca59a4bb9c9ebbb2cd3bc0b523397c"
   },
   "classes": [
     {
@@ -390,6 +390,27 @@
             }
           ],
           "returns": "dict"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@field_validator('MOVE_ERROR_POLICY', mode='before')",
+            "@classmethod"
+          ],
+          "name": "validate_move_error_policy",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "v"
+            }
+          ],
+          "returns": "Any"
         },
         {
           "async": false,

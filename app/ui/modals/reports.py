@@ -632,9 +632,10 @@ class AuditReportModal(ResponsiveModalScreen[None]):
     }
     """
 
-    def __init__(self, report_data: dict[str, Any]):
+    def __init__(self, report_data: dict[str, Any], session: Any = None):
         super().__init__()
         self.report_data = report_data or {}
+        self.session = session
 
     def compose(self) -> ComposeResult:
         """Compose verification audit report modal widgets."""
@@ -885,27 +886,97 @@ class AuditReportModal(ResponsiveModalScreen[None]):
         self._execute_retry(failed_records)
 
     def _execute_retry(self, items_to_retry: list[dict[str, Any]]) -> None:
-        """Execute mover retry for selected failed items and refresh UI."""
-        from app.core.mover import retry_failed_moves
+        """Execute mover retry for selected failed items via AppSession and refresh UI."""
+        from app.config import AppSettings
+        from app.core.audit_reporter import generate_audit_report
+        from app.core.session import AppSession
 
         base_dir = self.report_data.get("base_dir", "")
-        retry_res = retry_failed_moves(base_dir, items_to_retry)
+        session_id = self.report_data.get("session_id")
+        app_ref: Any = getattr(self, "app", None)
+
+        active_session: Any = None
+        for cand in (self.session, getattr(app_ref, "app_session", None)):
+            if (
+                cand is not None
+                and not getattr(cand, "_closed", False)
+                and callable(getattr(cand, "retry_failed_moves", None))
+            ):
+                active_session = cand
+                break
+
+        effective_base = base_dir or getattr(app_ref, "base_dir", None) or "."
+        if active_session is not None:
+            retry_res = active_session.retry_failed_moves(
+                items_to_retry, session_id=session_id
+            )
+        else:
+            settings = getattr(app_ref, "settings", None) or AppSettings()
+            temp_session = AppSession(settings, effective_base)
+            try:
+                retry_res = temp_session.retry_failed_moves(
+                    items_to_retry, session_id=session_id
+                )
+            finally:
+                temp_session.close()
+
         new_audit = retry_res.get("audit_report", {})
+        effective_session_id = (
+            retry_res.get("session_id") or new_audit.get("session_id") or session_id
+        )
 
-        retried_map = {r.get("source_path"): r for r in new_audit.get("records", [])}
+        retried_map: dict[str, dict[str, Any]] = {}
+        for r in new_audit.get("records", []):
+            raw_src = r.get("source_path")
+            if isinstance(raw_src, str) and raw_src:
+                retried_map[raw_src] = r
+                norm_src = os.path.normcase(
+                    os.path.normpath(
+                        os.path.abspath(
+                            os.path.join(base_dir, raw_src)
+                            if (base_dir and not os.path.isabs(raw_src))
+                            else raw_src
+                        )
+                    )
+                )
+                retried_map[norm_src] = r
 
-        records = self.report_data.get("records", [])
+        records = list(self.report_data.get("records", []))
         for idx, rec in enumerate(records):
             src = rec.get("source_path")
-            if src in retried_map:
-                records[idx] = retried_map[src]
+            if isinstance(src, str) and src:
+                if src in retried_map:
+                    records[idx] = retried_map[src]
+                    continue
+                norm_rec_src = os.path.normcase(
+                    os.path.normpath(
+                        os.path.abspath(
+                            os.path.join(base_dir, src)
+                            if (base_dir and not os.path.isabs(src))
+                            else src
+                        )
+                    )
+                )
+                if norm_rec_src in retried_map:
+                    records[idx] = retried_map[norm_rec_src]
 
-        from app.core.audit_reporter import generate_audit_report
-
-        self.report_data = generate_audit_report(base_dir, records)
+        self.report_data = generate_audit_report(
+            base_dir, records, session_id=effective_session_id
+        )
 
         self._populate_table()
         self._update_stats_cards()
+
+        if (
+            int(new_audit.get("verified_pass_count") or 0) > 0
+            and app_ref is not None
+            and getattr(app_ref, "source_dirs", None)
+            and callable(getattr(app_ref, "_start_scan", None))
+        ):
+            try:
+                app_ref._start_scan()
+            except Exception:
+                pass
 
         pass_cnt = self.report_data.get("verified_pass_count", 0)
         fail_cnt = self.report_data.get("mismatch_fail_count", 0)

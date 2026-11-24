@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "e6650c3873dc6d68cd6067b9bc7881416d425fa80c6e607efaadbb235ed1850f"
+    "checksum": "e5ffccf38cbf0985fa995794e01d82a30edca948c331c578c1039d5b0c600de7"
   },
   "classes": [
     {
@@ -840,6 +840,11 @@
           "annotation": null,
           "default": "None",
           "name": "progress_callback"
+        },
+        {
+          "annotation": "str | None",
+          "default": "None",
+          "name": "session_id"
         },
         {
           "annotation": null,

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "3540b0697fa724874f1476ddf29c651537aaa53b26960fe1b77b613d52b919b5"
+    "checksum": "3be563a128b8ae71f864dfbf42580a655d3ebc538313e9203950e1c6c86417b0"
   },
   "cli": [
     {
@@ -418,12 +418,60 @@
     },
     {
       "args": [
+        "--list-moves"
+      ],
+      "caller": "parser_undo",
+      "keywords": {
+        "action": "store_true",
+        "help": "List recorded move operations for the target sorting session"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
         "--latest"
       ],
       "caller": "parser_undo",
       "keywords": {
         "action": "store_true",
         "help": "Rollback the latest historical sorting session"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--dry-run"
+      ],
+      "caller": "parser_undo",
+      "keywords": {
+        "action": "store_true",
+        "help": "Preview restoration paths, collisions, and missing targets without modifying files on disk"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--step-id"
+      ],
+      "caller": "parser_undo",
+      "keywords": {
+        "action": "append",
+        "default": null,
+        "help": "Revert specific move step sequence ID (may be specified multiple times)",
+        "type": "int"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--file"
+      ],
+      "caller": "parser_undo",
+      "keywords": {
+        "action": "append",
+        "default": null,
+        "help": "Revert specific move matching source or destination file path (may be specified multiple times)",
+        "type": "str"
       },
       "method": "add_argument"
     },
