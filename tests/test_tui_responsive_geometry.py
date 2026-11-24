@@ -10,47 +10,43 @@ from typing import Any
 import pytest
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Button, DataTable, Input, Label, Log, TabbedContent, Tree
+from textual.geometry import Spacing
+from textual.widgets import (
+    Button,
+    DataTable,
+    Input,
+    Label,
+    Log,
+    Select,
+    TabbedContent,
+    Tree,
+)
 
 from app.config import AppSettings
 from app.plugins.clinical_compliance.tui_views import CROForensicModal
+from app.ui.catalog import get_catalog_registry
 from app.ui.layout import ModalBox
-from app.ui.modals.drop_zone import DropPlanConfirmModal, DropZoneModal
+from app.ui.modals.drop_zone import DropPlanConfirmModal
 from app.ui.modals.edit import (
     DirectorySelectModal,
     InteractiveCollisionResolverModal,
     ManualPathFallbackModal,
-    NewFolderModal,
-    ReassignModal,
-    RenameModal,
 )
-from app.ui.modals.help import ShortcutCheatSheetModal, TroubleshootingHelpModal
-from app.ui.modals.models import ModelManagerModal
-from app.ui.modals.quarantine import QuarantineVaultModal
 from app.ui.modals.reports import (
     AuditReportModal,
-    ExportReportModal,
     ExtractionPreviewModal,
 )
 from app.ui.modals.rules import (
-    ActiveRuleManagerModal,
     DeleteRuleConfirmModal,
-    ExportRulesModal,
-    RuleEditModal,
     RuleImportModal,
-    TemplateGalleryModal,
 )
 from app.ui.modals.sample_playground import SamplePlaygroundModal
 from app.ui.modals.session import (
     HistoryModal,
-    MultiSessionRecoveryModal,
     RollbackConfirmModal,
     RollbackErrorModal,
-    SessionRecoveryModal,
 )
 from app.ui.modals.settings import (
-    ConsentRevocationModal,
-    ScrubArtifactsModal,
     SettingsModal,
 )
 from app.ui.modals.wizard import WizardModal
@@ -112,6 +108,7 @@ def _find_modal_box(modal: Any) -> Any:
         ".dropzone-box",
         ".preview-modal-box",
         ".error-box",
+        ".palette-box",
     ):
         matches = modal.query(selector)
         if matches:
@@ -602,11 +599,11 @@ def test_rollback_and_audit_report_modals_geometry(
     asyncio.run(_run())
 
 
-@pytest.mark.parametrize("viewport", [(80, 24), (100, 30)])
+@pytest.mark.parametrize("viewport", [(80, 24), (58, 24)])
 def test_all_modals_button_labels_tables_and_sticky_footers(
     viewport: tuple[int, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Verify all multi-action and utility modals keep full button labels, >= 3 table rows, and sticky footers."""
+    """Verify all 32 catalog modals at 80x24 and 58x24 for compact padding, button hit-visibility, narrow stacking, and ModalBox._body_scroll_target()."""
     from app.core.extractor_strategies import PdfExtractor
 
     monkeypatch.setattr(
@@ -620,177 +617,108 @@ def test_all_modals_button_labels_tables_and_sticky_footers(
 
     async def _run() -> None:
         settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
         sample_pdf = tmp_path / "sample.pdf"
         sample_pdf.write_bytes(b"%PDF-1.4\n%%EOF\n")
 
-        dup_groups = [
-            {
-                "group_id": "grp-1",
-                "hash": "deadbeef1234",
-                "target_path": f"{tmp_path}/Finance/invoice.pdf",
-                "files": [
-                    {
-                        "path": f"{tmp_path}/a.pdf",
-                        "name": "a.pdf",
-                        "size": 1024,
-                        "mtime": 1700000000.0,
-                    },
-                    {
-                        "path": f"{tmp_path}/b.pdf",
-                        "name": "b.pdf",
-                        "size": 1024,
-                        "mtime": 1700000100.0,
-                    },
-                ],
-            }
+        catalog_modals = [
+            entry for entry in get_catalog_registry() if entry["category"] == "modal"
         ]
+        assert len(catalog_modals) == 32
 
-        modal_factories = [
-            ("TemplateGalleryModal", lambda: TemplateGalleryModal(settings=settings)),
-            ("ExportRulesModal", lambda: ExportRulesModal(settings=settings)),
-            ("RuleEditModal", lambda: RuleEditModal()),
-            ("DeleteRuleConfirmModal", lambda: DeleteRuleConfirmModal("invoice.*")),
-            (
-                "ActiveRuleManagerModal",
-                lambda: ActiveRuleManagerModal(settings=settings),
+        rich_overrides: dict[str, Any] = {
+            "extraction_preview_modal": lambda: ExtractionPreviewModal(
+                str(sample_pdf), settings=settings
             ),
-            (
-                "SessionRecoveryModal",
-                lambda: SessionRecoveryModal(
-                    {
-                        "session_id": "s-1",
-                        "status": "interrupted",
-                        "completed_files": 3,
-                        "total_files": 10,
-                        "updated_at": "2026-01-01",
-                    }
-                ),
-            ),
-            (
-                "MultiSessionRecoveryModal",
-                lambda: MultiSessionRecoveryModal(
-                    sessions=[
+            "rollback_confirm_modal": lambda: RollbackConfirmModal(
+                {
+                    "session_id": "sess-geo-01",
+                    "items": [
                         {
-                            "session_id": f"sess-{i}",
-                            "status": "interrupted",
-                            "completed_files": i,
-                            "total_files": 10,
-                            "updated_at": "2026-01-01",
-                            "base_dir": str(tmp_path),
-                        }
-                        for i in range(1, 5)
-                    ],
-                    settings=settings,
-                ),
-            ),
-            (
-                "RollbackErrorModal",
-                lambda: RollbackErrorModal(
-                    "Rollback Failed", "Error detail line\n" * 16
-                ),
-            ),
-            (
-                "HistoryModal",
-                lambda: HistoryModal(
-                    sessions=[
-                        {
-                            "session_id": f"h-{i}",
-                            "created_at": "2026-01-01",
-                            "base_dir": str(tmp_path),
-                            "total_files": 5,
+                            "step_id": i,
+                            "source_path": f"{tmp_path}/src_{i}.pdf",
+                            "target_path": f"{tmp_path}/dst_{i}.pdf",
+                            "operation_type": "move",
                             "status": "completed",
                         }
-                        for i in range(5)
+                        for i in range(1, 6)
                     ],
-                    base_dir=str(tmp_path),
-                ),
+                }
             ),
-            (
-                "ExportReportModal",
-                lambda: ExportReportModal(default_path=str(tmp_path / "report.html")),
+            "rollback_error_modal": lambda: RollbackErrorModal(
+                "Rollback Failed", "Error detail line\n" * 16
             ),
-            (
-                "ExtractionPreviewModal",
-                lambda: ExtractionPreviewModal(str(sample_pdf), settings=settings),
+            "history_modal": lambda: HistoryModal(
+                sessions=[
+                    {
+                        "session_id": f"h-{i}",
+                        "created_at": "2026-01-01",
+                        "base_dir": str(tmp_path),
+                        "total_files": 5,
+                        "status": "completed",
+                    }
+                    for i in range(5)
+                ],
+                base_dir=str(tmp_path),
             ),
-            ("ModelManagerModal", lambda: ModelManagerModal(settings=settings)),
-            (
-                "DropPlanConfirmModal",
-                lambda: DropPlanConfirmModal(
-                    "Move 6 files", [f"doc_{i}.pdf -> Finance/" for i in range(14)]
-                ),
+            "audit_report_modal": lambda: AuditReportModal(
+                report_data={
+                    "base_dir": str(tmp_path),
+                    "total_files": 7,
+                    "verified_pass_count": 5,
+                    "mismatch_fail_count": 2,
+                    "skipped_count": 0,
+                    "unverified_count": 0,
+                    "records": [
+                        {
+                            "filename": f"doc_{i}.pdf",
+                            "source_path": f"{tmp_path}/src/doc_{i}.pdf",
+                            "target_path": f"{tmp_path}/dst/doc_{i}.pdf",
+                            "status": "VERIFIED_PASS" if i < 5 else "MISMATCH_FAIL",
+                        }
+                        for i in range(7)
+                    ],
+                }
             ),
-            (
-                "DropZoneModal",
-                lambda: DropZoneModal(settings=settings, base_dir=str(tmp_path)),
+            "drop_plan_confirm_modal": lambda: DropPlanConfirmModal(
+                "Move 6 files", [f"doc_{i}.pdf -> Finance/" for i in range(14)]
             ),
-            (
-                "QuarantineVaultModal",
-                lambda: QuarantineVaultModal(
-                    db=None, base_dir=str(tmp_path), policies=[]
-                ),
+            "directory_select_modal": lambda: DirectorySelectModal(
+                current_dir=str(tmp_path)
             ),
-            (
-                "RenameModal",
-                lambda: RenameModal(
-                    "Rename File", current_name="invoice.pdf", category="Finance"
-                ),
+            "manual_path_fallback_modal": lambda: ManualPathFallbackModal(
+                current_dir=str(tmp_path), reason="Native dialog unavailable"
             ),
-            ("NewFolderModal", lambda: NewFolderModal()),
-            (
-                "ReassignModal",
-                lambda: ReassignModal(
-                    ["Finance", "Legal", "Medical", "Personal"], count=2
-                ),
+            "wizard_modal": lambda: WizardModal(
+                settings=settings, current_dir=str(tmp_path)
             ),
-            (
-                "DirectorySelectModal",
-                lambda: DirectorySelectModal(current_dir=str(tmp_path)),
+            "sample_playground_modal": lambda: SamplePlaygroundModal(
+                settings=settings, target_dir=str(tmp_path)
             ),
-            (
-                "ManualPathFallbackModal",
-                lambda: ManualPathFallbackModal(
-                    current_dir=str(tmp_path), reason="Native dialog unavailable"
-                ),
+            "cro_forensic_modal": lambda: CROForensicModal(
+                settings=settings, base_dir=str(tmp_path)
             ),
-            (
-                "InteractiveCollisionResolverModal",
-                lambda: InteractiveCollisionResolverModal(duplicate_groups=dup_groups),
-            ),
-            (
-                "ScrubArtifactsModal",
-                lambda: ScrubArtifactsModal(vector_count=42, cache_size_mb=12.5),
-            ),
-            (
-                "ConsentRevocationModal",
-                lambda: ConsentRevocationModal(vector_count=42, cache_size_mb=12.5),
-            ),
-            ("SettingsModal", lambda: SettingsModal(settings=settings)),
-            (
-                "WizardModal",
-                lambda: WizardModal(settings=settings, current_dir=str(tmp_path)),
-            ),
-            ("ShortcutCheatSheetModal", lambda: ShortcutCheatSheetModal()),
-            (
-                "TroubleshootingHelpModal",
-                lambda: TroubleshootingHelpModal(anchor="session-recovery"),
-            ),
-            (
-                "SamplePlaygroundModal",
-                lambda: SamplePlaygroundModal(
-                    settings=settings, target_dir=str(tmp_path)
-                ),
-            ),
-            (
-                "CROForensicModal",
-                lambda: CROForensicModal(settings=settings, base_dir=str(tmp_path)),
-            ),
-        ]
+        }
 
-        for name, factory in modal_factories:
+        modal_factories: list[tuple[str, Any]] = [
+            (
+                entry["id"],
+                rich_overrides.get(
+                    entry["id"],
+                    lambda e=entry: e["factory"](settings=settings),
+                ),
+            )
+            for entry in catalog_modals
+        ]
+        modal_factories.append(
+            ("delete_rule_confirm_modal", lambda: DeleteRuleConfirmModal("invoice.*"))
+        )
+
+        for modal_id, factory in modal_factories:
             host = _ModalHostApp(settings=settings, base_dir=str(tmp_path))
             async with host.run_test(size=viewport) as pilot:
                 modal = factory()
+                name = type(modal).__name__
                 host.push_screen(modal)
                 await pilot.pause()
 
@@ -801,30 +729,149 @@ def test_all_modals_button_labels_tables_and_sticky_footers(
                         await pilot.pause()
 
                 box = _find_modal_box(modal)
+                assert box.styles.padding == Spacing(0, 1, 0, 1), (
+                    f"{viewport} {name} ({modal_id}) expected compact padding Spacing(0, 1, 0, 1), "
+                    f"got {box.styles.padding}"
+                )
 
+                bodies = list(modal.query(".modal-body"))
+                if bodies:
+                    assert isinstance(box, ModalBox), (
+                        f"{viewport} {name} expected ModalBox outer container, got {box!r}"
+                    )
+                    assert box.max_scroll_y == 0, (
+                        f"{viewport} {name} ModalBox overflowed with max_scroll_y={box.max_scroll_y}"
+                    )
+                    scroll_target = box._body_scroll_target()
+                    assert scroll_target is not None, (
+                        f"{viewport} {name} ModalBox._body_scroll_target() returned None"
+                    )
+                else:
+                    assert modal_id == "command_palette_modal"
+
+                # DuplicateReviewModal & InteractiveCollisionResolverModal: dropdown must stay above pinned footer
+                if modal_id in ("duplicate_review_modal", "collision_resolver_modal"):
+                    sel_id = (
+                        "#select-action-dup_1"
+                        if modal_id == "duplicate_review_modal"
+                        else "#select-action-group_1"
+                    )
+                    action_sel = modal.query_one(sel_id, Select)
+                    button_row = modal.query_one(".button-row")
+                    assert action_sel.region.bottom <= button_row.region.y, (
+                        f"{viewport} {name} {sel_id} ({action_sel.region}) overlaps .button-row ({button_row.region})"
+                    )
+
+                # First check pinned footer buttons (and all DropZoneModal buttons) WITHOUT scrolling
                 for btn in modal.query(Button):
                     if not _is_visible(btn):
                         continue
-                    in_footer = any(
+                    in_pinned_footer = any(
                         "button-row" in anc.classes
                         or "modal-footer" in anc.classes
                         or "quarantine-button-row" in anc.classes
                         for anc in btn.ancestors_with_self
-                    ) and not any(
-                        "item-button-row" in anc.classes
-                        for anc in btn.ancestors_with_self
-                    )
-                    assert btn.content_region.width >= len(btn.label.plain), (
-                        f"{viewport} {name} #{btn.id} ({btn.label.plain!r}) clipped: "
-                        f"{btn.content_region.width} < {len(btn.label.plain)}"
-                    )
-                    if in_footer:
+                    ) and not any("modal-body" in anc.classes for anc in btn.ancestors)
+                    if in_pinned_footer or name == "DropZoneModal":
                         _assert_button_visible_and_hittestable(modal, btn, box.region)
+
+                # Next check EVERY visible button across the modal (scrolling scrollable .modal-body controls into view)
+                for btn in modal.query(Button):
+                    if not _is_visible(btn):
+                        continue
+                    in_body = any("modal-body" in anc.classes for anc in btn.ancestors)
+                    if (
+                        in_body
+                        and name != "DropZoneModal"
+                        and isinstance(box, ModalBox)
+                    ):
+                        box.scroll_to_widget(btn, animate=False)
+                        await pilot.pause()
+                    _assert_button_visible_and_hittestable(modal, btn, box.region)
+
+                if bodies and isinstance(box, ModalBox):
+                    box.scroll_home(animate=False)
+                    await pilot.pause()
+                    target_after = box._body_scroll_target()
+                    assert target_after is not None and target_after.scroll_y == 0
+
+                # Narrow (58x24) vertical split-pane stacking and 3->2 column button grid reflow
+                if viewport == (58, 24):
+                    if name == "DropZoneModal":
+                        dt_stage = modal.query_one("#dropzone-staging-table", DataTable)
+                        meta_prev = modal.query_one("#dropzone-metadata-preview")
+                        assert dt_stage.region.y < meta_prev.region.y
+                        q_btns = [
+                            b
+                            for b in modal.query(".queue-row Button")
+                            if _is_visible(b)
+                        ]
+                        assert len(q_btns) == 5
+                        assert q_btns[0].region.x < q_btns[1].region.x
+                        assert q_btns[2].region.y > q_btns[0].region.y
+                    elif name == "QuarantineVaultModal":
+                        t_pane = modal.query_one("#quarantine-table-pane")
+                        d_pane = modal.query_one("#quarantine-detail-pane")
+                        assert t_pane.region.y < d_pane.region.y
+                        q_cells = [
+                            w
+                            for w in modal.query_one(".quarantine-button-row").children
+                            if _is_visible(w)
+                        ]
+                        assert len(q_cells) == 6
+                        assert q_cells[0].region.x < q_cells[1].region.x
+                        assert q_cells[2].region.y > q_cells[0].region.y
+                    elif name == "SamplePlaygroundModal":
+                        l_pane = modal.query_one(".left-pane")
+                        r_pane = modal.query_one(".right-pane")
+                        assert l_pane.region.y < r_pane.region.y
+                    elif name in ("SettingsModal", "ModelManagerModal"):
+                        f_btns = [
+                            b
+                            for b in modal.query(".button-row Button")
+                            if _is_visible(b)
+                        ]
+                        assert len(f_btns) >= 3
+                        assert f_btns[0].region.x < f_btns[1].region.x
+                        assert f_btns[2].region.y > f_btns[0].region.y
 
                 for dt in modal.query(DataTable):
                     if not _is_visible(dt):
                         continue
                     _assert_datatable_min_rows(dt, min_rows=3)
+
+    asyncio.run(_run())
+
+
+def test_settings_modal_tab_scroll_home_forwarding(tmp_path: Path) -> None:
+    """Verify SettingsModal keeps ModalBox.max_scroll_y == 0 and forwards scroll_home across TabPanes at 80x24 and 58x24."""
+
+    async def _run() -> None:
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        for viewport in ((80, 24), (58, 24)):
+            host = _ModalHostApp(settings=settings, base_dir=str(tmp_path))
+            async with host.run_test(size=viewport) as pilot:
+                modal = SettingsModal(settings=settings)
+                host.push_screen(modal)
+                await pilot.pause()
+
+                box = modal.query_one(".modal-box", ModalBox)
+                assert box.max_scroll_y == 0
+                active_pane = box._body_scroll_target()
+                assert active_pane is not None
+                assert active_pane.id == "tab-general"
+
+                # Scroll down the active TabPane and verify ModalBox.scroll_home resets it to 0
+                active_pane.scroll_end(animate=False)
+                await pilot.pause()
+                assert active_pane.max_scroll_y > 0
+                assert active_pane.scroll_y > 0
+                assert box.max_scroll_y == 0
+
+                box.scroll_home(animate=False)
+                await pilot.pause()
+                assert active_pane.scroll_y == 0
 
     asyncio.run(_run())
 

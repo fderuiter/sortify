@@ -87,6 +87,25 @@ class _ArtifactConfirmModal(ResponsiveModalScreen[bool]):
     .button-row Button {
         margin-left: 1;
     }
+    ScrubArtifactsModal, ConsentRevocationModal {
+        &.compact .info-label {
+            margin-top: 0;
+        }
+        &.compact .warning-label {
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+        &.narrow .button-row {
+            layout: grid;
+            grid-size: 1;
+            grid-columns: 1fr;
+        }
+        &.narrow .button-row Button {
+            width: 100%;
+            min-width: 0;
+            margin-left: 0;
+        }
+    }
     """
 
     def __init__(self, vector_count: int, cache_size_mb: float):
@@ -195,9 +214,6 @@ class SettingsModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         grid-gutter: 0 1;
         min-height: 3;
     }
-    .narrow .button-row {
-        grid-size: 2;
-    }
     .button-row Button {
         width: 100%;
         min-width: 0;
@@ -206,17 +222,29 @@ class SettingsModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         border: heavy $accent;
         text-style: bold;
     }
+    SettingsModal {
+        &.compact .field-label {
+            margin-top: 0;
+        }
+        &.compact .switch-row {
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+        &.narrow .button-row {
+            grid-size: 2;
+        }
+    }
     SettingsModal TabbedContent {
-        height: auto;
-        max-height: 1fr;
+        height: 1fr;
+        min-height: 0;
     }
     SettingsModal ContentSwitcher {
-        height: auto;
-        max-height: 1fr;
+        height: 1fr;
+        min-height: 0;
     }
     SettingsModal TabPane {
-        height: auto;
-        max-height: 1fr;
+        height: 1fr;
+        min-height: 0;
         padding: 0;
         overflow-y: auto;
     }
