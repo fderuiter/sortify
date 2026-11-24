@@ -1998,13 +1998,29 @@ class Database:
         if not base_dir or not filepaths:
             return []
 
+        query_fps: list[str] = []
+        seen_fps: set[str] = set()
+        for fp in filepaths:
+            if not fp:
+                continue
+            if fp not in seen_fps:
+                seen_fps.add(fp)
+                query_fps.append(fp)
+            norm_fp = fp.replace("\\", "/")
+            if norm_fp not in seen_fps:
+                seen_fps.add(norm_fp)
+                query_fps.append(norm_fp)
+
+        if not query_fps:
+            return []
+
         conn = get_db_connection(self.db_path)
         results: list[tuple[str, str]] = []
         with conn:
             # Process in small chunks to avoid sqlite query argument limits
             chunk_size = 50
-            for i in range(0, len(filepaths), chunk_size):
-                chunk = filepaths[i : i + chunk_size]
+            for i in range(0, len(query_fps), chunk_size):
+                chunk = query_fps[i : i + chunk_size]
                 placeholders = ",".join(["?"] * len(chunk))
                 cursor = conn.execute(
                     f"""
@@ -2016,11 +2032,18 @@ class Database:
                 )
                 rows = cursor.fetchall()
                 for filepath, enc_text in rows:
-                    dec_text = (
-                        self.crypto.decrypt_text(enc_text)
-                        if enc_text is not None
-                        else ""
-                    )
+                    if enc_text:
+                        try:
+                            decrypted = self.crypto.decrypt_text(enc_text)
+                            dec_text = decrypted if decrypted is not None else ""
+                        except Exception:
+                            logging.debug(
+                                f"Failed to decrypt document text for {filepath}",
+                                exc_info=True,
+                            )
+                            dec_text = ""
+                    else:
+                        dec_text = ""
                     results.append((filepath, dec_text))
         return results
 
@@ -2078,6 +2101,109 @@ class Database:
                             results[filepath] = json.loads(decrypted)
                         except Exception:
                             self.track_corrupted_vector(base_dir, filepath)
+        return results
+
+    def get_verified_historical_vectors(
+        self,
+        base_dir: str,
+        include_unvectorized: bool = False,
+        allowed_extensions: set[str] | None = None,
+        track_corrupted: bool = True,
+    ) -> list[tuple[str, str, list[float] | None]]:
+        """Retrieve verified historical document targets and decrypted vectors for a base directory."""
+        if not base_dir:
+            return []
+
+        join_clause = "LEFT JOIN" if include_unvectorized else "INNER JOIN"
+        conn = get_db_connection(self.db_path)
+        with conn:
+            cursor = conn.execute(
+                f"""
+                SELECT d.filepath, d.user_verified_target_path, v.vector
+                FROM documents d
+                {join_clause} document_vectors v
+                    ON d.base_dir = v.base_dir
+                    AND (
+                        d.filepath = v.filepath
+                        OR REPLACE(d.filepath, '\\', '/') = REPLACE(v.filepath, '\\', '/')
+                    )
+                WHERE d.base_dir = ?
+                    AND d.user_verified_target_path IS NOT NULL
+                    AND d.user_verified_target_path != ''
+                """,
+                (base_dir,),
+            )
+            rows = cursor.fetchall()
+
+        if not rows:
+            return []
+
+        filtered_rows: list[tuple[str, str, Any]] = []
+        if allowed_extensions is not None:
+            norm_exts = {ext.lower() for ext in allowed_extensions}
+            for filepath, folder, vector_str in rows:
+                if not filepath or not folder:
+                    continue
+                dot_idx = filepath.rfind(".")
+                ext = filepath[dot_idx:].lower() if dot_idx != -1 else ""
+                if ext in norm_exts:
+                    filtered_rows.append((filepath, folder, vector_str))
+        else:
+            for filepath, folder, vector_str in rows:
+                if filepath and folder:
+                    filtered_rows.append((filepath, folder, vector_str))
+
+        if not filtered_rows:
+            return []
+
+        crypto_obj = self.crypto
+
+        def _decrypt_vector_chunk(
+            chunk: list[tuple[str, str, Any]],
+        ) -> list[tuple[str, str, list[float] | None, bool]]:
+            chunk_results: list[tuple[str, str, list[float] | None, bool]] = []
+            for filepath, folder, vector_str in chunk:
+                if vector_str:
+                    try:
+                        if hasattr(crypto_obj, "decrypt_and_parse_vector"):
+                            parsed = crypto_obj.decrypt_and_parse_vector(vector_str)
+                        else:
+                            import json
+
+                            decrypted_str = crypto_obj.decrypt_vector(vector_str)
+                            parsed = (
+                                json.loads(decrypted_str) if decrypted_str else None
+                            )
+                    except Exception:
+                        logging.debug(
+                            "Failed to decrypt or parse historical vector",
+                            exc_info=True,
+                        )
+                        parsed = None
+                    chunk_results.append((filepath, folder, parsed, parsed is None))
+                elif include_unvectorized:
+                    chunk_results.append((filepath, folder, None, False))
+            return chunk_results
+
+        if len(filtered_rows) <= 32:
+            decrypted_items = _decrypt_vector_chunk(filtered_rows)
+        else:
+            from app.core.analyzer_strategies import get_decryption_executor
+
+            executor = get_decryption_executor()
+            num_chunks = min(32, max(1, len(filtered_rows) // 32))
+            step = (len(filtered_rows) + num_chunks - 1) // num_chunks
+            chunks = [
+                filtered_rows[i : i + step] for i in range(0, len(filtered_rows), step)
+            ]
+            chunk_res = list(executor.map(_decrypt_vector_chunk, chunks))
+            decrypted_items = [item for sub in chunk_res for item in sub]
+
+        results: list[tuple[str, str, list[float] | None]] = []
+        for filepath, folder, parsed_vec, failed_decrypt in decrypted_items:
+            if failed_decrypt and track_corrupted:
+                self.track_corrupted_vector(base_dir, filepath)
+            results.append((filepath, folder, parsed_vec))
         return results
 
     def upsert_document_vectors(
