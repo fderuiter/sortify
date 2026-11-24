@@ -322,6 +322,14 @@ def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
     if contextual_renaming is not None:
         settings.override("CONTEXTUAL_RENAMING", contextual_renaming)
 
+    duplicates = getattr(args, "duplicates", None)
+    if duplicates is not None:
+        settings.override("DUPLICATE_ACTION", duplicates)
+
+    detect_original_by = getattr(args, "detect_original_by", None)
+    if detect_original_by is not None:
+        settings.override("DETECT_ORIGINAL_BY", detect_original_by)
+
     # Handle AI consent flags and environment variables
     accept_consent = _extract_bool_arg(args, "accept_ai_consent")
     decline_consent = _extract_bool_arg(args, "decline_ai_consent")
@@ -759,7 +767,8 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
                 "plan": serializable_plan,
             }
         else:
-            outcome = pipeline.execute(plan)
+            flush_trash = bool(getattr(args, "flush_trash", False))
+            outcome = pipeline.execute(plan, flush_trash=flush_trash)
             result = {
                 "status": "success",
                 "dry_run": False,
@@ -1393,14 +1402,51 @@ class SortifyArgumentParser(argparse.ArgumentParser):
 
     _active_cli_args: Any = None
 
+    @staticmethod
+    def _normalize_dash_option_values(raw_args: list[str]) -> list[str]:
+        """Allow '--detect-original-by -created' alongside '--detect-original-by=-created'."""
+        normalized: list[str] = []
+        idx = 0
+        while idx < len(raw_args):
+            token = raw_args[idx]
+            if token == "--":
+                normalized.extend(raw_args[idx:])
+                break
+            if (
+                token == "--detect-original-by"
+                and idx + 1 < len(raw_args)
+                and raw_args[idx + 1].startswith("-")
+                and not raw_args[idx + 1].startswith("--")
+            ):
+                normalized.append(f"{token}={raw_args[idx + 1]}")
+                idx += 2
+                continue
+            normalized.append(token)
+            idx += 1
+        return normalized
+
+    def parse_known_args(
+        self,
+        args: Any = None,
+        namespace: Any = None,
+    ) -> tuple[Any, list[str]]:
+        """Normalize dash-prefixed option values before delegating to argparse."""
+        raw_list = list(sys.argv[1:]) if args is None else list(args)
+        normalized = self._normalize_dash_option_values(raw_list)
+        if SortifyArgumentParser._active_cli_args is None:
+            SortifyArgumentParser._active_cli_args = normalized
+        return super().parse_known_args(args=normalized, namespace=namespace)
+
     def parse_args(
         self,
         args: Any = None,
         namespace: Any = None,
     ) -> Any:
         """Parse CLI arguments and record active arguments for error handling."""
-        SortifyArgumentParser._active_cli_args = args
-        return super().parse_args(args=args, namespace=namespace)
+        raw_list = list(sys.argv[1:]) if args is None else list(args)
+        normalized = self._normalize_dash_option_values(raw_list)
+        SortifyArgumentParser._active_cli_args = normalized
+        return super().parse_args(args=normalized, namespace=namespace)
 
     def error(self, message: str) -> NoReturn:
         """Emit structured JSON error or standard argparse text error.
@@ -1541,6 +1587,29 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
             help="Conflict resolution policy",
         )
         subparser.add_argument(
+            "--duplicates",
+            type=str,
+            choices=["off", "skip", "stage", "trash"],
+            default=None,
+            help="Byte-identical duplicate handling mode (off, skip, stage, trash)",
+        )
+        subparser.add_argument(
+            "--detect-original-by",
+            type=str,
+            choices=[
+                "first_seen",
+                "-first_seen",
+                "name",
+                "-name",
+                "created",
+                "-created",
+                "lastmodified",
+                "-lastmodified",
+            ],
+            default=None,
+            help="Criterion used to select the surviving original in duplicate clusters",
+        )
+        subparser.add_argument(
             "--contextual-renaming",
             action="store_true",
             default=None,
@@ -1632,6 +1701,12 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         "--dry-run",
         action="store_true",
         help="Perform dry run analysis without executing physical moves",
+    )
+    parser_sort.add_argument(
+        "--flush-trash",
+        action="store_true",
+        default=False,
+        help="Export staged duplicate copies to the OS Trash after move verification",
     )
     add_common_override_args(parser_sort)
 

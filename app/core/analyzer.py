@@ -464,6 +464,32 @@ def pre_fetch_historical_corpus(
 class IncrementalAnalyzer:
     """Stateful ML analyzer using incremental topic modeling."""
 
+    @staticmethod
+    def detect_duplicate_clusters(
+        base_dir: str,
+        file_paths: Any,
+        detect_original_by: str = "first_seen",
+    ) -> list[dict[str, Any]]:
+        """Group byte-identical files across scanned paths using size pre-filter and raw byte comparison."""
+        from app.core.resilient_file_ops import group_byte_identical_files
+        from app.core.scanner import parse_item_identifier
+
+        resolved_paths: list[str] = []
+        for raw_fp in file_paths or []:
+            if not raw_fp:
+                continue
+            fp_str = str(raw_fp)
+            if os.path.isabs(fp_str) and "::" not in fp_str:
+                resolved_paths.append(os.path.normpath(fp_str))
+            else:
+                src_root, clean_rel = parse_item_identifier(fp_str, base_dir)
+                resolved_paths.append(
+                    os.path.normpath(os.path.abspath(os.path.join(src_root, clean_rel)))
+                )
+        return group_byte_identical_files(
+            resolved_paths, detect_original_by=detect_original_by
+        )
+
     def __init__(
         self,
         max_folders: int,
@@ -1242,6 +1268,60 @@ class IncrementalAnalyzer:
             )
             sorted_policies = PolicyEngine.sort_policies(policies)
 
+            from app.core.resilient_file_ops import (
+                DETECT_ORIGINAL_BY_MODES,
+                group_byte_identical_files,
+            )
+
+            detect_original_by = (
+                getattr(runtime_settings, "DETECT_ORIGINAL_BY", "first_seen")
+                if runtime_settings
+                else "first_seen"
+            )
+            if detect_original_by == "first_seen" and sorted_policies:
+                for pol in sorted_policies:
+                    p_type = (
+                        pol.type
+                        if hasattr(pol, "type")
+                        else pol.get("type")
+                        if isinstance(pol, dict)
+                        else None
+                    )
+                    p_sel = (
+                        getattr(pol, "detect_original_by", None)
+                        if hasattr(pol, "type")
+                        else pol.get("detect_original_by")
+                        if isinstance(pol, dict)
+                        else None
+                    )
+                    if p_type == "duplicate" and p_sel in DETECT_ORIGINAL_BY_MODES:
+                        detect_original_by = str(p_sel)
+                        break
+
+            doc_abs_map: dict[str, str] = {}
+            abs_to_doc_key: dict[str, str] = {}
+            ordered_abs_paths: list[str] = []
+            for d in docs:
+                f_key = str(d[0])
+                s_root, s_rel = parse_item_identifier(f_key, base_dir)
+                abs_f = os.path.normpath(os.path.abspath(os.path.join(s_root, s_rel)))
+                doc_abs_map[f_key] = abs_f
+                abs_to_doc_key.setdefault(abs_f, f_key)
+                ordered_abs_paths.append(abs_f)
+
+            byte_clusters = group_byte_identical_files(
+                ordered_abs_paths, detect_original_by=detect_original_by
+            )
+            primary_by_abs: dict[str, tuple[str, str]] = {}
+            primary_group_map: dict[str, str] = {}
+            for cluster_idx, cluster in enumerate(byte_clusters, start=1):
+                gid = f"dup_{cluster_idx}"
+                orig_abs = os.path.normpath(os.path.abspath(cluster["original"]))
+                primary_group_map[orig_abs] = gid
+                for dup_abs in cluster["duplicates"]:
+                    norm_dup = os.path.normpath(os.path.abspath(dup_abs))
+                    primary_by_abs[norm_dup] = (orig_abs, gid)
+
             ai_filenames = []
             ai_documents = []
             policy_plan_files = []
@@ -1383,6 +1463,7 @@ class IncrementalAnalyzer:
                         sorted_policies,
                         return_halting=True,
                         is_sorted=True,
+                        is_duplicate=(doc_abs_map.get(str(f), "") in primary_by_abs),
                     ),
                 )
 
@@ -2448,12 +2529,20 @@ class IncrementalAnalyzer:
                     return SortingPlan()
                 if target_folder not in plan:
                     plan[target_folder] = {}
-                plan[target_folder][f] = {
+                matched_pol = matched_policies_map.get(f)
+                pol_action = getattr(matched_pol, "action", None) or (
+                    matched_pol.get("action") if isinstance(matched_pol, dict) else None
+                )
+                node_payload: dict[str, Any] = {
                     "__type__": "file",
                     "routed_by": rule_type,
                     "match": expression,
                     "status": status,
                 }
+                if pol_action == "trash":
+                    node_payload["policy_action"] = "trash"
+                    node_payload["duplicate_action"] = "trash"
+                plan[target_folder][f] = node_payload
 
             for f, target_folder, keyword, rule_type, status in keyword_plan_files:
                 if cancel_check and cancel_check():
@@ -2541,6 +2630,14 @@ class IncrementalAnalyzer:
                         if isinstance(matched_pol, dict)
                         else None
                     )
+                    pol_action = getattr(matched_pol, "action", None) or (
+                        matched_pol.get("action")
+                        if isinstance(matched_pol, dict)
+                        else None
+                    )
+                    if pol_action == "trash":
+                        info["policy_action"] = "trash"
+                        info["duplicate_action"] = "trash"
                 elif used_rule_routing and matched_rule:
                     info["routed_by"] = matched_rule[0]
                     info["match"] = matched_rule[1]
@@ -2590,6 +2687,11 @@ class IncrementalAnalyzer:
                 if not isinstance(files, dict) or not files:
                     continue
 
+                if not target_folder:
+                    for f, info in files.items():
+                        clean_plan[f] = info
+                    continue
+
                 if os.path.isabs(target_folder) or ntpath.isabs(target_folder):
                     if target_folder not in clean_plan:
                         clean_plan[target_folder] = {}
@@ -2615,8 +2717,17 @@ class IncrementalAnalyzer:
             ):
                 clean_plan = self._inject_hierarchy(clean_plan)
 
+            configured_dup_action = (
+                str(getattr(runtime_settings, "DUPLICATE_ACTION", "off") or "off")
+                .strip()
+                .lower()
+                if runtime_settings
+                else "off"
+            )
+
             # Post-process: ensure every file node in the plan has source_path and relative_source,
-            # and prune no-op leaves where source already equals destination.
+            # and prune no-op leaves where source already equals destination (unless slated for
+            # trash/duplicate staging or active duplicate review).
             eff_dest_root = dest_dir or base_dir
 
             def _is_noop_destination(
@@ -2644,7 +2755,16 @@ class IncrementalAnalyzer:
                         raw_k = k
                         if "::" in k:
                             src_root, raw_k = k.split("::", 1)
-                        if _is_noop_destination(src_root, raw_k, current_path, raw_k):
+                        cand_abs = os.path.normpath(
+                            os.path.abspath(os.path.join(src_root, raw_k))
+                        )
+                        keep_for_dup = (
+                            cand_abs in primary_by_abs
+                            and configured_dup_action in ("stage", "trash", "review")
+                        )
+                        if not keep_for_dup and _is_noop_destination(
+                            src_root, raw_k, current_path, raw_k
+                        ):
                             del node[k]
                             continue
                         rel_src = safe_relpath(
@@ -2678,7 +2798,23 @@ class IncrementalAnalyzer:
 
                             src_rel_for_calc = v.get("source_path") or raw_k
                             s_root = v.get("source_root") or base_dir
-                            if _is_noop_destination(
+                            cand_abs = os.path.normpath(
+                                os.path.abspath(
+                                    src_rel_for_calc
+                                    if os.path.isabs(str(src_rel_for_calc))
+                                    else os.path.join(s_root, str(src_rel_for_calc))
+                                )
+                            )
+                            keep_for_disposal = (
+                                v.get("policy_action") == "trash"
+                                or v.get("duplicate_action") in ("stage", "trash")
+                                or (
+                                    cand_abs in primary_by_abs
+                                    and configured_dup_action
+                                    in ("stage", "trash", "review")
+                                )
+                            )
+                            if not keep_for_disposal and _is_noop_destination(
                                 s_root, src_rel_for_calc, current_path, raw_k
                             ):
                                 del node[k]
@@ -2699,6 +2835,50 @@ class IncrementalAnalyzer:
                                 del node[k]
 
             _ensure_relative_source(clean_plan)
+
+            def _tag_byte_duplicates(node: dict[str, Any]) -> None:
+                for k, v in list(node.items()):
+                    if not isinstance(v, dict):
+                        continue
+                    if v.get("__type__") == "file":
+                        s_root = v.get("source_root") or base_dir
+                        src_rel = v.get("source_path") or (
+                            k.split("::", 1)[1] if "::" in k else k
+                        )
+                        abs_src = os.path.normpath(
+                            os.path.abspath(
+                                src_rel
+                                if os.path.isabs(str(src_rel))
+                                else os.path.join(s_root, str(src_rel))
+                            )
+                        )
+                        if abs_src in primary_group_map:
+                            v["is_duplicate"] = False
+                            v["is_duplicate_primary"] = True
+                            v["duplicate_group_id"] = primary_group_map[abs_src]
+                        elif abs_src in primary_by_abs:
+                            orig_abs, gid = primary_by_abs[abs_src]
+                            orig_key = abs_to_doc_key.get(orig_abs) or safe_relpath(
+                                orig_abs, base_dir
+                            )
+                            v["is_duplicate"] = True
+                            v["is_duplicate_primary"] = False
+                            v["duplicate_of"] = orig_key
+                            v["duplicate_group_id"] = gid
+                            if v.get("policy_action") == "trash":
+                                v["duplicate_action"] = "trash"
+                            elif configured_dup_action == "skip":
+                                v["duplicate_action"] = "skip"
+                                v["is_excluded"] = True
+                                v["is_checked"] = False
+                                v["status"] = "Skipped"
+                            elif configured_dup_action in ("stage", "trash"):
+                                v["duplicate_action"] = configured_dup_action
+                    else:
+                        _tag_byte_duplicates(v)
+
+            if primary_group_map or primary_by_abs:
+                _tag_byte_duplicates(clean_plan)
 
             if runtime_settings and (
                 getattr(runtime_settings, "CONTEXTUAL_RENAMING", False)

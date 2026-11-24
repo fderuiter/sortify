@@ -883,10 +883,10 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Optional[Any]])
         rk_attr = getattr(event, "row_key", None)
         if rk_attr is not None and getattr(rk_attr, "value", None):
             row_key = str(rk_attr.value)
-        elif isinstance(event, DataTable.CellSelected):
+        elif (coord := getattr(event, "coordinate", None)) is not None:
             try:
                 dt_conf = self.query_one("#dt-rule-conflicts", DataTable)
-                rk = dt_conf.coordinate_to_cell_key(event.coordinate).row_key
+                rk = dt_conf.coordinate_to_cell_key(coord).row_key
                 if rk and rk.value:
                     row_key = str(rk.value)
             except Exception:
