@@ -795,6 +795,10 @@ class TreeViewMixin:
                 if routed_by == "jev_classifier" or file_info.get("is_jev"):
                     label_parts.append("[JEV]")
 
+                policy_action = file_info.get("policy_action")
+                if policy_action:
+                    label_parts.append(f"[ACTION: {str(policy_action).upper()}]")
+
                 sens_rating = file_info.get("sensitivity_rating")
                 if sens_rating:
                     label_parts.append(f"[SENS: {str(sens_rating).upper()}]")
@@ -1107,6 +1111,10 @@ class TreeViewMixin:
             routing_src = info.get("routed_by")
             if routing_src:
                 lines.append(f"[bold]Routing Source:[/bold] {routing_src}")
+
+            pol_action = info.get("policy_action")
+            if pol_action:
+                lines.append(f"[bold]Policy Action:[/bold] {pol_action}")
 
             cat = info.get("category") or info.get("jev_category")
             if cat:

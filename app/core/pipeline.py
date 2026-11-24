@@ -5,6 +5,7 @@ to ``SortPipeline`` instead of wiring the extractor, analyzer and mover together
 themselves. See issue #708 and the system design's "Target architecture".
 """
 
+import contextvars
 import inspect
 import logging
 import os
@@ -19,6 +20,10 @@ from typing import Any
 from app.core.lifecycle import LifecycleTelemetryMixin
 
 logger = logging.getLogger(__name__)
+
+_ACTIVE_PIPELINE: contextvars.ContextVar["SortPipeline | None"] = (
+    contextvars.ContextVar("_ACTIVE_PIPELINE", default=None)
+)
 
 
 class PipelineLifecycleState(str, Enum):
@@ -631,17 +636,22 @@ class SortPipeline(LifecycleTelemetryMixin):
         self._settings = settings
         if hasattr(session, "pipeline"):
             session.pipeline = self
-        initial_state = getattr(session, "lifecycle_state", None)
-        if initial_state is None or not isinstance(
-            initial_state, PipelineLifecycleState
+        sess_state = getattr(session, "lifecycle_state", None)
+        if hasattr(session, "lifecycle_state") and not isinstance(
+            sess_state, PipelineLifecycleState
         ):
-            initial_state = PipelineLifecycleState.CREATED
-            if hasattr(session, "lifecycle_state"):
-                session.lifecycle_state = initial_state
-        self._state = initial_state
+            session.lifecycle_state = PipelineLifecycleState.CREATED
+            sess_state = PipelineLifecycleState.CREATED
+        self._state = (
+            PipelineLifecycleState.PLANNED
+            if sess_state == PipelineLifecycleState.PLANNED
+            else PipelineLifecycleState.CREATED
+        )
         self._lock = threading.RLock()
         self._rollback_completed: bool | None = None
         self._planned_items: list[Any] = []
+        self._defer_unarchive_children: bool = False
+        self._unarchive_depth: int = 0
 
     @property
     def planned_items(self) -> list[Any]:
@@ -736,6 +746,7 @@ class SortPipeline(LifecycleTelemetryMixin):
         self.transition_to(PipelineLifecycleState.PLANNING)
         self.emit_telemetry("plan_start", items=items)
 
+        active_token = _ACTIVE_PIPELINE.set(self)
         try:
             from app.core.scanner import (
                 ScanFilter,
@@ -943,6 +954,95 @@ class SortPipeline(LifecycleTelemetryMixin):
                     logger.debug(f"Failed to transition to FAILED state: {trans_err}")
             self.emit_telemetry("plan_error", error=str(e))
             raise
+        finally:
+            _ACTIVE_PIPELINE.reset(active_token)
+
+    def _sort_unarchived_children(
+        self,
+        unarchived_children: list[str],
+        parent_result: SortResult,
+        *,
+        cancel_check: Callable | None = None,
+    ) -> None:
+        """Plan and execute sorting for extracted child files under the parent session."""
+        if not unarchived_children or not self.base_dir or not parent_result.session_id:
+            return
+        if cancel_check and cancel_check():
+            return
+
+        from app.core.forensic_scanner import ForensicScanner
+        from app.core.path_utils import safe_relpath
+
+        depth = int(getattr(self, "_unarchive_depth", 0))
+        if depth >= 3:
+            logger.warning(
+                "Skipping recursive unarchive child sorting beyond depth limit (%d).",
+                depth,
+            )
+            return
+
+        scanner = ForensicScanner()
+        existing_children = [p for p in unarchived_children if p and os.path.isfile(p)]
+        if not existing_children:
+            return
+        if len(existing_children) > scanner.max_files:
+            logger.warning(
+                "Skipping child sorting: extracted child count %d exceeds limit %d.",
+                len(existing_children),
+                scanner.max_files,
+            )
+            return
+        total_child_bytes = sum(
+            os.path.getsize(p) for p in existing_children if os.path.exists(p)
+        )
+        if total_child_bytes > scanner.max_total_size_bytes:
+            logger.warning(
+                "Skipping child sorting: extracted child bytes %d exceed limit %d.",
+                total_child_bytes,
+                scanner.max_total_size_bytes,
+            )
+            return
+
+        rel_children: list[str] = []
+        for child_abs in existing_children:
+            try:
+                rel_p = safe_relpath(child_abs, self.base_dir).replace("\\", "/")
+            except ValueError:
+                continue
+            if rel_p and not rel_p.startswith(".."):
+                rel_children.append(rel_p)
+        if not rel_children:
+            return
+
+        child_pipeline = SortPipeline(
+            self.session, base_dir=self.base_dir, settings=self.settings
+        )
+        child_pipeline._unarchive_depth = depth + 1
+        child_plan = child_pipeline.plan(
+            rel_children,
+            target_paths=rel_children,
+            cancel_check=cancel_check,
+        )
+        if not child_plan:
+            return
+
+        child_result = child_pipeline.execute(
+            child_plan,
+            parent_session_id=parent_result.session_id,
+            cancel_check=cancel_check,
+        )
+        parent_result.moved.extend(child_result.moved)
+        parent_result.quarantined.extend(child_result.quarantined)
+        parent_result.skipped.extend(child_result.skipped)
+        parent_result.failed.extend(child_result.failed)
+        parent_records = parent_result.summary.setdefault(
+            "audit_report", {}
+        ).setdefault("records", [])
+        child_records = (
+            (child_result.summary or {}).get("audit_report", {}).get("records", [])
+        )
+        if child_records:
+            parent_records.extend(child_records)
 
     def execute(
         self,
@@ -989,6 +1089,20 @@ class SortPipeline(LifecycleTelemetryMixin):
                 else "_Compliance_Quarantine"
             )
             result = SortResult.from_summary(summary, quarantine_dir)
+            unarchived_children = list((summary or {}).get("unarchived_children") or [])
+            if (
+                unarchived_children
+                and not getattr(self, "_defer_unarchive_children", False)
+                and not result.cancelled
+                and not summary.get("cancelled")
+                and not result.failed
+            ):
+                self._sort_unarchived_children(
+                    unarchived_children,
+                    result,
+                    cancel_check=call_kwargs.get("cancel_check"),
+                )
+
             if result.cancelled or summary.get("cancelled"):
                 if self.state != PipelineLifecycleState.CANCELLED:
                     self.transition_to(PipelineLifecycleState.CANCELLED)
@@ -1055,6 +1169,7 @@ class SortPipeline(LifecycleTelemetryMixin):
         self.transition_to(PipelineLifecycleState.ROLLING_BACK)
         self.emit_telemetry("undo_start", session_id=session_id)
 
+        from app.core.mover import is_subpath_or_equal, overwrite_backup_dir
         from app.core.moves import FAILED, INTENT
         from app.core.path_utils import safe_relpath
 
@@ -1087,11 +1202,25 @@ class SortPipeline(LifecycleTelemetryMixin):
                     error=f"Session not found: {session_id}",
                 )
                 raise ValueError(f"Session not found: {session_id}")
-            moves = [
-                m
-                for m in history.moves.list_moves(session_id)
-                if m.state not in (INTENT, FAILED)
-            ]
+            session_backup_dir = overwrite_backup_dir(base_dir, session_id)
+            ephemeral_paths: set[str] = set()
+            moves = []
+            for m in sorted(
+                history.moves.list_moves(session_id),
+                key=lambda item: item.seq,
+            ):
+                if m.state in (INTENT, FAILED):
+                    continue
+                norm_src = os.path.normcase(os.path.abspath(m.src))
+                norm_dst = os.path.normcase(os.path.abspath(m.dst))
+                if is_subpath_or_equal(m.src, session_backup_dir):
+                    ephemeral_paths.add(norm_dst)
+                    continue
+                if norm_src in ephemeral_paths:
+                    ephemeral_paths.discard(norm_src)
+                    ephemeral_paths.add(norm_dst)
+                    continue
+                moves.append(m)
             if selected_step_ids is not None:
                 sel_set = {str(x) for x in selected_step_ids}
                 moves = [m for m in moves if str(m.seq) in sel_set]
