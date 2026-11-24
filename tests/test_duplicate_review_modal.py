@@ -554,3 +554,62 @@ async def test_interactive_collision_resolver_modal_imports_and_batch_apply():
 
         assert modal.user_selections == {"group_1": "overwrite"}
         assert modal.query_one("#select-action-group_1", Select).value == "overwrite"
+
+
+def test_action_execute_sort_normalizes_nested_exec_plan_before_duplicate_and_collision_modals(
+    tmp_path,
+):
+    """Nested TUI plan nodes with filepath only (no relative_source) keep #btn-execute enabled and normalize cleanly in action_execute_sort."""
+    import asyncio
+
+    from textual.widgets import Button
+
+    from app.core.session import AppSession
+    from app.ui.modals.edit import InteractiveCollisionResolverModal
+
+    src_file = tmp_path / "draft_report.txt"
+    src_file.write_text("new draft bytes")
+    existing_dir = tmp_path / "Finance" / "2025" / "Q1"
+    existing_dir.mkdir(parents=True)
+    existing_file = existing_dir / "final.txt"
+    existing_file.write_text("older target bytes")
+
+    async def _test():
+        settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        settings._settings_model.CONFLICT_POLICY = "overwrite"
+        app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path), skip_wizard=True)
+        session = AppSession(settings, base_dir=str(tmp_path))
+        app.app_session = session
+        try:
+            async with app.run_test() as pilot:
+                # Deeply nested plan entry with only filepath (no relative_source / source_path)
+                app.plan = {
+                    "Finance": {
+                        "2025": {
+                            "Q1": {
+                                "draft_report.txt": {
+                                    "__type__": "file",
+                                    "filepath": str(src_file),
+                                    "target_filename": "final.txt",
+                                    "confirmed": True,
+                                }
+                            }
+                        }
+                    }
+                }
+                app.rebuild_tree()
+                await app.workers.wait_for_complete()
+                await pilot.pause(0.05)
+
+                btn_exec = app.query_one("#btn-execute", Button)
+                assert app.has_critical_errors is False
+                assert btn_exec.disabled is False
+
+                app.action_execute_sort()
+                await pilot.pause(0.05)
+                assert isinstance(app.screen, InteractiveCollisionResolverModal)
+        finally:
+            session.close()
+
+    asyncio.run(_test())

@@ -77,7 +77,7 @@ smart-autosorter sort ~/Downloads --dest-dir ~/Sorted
 Useful options for `sort` and `scan`:
 - `--max-folders N`: maximum folders per level (default 12, up to 50).
 - `--strategy`: `default` (keyword clustering), `generative` (local LLM folder names, needs the `ml` extra), or the clinical `clinical_tmf` / `clinical_isf` strategies.
-- `--conflict-policy skip|rename`: what to do when a destination file already exists.
+- `--conflict-policy skip|rename|overwrite`: what to do when a destination file already exists (`overwrite` moves the existing file to `.sortify_overwritten/<session_id>/` so `undo` restores it).
 - `--export-report FILE --report-format html|json`: save an audit report of the run.
 - `--preset demo|downloads|documents`: use a standard folder instead of naming one.
 - `-q` / `--quiet` and `--no-color`: less output, and plain text for logs or terminals without color.
@@ -187,17 +187,21 @@ You can open the active rule manager using either of the following methods:
 *Note on focus*: When focus is inside a text input field (such as the tree search box or modal input fields), `[Ctrl+R]` and `[F2]` do not trigger modal actions. Defocus the text input or press `[Esc]` before using these shortcuts.
 
 #### Managing Rules and Controls
-The active rule manager displays all configured rules in the interactive **Rules Table** (`#rules-table`) with columns for `Status` (Active or Disabled), `Type` (e.g. `keyword`, `compliance`, `pattern`, including compound badges such as `[all]`, `[any]`, `[none]`, `[not]`, `[regex]`, and `[case]`), `Pattern`, `Target Folder`, and `Priority`.
+The active rule manager displays all configured rules in the interactive **Rules Table** (`#rules-table`) with columns for `Status` (Active, Disabled, or `⚠ Masked by '<pattern>'` when a higher-priority policy shadows a lower-priority policy), `Type` (e.g. `keyword`, `compliance`, `pattern`, including compound badges such as `[all]`, `[any]`, `[none]`, `[not]`, `[regex]`, and `[case]`), `Pattern`, `Target Folder`, and `Priority`.
 
 Use the following shortcuts and button controls:
 - **Toggle Rule Status** (`[Space]` or `#btn-toggle-rule`): Toggles the selected rule between *Active* and *Disabled*. Toggling a keyword rule moves it between `KEYWORD_RULES` and `DISABLED_KEYWORD_RULES` without deleting its destination path, preserving row cursor focus on the table.
-- **Add Rule** (`#btn-add-rule`): Opens the rule editor modal (`RuleEditModal`) to define a simple keyword rule or a compound boolean policy. Choose **Match Mode** (`Simple Keyword / Pattern`, `All conditions (AND)`, `Any condition (OR)`, or `None of conditions (NOR)`), configure optional **Negate**, **Regex** (bounded to 256 characters and validated against ReDoS nested quantifiers), and **Case-sensitive** flags, add or remove multi-clause conditions (`name`, `extension`, `content`, `path`, or `any_text` with `contains`, `equals`, `starts_with`, `ends_with`, `glob`, or `regex` operators), and specify a validated relative target folder.
-- **Edit Rule** (`[Enter]` or `#btn-edit-rule`): Opens the rule editor modal for the highlighted rule or compound policy, allowing you to update its match mode, boolean condition clauses, flags, summary pattern expression, or target folder.
+- **Add Rule** (`#btn-add-rule`): Opens the rule editor modal (`RuleEditModal`) to define either a keyword rule or a prioritized policy (`type`, `expression`, `target_path`, `priority`, `halting`, and optional `action`), including compound boolean conditions. Choose **Match Mode** (`Simple Keyword / Pattern`, `All conditions (AND)`, `Any condition (OR)`, or `None of conditions (NOR)`), configure optional **Negate**, **Regex** (bounded to 256 characters and validated against ReDoS nested quantifiers), and **Case-sensitive** flags, and add or remove multi-clause conditions (`name`, `extension`, `content`, `path`, or `any_text` with `contains`, `equals`, `starts_with`, `ends_with`, `glob`, or `regex` operators). Pick a workspace file in `#select-sample-file` to live-test your draft rule locally without outbound network calls or moving files, and view total matching file counts across the workspace. Target paths and policy actions are validated before saving.
+- **Edit Rule** (`[Enter]` or `#btn-edit-rule`): Opens the rule editor modal for the highlighted keyword rule or compound policy, allowing you to update its rule category, policy attributes, match mode, boolean condition clauses, flags, summary pattern expression, or target folder while live-previewing sample matches.
 - **Delete Rule** (`[Delete]` or `#btn-delete-rule`): Prompts a confirmation dialog (`DeleteRuleConfirmModal`) before permanently deleting the selected rule or policy from settings.
 - **Import Rules** (`[Ctrl+I]` / `[I]` or `#btn-import-rules`): Opens the external rule import dialog (`RuleImportModal`) to import rules from Hazel, DropIt, TagSpaces, or Sortify JSON. Completing the import workflow updates the rules table immediately without closing the active rule manager.
 - **Export Rules** (`[Ctrl+E]` / `[E]` or `#btn-export-rules`): Opens the export dialog (`ExportRulesModal`) displaying active rule counts and exports active rules (including compound boolean conditions and exclusions) to Sortify JSON, Hazel, or DropIt formats.
 - **Browse Templates** (`[Ctrl+B]` / `[B]` or `#btn-browse-templates`): Opens the template gallery modal (`TemplateGalleryModal`) to browse and apply pre-configured starter packs. When templates are applied, the rules table refreshes immediately.
-- **Close Dialog** (`[Esc]` or `#btn-close-rules`): Closes the active rule manager and returns to the previous view.
+- **Close Dialog** (`[Esc]` or `#btn-close-rules`): Closes the active rule manager and returns to the previous view. When any rule was added, edited, toggled, imported, or deleted during the session, Sortify automatically rescans the active workspace directory.
+
+#### Inspecting Plan Routing and Document Previews
+- **Plan Tree Routing Badges & Inspector**: Every file leaf in `#plan-tree` displays a compact routing badge (`[POLICY]`, `[KEYWORD]`, `[LEARNED]`, `[JEV]`, `[HIST]`, `[SIM]`, `[FOLDER]`, `[EXT]`, `[CLUSTER]`, or `[FALLBACK]`). Selecting a file updates the inspector panel with the winning rule expression, policy priority, or top TF-IDF cluster keywords.
+- **Document Text & Density Preview** (`[Ctrl+X]`): Opens `ExtractionPreviewModal` for any supported document format (both PDF and non-PDF files) to inspect sanitized extracted text (with secret tokens and home paths scrubbed) alongside per-page PDF character density metrics.
 
 ### Importing External Rules
 

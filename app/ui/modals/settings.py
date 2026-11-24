@@ -621,7 +621,17 @@ class SettingsModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         """Open active rule manager modal."""
         from app.ui.modals.rules import ActiveRuleManagerModal
 
-        self.app.push_screen(ActiveRuleManagerModal(self.settings))
+        def on_rules_closed(mutated: Optional[bool] = None) -> None:
+            if mutated:
+                update_fn = getattr(self.app, "update_status", None)
+                if callable(update_fn):
+                    update_fn()
+                if getattr(self.app, "base_dir", None):
+                    scan_fn = getattr(self.app, "action_scan_directory", None)
+                    if callable(scan_fn):
+                        scan_fn()
+
+        self.app.push_screen(ActiveRuleManagerModal(self.settings), on_rules_closed)
 
     @on(DensitySlider.Changed, "#slider-pdf-density-threshold")
     def _on_density_slider_changed(self, event: DensitySlider.Changed) -> None:

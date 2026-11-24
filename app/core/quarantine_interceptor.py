@@ -92,10 +92,43 @@ def _is_content_approved_for_release(
 
 SSN_PATTERN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
 CREDIT_CARD_PATTERN = re.compile(r"\b(?:\d[ -]*?){13,16}\b")
+PHONE_PATTERN = re.compile(
+    r"(?<!\d)(?:\+?1[-.\s]?)?(?:\(\d{3}\)|\d{3})[-.\s]\d{3}[-.\s]\d{4}(?!\d)"
+)
 EMAIL_PATTERN = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
 CLINICAL_PII_PATTERN = re.compile(
     r"(?i)(Confidential Medical Report|Subject \d+|Diagnosis:[^\n]*)"
 )
+INLINE_SECRET_ASSIGNMENT_PATTERN = re.compile(
+    r"(?i)\b(?:api[_-]?key|secret(?:[_-]?key|[_-]?token)?|access[_-]?token|auth[_-]?token|bearer[_-]?token|password|passwd|token)\s*[:=]\s*(?:['\"][^'\"]+['\"]|[^\s,;'\"]+)"
+)
+
+_REDACTABLE_TEXT_EXTENSIONS = frozenset(
+    {
+        ".txt",
+        ".md",
+        ".csv",
+        ".tsv",
+        ".json",
+        ".log",
+        ".xml",
+        ".yaml",
+        ".yml",
+        ".ini",
+        ".cfg",
+        ".conf",
+        ".html",
+        ".htm",
+        ".rst",
+    }
+)
+_REDACTABLE_OFFICE_EXTENSIONS = frozenset({".docx", ".xlsx"})
+
+
+def _is_redactable_extension(file_path: str) -> bool:
+    """Return True when file_path has a plain-text or supported OOXML extension."""
+    ext = os.path.splitext(str(file_path or ""))[1].lower()
+    return ext in _REDACTABLE_TEXT_EXTENSIONS or ext in _REDACTABLE_OFFICE_EXTENSIONS
 
 
 def scrub_pii_from_text(text: Any) -> str:
@@ -112,15 +145,174 @@ def scrub_pii_from_text(text: Any) -> str:
     redacted = SSN_PATTERN.sub("[REDACTED_SSN]", redacted)
     # Credit Card pattern
     redacted = CREDIT_CARD_PATTERN.sub("[REDACTED_CARD]", redacted)
+    # Phone number pattern
+    redacted = PHONE_PATTERN.sub("[REDACTED_PHONE]", redacted)
     # Email pattern
     redacted = EMAIL_PATTERN.sub("[REDACTED_EMAIL]", redacted)
     # Clinical/PII Sensitive phrases
     redacted = CLINICAL_PII_PATTERN.sub("[REDACTED_PII]", redacted)
+    # Inline key/value secret assignments (supports both ':' and '=')
+    redacted = INLINE_SECRET_ASSIGNMENT_PATTERN.sub("[REDACTED_SECRET]", redacted)
 
     # Centralized secret pattern redaction (API keys, JWT tokens, Bearer tokens, private keys, high-entropy secrets)
     redacted = sanitize_secret_patterns(redacted, replacement="[REDACTED_SECRET]")
 
     return redacted
+
+
+def _redact_document_to_path(
+    src_path: str,
+    out_path: str,
+    extra_regex: Optional[str] = None,
+) -> tuple[bool, str]:
+    """Scrub sensitive content from supported text, .docx, and .xlsx files into out_path.
+
+    Returns ``(True, scrubbed_text)`` when the container format is supported and
+    valid, or ``(False, "")`` when ``src_path`` is a ``.pdf`` or other binary
+    format that must be held intact in quarantine rather than corrupted.
+    Filesystem ``OSError`` failures during reading or writing propagate to the caller.
+    """
+    ext = os.path.splitext(str(src_path or ""))[1].lower()
+    compiled_extra: Optional[re.Pattern[str]] = None
+    if extra_regex:
+        with contextlib.suppress(re.error):
+            compiled_extra = re.compile(extra_regex, re.IGNORECASE)
+
+    def _scrub_val(raw: str) -> str:
+        res = scrub_pii_from_text(raw)
+        if compiled_extra is not None:
+            res = compiled_extra.sub("[REDACTED_POLICY]", res)
+        return res
+
+    if ext in _REDACTABLE_TEXT_EXTENSIONS:
+        try:
+            with open(src_path, "r", encoding="utf-8") as fh:
+                raw_text = fh.read()
+        except UnicodeDecodeError:
+            return False, ""
+        scrubbed_text = _scrub_val(raw_text)
+        out_dir = os.path.dirname(os.path.abspath(out_path))
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+        with open(out_path, "w", encoding="utf-8") as fh:
+            fh.write(scrubbed_text)
+        _set_posix_mode(out_path, 0o600)
+        return True, scrubbed_text
+
+    if ext == ".docx":
+        import zipfile
+
+        import docx
+        from docx.opc.exceptions import PackageNotFoundError
+
+        try:
+            doc = docx.Document(src_path)
+        except (PackageNotFoundError, zipfile.BadZipFile, KeyError, ValueError):
+            return False, ""
+
+        collected_chunks: list[str] = []
+
+        def _scrub_paragraph(para: Any) -> None:
+            runs = list(getattr(para, "runs", []) or [])
+            for run in runs:
+                if run.text:
+                    run.text = _scrub_val(run.text)
+            full_after = para.text or ""
+            scrubbed_full = _scrub_val(full_after)
+            if scrubbed_full != full_after:
+                if runs:
+                    runs[0].text = scrubbed_full
+                    for extra_run in runs[1:]:
+                        extra_run.text = ""
+                else:
+                    para.text = scrubbed_full
+            if para.text:
+                collected_chunks.append(para.text)
+
+        def _scrub_table(table: Any) -> None:
+            for row in table.rows:
+                for cell in row.cells:
+                    for para in cell.paragraphs:
+                        _scrub_paragraph(para)
+                    for nested in cell.tables:
+                        _scrub_table(nested)
+
+        for para in doc.paragraphs:
+            _scrub_paragraph(para)
+        for tbl in doc.tables:
+            _scrub_table(tbl)
+        for section in doc.sections:
+            for container in (
+                section.header,
+                section.footer,
+                section.first_page_header,
+                section.first_page_footer,
+                section.even_page_header,
+                section.even_page_footer,
+            ):
+                if container is not None:
+                    for para in container.paragraphs:
+                        _scrub_paragraph(para)
+                    for tbl in container.tables:
+                        _scrub_table(tbl)
+
+        core_props = getattr(doc, "core_properties", None)
+        if core_props is not None:
+            for prop_name in ("author", "comments", "subject", "title", "keywords"):
+                val = getattr(core_props, prop_name, None)
+                if isinstance(val, str) and val:
+                    setattr(core_props, prop_name, _scrub_val(val))
+
+        out_dir = os.path.dirname(os.path.abspath(out_path))
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+        doc.save(out_path)
+        _set_posix_mode(out_path, 0o600)
+        return True, "\n".join(collected_chunks)
+
+    if ext == ".xlsx":
+        import zipfile
+
+        import openpyxl
+
+        try:
+            wb = openpyxl.load_workbook(src_path)
+        except (zipfile.BadZipFile, KeyError, ValueError):
+            return False, ""
+
+        xlsx_chunks: list[str] = []
+        for sheet in wb.worksheets:
+            for row in sheet.iter_rows():
+                for cell in row:
+                    if isinstance(cell.value, str) and cell.value:
+                        scrubbed_cell = _scrub_val(cell.value)
+                        if scrubbed_cell != cell.value:
+                            cell.value = scrubbed_cell
+                        xlsx_chunks.append(str(cell.value))
+                    if (
+                        cell.comment
+                        and isinstance(cell.comment.text, str)
+                        and cell.comment.text
+                    ):
+                        cell.comment.text = _scrub_val(cell.comment.text)
+                        xlsx_chunks.append(cell.comment.text)
+
+        props = getattr(wb, "properties", None)
+        if props is not None:
+            for prop_name in ("creator", "description", "subject", "title", "keywords"):
+                val = getattr(props, prop_name, None)
+                if isinstance(val, str) and val:
+                    setattr(props, prop_name, _scrub_val(val))
+
+        out_dir = os.path.dirname(os.path.abspath(out_path))
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+        wb.save(out_path)
+        wb.close()
+        _set_posix_mode(out_path, 0o600)
+        return True, "\n".join(xlsx_chunks)
+
+    return False, ""
 
 
 class QuarantineInterceptorService:
@@ -305,6 +497,46 @@ class QuarantineInterceptorService:
         self, job_id: str, timeout_override: Optional[float] = None
     ) -> QuarantineRecordModel:
         """Execute deep forensic scanning, PII redaction, policy evaluation, and archival lifecycle actions."""
+        return self._run_quarantine_job(
+            job_id=job_id,
+            timeout_override=timeout_override,
+            phase0_only=False,
+        )
+
+    def _process_phase0_job(
+        self, job_id: str, timeout_override: Optional[float] = None
+    ) -> QuarantineRecordModel:
+        """Execute daemon Phase 0 safety checks and quarantine holds without routing non-quarantine policies."""
+        return self._run_quarantine_job(
+            job_id=job_id,
+            timeout_override=timeout_override,
+            phase0_only=True,
+        )
+
+    def _delete_phase0_record(self, job_id: str) -> None:
+        """Remove a transient Phase 0 staging record when SortPipeline will execute downstream routing."""
+        try:
+            from app.core.db import get_db_connection
+
+            db_path = getattr(self.db, "db_path", None)
+            worker = getattr(self.db, "worker", None)
+            if db_path and worker and hasattr(worker, "execute_write"):
+                worker.execute_write(
+                    lambda: get_db_connection(db_path).execute(
+                        "DELETE FROM quarantine_records WHERE job_id = ?",
+                        (job_id,),
+                    )
+                )
+        except (OSError, ValueError, RuntimeError, AttributeError):
+            logger.debug("Could not prune transient Phase 0 record %s", job_id)
+
+    def _run_quarantine_job(
+        self,
+        job_id: str,
+        timeout_override: Optional[float] = None,
+        phase0_only: bool = False,
+    ) -> QuarantineRecordModel:
+        """Run quarantine job with optional Phase 0 safety-and-hold restriction."""
         record = self.db.get_quarantine_record(job_id)
         if not isinstance(record, dict):
             record = None
@@ -330,6 +562,7 @@ class QuarantineInterceptorService:
         staged_path = record["staged_filepath"]
         base_dir = record["base_dir"]
         orig_rel_path = record["original_filepath"]
+        forensic_extracted_files: list[str] = []
 
         if base_dir:
             base_dir = os.path.abspath(base_dir)
@@ -357,6 +590,7 @@ class QuarantineInterceptorService:
                         extracted_files = self.forensic_scanner.unpack_archive(
                             staged_path, os.path.dirname(staged_path)
                         )
+                        forensic_extracted_files = list(extracted_files)
                         extracted_texts = []
                         for ef in extracted_files:
                             if os.path.isfile(ef):
@@ -545,25 +779,116 @@ class QuarantineInterceptorService:
                     )
 
             # 5. Policy Lifecycle Action Execution
+            if phase0_only:
+                if action == "quarantine":
+                    self.db.update_quarantine_status(
+                        job_id=job_id,
+                        status="QUARANTINED",
+                        policy_action="quarantine",
+                        audit_entry={
+                            "timestamp": time.time(),
+                            "status": "QUARANTINED",
+                            "details": "Document retained in quarantine staging for compliance review",
+                        },
+                    )
+                    res_q = self.db.get_quarantine_record(job_id)
+                    if isinstance(res_q, dict):
+                        return validate_quarantine_record(res_q)
+                    record["status"] = "QUARANTINED"
+                    record["policy_action"] = "quarantine"
+                    return validate_quarantine_record(record)
+
+                for ef in forensic_extracted_files:
+                    if os.path.exists(ef):
+                        with contextlib.suppress(OSError):
+                            resilient_remove(ef)
+                if staged_path and os.path.exists(staged_path):
+                    with contextlib.suppress(OSError):
+                        resilient_remove(staged_path)
+                self._delete_phase0_record(job_id)
+                return validate_quarantine_record(
+                    {
+                        "job_id": job_id,
+                        "base_dir": base_dir or "",
+                        "original_filepath": orig_rel_path,
+                        "staged_filepath": staged_path,
+                        "file_hash": current_file_hash or "",
+                        "status": "RELEASED",
+                        "policy_action": "release",
+                        "audit_log": [],
+                    }
+                )
+
             if action == "redact":
-                # Execute PII Scrubbing & Release Pipeline
-                scrubbed_text = scrub_pii_from_text(extracted_text)
+                rule_type = (
+                    getattr(matched_rule, "type", "")
+                    or (
+                        matched_rule.get("type", "")
+                        if isinstance(matched_rule, dict)
+                        else ""
+                    )
+                    if matched_rule
+                    else ""
+                )
+                rule_expr = (
+                    getattr(matched_rule, "expression", "")
+                    or (
+                        matched_rule.get("expression", "")
+                        if isinstance(matched_rule, dict)
+                        else ""
+                    )
+                    if matched_rule
+                    else ""
+                )
+                extra_regex = (
+                    str(rule_expr)
+                    if str(rule_type).lower() == "regex" and rule_expr
+                    else None
+                )
 
-                # Overwrite staged file with sanitized content. A failure must
-                # stop the job here: releasing the file now would publish the
-                # unredacted original as "sanitized". It propagates to the
-                # handler below, which routes the job to manual review.
+                # Overwrite staged file with format-aware sanitized content.
+                # Filesystem OSError propagates to the handler below -> MANUAL_REVIEW_REQUIRED.
+                # Binary/PDF files return was_redacted=False and are held intact in quarantine.
+                was_redacted = False
+                scrubbed_text = ""
                 if os.path.exists(staged_path):
-                    with open(staged_path, "w", encoding="utf-8") as f:
-                        f.write(scrubbed_text)
-                    _set_posix_mode(staged_path, 0o600)
+                    was_redacted, scrubbed_text = _redact_document_to_path(
+                        staged_path,
+                        staged_path,
+                        extra_regex=extra_regex,
+                    )
 
-                # If vector exists in DB, scrub vector
+                if not was_redacted:
+                    self.db.update_quarantine_status(
+                        job_id=job_id,
+                        status="QUARANTINED",
+                        policy_action="redact",
+                        audit_entry={
+                            "timestamp": time.time(),
+                            "status": "QUARANTINED",
+                            "policy_action": "redact",
+                            "details": (
+                                "Binary or PDF container cannot be safely text-redacted in place; "
+                                "held intact in quarantine for manual review"
+                            ),
+                        },
+                    )
+                    res_hold = self.db.get_quarantine_record(job_id)
+                    if isinstance(res_hold, dict):
+                        return validate_quarantine_record(res_hold)
+                    record["status"] = "QUARANTINED"
+                    record["policy_action"] = "redact"
+                    return validate_quarantine_record(record)
+
+                # If vector exists in DB, scrub and purge vector
                 if record.get("file_hash"):
                     try:
-                        vec = self.db.get_document_vector(base_dir, orig_rel_path)
-                        if vec:
-                            zero_vector_buffer(vec)
+                        if hasattr(self.db, "_purge_document_vector"):
+                            self.db._purge_document_vector(base_dir, orig_rel_path)
+                        else:
+                            vec = self.db.get_document_vector(base_dir, orig_rel_path)
+                            if vec:
+                                zero_vector_buffer(vec)
                     except Exception:
                         logger.warning(
                             f"Failed to scrub document vector for '{orig_rel_path}'",
@@ -781,10 +1106,17 @@ class QuarantineInterceptorService:
                             shutil.copy2(staged_path, orig_full_path)
                         resilient_remove(staged_path)
                 else:
-                    if os.path.exists(staged_path):
-                        resilient_remove(staged_path)
+                    backup_archive_path = os.path.join(
+                        overwrite_backup_dir(base_dir, job_id),
+                        "unarchive_src",
+                        orig_rel_path,
+                    )
                     if os.path.exists(orig_full_path):
-                        resilient_remove(orig_full_path)
+                        resilient_move(orig_full_path, backup_archive_path)
+                        if os.path.exists(staged_path):
+                            resilient_remove(staged_path)
+                    elif os.path.exists(staged_path):
+                        resilient_move(staged_path, backup_archive_path)
 
                 dest_subfolder = safe_relpath(dest_dir, base_dir).replace("\\", "/")
                 if dest_subfolder == ".":
@@ -805,15 +1137,22 @@ class QuarantineInterceptorService:
                 )
 
             else:
-                # Default release to target destination or original base_dir
+                # Default release to original relative location when no explicit
+                # lifecycle action matched so actionless routing policies never
+                # create duplicate copies before SortPipeline runs.
+                effective_subfolder = target_subfolder if action else None
                 dest_dir = self.resolve_safe_target_dir(
-                    base_dir, target_subfolder, default_subfolder=""
+                    base_dir, effective_subfolder, default_subfolder=""
                 )
                 dest_subfolder = safe_relpath(dest_dir, base_dir).replace("\\", "/")
                 if dest_subfolder == ".":
                     dest_subfolder = ""
                 os.makedirs(dest_dir, exist_ok=True)
-                dest_file_path = os.path.join(dest_dir, os.path.basename(orig_rel_path))
+                dest_file_path = (
+                    os.path.join(base_dir, orig_rel_path)
+                    if not action
+                    else os.path.join(dest_dir, os.path.basename(orig_rel_path))
+                )
 
                 # Releasing back over the unchanged original (the daemon stages a
                 # copy and leaves the original in place): keep the original rather

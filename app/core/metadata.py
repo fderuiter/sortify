@@ -224,6 +224,13 @@ class MetadataPass:
             r for r in (getattr(settings, "AUTO_QUARANTINE_RATINGS", []) or []) if r
         ]
 
+        def _policy_field(pol: object, key: str, default: object = "") -> object:
+            return (
+                pol.get(key, default)
+                if isinstance(pol, dict)
+                else getattr(pol, key, default)
+            )
+
         # Sort policies in descending order of priority (higher priority number first)
         valid_policies = (
             [
@@ -234,10 +241,21 @@ class MetadataPass:
             if isinstance(policies, (list, tuple))
             else []
         )
-        has_content_compliance_policy = bool(auto_quarantine_ratings) or any(
-            PolicyEngine.rule_inspects_content(p) for p in valid_policies
-        )
         sorted_policies = PolicyEngine.sort_policies(valid_policies)
+
+        has_content_compliance_policy = bool(auto_quarantine_ratings) or any(
+            bool(_policy_field(p, "enabled", True))
+            and (
+                PolicyEngine.rule_inspects_content(p)
+                or str(_policy_field(p, "type", "") or "").lower()
+                in ("compliance", "action")
+                or str(_policy_field(p, "action", "") or "").lower()
+                in ("quarantine", "redact", "archive", "retain")
+                or str(_policy_field(p, "expression", "") or "").strip().lower()
+                in ("secret", "credential")
+            )
+            for p in sorted_policies
+        )
 
         if db and hasattr(db, "worker"):
             from app.core.db import DBWorker
@@ -308,9 +326,37 @@ class MetadataPass:
             is_supported = registry.is_supported(ext)
 
             matched_target = None
+            matched_policy_action = ""
+            matched_from_policy = False
+            unmatched_higher_content_policy = False
             if file_hash in hash_to_target:
                 matched_target = hash_to_target[file_hash]
+                matched_from_policy = True
             else:
+                for pol_cand in sorted_policies:
+                    if not _policy_field(pol_cand, "enabled", True):
+                        continue
+                    p_type = str(_policy_field(pol_cand, "type", "") or "").lower()
+                    if PolicyEngine.match_policy(
+                        pol_cand, item_path, "", "[STATUS:STATIC]"
+                    ):
+                        matched_from_policy = True
+                        matched_policy_action = str(
+                            _policy_field(pol_cand, "action", "") or ""
+                        ).lower()
+                        break
+                    if p_type in (
+                        "keyword",
+                        "action",
+                        "compliance",
+                        "secret",
+                        "credential",
+                        "",
+                    ) or PolicyEngine.rule_inspects_content(pol_cand):
+                        unmatched_higher_content_policy = True
+                    if _policy_field(pol_cand, "halting", False):
+                        break
+
                 matched_target, _matched_action, _halt_eval = (
                     evaluate_static_file_routing(
                         item_path,
@@ -328,8 +374,12 @@ class MetadataPass:
                 if mt_clean in rejected_set or (mt_clean.split("/")[0] in rejected_set):
                     matched_target = None
 
-            if matched_target and (
-                not is_supported or not has_content_compliance_policy
+            if (matched_target or matched_policy_action in ("unarchive", "trash")) and (
+                not is_supported
+                or (
+                    not has_content_compliance_policy
+                    and (matched_from_policy or not unmatched_higher_content_policy)
+                )
             ):
                 bypassed_files.append(item)
                 docs_to_upsert.append((src_root, rel_p, file_hash, "[STATUS:BYPASSED]"))

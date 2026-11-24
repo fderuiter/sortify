@@ -293,6 +293,8 @@ class SortingPlanNodeModel(DictCompatMixin, BaseModel):
     duplicate_group_id: Optional[str] = None
     duplicate_action: Optional[str] = None
     policy_action: Optional[str] = None
+    post_unarchive_action: Optional[str] = None
+    post_unarchive_target: Optional[str] = None
     is_excluded: Optional[bool] = None
     is_checked: Optional[bool] = None
 
