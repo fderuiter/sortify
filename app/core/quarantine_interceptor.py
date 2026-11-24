@@ -8,6 +8,7 @@ import shutil
 import time
 import unicodedata
 import uuid
+from pathlib import Path
 from typing import Any, Optional
 
 from app.core.analyzer_strategies import redact_sensitive_text
@@ -137,12 +138,15 @@ class QuarantineInterceptorService:
         jev_classifier: Optional[Any] = None,
         auto_quarantine_ratings: Optional[list[str]] = None,
         runtime_settings: Optional[Any] = None,
+        history_manager: Optional[Any] = None,
     ):
         self.db = db
         self.policies = PolicyEngine.sort_policies(policies)
         self.worker_timeout = worker_timeout
         self.forensic_scanner = ForensicScanner()
         self.dlq_records: list[dict[str, Any]] = []
+        self.history_manager = history_manager
+        self._fallback_ledger_cache: dict[str, tuple[Any, str]] = {}
         if jev_classifier is not None:
             self.jev_classifier = jev_classifier
         else:
@@ -241,6 +245,202 @@ class QuarantineInterceptorService:
             logger.debug("Could not compare staged and release files", exc_info=True)
             return False
 
+    def _resolve_ledger_context(
+        self, history_manager: Optional[Any] = None
+    ) -> tuple[Optional[Any], Optional[str], Optional[Any]]:
+        """Resolve MoveLedger, ledger database path, and optional HistoryManager."""
+        effective_hm = history_manager or self.history_manager
+        if effective_hm is not None and hasattr(effective_hm, "moves"):
+            return effective_hm.moves, str(effective_hm.db_path), effective_hm
+
+        raw_db_path = getattr(self.db, "db_path", None)
+        if not isinstance(raw_db_path, (str, os.PathLike)):
+            return None, None, None
+
+        db_file = Path(raw_db_path)
+        cache_key = str(db_file)
+        cached = self._fallback_ledger_cache.get(cache_key)
+        if cached is not None:
+            return cached[0], cached[1], None
+
+        from app.core.db_conn import get_db_connection
+        from app.core.history import HISTORY_DB_MIGRATIONS
+        from app.core.migrations import migrate
+        from app.core.moves import MoveLedger
+
+        has_unified_tables = False
+        with contextlib.suppress(Exception):
+            probe_conn = get_db_connection(str(db_file))
+            with probe_conn:
+                tables = {
+                    row[0]
+                    for row in probe_conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('sessions', 'moves')"
+                    ).fetchall()
+                }
+                has_unified_tables = {"sessions", "moves"} <= tables
+        ledger_db_path = (
+            str(db_file) if has_unified_tables else str(db_file.parent / "history.db")
+        )
+
+        worker = getattr(self.db, "worker", None)
+
+        def _ensure_ledger_schema() -> None:
+            conn = get_db_connection(ledger_db_path)
+            with conn:
+                tables = {
+                    row[0]
+                    for row in conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('sessions', 'moves')"
+                    ).fetchall()
+                }
+                if not ({"sessions", "moves"} <= tables):
+                    migrate(
+                        conn,
+                        HISTORY_DB_MIGRATIONS,
+                        label=f"History {ledger_db_path}",
+                    )
+
+        if worker is not None and hasattr(worker, "execute_write"):
+            worker.execute_write(_ensure_ledger_schema)
+        else:
+            _ensure_ledger_schema()
+
+        ledger = MoveLedger(ledger_db_path, worker)
+        self._fallback_ledger_cache[cache_key] = (ledger, ledger_db_path)
+        return ledger, ledger_db_path, None
+
+    def _finalize_reversible_relocation(
+        self,
+        *,
+        base_dir: str,
+        abs_source: str,
+        final_dst: str,
+        expected_hash: Optional[str],
+        session_id: Optional[str] = None,
+        complete_session: bool = True,
+        history_manager: Optional[Any] = None,
+    ) -> tuple[Optional[str], Optional[int]]:
+        """Record a verified MoveLedger entry before removing unchanged source file."""
+        abs_src = os.path.abspath(abs_source)
+        abs_dst = os.path.abspath(final_dst)
+        if os.path.normcase(abs_src) == os.path.normcase(abs_dst):
+            return None, None
+        if not os.path.isfile(abs_dst):
+            raise FileNotFoundError(
+                f"Compliance destination file missing after relocation: {abs_dst}"
+            )
+
+        dst_hash = resilient_file_hash(abs_dst)
+        if expected_hash and dst_hash != expected_hash:
+            raise RuntimeError(f"Compliance destination hash mismatch for '{abs_dst}'")
+        verified_hash = dst_hash or expected_hash
+
+        src_exists = os.path.isfile(abs_src)
+        if src_exists and verified_hash:
+            try:
+                src_hash = resilient_file_hash(abs_src)
+            except OSError:
+                src_hash = None
+            if src_hash is not None and src_hash != verified_hash:
+                # Source changed after staging; preserve user edits at origin.
+                return None, None
+
+        ledger, ledger_db_path, effective_hm = self._resolve_ledger_context(
+            history_manager
+        )
+        recorded_sid: Optional[str] = None
+        recorded_seq: Optional[int] = None
+
+        if ledger is not None and ledger_db_path is not None:
+            from app.core.db_conn import get_db_connection
+            from app.core.history import ACTIVE, COMPLETED, SessionStateMachine
+
+            worker = getattr(self.db, "worker", None)
+            effective_base = (
+                os.path.abspath(base_dir) if base_dir else os.path.dirname(abs_src)
+            )
+
+            if session_id:
+                sid = str(session_id)
+                if effective_hm is None:
+
+                    def _ensure_active_row() -> None:
+                        conn = get_db_connection(ledger_db_path)
+                        with conn:
+                            conn.execute(
+                                "INSERT OR IGNORE INTO sessions (session_id, timestamp, base_dir, status) "
+                                "VALUES (?, ?, ?, ?)",
+                                (sid, time.time(), effective_base, ACTIVE),
+                            )
+
+                    if worker is not None and hasattr(worker, "execute_write"):
+                        worker.execute_write(_ensure_active_row)
+                    else:
+                        _ensure_active_row()
+            elif effective_hm is not None:
+                sid = str(effective_hm.start_session(effective_base))
+            else:
+                sid = str(uuid.uuid4())
+
+                def _insert_session() -> None:
+                    conn = get_db_connection(ledger_db_path)
+                    with conn:
+                        conn.execute(
+                            "INSERT INTO sessions (session_id, timestamp, base_dir, status) "
+                            "VALUES (?, ?, ?, ?)",
+                            (sid, time.time(), effective_base, ACTIVE),
+                        )
+
+                if worker is not None and hasattr(worker, "execute_write"):
+                    worker.execute_write(_insert_session)
+                else:
+                    _insert_session()
+
+            try:
+                file_size: Optional[int] = os.path.getsize(abs_dst)
+            except OSError:
+                file_size = None
+
+            seq = ledger.record_intent(
+                sid,
+                abs_src,
+                abs_dst,
+                src_sha256=verified_hash,
+                size=file_size,
+            )
+            ledger.mark_done(sid, seq, abs_dst)
+            ledger.mark_verified(sid, seq)
+            recorded_sid = sid
+            recorded_seq = seq
+
+            if src_exists and os.path.exists(abs_src):
+                if not resilient_remove(abs_src) and os.path.exists(abs_src):
+                    raise OSError(
+                        f"Failed to remove source file after compliance hold: {abs_src}"
+                    )
+
+            if complete_session:
+                if effective_hm is not None:
+                    effective_hm.complete_session(sid)
+                else:
+
+                    def _complete_standalone() -> None:
+                        conn = get_db_connection(ledger_db_path)
+                        with conn:
+                            SessionStateMachine(ledger_db_path).transition(
+                                sid, COMPLETED, conn=conn
+                            )
+
+                    if worker is not None and hasattr(worker, "execute_write"):
+                        worker.execute_write(_complete_standalone)
+                    else:
+                        _complete_standalone()
+        elif src_exists and os.path.exists(abs_src):
+            resilient_remove(abs_src)
+
+        return recorded_sid, recorded_seq
+
     def stage_incoming_file(
         self,
         source_path: str,
@@ -302,7 +502,13 @@ class QuarantineInterceptorService:
         }
 
     def process_quarantine_job(
-        self, job_id: str, timeout_override: Optional[float] = None
+        self,
+        job_id: str,
+        timeout_override: Optional[float] = None,
+        *,
+        session_id: Optional[str] = None,
+        complete_session: bool = True,
+        history_manager: Optional[Any] = None,
     ) -> QuarantineRecordModel:
         """Execute deep forensic scanning, PII redaction, policy evaluation, and archival lifecycle actions."""
         record = self.db.get_quarantine_record(job_id)
@@ -337,6 +543,18 @@ class QuarantineInterceptorService:
             candidate_staged = os.path.normpath(os.path.join(base_dir, staged_path))
             if os.path.exists(candidate_staged) or not os.path.exists(staged_path):
                 staged_path = candidate_staged
+
+        abs_source = (
+            os.path.abspath(orig_rel_path)
+            if os.path.isabs(orig_rel_path)
+            else (
+                os.path.abspath(os.path.join(base_dir, orig_rel_path))
+                if base_dir
+                else os.path.abspath(orig_rel_path)
+            )
+        )
+        move_session_id: Optional[str] = None
+        move_seq: Optional[int] = None
 
         try:
             # Check timeout guardrail
@@ -532,11 +750,29 @@ class QuarantineInterceptorService:
                                 "category": category_val,
                             },
                         )
+                        if staged_path and os.path.exists(staged_path):
+                            move_session_id, move_seq = (
+                                self._finalize_reversible_relocation(
+                                    base_dir=base_dir or "",
+                                    abs_source=abs_source,
+                                    final_dst=staged_path,
+                                    expected_hash=current_file_hash,
+                                    session_id=session_id,
+                                    complete_session=complete_session,
+                                    history_manager=history_manager,
+                                )
+                            )
                         rec = self.db.get_quarantine_record(job_id)
                         if rec:
+                            if move_session_id is not None:
+                                rec["move_session_id"] = move_session_id
+                                rec["move_seq"] = move_seq
                             return validate_quarantine_record(rec)
                         record["status"] = "QUARANTINED"
                         record["policy_action"] = "sensitivity_hold"
+                        if move_session_id is not None:
+                            record["move_session_id"] = move_session_id
+                            record["move_seq"] = move_seq
                         return validate_quarantine_record(record)
                 except Exception as jev_err:
                     logger.warning(
@@ -620,6 +856,13 @@ class QuarantineInterceptorService:
                         scrubbed_text,
                     )
 
+                # Destructive redaction must never leave an unredacted copy at origin
+                # or record a reversible MoveLedger entry that could restore raw PII.
+                if os.path.exists(abs_source) and os.path.normcase(
+                    abs_source
+                ) != os.path.normcase(os.path.abspath(actual_dest)):
+                    resilient_remove(abs_source)
+
             elif action == "archive":
                 archive_dir = self.resolve_safe_target_dir(
                     base_dir, target_subfolder, default_subfolder="Archive"
@@ -634,7 +877,9 @@ class QuarantineInterceptorService:
                     archive_dir, os.path.basename(orig_rel_path)
                 )
 
-                with atomic_quarantine_relocation(staged_path, archive_file_path):
+                with atomic_quarantine_relocation(
+                    staged_path, archive_file_path
+                ) as actual_archive_dest:
                     self.db.update_quarantine_status(
                         job_id=job_id,
                         status="ARCHIVED",
@@ -645,6 +890,15 @@ class QuarantineInterceptorService:
                             "details": f"Document archived to {archive_subfolder}",
                         },
                     )
+                move_session_id, move_seq = self._finalize_reversible_relocation(
+                    base_dir=base_dir or "",
+                    abs_source=abs_source,
+                    final_dst=actual_archive_dest,
+                    expected_hash=current_file_hash,
+                    session_id=session_id,
+                    complete_session=complete_session,
+                    history_manager=history_manager,
+                )
 
             elif action == "quarantine":
                 self.db.update_quarantine_status(
@@ -657,6 +911,16 @@ class QuarantineInterceptorService:
                         "details": "Document retained in quarantine staging for compliance review",
                     },
                 )
+                if staged_path and os.path.exists(staged_path):
+                    move_session_id, move_seq = self._finalize_reversible_relocation(
+                        base_dir=base_dir or "",
+                        abs_source=abs_source,
+                        final_dst=staged_path,
+                        expected_hash=current_file_hash,
+                        session_id=session_id,
+                        complete_session=complete_session,
+                        history_manager=history_manager,
+                    )
 
             elif action == "retain":
                 dest_dir = self.resolve_safe_target_dir(
@@ -668,7 +932,9 @@ class QuarantineInterceptorService:
                 os.makedirs(dest_dir, exist_ok=True)
                 dest_file_path = os.path.join(dest_dir, os.path.basename(orig_rel_path))
 
-                with atomic_quarantine_relocation(staged_path, dest_file_path):
+                with atomic_quarantine_relocation(
+                    staged_path, dest_file_path
+                ) as actual_retain_dest:
                     self.db.update_quarantine_status(
                         job_id=job_id,
                         status="RELEASED",
@@ -679,6 +945,15 @@ class QuarantineInterceptorService:
                             "details": f"Document retained and released to {dest_subfolder}",
                         },
                     )
+                move_session_id, move_seq = self._finalize_reversible_relocation(
+                    base_dir=base_dir or "",
+                    abs_source=abs_source,
+                    final_dst=actual_retain_dest,
+                    expected_hash=current_file_hash,
+                    session_id=session_id,
+                    complete_session=complete_session,
+                    history_manager=history_manager,
+                )
 
             elif action == "unarchive":
                 dest_dir = self.resolve_safe_target_dir(
@@ -853,11 +1128,17 @@ class QuarantineInterceptorService:
             if isinstance(res, dict):
                 if action == "unarchive" and "unpacked_child_files" in locals():
                     res["unpacked_files"] = unpacked_child_files
+                if move_session_id is not None:
+                    res["move_session_id"] = move_session_id
+                    res["move_seq"] = move_seq
                 return validate_quarantine_record(res)
             record["status"] = "UNARCHIVED" if action == "unarchive" else "RELEASED"
             record["policy_action"] = action or "release"
             if action == "unarchive" and "unpacked_child_files" in locals():
                 record["unpacked_files"] = unpacked_child_files
+            if move_session_id is not None:
+                record["move_session_id"] = move_session_id
+                record["move_seq"] = move_seq
             return validate_quarantine_record(record)
 
         except TimeoutError as te:

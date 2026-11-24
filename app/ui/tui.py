@@ -1,6 +1,8 @@
 """Textual full-screen terminal interface with interactive tree and modal dialogs."""
 
 import asyncio
+import contextlib
+import functools
 import inspect
 import logging
 import os
@@ -133,6 +135,13 @@ class AutoSorterTUI(
         Binding("ctrl+d", "open_dropzone", "DropZone", show=False),
         Binding("ctrl+t", "toggle_daemon(False)", "Toggle Daemon", show=False),
         Binding("p", "toggle_daemon(True)", "Toggle Daemon", show=False),
+        Binding(
+            "ctrl+shift+t",
+            "stop_daemon(False)",
+            "Stop Daemon",
+            show=False,
+        ),
+        Binding("P", "stop_daemon(True)", "Stop Daemon", show=False),
         Binding("ctrl+s", "scan_directory", "Scan", show=True),
         Binding("ctrl+y", "open_history", "History View", show=False),
         Binding("ctrl+u", "open_quarantine_vault", "Quarantine Vault", show=False),
@@ -402,6 +411,11 @@ class AutoSorterTUI(
         self.collision_paths: set[str] = set()
         self._daemon_state: str = "idle"
         self._daemon_is_moving: bool = False
+        self._daemon_watched_folders: list[str] = []
+        self._daemon_queue_depth: Optional[int] = None
+        self._daemon_max_queue: Optional[int] = None
+        self._daemon_active_workers: Optional[int] = None
+        self._managed_daemon: Optional[Any] = None
         self._pending_flush_trash: bool = False
 
     def compose(self) -> ComposeResult:
@@ -723,8 +737,19 @@ class AutoSorterTUI(
             AppSettings.remove_observer(
                 "AI_CONSENT_GRANTED", self._on_ai_consent_changed
             )
+            AppSettings.remove_observer(
+                "ENABLE_CHARACTER_KEY_SHORTCUTS",
+                self._on_character_shortcuts_changed,
+            )
         except Exception:
             pass
+        managed = getattr(self, "_managed_daemon", None)
+        if managed is not None:
+            self._managed_daemon = None
+            try:
+                managed.stop()
+            except Exception:
+                pass
 
     @work
     async def check_abandoned_sessions(self) -> None:
@@ -847,50 +872,225 @@ class AutoSorterTUI(
         self.announce(f"Cleaned session files for '{session_info.get('session_id')}'.")
 
     def _get_daemon_status_badge(self) -> str:
-        """Return visual watchdog daemon status badge string."""
+        """Return visual watchdog daemon status badge string with live multi-folder telemetry."""
         state = getattr(self, "_daemon_state", "idle")
-        if state == "active":
-            return "[Daemon: Active]"
-        elif state == "paused":
-            return "[Daemon: Paused]"
-        return "[Daemon: Idle]"
+        if state not in ("active", "paused"):
+            return "[Daemon: Idle]"
+        label = "Active" if state == "active" else "Paused"
+        parts = [f"Daemon: {label}"]
+        watched = getattr(self, "_daemon_watched_folders", None) or []
+        qd = getattr(self, "_daemon_queue_depth", None)
+        workers = getattr(self, "_daemon_active_workers", None)
+        if watched:
+            n = len(watched)
+            parts.append(f"{n} {'dir' if n == 1 else 'dirs'}")
+        if qd is not None:
+            parts.append(f"Q:{qd}")
+        if workers is not None:
+            parts.append(f"W:{workers}")
+        return f"[{' | '.join(parts)}]"
+
+    def _collect_relevant_daemon_dirs(self) -> list[str]:
+        """Collect deduplicated candidate directories from WATCHED_FOLDERS, source_dirs, and base_dir."""
+        candidates: list[str] = []
+        seen: set[str] = set()
+        raw_sources = (
+            list(getattr(self.settings, "WATCHED_FOLDERS", []) or [])
+            + list(getattr(self, "source_dirs", []) or [])
+            + ([self.base_dir] if getattr(self, "base_dir", "") else [])
+        )
+        for item in raw_sources:
+            if not item:
+                continue
+            abs_p = os.path.normpath(os.path.abspath(str(item)))
+            norm_p = os.path.normcase(abs_p)
+            if norm_p not in seen:
+                seen.add(norm_p)
+                candidates.append(abs_p)
+        return candidates
+
+    def _resolve_daemon_target_folders(self) -> list[str]:
+        """Resolve existing, non-nested, non-protected directories to watch when starting from TUI."""
+        from app.core.path_utils import is_subpath_or_equal
+
+        configured = [
+            os.path.normpath(os.path.abspath(str(p)))
+            for p in (getattr(self.settings, "WATCHED_FOLDERS", []) or [])
+            if p and os.path.isdir(os.path.abspath(str(p)))
+        ]
+        if configured:
+            raw_candidates = configured + [
+                os.path.normpath(os.path.abspath(str(p)))
+                for p in (
+                    list(getattr(self, "source_dirs", []) or [])
+                    + ([self.base_dir] if getattr(self, "base_dir", "") else [])
+                )
+                if p and os.path.isdir(os.path.abspath(str(p)))
+            ]
+        else:
+            raw_candidates = [
+                os.path.normpath(os.path.abspath(str(p)))
+                for p in (
+                    list(getattr(self, "source_dirs", []) or [])
+                    + ([self.base_dir] if getattr(self, "base_dir", "") else [])
+                )
+                if p and os.path.isdir(os.path.abspath(str(p)))
+            ]
+
+        protected = [
+            os.path.normpath(os.path.abspath(str(p)))
+            for p in (getattr(self.settings, "PROTECTED_PATHS", []) or [])
+            if p
+        ]
+        selected: list[str] = []
+        for cand in raw_candidates:
+            blocked = False
+            for prot in protected:
+                try:
+                    if is_subpath_or_equal(cand, prot) or is_subpath_or_equal(
+                        prot, cand
+                    ):
+                        blocked = True
+                        break
+                except Exception:
+                    continue
+            if blocked:
+                continue
+            nested = False
+            for existing in selected:
+                try:
+                    if is_subpath_or_equal(cand, existing) or is_subpath_or_equal(
+                        existing, cand
+                    ):
+                        nested = True
+                        break
+                except Exception:
+                    continue
+            if not nested:
+                selected.append(cand)
+        return selected
 
     async def _poll_daemon_status(self) -> None:
-        """Asynchronously poll background daemon lockfile and query IPC status."""
+        """Asynchronously poll shared user-scoped daemon IPC channel across watched and workspace folders."""
+        from app.core.path_utils import is_subpath_or_equal
+
         base_dir = getattr(self, "base_dir", None)
+        lookup_dir = base_dir if (base_dir and os.path.exists(base_dir)) else None
+        relevant_dirs = self._collect_relevant_daemon_dirs()
+        has_existing_context = (
+            any(os.path.exists(d) for d in relevant_dirs)
+            or getattr(self, "_managed_daemon", None) is not None
+        )
+
         new_state = "idle"
         is_moving = False
-        if base_dir and os.path.exists(base_dir):
-            try:
-                import asyncio
+        watched_folders: list[str] = []
+        queue_depth: Optional[int] = None
+        max_queue: Optional[int] = None
+        active_workers: Optional[int] = None
 
+        if has_existing_context or not base_dir:
+            try:
                 from app.core.ipc import (
                     DaemonIPCClient,
                     is_process_alive,
                     read_pid_file,
                 )
 
-                pid_info = await asyncio.to_thread(read_pid_file, base_dir)
+                pid_info = await asyncio.to_thread(read_pid_file, lookup_dir)
                 if pid_info and is_process_alive(pid_info.get("pid", 0)):
-                    client = DaemonIPCClient(base_dir)
+                    client = DaemonIPCClient(lookup_dir)
                     res = await client.send_command("status", timeout=1.0)
-                    if res.get("is_paused") is True or res.get("status") == "paused":
-                        new_state = "paused"
-                    elif (
-                        res.get("is_running") is True or res.get("status") == "running"
-                    ):
-                        new_state = "active"
+                    raw_watched = res.get("watched_folders")
+                    raw_paused = res.get("paused_folders") or []
+                    if isinstance(raw_watched, list):
+                        watched_folders = [str(p) for p in raw_watched if p]
+
+                    relevant_match = True
+                    if watched_folders and relevant_dirs:
+                        relevant_match = False
+                        for r_dir in relevant_dirs:
+                            for w_dir in watched_folders:
+                                try:
+                                    if is_subpath_or_equal(
+                                        r_dir, w_dir
+                                    ) or is_subpath_or_equal(w_dir, r_dir):
+                                        relevant_match = True
+                                        break
+                                except Exception:
+                                    continue
+                            if relevant_match:
+                                break
+
+                    if relevant_match:
+                        if "queue_depth" in res and res["queue_depth"] is not None:
+                            queue_depth = int(res["queue_depth"])
+                        if (
+                            "max_queue_capacity" in res
+                            and res["max_queue_capacity"] is not None
+                        ):
+                            max_queue = int(res["max_queue_capacity"])
+                        if (
+                            "active_workers" in res
+                            and res["active_workers"] is not None
+                        ):
+                            active_workers = int(res["active_workers"])
+
+                        paused_norms = {
+                            os.path.normcase(os.path.abspath(str(p)))
+                            for p in raw_paused
+                            if p
+                        }
+                        all_relevant_paused = bool(
+                            paused_norms
+                            and relevant_dirs
+                            and watched_folders
+                            and all(
+                                any(
+                                    os.path.normcase(os.path.abspath(w)) in paused_norms
+                                    for w in watched_folders
+                                    if is_subpath_or_equal(r, w)
+                                )
+                                for r in relevant_dirs
+                                if any(
+                                    is_subpath_or_equal(r, w) for w in watched_folders
+                                )
+                            )
+                        )
+                        if (
+                            res.get("is_paused") is True
+                            or res.get("status") == "paused"
+                            or all_relevant_paused
+                        ):
+                            new_state = "paused"
+                        elif (
+                            res.get("is_running") is True
+                            or res.get("status") == "running"
+                        ):
+                            new_state = "active"
+                        else:
+                            new_state = "idle"
+                        is_moving = bool(res.get("is_moving", False))
                     else:
-                        new_state = "idle"
-                    is_moving = bool(res.get("is_moving", False))
+                        watched_folders = []
             except Exception as e:
                 logger.debug(f"Daemon IPC polling error: {e}")
                 new_state = "idle"
                 is_moving = False
+                watched_folders = []
+                queue_depth = None
+                max_queue = None
+                active_workers = None
 
+        prev_badge = self._get_daemon_status_badge()
         self._daemon_is_moving = is_moving
+        self._daemon_watched_folders = watched_folders
+        self._daemon_queue_depth = queue_depth
+        self._daemon_max_queue = max_queue
+        self._daemon_active_workers = active_workers
         prev_state = getattr(self, "_daemon_state", "idle")
         self._daemon_state = new_state
+        new_badge = self._get_daemon_status_badge()
 
         if not getattr(self, "_daemon_initialized", False):
             self._daemon_initialized = True
@@ -907,6 +1107,8 @@ class AutoSorterTUI(
                 self.announce("Watchdog daemon paused.", priority="assertive")
             elif new_state == "idle":
                 self.announce("Watchdog daemon idle.", priority="assertive")
+        elif prev_badge != new_badge:
+            self.update_status()
 
     def _compute_ai_poll_token(self) -> tuple[Any, ...]:
         """Build an in-memory token of consent and DownloadManager state without disk stat calls."""
@@ -1011,13 +1213,7 @@ class AutoSorterTUI(
 
                 clean_text = str(text)
                 clean_text = re.sub(r"^\[AI:[^\]]+\]\s*", "", clean_text)
-                for badge_str in (
-                    "[Daemon: Active]",
-                    "[Daemon: Paused]",
-                    "[Daemon: Idle]",
-                ):
-                    if clean_text.startswith(badge_str):
-                        clean_text = clean_text[len(badge_str) :].lstrip()
+                clean_text = re.sub(r"^\[Daemon:[^\]]+\]\s*", "", clean_text)
                 self._current_status_text = clean_text
             elif not hasattr(self, "_current_status_text"):
                 self._current_status_text = (
@@ -1107,7 +1303,11 @@ class AutoSorterTUI(
             "rate_negative",
             "generate_sample_corpus",
         }
-        if action == "toggle_daemon" and parameters and parameters[0] is True:
+        if (
+            action in {"toggle_daemon", "stop_daemon"}
+            and parameters
+            and parameters[0] is True
+        ):
             is_char_action = True
 
         if is_char_action:
@@ -1169,35 +1369,169 @@ class AutoSorterTUI(
             on_selected,
         )
 
-    async def action_toggle_daemon(self, from_character: bool = False) -> None:
-        """Toggle watchdog daemon pause / resume state."""
-        if from_character:
-            if not self._tree_has_focus() or not self._character_shortcuts_enabled():
-                return
+    async def action_start_daemon(self) -> None:
+        """Start background multi-folder watchdog daemon from TUI if idle, or resume if paused."""
         if self._is_text_control_focused(allow_tree_search=True):
             return
 
+        from app.core.daemon import ContinuousWatchdogDaemon
+        from app.core.ipc import DaemonIPCClient, is_process_alive, read_pid_file
+
         base_dir = getattr(self, "base_dir", None)
-        if not base_dir or not os.path.exists(base_dir):
+        lookup_dir = base_dir if (base_dir and os.path.exists(base_dir)) else None
+        pid_info = await asyncio.to_thread(read_pid_file, lookup_dir)
+        if pid_info and is_process_alive(pid_info.get("pid", 0)):
+            client = DaemonIPCClient(lookup_dir)
+            try:
+                status_res = await client.send_command("status", timeout=2.0)
+                if (
+                    status_res.get("is_paused") is True
+                    or status_res.get("status") == "paused"
+                ):
+                    await client.send_command("resume", timeout=2.0)
+                    self._daemon_state = "active"
+                    self.update_status()
+                    msg = "Watchdog daemon resumed."
+                    self.announce(msg, priority="assertive")
+                    if hasattr(self, "notify"):
+                        self.notify(msg)
+                    return
+                await self._poll_daemon_status()
+                msg = "Watchdog daemon is already running."
+                self.announce(msg, priority="assertive")
+                if hasattr(self, "notify"):
+                    self.notify(msg)
+                return
+            except Exception as exc:
+                logger.debug(f"Existing daemon status probe failed: {exc}")
+
+        target_folders = self._resolve_daemon_target_folders()
+        if not target_folders:
             msg = "No workspace folder selected for daemon monitoring."
             self.announce(msg, priority="assertive")
             if hasattr(self, "notify"):
                 self.notify(msg, severity="warning")
             return
 
+        try:
+
+            def _create_and_start() -> ContinuousWatchdogDaemon:
+                d = ContinuousWatchdogDaemon(
+                    self.settings, watched_folders=target_folders
+                )
+                d.start()
+                return d
+
+            daemon = await asyncio.to_thread(_create_and_start)
+            for _ in range(25):
+                if getattr(daemon, "_ipc_server", None) is not None and getattr(
+                    daemon._ipc_server, "is_running", False
+                ):
+                    break
+                await asyncio.sleep(0.02)
+
+            self._managed_daemon = daemon
+            telemetry = daemon.get_status_telemetry()
+            self._daemon_state = "active"
+            self._daemon_is_moving = bool(telemetry.get("is_moving", False))
+            self._daemon_watched_folders = list(
+                telemetry.get("watched_folders") or target_folders
+            )
+            self._daemon_queue_depth = int(telemetry.get("queue_depth", 0))
+            self._daemon_max_queue = int(
+                telemetry.get("max_queue_capacity", daemon.max_queue_capacity)
+            )
+            self._daemon_active_workers = int(telemetry.get("active_workers", 0))
+            self._daemon_initialized = True
+            self.update_status()
+            msg = f"Watchdog daemon started ({len(self._daemon_watched_folders)} folder(s))."
+            self.announce(msg, priority="assertive")
+            if hasattr(self, "notify"):
+                self.notify(msg)
+        except Exception as exc:
+            err_msg = f"Failed to start watchdog daemon: {exc}"
+            self.announce(err_msg, priority="assertive")
+            if hasattr(self, "notify"):
+                self.notify(err_msg, severity="error")
+
+    async def action_stop_daemon(self, from_character: bool = False) -> None:
+        """Stop the running background watchdog daemon cleanly from TUI."""
+        if from_character:
+            if not self._tree_has_focus() or not self._character_shortcuts_enabled():
+                return
+        if self._is_text_control_focused(allow_tree_search=True):
+            return
+
         from app.core.ipc import DaemonIPCClient, is_process_alive, read_pid_file
 
-        pid_info = await asyncio.to_thread(read_pid_file, base_dir)
-        if not pid_info or not is_process_alive(pid_info.get("pid", 0)):
+        managed = getattr(self, "_managed_daemon", None)
+        base_dir = getattr(self, "base_dir", None)
+        lookup_dir = base_dir if (base_dir and os.path.exists(base_dir)) else None
+        pid_info = await asyncio.to_thread(read_pid_file, lookup_dir)
+        pid_alive = bool(pid_info and is_process_alive(pid_info.get("pid", 0)))
+
+        if managed is None and not pid_alive:
             self._daemon_state = "idle"
+            self._daemon_is_moving = False
+            self._daemon_watched_folders = []
+            self._daemon_queue_depth = None
+            self._daemon_max_queue = None
+            self._daemon_active_workers = None
             self.update_status()
-            msg = "No background watchdog daemon is running for this workspace."
+            msg = "No background watchdog daemon is running."
             self.announce(msg, priority="assertive")
             if hasattr(self, "notify"):
                 self.notify(msg, severity="warning")
             return
 
-        client = DaemonIPCClient(base_dir)
+        try:
+            if managed is not None:
+                self._managed_daemon = None
+                await asyncio.to_thread(managed.stop)
+            elif pid_alive:
+                client = DaemonIPCClient(lookup_dir)
+                await client.send_command("stop", timeout=2.0)
+                for _ in range(25):
+                    still_pid = await asyncio.to_thread(read_pid_file, lookup_dir)
+                    if not still_pid or not is_process_alive(still_pid.get("pid", 0)):
+                        break
+                    await asyncio.sleep(0.02)
+
+            self._daemon_state = "idle"
+            self._daemon_is_moving = False
+            self._daemon_watched_folders = []
+            self._daemon_queue_depth = None
+            self._daemon_max_queue = None
+            self._daemon_active_workers = None
+            self.update_status()
+            msg = "Watchdog daemon stopped."
+            self.announce(msg, priority="assertive")
+            if hasattr(self, "notify"):
+                self.notify(msg)
+        except Exception as exc:
+            err_msg = f"Failed to stop watchdog daemon: {exc}"
+            self.announce(err_msg, priority="assertive")
+            if hasattr(self, "notify"):
+                self.notify(err_msg, severity="error")
+
+    async def action_toggle_daemon(self, from_character: bool = False) -> None:
+        """Start an idle watchdog daemon, or toggle pause / resume when running."""
+        if from_character:
+            if not self._tree_has_focus() or not self._character_shortcuts_enabled():
+                return
+        if self._is_text_control_focused(allow_tree_search=True):
+            return
+
+        from app.core.ipc import DaemonIPCClient, is_process_alive, read_pid_file
+
+        base_dir = getattr(self, "base_dir", None)
+        lookup_dir = base_dir if (base_dir and os.path.exists(base_dir)) else None
+        pid_info = await asyncio.to_thread(read_pid_file, lookup_dir)
+        if not pid_info or not is_process_alive(pid_info.get("pid", 0)):
+            await self.action_start_daemon()
+            return
+
+        client = DaemonIPCClient(lookup_dir)
         try:
             current_state = getattr(self, "_daemon_state", "idle")
             if current_state == "paused":
@@ -1243,6 +1577,35 @@ class AutoSorterTUI(
             self.announce(err_msg, priority="assertive")
             if hasattr(self, "notify"):
                 self.notify(err_msg, severity="error")
+
+    async def _sync_daemon_watched_folders(self, watched_folders: list[str]) -> None:
+        """Propagate saved WATCHED_FOLDERS updates to any running daemon dynamically."""
+        managed = getattr(self, "_managed_daemon", None)
+        if managed is not None:
+            with contextlib.suppress(Exception):
+                await asyncio.to_thread(
+                    managed.update_watched_folders, list(watched_folders)
+                )
+        else:
+            with contextlib.suppress(Exception):
+                from app.core.ipc import (
+                    DaemonIPCClient,
+                    is_process_alive,
+                    read_pid_file,
+                )
+
+                base_dir = getattr(self, "base_dir", None)
+                lookup_dir = (
+                    base_dir if (base_dir and os.path.exists(base_dir)) else None
+                )
+                pid_info = await asyncio.to_thread(read_pid_file, lookup_dir)
+                if pid_info and is_process_alive(pid_info.get("pid", 0)):
+                    await DaemonIPCClient(lookup_dir).send_command(
+                        "reload",
+                        {"watched_folders": list(watched_folders)},
+                        timeout=2.0,
+                    )
+        await self._poll_daemon_status()
 
     def action_generate_sample_corpus(self, open_modal: bool = False) -> None:
         """Generate sample document corpus in active workspace directory, or launch interactive playground modal."""
@@ -1302,6 +1665,11 @@ class AutoSorterTUI(
                 if "PROTECTED_PATHS" in res:
                     try:
                         self.settings.PROTECTED_PATHS = res["PROTECTED_PATHS"]
+                    except Exception:
+                        pass
+                if "WATCHED_FOLDERS" in res:
+                    try:
+                        self.settings.WATCHED_FOLDERS = res["WATCHED_FOLDERS"]
                     except Exception:
                         pass
                 if "IGNORED_EXTENSIONS" in res:
@@ -1374,6 +1742,14 @@ class AutoSorterTUI(
                         pass
                 if hasattr(self.settings, "_save"):
                     self.settings._save()
+                if "WATCHED_FOLDERS" in res:
+                    self.run_worker(
+                        functools.partial(
+                            self._sync_daemon_watched_folders,
+                            list(res["WATCHED_FOLDERS"]),
+                        ),
+                        name="sync_daemon_watched_folders",
+                    )
                 self.update_status()
                 self.announce("Settings updated and saved.")
                 if self.base_dir:

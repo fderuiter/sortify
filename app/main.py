@@ -962,9 +962,12 @@ def _parse_config_cli_value(key_upper: str, raw_value: str, curr_val: Any) -> An
 
 def handle_config_command(args: argparse.Namespace, settings: AppSettings):
     """View or update application settings."""
+    import asyncio
+    import contextlib
     import json
 
     apply_config_overrides(settings, args)
+    watched_folders_changed = False
 
     if getattr(args, "set", None):
         for key, value in args.set:
@@ -975,6 +978,8 @@ def handle_config_command(args: argparse.Namespace, settings: AppSettings):
                     new_val = _parse_config_cli_value(key_upper, value, curr_val)
                     setattr(settings, key_upper, new_val)
                     settings.flush()
+                    if key_upper == "WATCHED_FOLDERS":
+                        watched_folders_changed = True
                 except Exception as ex:
                     emit_cli_error(
                         f"Error: Failed to set configuration key '{key_upper}' to '{value}': {ex}",
@@ -987,6 +992,61 @@ def handle_config_command(args: argparse.Namespace, settings: AppSettings):
                     json_mode=getattr(args, "json", False),
                     exit_code=1,
                 )
+
+    add_watches = getattr(args, "add_watch", None) or []
+    if add_watches:
+        current_watches = list(getattr(settings, "WATCHED_FOLDERS", []) or [])
+        candidate_watches = list(current_watches)
+        for raw_dir in add_watches:
+            candidate_watches.append(raw_dir)
+        try:
+            settings.WATCHED_FOLDERS = candidate_watches
+            settings.flush()
+            watched_folders_changed = True
+        except Exception as ex:
+            emit_cli_error(
+                f"Error: Failed to add watched folder: {ex}",
+                json_mode=getattr(args, "json", False),
+                exit_code=1,
+            )
+
+    remove_watches = getattr(args, "remove_watch", None) or []
+    if remove_watches:
+        current_watches = list(getattr(settings, "WATCHED_FOLDERS", []) or [])
+        remove_norms: set[str] = set()
+        for raw_dir in remove_watches:
+            cleaned = str(raw_dir).strip()
+            if not cleaned:
+                continue
+            abs_target = os.path.normpath(os.path.abspath(os.path.expanduser(cleaned)))
+            real_target = os.path.normpath(os.path.realpath(abs_target))
+            remove_norms.add(os.path.normcase(abs_target))
+            remove_norms.add(os.path.normcase(real_target))
+        filtered_watches = [
+            entry
+            for entry in current_watches
+            if os.path.normcase(os.path.normpath(os.path.abspath(entry)))
+            not in remove_norms
+            and os.path.normcase(os.path.normpath(os.path.realpath(entry)))
+            not in remove_norms
+        ]
+        try:
+            settings.WATCHED_FOLDERS = filtered_watches
+            settings.flush()
+            watched_folders_changed = True
+        except Exception as ex:
+            emit_cli_error(
+                f"Error: Failed to remove watched folder: {ex}",
+                json_mode=getattr(args, "json", False),
+                exit_code=1,
+            )
+
+    if watched_folders_changed:
+        with contextlib.suppress(Exception):
+            from app.core.ipc import DaemonIPCClient, read_pid_file
+
+            if read_pid_file() is not None:
+                asyncio.run(DaemonIPCClient().send_command("reload"))
 
     quiet = getattr(args, "quiet", False)
     settings_dict = settings._settings_model.model_dump(mode="json")
@@ -1009,48 +1069,130 @@ def handle_daemon_command(args: argparse.Namespace, settings: AppSettings):
     import time
     from pathlib import Path
 
+    from app.config import Settings
     from app.core.daemon import start_daemon
-    from app.core.ipc import DaemonIPCClient
+    from app.core.ipc import DaemonIPCClient, is_process_alive, read_pid_file
 
     apply_config_overrides(settings, args)
+    json_mode = bool(getattr(args, "json", False))
 
-    known_actions = {"status", "health", "metrics", "pause", "resume", "stop", "start"}
+    known_actions = {
+        "status",
+        "health",
+        "metrics",
+        "pause",
+        "resume",
+        "stop",
+        "start",
+        "reload",
+    }
 
     first_arg = getattr(args, "action", None)
     second_arg = getattr(args, "directory", None)
+    extra_dirs = list(getattr(args, "extra_directories", None) or [])
 
     if first_arg in known_actions:
         action = first_arg
-        target_dir = second_arg or os.getcwd()
+        raw_dirs = ([second_arg] if second_arg else []) + extra_dirs
     elif first_arg is not None:
         action = "start"
-        target_dir = first_arg
+        raw_dirs = [first_arg] + ([second_arg] if second_arg else []) + extra_dirs
     else:
         action = "start"
-        target_dir = second_arg or os.getcwd()
-
-    target_path = Path(target_dir).resolve()
+        raw_dirs = ([second_arg] if second_arg else []) + extra_dirs
 
     if action == "start":
-        if not target_path.exists() or not target_path.is_dir():
-            emit_cli_error(
-                f"Error: Target directory '{target_dir}' does not exist or is not a directory.",
-                json_mode=getattr(args, "json", False),
-                exit_code=1,
-            )
-        start_daemon(settings, str(target_path))
+        if raw_dirs:
+            resolved_paths: list[str] = []
+            for raw_dir in raw_dirs:
+                target_path = Path(raw_dir).expanduser().resolve()
+                if not target_path.exists() or not target_path.is_dir():
+                    emit_cli_error(
+                        f"Error: Target directory '{raw_dir}' does not exist or is not a directory.",
+                        json_mode=json_mode,
+                        exit_code=1,
+                    )
+                resolved_paths.append(str(target_path))
+            try:
+                Settings(
+                    PROTECTED_PATHS=list(
+                        getattr(settings, "PROTECTED_PATHS", []) or []
+                    ),
+                    WATCHED_FOLDERS=resolved_paths,
+                )
+            except Exception as exc:
+                emit_cli_error(
+                    f"Error: Invalid watched folder configuration: {exc}",
+                    json_mode=json_mode,
+                    exit_code=1,
+                )
+            existing_pid = read_pid_file()
+            if existing_pid and is_process_alive(existing_pid.get("pid", 0)):
+                try:
+                    res = asyncio.run(
+                        DaemonIPCClient().send_command(
+                            "reload", {"add_folders": resolved_paths}
+                        )
+                    )
+                    if json_mode:
+                        sys.stdout.write(json.dumps(res, indent=2) + "\n")
+                        sys.stdout.flush()
+                    else:
+                        print(
+                            f"Daemon already running (PID {existing_pid.get('pid')}); "
+                            f"watching {len(res.get('watched_folders') or [])} folder(s)."
+                        )
+                    return
+                except Exception as exc:
+                    emit_cli_error(
+                        f"Error updating running daemon watched folders: {exc}",
+                        json_mode=json_mode,
+                        exit_code=1,
+                    )
+            if len(resolved_paths) == 1 and not extra_dirs:
+                start_daemon(settings, resolved_paths[0])
+            else:
+                start_daemon(settings, watched_folders=resolved_paths)
+        else:
+            configured = list(getattr(settings, "WATCHED_FOLDERS", []) or [])
+            if configured:
+                for cfg_dir in configured:
+                    cfg_path = Path(cfg_dir).expanduser().resolve()
+                    if not cfg_path.exists() or not cfg_path.is_dir():
+                        emit_cli_error(
+                            f"Error: Configured watched directory '{cfg_dir}' does not exist or is not a directory.",
+                            json_mode=json_mode,
+                            exit_code=1,
+                        )
+                start_daemon(settings, watched_folders=configured)
+            else:
+                cwd_path = Path(os.getcwd()).resolve()
+                start_daemon(settings, str(cwd_path))
     else:
-        client = DaemonIPCClient(str(target_path))
+        explicit_folders = [str(Path(d).expanduser().resolve()) for d in raw_dirs if d]
+        client = DaemonIPCClient(
+            explicit_folders[0] if len(explicit_folders) == 1 else None
+        )
+        payload = (
+            {"folders": explicit_folders}
+            if explicit_folders and action in {"status", "pause", "resume", "stop"}
+            else None
+        )
         is_watch = getattr(args, "watch", False)
 
         if action == "status" and is_watch:
+            watch_label = (
+                ", ".join(explicit_folders)
+                if explicit_folders
+                else "all watched folders"
+            )
             print(
-                f"Monitoring daemon status telemetry for '{target_path}' (Press Ctrl+C to exit)..."
+                f"Monitoring daemon status telemetry for '{watch_label}' (Press Ctrl+C to exit)..."
             )
             try:
                 while True:
                     try:
-                        res = asyncio.run(client.send_command("status"))
+                        res = asyncio.run(client.send_command("status", payload))
                         status_str = str(res.get("status", "unknown")).upper()
                         pid = res.get("pid", "unknown")
                         qd = res.get("queue_depth", 0)
@@ -1058,8 +1200,9 @@ def handle_daemon_command(args: argparse.Namespace, settings: AppSettings):
                         workers = res.get("active_workers", 0)
                         uptime = res.get("uptime_seconds", 0)
                         triages = res.get("active_triage_paths", [])
+                        watched_cnt = len(res.get("watched_folders") or [])
                         print(
-                            f"[{time.strftime('%H:%M:%S')}] Status: {status_str} (PID {pid}) | Queue: {qd}/{max_cap} | Workers: {workers} | Uptime: {uptime}s | Active Triage: {len(triages)}"
+                            f"[{time.strftime('%H:%M:%S')}] Status: {status_str} (PID {pid}) | Folders: {watched_cnt} | Queue: {qd}/{max_cap} | Workers: {workers} | Uptime: {uptime}s | Active Triage: {len(triages)}"
                         )
                     except Exception as err:
                         print(f"Error querying daemon status: {err}", file=sys.stderr)
@@ -1069,11 +1212,24 @@ def handle_daemon_command(args: argparse.Namespace, settings: AppSettings):
                 sys.exit(0)
 
         try:
-            res = asyncio.run(client.send_command(action))
+            res = asyncio.run(client.send_command(action, payload))
+            if json_mode:
+                sys.stdout.write(json.dumps(res, indent=2) + "\n")
+                sys.stdout.flush()
+                return
             if action == "status":
+                watched_list = res.get("watched_folders") or (
+                    [res["base_dir"]] if res.get("base_dir") else []
+                )
+                paused_list = res.get("paused_folders") or []
                 print(f"Daemon Status (PID: {res.get('pid')}):")
                 print(f"  Status: {str(res.get('status', '')).upper()}")
                 print(f"  Base Directory: {res.get('base_dir')}")
+                print(
+                    f"  Watched Folders ({len(watched_list)}): {', '.join(watched_list) if watched_list else 'None'}"
+                )
+                if paused_list:
+                    print(f"  Paused Folders: {', '.join(paused_list)}")
                 print(f"  Uptime: {res.get('uptime_seconds')}s")
                 print(
                     f"  Queue Depth: {res.get('queue_depth')} / {res.get('max_queue_capacity')}"
@@ -1102,13 +1258,22 @@ def handle_daemon_command(args: argparse.Namespace, settings: AppSettings):
             elif action == "resume":
                 print(f"Daemon resumed successfully ({res.get('message')}).")
             elif action == "stop":
-                print(f"Daemon shutdown initiated ({res.get('message')}).")
+                if res.get("status") == "stopping" or res.get(
+                    "should_stop_daemon", False
+                ):
+                    print(f"Daemon shutdown initiated ({res.get('message')}).")
+                else:
+                    print(f"Daemon watched folders updated ({res.get('message')}).")
+            elif action == "reload":
+                print(
+                    f"Daemon watched folders reloaded ({len(res.get('watched_folders') or [])} active)."
+                )
             else:
                 print(json.dumps(res, indent=2))
         except Exception as e:
             emit_cli_error(
                 str(e),
-                json_mode=getattr(args, "json", False),
+                json_mode=json_mode,
                 exit_code=1,
             )
 
@@ -1752,6 +1917,18 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         metavar=("KEY", "VALUE"),
         help="Set configuration KEY to VALUE",
     )
+    parser_config.add_argument(
+        "--add-watch",
+        action="append",
+        metavar="DIR",
+        help="Add an existing absolute directory path to WATCHED_FOLDERS",
+    )
+    parser_config.add_argument(
+        "--remove-watch",
+        action="append",
+        metavar="DIR",
+        help="Remove a directory path from WATCHED_FOLDERS",
+    )
     add_common_override_args(parser_config)
 
     # Subcommand: daemon
@@ -1762,18 +1939,29 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         "action",
         nargs="?",
         default=None,
-        help="Action (start, status, health, metrics, pause, resume, stop) or directory to watch",
+        help="Action (start, status, health, metrics, pause, resume, stop, reload) or directory to watch",
     )
     parser_daemon.add_argument(
         "directory",
         nargs="?",
         default=None,
-        help="Directory to watch or control",
+        help="Directory to watch or control (defaults to all configured WATCHED_FOLDERS)",
+    )
+    parser_daemon.add_argument(
+        "extra_directories",
+        nargs="*",
+        default=[],
+        help="Additional directories to watch or target",
     )
     parser_daemon.add_argument(
         "--watch",
         action="store_true",
         help="Continuously monitor status telemetry in real time",
+    )
+    parser_daemon.add_argument(
+        "--json",
+        action="store_true",
+        help="Output daemon response in structured JSON format",
     )
     add_common_override_args(parser_daemon)
 

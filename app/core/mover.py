@@ -13,7 +13,6 @@ import threading
 import unicodedata
 import uuid
 from enum import Enum
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
@@ -22,7 +21,16 @@ from app.core.domain_contracts import _get_val
 from app.core.exceptions import SortifyBaseError
 from app.core.lifecycle import LifecycleTelemetryMixin
 from app.core.link_manager import LinkManager
-from app.core.path_utils import is_junction_path, safe_relpath
+from app.core.path_utils import (
+    _resolve_path as _resolve_path,
+)
+from app.core.path_utils import (
+    is_junction_path,
+    safe_relpath,
+)
+from app.core.path_utils import (
+    is_subpath_or_equal as is_subpath_or_equal,
+)
 from app.core.pipeline import PipelineLifecycleState
 from app.core.progress import emit_progress
 from app.core.verifier import VerificationEngine
@@ -276,105 +284,6 @@ def _is_same_path(p1: str, p2: str) -> bool:
     return os.path.normcase(os.path.abspath(p1)) == os.path.normcase(
         os.path.abspath(p2)
     )
-
-
-def _resolve_path(p: Path) -> Path:
-    """Resolve symlinks and Windows 8.3 short paths, even if trailing components do not exist.
-
-    Args:
-        p: Path object to resolve.
-
-    Returns
-    -------
-        Resolved Path object with symlinks and 8.3 short names expanded for existing ancestors.
-    """
-    try:
-        p = p.expanduser()
-    except Exception:
-        pass
-
-    try:
-        if p.exists():
-            return p.resolve()
-    except Exception:
-        pass
-
-    parts = []
-    curr = p
-    while True:
-        try:
-            if curr.exists():
-                break
-        except Exception:
-            pass
-        parent_curr = curr.parent
-        if parent_curr == curr:
-            break
-        parts.append(curr.name)
-        curr = parent_curr
-
-    try:
-        curr_resolved = curr.resolve()
-    except Exception:
-        curr_resolved = curr
-
-    for part in reversed(parts):
-        curr_resolved = curr_resolved / part
-
-    return curr_resolved
-
-
-def is_subpath_or_equal(child: str, parent: str) -> bool:
-    """Check if child path is equal to or nested within parent path (case-insensitive and cross-platform).
-
-    Args:
-        child: Candidate child path to check for subpath containment.
-        parent: Boundary parent path to evaluate child against.
-
-    Returns
-    -------
-        True if child is identical to or located within parent directory boundary, False otherwise.
-    """
-    if child is None or parent is None:
-        return False
-
-    clean_child = str(child).replace("\\", "/")
-    clean_parent = str(parent).replace("\\", "/")
-
-    try:
-        p_child = _resolve_path(Path(clean_child))
-        p_parent = _resolve_path(Path(clean_parent))
-
-        if p_child == p_parent:
-            return True
-        try:
-            if p_child.is_relative_to(p_parent):
-                return True
-        except (AttributeError, ValueError):
-            pass
-
-        s_child = str(p_child).replace("\\", "/").rstrip("/").lower()
-        s_parent = str(p_parent).replace("\\", "/").rstrip("/").lower()
-
-        if s_child == s_parent:
-            return True
-        if s_child.startswith(s_parent + "/"):
-            return True
-    except Exception:
-        pass
-
-    try:
-        abs_c = os.path.abspath(clean_child).replace("\\", "/").rstrip("/").lower()
-        abs_p = os.path.abspath(clean_parent).replace("\\", "/").rstrip("/").lower()
-
-        if abs_c == abs_p:
-            return True
-        if abs_c.startswith(abs_p + "/"):
-            return True
-    except Exception:
-        pass
-
-    return False
 
 
 def get_safe_path(dest_dir: str, filename: str, source_path: str | None = None) -> str:
@@ -2018,6 +1927,8 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
         priority: str | None = None,
         progress_callback=None,
         pipeline: Any = None,
+        session_id: str | None = None,
+        complete_session: bool = True,
         **kwargs: Any,
     ) -> MoveResult:
         """Partition relocation plan into bounded worker chunks and execute file moves off-thread.
@@ -2050,7 +1961,8 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
         base_dir = os.path.normpath(base_dir)
         self.transition_to(MoveEngineState.PREPARING)
 
-        session_id = None
+        external_session = session_id is not None
+        pre_existing_seqs: set[int] = set()
         db_lock = threading.Lock()
         db_updates_batch: list[Any] = []
         audit_records: list[dict] = []
@@ -2172,7 +2084,16 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
             ) or bool(disposal_items)
 
             registered_session = False
-            if not resume and history_manager and has_candidate_moves:
+            if external_session and session_id and history_manager:
+                ledger_pre = getattr(history_manager, "moves", None)
+                if ledger_pre is not None and hasattr(ledger_pre, "list_moves"):
+                    try:
+                        pre_existing_seqs = {
+                            m.seq for m in ledger_pre.list_moves(session_id)
+                        }
+                    except Exception:
+                        pre_existing_seqs = set()
+            elif not resume and history_manager and has_candidate_moves:
                 # Without a registered session nothing could undo or roll back the
                 # moves, so refuse to start rather than move files untracked.
                 try:
@@ -2553,7 +2474,8 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                             real_move_count = len(audit_records)
 
                 if (
-                    session_id
+                    complete_session
+                    and session_id
                     and history_manager
                     and real_move_count > 0
                     and hasattr(history_manager, "complete_session")
@@ -2565,7 +2487,8 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                             f"Failed to mark session {session_id} completed: {complete_err}"
                         )
                 elif (
-                    session_id
+                    complete_session
+                    and session_id
                     and registered_session
                     and history_manager
                     and real_move_count == 0
@@ -2646,7 +2569,27 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                     except Exception:
                         pass
                 try:
-                    history_manager.unwind_session(session_id, db=db)
+                    if external_session and pre_existing_seqs:
+                        ledger_err = getattr(history_manager, "moves", None)
+                        current_moves = (
+                            ledger_err.list_moves(session_id)
+                            if ledger_err is not None
+                            and hasattr(ledger_err, "list_moves")
+                            else []
+                        )
+                        new_seqs = [
+                            m.seq
+                            for m in current_moves
+                            if m.seq not in pre_existing_seqs
+                        ]
+                        if new_seqs:
+                            history_manager.unwind_session(
+                                session_id,
+                                db=db,
+                                selected_step_ids=new_seqs,
+                            )
+                    else:
+                        history_manager.unwind_session(session_id, db=db)
                     self.transition_to(MoveEngineState.ROLLED_BACK)
                     rollback_succeeded = True
                     logging.info(
@@ -2708,6 +2651,8 @@ def execute_moves(
     progress_callback=None,
     source_dirs: list[str] | None = None,
     pipeline: Any = None,
+    session_id: str | None = None,
+    complete_session: bool = True,
     **kwargs: Any,
 ) -> MoveResult:
     """Create directories and safely move files using chunked asynchronous execution.
@@ -2750,6 +2695,8 @@ def execute_moves(
         priority=priority,
         progress_callback=progress_callback,
         pipeline=pipeline,
+        session_id=session_id,
+        complete_session=complete_session,
         **kwargs,
     )
 

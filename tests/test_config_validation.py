@@ -1184,3 +1184,73 @@ def test_main_creates_log_file_parent_dir_before_basic_config(tmp_path):
     )
     assert result.returncode == 0, f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     assert nested_log.parent.is_dir()
+
+
+def test_watched_folders_validation_rules(tmp_path):
+    """WATCHED_FOLDERS accepts ordered existing directories and rejects invalid/nested/protected paths."""
+    dir_a = tmp_path / "inbox_a"
+    dir_b = tmp_path / "inbox_b"
+    nested = dir_a / "sub"
+    protected = tmp_path / "protected"
+    file_item = tmp_path / "plain.txt"
+    for d in (dir_a, dir_b, nested, protected):
+        d.mkdir(parents=True)
+    file_item.write_text("data", encoding="utf-8")
+
+    # Valid ordered list with deduplication
+    cfg = Settings(WATCHED_FOLDERS=[str(dir_b), str(dir_a), str(dir_b)])
+    assert cfg.WATCHED_FOLDERS == [str(dir_b), str(dir_a)]
+
+    # Relative path rejected
+    with pytest.raises(ValidationError, match="must be an absolute path"):
+        Settings(WATCHED_FOLDERS=["relative/folder"])
+
+    # Non-existent directory rejected
+    with pytest.raises(ValidationError, match="does not exist"):
+        Settings(WATCHED_FOLDERS=[str(tmp_path / "missing_dir")])
+
+    # Regular file rejected
+    with pytest.raises(ValidationError, match="existing directory"):
+        Settings(WATCHED_FOLDERS=[str(file_item)])
+
+    # Wildcard path rejected
+    with pytest.raises(ValidationError, match="Wildcard patterns"):
+        Settings(WATCHED_FOLDERS=[str(tmp_path / "inbox_*")])
+
+    # Nested watched folders rejected
+    with pytest.raises(ValidationError, match="cannot nest inside or contain"):
+        Settings(WATCHED_FOLDERS=[str(dir_a), str(nested)])
+
+    # Overlap with PROTECTED_PATHS rejected in both directions
+    with pytest.raises(ValidationError, match="overlaps protected path"):
+        Settings(
+            PROTECTED_PATHS=[str(protected)],
+            WATCHED_FOLDERS=[str(protected)],
+        )
+    prot_child = dir_a / "vault"
+    prot_child.mkdir()
+    with pytest.raises(ValidationError, match="overlaps protected path"):
+        Settings(
+            PROTECTED_PATHS=[str(prot_child)],
+            WATCHED_FOLDERS=[str(dir_a)],
+        )
+
+
+def test_app_settings_watched_folders_cross_validation_and_reload(tmp_path):
+    """AppSettings enforces PROTECTED_PATHS/WATCHED_FOLDERS non-overlap on mutation and load."""
+    cfg_file = tmp_path / "settings.json"
+    dir_a = tmp_path / "watch_a"
+    dir_b = tmp_path / "watch_b"
+    dir_a.mkdir()
+    dir_b.mkdir()
+
+    s = AppSettings(filepath=str(cfg_file))
+    s.PROTECTED_PATHS = [str(dir_b)]
+    with pytest.raises(ValidationError, match="overlaps protected path"):
+        s.WATCHED_FOLDERS = [str(dir_a), str(dir_b)]
+
+    s.WATCHED_FOLDERS = [str(dir_a)]
+    s.flush()
+
+    reloaded = AppSettings(filepath=str(cfg_file))
+    assert reloaded.WATCHED_FOLDERS == [str(dir_a)]

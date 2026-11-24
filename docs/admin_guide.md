@@ -162,6 +162,12 @@ Number of days (> 0) to retain historical sorting session records and rollback s
 
 List of absolute literal directory paths protected from scanning, moving, or modification. Relative paths and wildcard or glob characters ('*', '?', '[', ']') are rejected.
 
+### `WATCHED_FOLDERS`
+- **Type**: `list[str]`
+- **Default**: `[]`
+
+Ordered list of existing absolute directory paths continuously monitored by the user-scoped background watchdog daemon. Entries must not contain wildcards, nest inside another watched folder, or overlap PROTECTED_PATHS.
+
 ### `AUTO_QUARANTINE_RATINGS`
 - **Type**: `list[str]`
 - **Default**: `[]`
@@ -706,7 +712,8 @@ options:
 
 ##### `config`
 ```text
-usage: smart-autosorter config [-h] [--show] [--json] [--set KEY VALUE] [-q]
+usage: smart-autosorter config [-h] [--show] [--json] [--set KEY VALUE]
+                               [--add-watch DIR] [--remove-watch DIR] [-q]
                                [--no-color] [--max-folders MAX_FOLDERS]
                                [--strategy {default,generative,clinical_tmf,clinical_isf}]
                                [--conflict-policy {skip,rename}]
@@ -725,6 +732,9 @@ options:
   --show                Display current configuration settings (the default)
   --json                Output configuration as JSON
   --set KEY VALUE       Set configuration KEY to VALUE
+  --add-watch DIR       Add an existing absolute directory path to
+                        WATCHED_FOLDERS
+  --remove-watch DIR    Remove a directory path from WATCHED_FOLDERS
   -q, --quiet           Suppress informational prints and non-essential
                         progress output
   --no-color            Disable ANSI color and style formatting
@@ -761,7 +771,7 @@ options:
 
 ##### `daemon`
 ```text
-usage: smart-autosorter daemon [-h] [--watch] [-q] [--no-color]
+usage: smart-autosorter daemon [-h] [--watch] [--json] [-q] [--no-color]
                                [--max-folders MAX_FOLDERS]
                                [--strategy {default,generative,clinical_tmf,clinical_isf}]
                                [--conflict-policy {skip,rename}]
@@ -774,16 +784,19 @@ usage: smart-autosorter daemon [-h] [--watch] [-q] [--no-color]
                                [--skip-wizard] [--non-interactive]
                                [--export-report EXPORT_REPORT]
                                [--report-format {html,json}]
-                               [action] [directory]
+                               [action] [directory] [extra_directories ...]
 
 positional arguments:
   action                Action (start, status, health, metrics, pause, resume,
-                        stop) or directory to watch
-  directory             Directory to watch or control
+                        stop, reload) or directory to watch
+  directory             Directory to watch or control (defaults to all
+                        configured WATCHED_FOLDERS)
+  extra_directories     Additional directories to watch or target
 
 options:
   -h, --help            show this help message and exit
   --watch               Continuously monitor status telemetry in real time
+  --json                Output daemon response in structured JSON format
   -q, --quiet           Suppress informational prints and non-essential
                         progress output
   --no-color            Disable ANSI color and style formatting

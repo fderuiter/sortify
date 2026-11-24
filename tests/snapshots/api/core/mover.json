@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "3c99f3a90abbfc85159aacf796fc32c638013ab06620e32e1a6f76c4bbd8a5ba"
+    "checksum": "eb9ec235fe7f89e378a94d0e2d648719c11d885d2f2ad6a4bc3285954ed2b74c"
   },
   "classes": [
     {
@@ -104,6 +104,16 @@
               "annotation": "Any",
               "default": "None",
               "name": "pipeline"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "session_id"
+            },
+            {
+              "annotation": "bool",
+              "default": "True",
+              "name": "complete_session"
             },
             {
               "annotation": "Any",
@@ -624,6 +634,16 @@
           "name": "pipeline"
         },
         {
+          "annotation": "str | None",
+          "default": "None",
+          "name": "session_id"
+        },
+        {
+          "annotation": "bool",
+          "default": "True",
+          "name": "complete_session"
+        },
+        {
           "annotation": "Any",
           "default": null,
           "name": "**kwargs"
@@ -731,24 +751,6 @@
         }
       ],
       "returns": "str"
-    },
-    {
-      "async": false,
-      "decorators": [],
-      "name": "is_subpath_or_equal",
-      "parameters": [
-        {
-          "annotation": "str",
-          "default": null,
-          "name": "child"
-        },
-        {
-          "annotation": "str",
-          "default": null,
-          "name": "parent"
-        }
-      ],
-      "returns": "bool"
     },
     {
       "async": false,

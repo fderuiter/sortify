@@ -416,6 +416,14 @@ class Settings(BaseSettings):
             "or modification. Relative paths and wildcard or glob characters ('*', '?', '[', ']') are rejected."
         ),
     )
+    WATCHED_FOLDERS: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Ordered list of existing absolute directory paths continuously monitored by "
+            "the user-scoped background watchdog daemon. Entries must not contain wildcards, "
+            "nest inside another watched folder, or overlap PROTECTED_PATHS."
+        ),
+    )
     AUTO_QUARANTINE_RATINGS: list[str] = Field(
         default_factory=list,
         description=(
@@ -884,6 +892,97 @@ class Settings(BaseSettings):
                 )
         return v
 
+    @field_validator("WATCHED_FOLDERS", mode="before")
+    @classmethod
+    def validate_watched_folders(cls, v: list[str]) -> list[str]:
+        """Validate that watched folders are ordered, existing, non-nested absolute directory paths."""
+        from app.core.path_utils import is_subpath_or_equal
+
+        if not isinstance(v, list):
+            raise ValueError("WATCHED_FOLDERS must be a list of directory paths.")
+
+        normalized: list[str] = []
+        seen_norm_keys: set[str] = set()
+        seen_entries: list[tuple[str, str]] = []
+
+        for raw_path in v:
+            if not isinstance(raw_path, str):
+                raise ValueError("Each watched folder path must be a string.")
+            cleaned = raw_path.strip()
+            if not cleaned:
+                raise ValueError(
+                    "Watched folder path cannot be blank or whitespace-only."
+                )
+            if any(char in cleaned for char in ("*", "?", "[", "]")):
+                raise ValueError(
+                    f"Wildcard patterns or glob characters are not allowed in watched folder path: '{raw_path}'"
+                )
+            if not os.path.isabs(cleaned):
+                raise ValueError(
+                    f"Watched folder path must be an absolute path: '{raw_path}'"
+                )
+            if not os.path.exists(cleaned):
+                raise ValueError(f"Watched folder path does not exist: '{raw_path}'")
+            if not os.path.isdir(cleaned):
+                raise ValueError(
+                    f"Watched folder path must be an existing directory: '{raw_path}'"
+                )
+
+            abs_path = os.path.abspath(cleaned)
+            norm_key = os.path.normcase(abs_path)
+            if norm_key in seen_norm_keys:
+                continue
+
+            real_path = os.path.realpath(abs_path)
+            for existing_abs, existing_real in seen_entries:
+                if os.path.normcase(real_path) == os.path.normcase(existing_real):
+                    raise ValueError(
+                        f"Watched folder '{abs_path}' resolves to the same directory as '{existing_abs}'."
+                    )
+                if (
+                    is_subpath_or_equal(abs_path, existing_abs)
+                    or is_subpath_or_equal(existing_abs, abs_path)
+                    or is_subpath_or_equal(real_path, existing_real)
+                    or is_subpath_or_equal(existing_real, real_path)
+                ):
+                    raise ValueError(
+                        f"Watched folder '{abs_path}' cannot nest inside or contain watched folder '{existing_abs}'."
+                    )
+
+            seen_norm_keys.add(norm_key)
+            seen_entries.append((abs_path, real_path))
+            normalized.append(abs_path)
+
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_watched_folders_against_protected(self) -> "Settings":
+        """Ensure no watched folder overlaps any configured PROTECTED_PATHS entry."""
+        if not self.WATCHED_FOLDERS or not self.PROTECTED_PATHS:
+            return self
+
+        from app.core.path_utils import is_subpath_or_equal
+
+        for watched in self.WATCHED_FOLDERS:
+            watched_real = os.path.realpath(watched)
+            for protected in self.PROTECTED_PATHS:
+                prot_abs = os.path.abspath(protected)
+                if is_subpath_or_equal(watched, prot_abs) or is_subpath_or_equal(
+                    prot_abs, watched
+                ):
+                    raise ValueError(
+                        f"Watched folder '{watched}' overlaps protected path '{protected}'."
+                    )
+                if os.path.exists(prot_abs):
+                    prot_real = os.path.realpath(prot_abs)
+                    if is_subpath_or_equal(
+                        watched_real, prot_real
+                    ) or is_subpath_or_equal(prot_real, watched_real):
+                        raise ValueError(
+                            f"Watched folder '{watched}' overlaps protected path '{protected}'."
+                        )
+        return self
+
     @field_validator("KEYWORD_RULES", "LEARNED_RULES", "DISABLED_KEYWORD_RULES")
     @classmethod
     def validate_keyword_rules(cls, v: dict) -> dict:
@@ -1288,6 +1387,10 @@ class AppSettings:
             if "MAX_DEBOUNCE_DELAY" in data_keys and "DEBOUNCE_DELAY" in data_keys:
                 data_keys.remove("MAX_DEBOUNCE_DELAY")
                 data_keys.insert(0, "MAX_DEBOUNCE_DELAY")
+            if "PROTECTED_PATHS" in data_keys and "WATCHED_FOLDERS" in data_keys:
+                data_keys.remove("PROTECTED_PATHS")
+                wf_idx = data_keys.index("WATCHED_FOLDERS")
+                data_keys.insert(wf_idx, "PROTECTED_PATHS")
 
             for key in data_keys:
                 value = data[key]

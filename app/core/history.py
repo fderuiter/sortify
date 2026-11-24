@@ -1079,7 +1079,11 @@ class HistoryManager:
         base_dir = row[0] if row else None
 
         claimed = {m.dst for m in moves if m.state not in (INTENT, FAILED)}
-        docs_conn = get_db_connection(self.db.db_path)
+        target_db = db or self.db
+        docs_db_path = getattr(target_db, "db_path", None) if target_db else None
+        docs_conn = (
+            get_db_connection(str(docs_db_path)) if docs_db_path is not None else conn
+        )
         dirs_to_prune = set()
         restored = 0
         conflicts = []
@@ -1119,25 +1123,67 @@ class HistoryManager:
                                 f"restored {moved} to {restored_to} instead."
                             )
                     restored += 1
-                    if db and base_dir:
+                    target_db = db or self.db
+                    if target_db and base_dir:
                         try:
                             old_rel = safe_relpath(moved, base_dir).replace("\\", "/")
                             new_rel = safe_relpath(restored_to, base_dir).replace(
                                 "\\", "/"
                             )
                             try:
-                                db.update_document_path(
+                                target_db.update_document_path(
                                     base_dir,
                                     old_rel,
                                     new_rel,
                                     clear_verified_target=True,
                                 )
                             except TypeError:
-                                db.update_document_path(base_dir, old_rel, new_rel)
+                                target_db.update_document_path(
+                                    base_dir, old_rel, new_rel
+                                )
                         except Exception as err:
                             logging.warning(
                                 f"Could not update the document path for {restored_to}: {err}"
                             )
+                        if hasattr(
+                            target_db, "get_quarantine_records_by_base_dir"
+                        ) and hasattr(target_db, "update_quarantine_status"):
+                            try:
+                                q_records = (
+                                    target_db.get_quarantine_records_by_base_dir(
+                                        base_dir
+                                    )
+                                )
+                                moved_norm = _normalize_restored_path(moved)
+                                src_rel_norm = safe_relpath(move.src, base_dir).replace(
+                                    "\\", "/"
+                                )
+                                for q_rec in q_records:
+                                    q_status = q_rec.get("status")
+                                    if q_status not in ("QUARANTINED", "ARCHIVED"):
+                                        continue
+                                    q_staged = q_rec.get("staged_filepath") or ""
+                                    q_orig = (
+                                        q_rec.get("original_filepath") or ""
+                                    ).replace("\\", "/")
+                                    if (
+                                        q_staged
+                                        and _normalize_restored_path(q_staged)
+                                        == moved_norm
+                                    ) or (q_orig == src_rel_norm):
+                                        target_db.update_quarantine_status(
+                                            job_id=q_rec["job_id"],
+                                            status="DISMISSED",
+                                            audit_entry={
+                                                "timestamp": time.time(),
+                                                "status": "DISMISSED",
+                                                "details": f"Compliance relocation rolled back to {src_rel_norm} in session {session_id}",
+                                            },
+                                        )
+                            except Exception as q_err:
+                                logging.debug(
+                                    f"Could not dismiss rolled-back quarantine record for {restored_to}: {q_err}"
+                                )
                 if move.displaced and os.path.lexists(move.displaced):
                     dirs_to_prune.add(os.path.dirname(move.displaced))
                     put_back = resilient_move(move.displaced, move.dst)

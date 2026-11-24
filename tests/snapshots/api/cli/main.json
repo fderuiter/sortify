@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "486f863b11ee4d0ed2228e8abaea163d1a76581df1220410362f60cf2060cb5c"
+    "checksum": "49e5fe2982abf17478926114992464ca8d58bddfba9e6db61b1795f9befba01a"
   },
   "cli": [
     {
@@ -340,6 +340,30 @@
     },
     {
       "args": [
+        "--add-watch"
+      ],
+      "caller": "parser_config",
+      "keywords": {
+        "action": "append",
+        "help": "Add an existing absolute directory path to WATCHED_FOLDERS",
+        "metavar": "DIR"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--remove-watch"
+      ],
+      "caller": "parser_config",
+      "keywords": {
+        "action": "append",
+        "help": "Remove a directory path from WATCHED_FOLDERS",
+        "metavar": "DIR"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
         "daemon"
       ],
       "caller": "subparsers",
@@ -355,7 +379,7 @@
       "caller": "parser_daemon",
       "keywords": {
         "default": null,
-        "help": "Action (start, status, health, metrics, pause, resume, stop) or directory to watch",
+        "help": "Action (start, status, health, metrics, pause, resume, stop, reload) or directory to watch",
         "nargs": "?"
       },
       "method": "add_argument"
@@ -367,8 +391,20 @@
       "caller": "parser_daemon",
       "keywords": {
         "default": null,
-        "help": "Directory to watch or control",
+        "help": "Directory to watch or control (defaults to all configured WATCHED_FOLDERS)",
         "nargs": "?"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "extra_directories"
+      ],
+      "caller": "parser_daemon",
+      "keywords": {
+        "default": [],
+        "help": "Additional directories to watch or target",
+        "nargs": "*"
       },
       "method": "add_argument"
     },
@@ -380,6 +416,17 @@
       "keywords": {
         "action": "store_true",
         "help": "Continuously monitor status telemetry in real time"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--json"
+      ],
+      "caller": "parser_daemon",
+      "keywords": {
+        "action": "store_true",
+        "help": "Output daemon response in structured JSON format"
       },
       "method": "add_argument"
     },

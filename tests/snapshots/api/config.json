@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "34a157aa4b2d7873c54f63b70e333fcf17cdc55b5242bd0dcaf53430469f9055"
+    "checksum": "3d0edd8815ffaeb7a9fa9c4c94a34e885690ce17f0befcdb0bb6d13f6befd2a9"
   },
   "classes": [
     {
@@ -495,6 +495,42 @@
             }
           ],
           "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@field_validator('WATCHED_FOLDERS', mode='before')",
+            "@classmethod"
+          ],
+          "name": "validate_watched_folders",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "list[str]",
+              "default": null,
+              "name": "v"
+            }
+          ],
+          "returns": "list[str]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@model_validator(mode='after')"
+          ],
+          "name": "validate_watched_folders_against_protected",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "'Settings'"
         }
       ]
     }

@@ -267,6 +267,14 @@
       "title": "Protected Paths",
       "type": "array"
     },
+    "WATCHED_FOLDERS": {
+      "description": "Ordered list of existing absolute directory paths continuously monitored by the user-scoped background watchdog daemon. Entries must not contain wildcards, nest inside another watched folder, or overlap PROTECTED_PATHS.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Watched Folders",
+      "type": "array"
+    },
     "AUTO_QUARANTINE_RATINGS": {
       "description": "Opt-in sensitivity severity ratings (such as 'CRITICAL' and 'HIGH') that automatically route detected files into compliance quarantine staging. Defaults to an empty list so automatic sensitivity quarantine is disabled until enabled.",
       "items": {

@@ -280,18 +280,32 @@ Destination paths are validated before writing:
 
 ## Background Folder Monitoring
 
-The daemon watches a folder and sorts new files as they arrive:
+One background watchdog daemon can monitor multiple folders simultaneously (such as `~/Downloads`, `~/Desktop`, and a scanner inbox), routing every arriving file strictly within its own watched root folder while exposing a single shared user-scoped IPC channel in the Sortify application directory (`~/.autosorter/.autosorter.pid` and `.autosorter.sock`).
+
+Configure persistent watched folders from the CLI or in TUI **Application Settings** (`[Ctrl+O]` -> **Background Watched Folders**):
 ```bash
-smart-autosorter daemon start ~/Downloads
+smart-autosorter config --add-watch ~/Downloads --add-watch ~/Desktop
+smart-autosorter config --remove-watch ~/Desktop
+```
+
+Start, inspect, reload, or control the multi-folder daemon across all configured `WATCHED_FOLDERS` (or pass explicit folder paths to target specific roots):
+```bash
+smart-autosorter daemon start
 smart-autosorter daemon status
+smart-autosorter daemon pause ~/Downloads
+smart-autosorter daemon resume ~/Downloads
+smart-autosorter daemon reload
 smart-autosorter daemon stop
 ```
-`pause`, `resume`, `health` and `metrics` are also available.
+`health` and `metrics` are also available (`--json` emits machine-readable telemetry). Adding or removing watched folders in Settings or via `config --add-watch` / `--remove-watch` updates the active daemon dynamically without a manual restart.
+
+Inside `AutoSorterTUI`, the status bar polls the shared IPC channel across `source_dirs` and `WATCHED_FOLDERS` to show live watcher state, watched-folder count, pending queue depth, and active workers (for example `[Daemon: Active | 2 dirs | Q:0 | W:4]`). Press `[Ctrl+T]` or `[p]` (or open the Command Palette with `[Ctrl+K]`) to start an idle watcher or toggle pause/resume, and press `[Ctrl+Shift+T]` or `[P]` to stop the running watcher cleanly.
 
 ![Watchdog Event Aggregation & Debounce State Machine](assets/diagrams/user_guide_watchdog_state.svg)
 
 - **Incomplete downloads are ignored.** Files ending in `.crdownload`, `.tmp` or `.download` are skipped until they are finished.
-- **Bursts are batched.** After a file event the daemon waits 0.6 seconds (`DEBOUNCE_DELAY`) for more changes, and never more than 5 seconds (`MAX_DEBOUNCE_DELAY`) during a continuous stream of writes.
+- **Quiet-window bursts share one undo session.** Files arriving in a watched folder within its quiet window (`DEBOUNCE_DELAY` = 0.6s, bounded by `MAX_DEBOUNCE_DELAY` = 5.0s) are grouped into a single `HistoryManager` session that closes once the folder goes idle, so `smart-autosorter undo --latest` (or `[Ctrl+Z]`) restores the entire burst in one step.
+- **Compliance holds are reversible; PII redaction is not.** Non-destructive Phase 0 compliance actions (`archive`, `retain`, `quarantine`, and `sensitivity_hold`) record SHA-256-verified `MoveLedger` entries before removing the source file and roll back cleanly via `undo`. Destructive `redact` actions permanently scrub PII in place, remove unredacted copies outside compliance staging, and intentionally omit reversible ledger entries so undo never restores unredacted PII.
 
 ## Offline Mode
 <a id="offline-non-semantic-mode"></a>

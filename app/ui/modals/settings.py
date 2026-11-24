@@ -202,6 +202,21 @@ class SettingsModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         width: 100%;
         min-width: 0;
     }
+    .watched-actions-row {
+        layout: grid;
+        grid-size: 3;
+        grid-gutter: 0 1;
+        height: auto;
+        min-height: 3;
+        margin-top: 1;
+    }
+    .narrow .watched-actions-row {
+        grid-size: 1;
+    }
+    .watched-actions-row Button {
+        width: 100%;
+        min-width: 0;
+    }
     Button:focus, Input:focus, Select:focus, Switch:focus {
         border: heavy $accent;
         text-style: bold;
@@ -283,6 +298,52 @@ class SettingsModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
                     )
                     inp_prot.tooltip = "Comma-separated protected directories exempt from automated moves"
                     yield inp_prot
+
+                    yield Label(
+                        "Background Watched Folders (comma-separated):",
+                        classes="field-label",
+                    )
+                    watched = getattr(self.settings, "WATCHED_FOLDERS", []) or []
+                    watched_str = (
+                        ", ".join(watched)
+                        if isinstance(watched, (list, tuple, set))
+                        else str(watched)
+                    )
+                    inp_watched = Input(
+                        value=watched_str,
+                        placeholder="/path/inbox, /path/downloads",
+                        id="input-watched-folders",
+                    )
+                    inp_watched.tooltip = "Ordered comma-separated directories monitored by the background watchdog daemon"
+                    yield inp_watched
+                    with Horizontal(classes="watched-actions-row"):
+                        btn_browse_watched = Button(
+                            "Browse Folders",
+                            id="btn-browse-watched-folder",
+                            variant="primary",
+                        )
+                        btn_browse_watched.tooltip = (
+                            "Browse and select directories to monitor in the background"
+                        )
+                        yield btn_browse_watched
+                        btn_remove_watched = Button(
+                            "Remove Last",
+                            id="btn-remove-watched-folder",
+                            variant="default",
+                        )
+                        btn_remove_watched.tooltip = (
+                            "Remove the last folder from Background Watched Folders"
+                        )
+                        yield btn_remove_watched
+                        btn_clear_watched = Button(
+                            "Clear Watched",
+                            id="btn-clear-watched-folders",
+                            variant="default",
+                        )
+                        btn_clear_watched.tooltip = (
+                            "Clear all configured Background Watched Folders"
+                        )
+                        yield btn_clear_watched
 
                     yield Label(
                         "Ignored Extensions (comma-separated):",
@@ -623,6 +684,84 @@ class SettingsModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
 
         self.app.push_screen(ActiveRuleManagerModal(self.settings))
 
+    def _parse_watched_input(self) -> list[str]:
+        """Return ordered non-empty watched folder entries from the input widget."""
+        try:
+            raw_val = self.query_one("#input-watched-folders", Input).value
+        except Exception:
+            raw_val = ""
+        return [item.strip() for item in raw_val.split(",") if item.strip()]
+
+    @on(Button.Pressed, "#btn-browse-watched-folder")
+    def action_browse_watched_folders(self) -> None:
+        """Open DirectorySelectModal to browse and append/manage watched folders."""
+        from app.ui.modals.edit import DirectorySelectModal
+
+        current_list = self._parse_watched_input()
+        initial_dir = (
+            current_list[-1]
+            if current_list
+            else (getattr(self.app, "base_dir", "") or os.getcwd())
+        )
+
+        def _on_selected(selected: Optional[str | list[str]]) -> None:
+            if not selected:
+                return
+            picked = [selected] if isinstance(selected, str) else list(selected)
+            merged: list[str] = []
+            seen: set[str] = set()
+            for p in current_list + picked:
+                clean = str(p).strip()
+                if not clean:
+                    continue
+                norm = os.path.normcase(os.path.normpath(os.path.abspath(clean)))
+                if norm not in seen:
+                    seen.add(norm)
+                    merged.append(os.path.normpath(os.path.abspath(clean)))
+            try:
+                inp = self.query_one("#input-watched-folders", Input)
+                inp.value = ", ".join(merged)
+                self.announce(
+                    f"Updated watched folders ({len(merged)} configured).",
+                    priority="polite",
+                )
+            except Exception:
+                pass
+
+        if hasattr(self, "app") and self.app:
+            self.app.push_screen(
+                DirectorySelectModal(
+                    current_dir=initial_dir,
+                    source_dirs=current_list or None,
+                ),
+                _on_selected,
+            )
+
+    @on(Button.Pressed, "#btn-remove-watched-folder")
+    def action_remove_last_watched_folder(self) -> None:
+        """Remove the last folder entry from Background Watched Folders."""
+        items = self._parse_watched_input()
+        if not items:
+            self.announce("No watched folders to remove.", priority="polite")
+            return
+        removed = items.pop()
+        try:
+            inp = self.query_one("#input-watched-folders", Input)
+            inp.value = ", ".join(items)
+        except Exception:
+            pass
+        self.announce(f"Removed watched folder: {removed}", priority="polite")
+
+    @on(Button.Pressed, "#btn-clear-watched-folders")
+    def action_clear_watched_folders(self) -> None:
+        """Clear all entries from Background Watched Folders."""
+        try:
+            inp = self.query_one("#input-watched-folders", Input)
+            inp.value = ""
+        except Exception:
+            pass
+        self.announce("Cleared background watched folders.", priority="polite")
+
     @on(DensitySlider.Changed, "#slider-pdf-density-threshold")
     def _on_density_slider_changed(self, event: DensitySlider.Changed) -> None:
         try:
@@ -773,6 +912,12 @@ class SettingsModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         p_str = self.query_one("#input-protected", Input).value
         p_list = [p.strip() for p in p_str.split(",") if p.strip()]
 
+        try:
+            watched_raw = self.query_one("#input-watched-folders", Input).value
+            watched_list = [w.strip() for w in watched_raw.split(",") if w.strip()]
+        except Exception:
+            watched_list = list(getattr(self.settings, "WATCHED_FOLDERS", []) or [])
+
         i_str = self.query_one("#input-ignored", Input).value
         i_list = [
             i.strip() if i.strip().startswith(".") else f".{i.strip()}"
@@ -781,6 +926,22 @@ class SettingsModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         ]
 
         help_url = f"{TROUBLESHOOTING_URL}#settings-configuration"
+        try:
+            from app.config import Settings
+
+            validated_paths_model = Settings(
+                PROTECTED_PATHS=p_list,
+                WATCHED_FOLDERS=watched_list,
+            )
+            p_list = list(validated_paths_model.PROTECTED_PATHS)
+            watched_list = list(validated_paths_model.WATCHED_FOLDERS)
+        except Exception as e:
+            self._show_help_button(help_url)
+            from app.ui.notifications import notify
+
+            notify(f"Settings error: {e}", type="error", help_url=help_url)
+            self.announce(f"Settings error: {e}", help_url=help_url)
+            return
         try:
             conc_val = self.query_one("#input-concurrency", Input).value.strip()
             conc = int(conc_val)
@@ -953,6 +1114,7 @@ class SettingsModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
 
         res = {
             "PROTECTED_PATHS": p_list,
+            "WATCHED_FOLDERS": watched_list,
             "IGNORED_EXTENSIONS": i_list,
             "MAX_WORKERS": conc,
             "MAX_FOLDERS": max_f,

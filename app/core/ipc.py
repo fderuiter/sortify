@@ -1,4 +1,4 @@
-"""Async IPC server and client for daemon status telemetry and process control."""
+"""Async IPC server and client for user-scoped daemon status telemetry and process control."""
 
 import asyncio
 import contextlib
@@ -9,12 +9,22 @@ import secrets
 import sys
 import tempfile
 import time
+from pathlib import Path
 from typing import Any, Optional
 
 logger = logging.getLogger("app.ipc")
 
 PID_FILE_NAME = ".autosorter.pid"
 SOCKET_FILE_NAME = ".autosorter.sock"
+
+
+def get_ipc_dir() -> str:
+    """Return the user-scoped application directory hosting daemon IPC lock and socket files."""
+    import app.config
+
+    app_dir = Path(app.config.get_app_dir())
+    app_dir.mkdir(parents=True, exist_ok=True)
+    return str(app_dir)
 
 
 def is_process_alive(pid: int) -> bool:
@@ -52,9 +62,8 @@ def is_process_alive(pid: int) -> bool:
             return False
 
 
-def read_pid_file(base_dir: str) -> Optional[dict[str, Any]]:
-    """Read and parse the daemon PID file from base_dir."""
-    pid_path = os.path.join(base_dir, PID_FILE_NAME)
+def _parse_pid_file(pid_path: str) -> Optional[dict[str, Any]]:
+    """Read and parse a JSON PID lockfile if it exists and carries a PID."""
     if not os.path.exists(pid_path):
         return None
     try:
@@ -67,28 +76,122 @@ def read_pid_file(base_dir: str) -> Optional[dict[str, Any]]:
     return None
 
 
-class DaemonIPCServer:
-    """Async IPC server hosting JSON-RPC status telemetry and control endpoints."""
+def read_pid_file(base_dir: Optional[str | Path] = None) -> Optional[dict[str, Any]]:
+    """Read and parse the user-scoped daemon PID file from the app configuration folder.
 
-    def __init__(self, daemon):
+    Falls back to ``base_dir/.autosorter.pid`` only if no user-scoped lockfile exists
+    and ``base_dir`` is explicitly provided (for legacy lockfile inspection/cleanup).
+    """
+    shared_pid_path = os.path.join(get_ipc_dir(), PID_FILE_NAME)
+    shared_data = _parse_pid_file(shared_pid_path)
+    if shared_data is not None:
+        return shared_data
+
+    if base_dir is not None:
+        legacy_pid_path = os.path.join(os.path.abspath(str(base_dir)), PID_FILE_NAME)
+        if os.path.normcase(legacy_pid_path) != os.path.normcase(shared_pid_path):
+            return _parse_pid_file(legacy_pid_path)
+    return None
+
+
+class DaemonIPCServer:
+    """Async IPC server hosting user-scoped JSON-RPC status telemetry and control endpoints."""
+
+    def __init__(self, daemon: Any, control_dir: Optional[str | Path] = None) -> None:
         self.daemon = daemon
-        self.base_dir = daemon.base_dir
+        self.control_dir = (
+            os.path.abspath(str(control_dir))
+            if control_dir is not None
+            else get_ipc_dir()
+        )
+        self.base_dir = getattr(daemon, "base_dir", "") or ""
         self.server: Optional[asyncio.Server] = None
         self.socket_path: Optional[str] = None
-        self.pid_path = os.path.join(self.base_dir, PID_FILE_NAME)
+        self.pid_path = os.path.join(self.control_dir, PID_FILE_NAME)
         self.auth_token: Optional[str] = None
         self.is_running = False
+        self._start_timestamp: float = 0.0
 
-    async def start(self):
-        """Start the IPC server and write the .autosorter.pid lockfile."""
+    def _daemon_watched_folders(self) -> list[str]:
+        watched = getattr(self.daemon, "watched_folders", None)
+        if isinstance(watched, (list, tuple)):
+            return [str(p) for p in watched if p]
+        if self.base_dir:
+            return [self.base_dir]
+        return []
+
+    def _cleanup_legacy_watched_folder_lockfiles(self) -> None:
+        """Remove any stale legacy per-folder lockfiles inside watched folders."""
+        for folder in self._daemon_watched_folders():
+            if os.path.normcase(os.path.abspath(folder)) == os.path.normcase(
+                self.control_dir
+            ):
+                continue
+            legacy_pid = os.path.join(folder, PID_FILE_NAME)
+            legacy_info = _parse_pid_file(legacy_pid)
+            if legacy_info is not None:
+                lpid = legacy_info.get("pid")
+                if lpid and is_process_alive(int(lpid)) and int(lpid) != os.getpid():
+                    raise RuntimeError(
+                        f"Daemon is already running for directory {folder} (PID: {lpid})."
+                    )
+                stale_sock = legacy_info.get("socket_path")
+                if (
+                    isinstance(stale_sock, str)
+                    and stale_sock
+                    and not stale_sock.startswith("tcp://")
+                    and os.path.exists(stale_sock)
+                ):
+                    with contextlib.suppress(OSError):
+                        os.unlink(stale_sock)
+                with contextlib.suppress(OSError):
+                    os.unlink(legacy_pid)
+
+    def refresh_pid_file(self) -> None:
+        """Rewrite the user-scoped .autosorter.pid file with current watched folders."""
+        if not self.is_running or not self.auth_token:
+            return
+        self.base_dir = getattr(self.daemon, "base_dir", "") or self.base_dir
+        watched_folders = self._daemon_watched_folders()
+        pid_info = {
+            "pid": os.getpid(),
+            "socket_path": self.socket_path,
+            "auth_token": self.auth_token,
+            "base_dir": self.base_dir
+            or (watched_folders[0] if watched_folders else ""),
+            "watched_folders": watched_folders,
+            "start_time": self._start_timestamp or time.time(),
+        }
+        try:
+            os.makedirs(self.control_dir, exist_ok=True)
+            old_umask = os.umask(0o077)
+            try:
+                fd = os.open(
+                    self.pid_path,
+                    os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                    0o600,
+                )
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(pid_info, f, indent=2)
+            finally:
+                os.umask(old_umask)
+            with contextlib.suppress(OSError):
+                os.chmod(self.pid_path, 0o600)
+        except Exception as e:
+            logger.error(
+                f"Failed to write PID lockfile at {self.pid_path}: {e}", exc_info=True
+            )
+
+    async def start(self) -> None:
+        """Start the IPC server and write the user-scoped .autosorter.pid lockfile."""
+        os.makedirs(self.control_dir, exist_ok=True)
+
         # Step 1: Check for existing lockfile / process
-        existing_info = read_pid_file(self.base_dir)
+        existing_info = _parse_pid_file(self.pid_path)
         if existing_info:
             existing_pid = existing_info.get("pid")
             if existing_pid and is_process_alive(existing_pid):
-                raise RuntimeError(
-                    f"Daemon is already running for directory {self.base_dir} (PID: {existing_pid})."
-                )
+                raise RuntimeError(f"Daemon is already running (PID: {existing_pid}).")
             logger.info(f"Removing stale lockfile and socket from PID {existing_pid}")
             stale_sock = existing_info.get("socket_path")
             if (
@@ -108,12 +211,14 @@ class DaemonIPCServer:
                         f"Failed to remove stale pid file {self.pid_path}: {e}"
                     )
 
+        self._cleanup_legacy_watched_folder_lockfiles()
+
         # Generate 256-bit secret token for server authentication
         self.auth_token = secrets.token_hex(32)
+        self._start_timestamp = time.time()
 
         # Step 2: Determine socket path
         if sys.platform == "win32":
-            # On Windows, use a local TCP server on loopback interface
             self.server = await asyncio.start_server(
                 self._handle_client, host="127.0.0.1", port=0
             )
@@ -124,12 +229,12 @@ class DaemonIPCServer:
             else:
                 raise RuntimeError("Failed to bind local loopback port on Windows")
         else:
-            default_sock = os.path.join(self.base_dir, SOCKET_FILE_NAME)
+            default_sock = os.path.join(self.control_dir, SOCKET_FILE_NAME)
             # Ensure socket path length is within OS limits (~100 chars on Linux/macOS)
             if len(default_sock) > 85:
                 import hashlib
 
-                h = hashlib.md5(self.base_dir.encode("utf-8")).hexdigest()[:8]
+                h = hashlib.sha256(self.control_dir.encode("utf-8")).hexdigest()[:8]
                 self.socket_path = os.path.join(
                     tempfile.gettempdir(), f"autosorter_{h}.sock"
                 )
@@ -156,29 +261,14 @@ class DaemonIPCServer:
 
         self.is_running = True
 
-        # Step 3: Write PID lockfile
-        pid_info = {
-            "pid": os.getpid(),
-            "socket_path": self.socket_path,
-            "auth_token": self.auth_token,
-            "base_dir": self.base_dir,
-            "start_time": time.time(),
-        }
-        try:
-            with open(self.pid_path, "w", encoding="utf-8") as f:
-                json.dump(pid_info, f, indent=2)
-            with contextlib.suppress(OSError):
-                os.chmod(self.pid_path, 0o600)
-        except Exception as e:
-            logger.error(
-                f"Failed to write PID lockfile at {self.pid_path}: {e}", exc_info=True
-            )
+        # Step 3: Write PID lockfile (0o600)
+        self.refresh_pid_file()
 
         logger.info(f"IPC server listening on {self.socket_path}")
 
     async def _handle_client(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
-    ):
+    ) -> None:
         """Handle incoming line-delimited JSON-RPC requests."""
         while self.is_running:
             try:
@@ -265,29 +355,106 @@ class DaemonIPCServer:
                 "error": {"code": -32603, "message": f"Internal error: {str(e)}"},
             }
 
+    @staticmethod
+    def _extract_folder_list(params: Any) -> Optional[list[str]]:
+        if not isinstance(params, dict):
+            return None
+        raw = params.get("folders")
+        if raw is None and params.get("folder"):
+            raw = [params["folder"]]
+        if isinstance(raw, list):
+            cleaned = [os.path.abspath(str(p)) for p in raw if p]
+            return cleaned or None
+        return None
+
     async def _dispatch_method(self, method: str, params: dict) -> dict[str, Any]:
         """Dispatch JSON-RPC method to corresponding daemon telemetry/control handler."""
+        folders = self._extract_folder_list(params)
         if method == "status":
-            return self.daemon.get_status_telemetry()
+            telemetry = self.daemon.get_status_telemetry()
+            if folders:
+                watched_norm = {
+                    os.path.normcase(os.path.abspath(p)): p
+                    for p in telemetry.get("watched_folders", [])
+                }
+                paused_norm = {
+                    os.path.normcase(os.path.abspath(p))
+                    for p in telemetry.get("paused_folders", [])
+                }
+                telemetry = dict(telemetry)
+                telemetry["requested_folders"] = folders
+                telemetry["folder_states"] = {
+                    f: (
+                        "paused"
+                        if os.path.normcase(f) in paused_norm
+                        or telemetry.get("is_paused")
+                        else (
+                            "watching"
+                            if os.path.normcase(f) in watched_norm
+                            else "unwatched"
+                        )
+                    )
+                    for f in folders
+                }
+            return telemetry
         elif method == "health":
             return self.daemon.get_health_telemetry()
         elif method == "metrics":
             return self.daemon.get_metrics_telemetry()
         elif method == "pause":
+            if folders and hasattr(self.daemon, "pause_folders"):
+                res = self.daemon.pause_folders(folders)
+                return res
             self.daemon.pause()
             return {"status": "paused", "message": "Daemon triage pipeline paused"}
         elif method == "resume":
+            if folders and hasattr(self.daemon, "resume_folders"):
+                res = self.daemon.resume_folders(folders)
+                return res
             self.daemon.resume()
             return {"status": "resumed", "message": "Daemon triage pipeline resumed"}
+        elif method in ("reload", "update_watches"):
+            return await asyncio.to_thread(self._handle_reload_rpc, params)
         elif method == "drop":
             return await self._handle_drop_rpc(params)
         elif method == "stop":
+            if folders and hasattr(self.daemon, "stop_watching_folders"):
+                stop_res = await asyncio.to_thread(
+                    self.daemon.stop_watching_folders, folders
+                )
+                self.refresh_pid_file()
+                if not stop_res.get("should_stop_daemon", False):
+                    return stop_res
             # Schedule daemon shutdown after response is sent
             loop = asyncio.get_running_loop()
             loop.call_soon(self._trigger_daemon_stop)
             return {"status": "stopping", "message": "Daemon shutting down"}
         else:
             raise ValueError(f"Method '{method}' not found")
+
+    def _handle_reload_rpc(self, params: dict) -> dict[str, Any]:
+        """Reload daemon settings and dynamically synchronize watched folders."""
+        explicit_folders = (
+            params.get("watched_folders") if isinstance(params, dict) else None
+        )
+        add_folders = params.get("add_folders") if isinstance(params, dict) else None
+        remove_folders = (
+            params.get("remove_folders") if isinstance(params, dict) else None
+        )
+
+        if hasattr(self.daemon, "reload_watched_folders"):
+            res = self.daemon.reload_watched_folders(
+                watched_folders=explicit_folders,
+                add_folders=add_folders,
+                remove_folders=remove_folders,
+            )
+            self.refresh_pid_file()
+            return res
+
+        return {
+            "status": "reloaded",
+            "watched_folders": self._daemon_watched_folders(),
+        }
 
     async def _handle_drop_rpc(self, params: dict) -> dict[str, Any]:
         """Handle 'drop' JSON-RPC method request forwarding payloads to active triage pipeline."""
@@ -370,14 +537,14 @@ class DaemonIPCServer:
             "message": f"Successfully forwarded {len(validated_paths)} dropped items to triage pipeline",
         }
 
-    def _trigger_daemon_stop(self):
+    def _trigger_daemon_stop(self) -> None:
         """Asynchronously trigger daemon stop in a background thread."""
         import threading
 
         t = threading.Thread(target=self.daemon.stop, daemon=True)
         t.start()
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the IPC server and remove socket and PID lockfiles."""
         self.is_running = False
         self.auth_token = None
@@ -407,18 +574,31 @@ class DaemonIPCServer:
 
 
 class DaemonIPCClient:
-    """Client for connecting to local daemon IPC server over sockets."""
+    """Client for connecting to the user-scoped daemon IPC server over sockets."""
 
-    def __init__(self, base_dir: str):
-        self.base_dir = os.path.abspath(base_dir)
+    def __init__(
+        self,
+        base_dir: Optional[str | Path] = None,
+        control_dir: Optional[str | Path] = None,
+    ) -> None:
+        self.base_dir = os.path.abspath(str(base_dir)) if base_dir is not None else None
+        self.control_dir = (
+            os.path.abspath(str(control_dir)) if control_dir is not None else None
+        )
+
+    def _resolve_pid_info(self) -> Optional[dict[str, Any]]:
+        if self.control_dir is not None:
+            return _parse_pid_file(os.path.join(self.control_dir, PID_FILE_NAME))
+        return read_pid_file(self.base_dir)
 
     async def send_command(
         self, method: str, params: Optional[dict] = None, timeout: float = 15.0
     ) -> dict[str, Any]:
         """Send a JSON-RPC method request to the daemon IPC server and return result dict."""
-        pid_info = read_pid_file(self.base_dir)
+        pid_info = self._resolve_pid_info()
+        target_label = self.control_dir or self.base_dir or get_ipc_dir()
         if not pid_info:
-            raise RuntimeError(f"No active daemon lockfile found in '{self.base_dir}'.")
+            raise RuntimeError(f"No active daemon lockfile found in '{target_label}'.")
 
         pid = pid_info.get("pid")
         socket_path = pid_info.get("socket_path")
@@ -426,7 +606,7 @@ class DaemonIPCClient:
 
         if not pid or not is_process_alive(pid):
             raise RuntimeError(
-                f"Daemon process (PID {pid}) is not running for '{self.base_dir}'."
+                f"Daemon process (PID {pid}) is not running for '{target_label}'."
             )
 
         if not socket_path:
