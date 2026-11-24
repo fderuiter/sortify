@@ -52,9 +52,6 @@ class SamplePlaygroundModal(ResponsiveModalScreen[None]):
         margin-top: 1;
         margin-bottom: 1;
     }
-    .narrow .playground-panes {
-        layout: vertical;
-    }
     .left-pane {
         width: 45%;
         height: auto;
@@ -64,10 +61,6 @@ class SamplePlaygroundModal(ResponsiveModalScreen[None]):
         width: 55%;
         height: auto;
         padding-left: 1;
-    }
-    .narrow .left-pane, .narrow .right-pane {
-        width: 100%;
-        padding: 0;
     }
     #playground-doc-list {
         height: 8;
@@ -99,6 +92,41 @@ class SamplePlaygroundModal(ResponsiveModalScreen[None]):
     Button:focus, Checkbox:focus, OptionList:focus, DataTable:focus {
         border: heavy $accent;
         text-style: bold;
+    }
+    SamplePlaygroundModal {
+        &.compact .field-label {
+            margin-top: 0;
+        }
+        &.compact .playground-panes {
+            margin-top: 0;
+            margin-bottom: 0;
+            min-height: 0;
+        }
+        &.narrow .playground-panes {
+            layout: vertical;
+        }
+        &.narrow .left-pane, &.narrow .right-pane {
+            width: 100%;
+            padding: 0;
+        }
+        &.compact #playground-doc-list {
+            height: 6;
+            margin-bottom: 0;
+        }
+        &.compact #playground-doc-preview {
+            height: 4;
+            min-height: 3;
+        }
+        &.compact #playground-prediction-matrix {
+            height: 6;
+            min-height: 6;
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+        &.narrow .button-row Button {
+            min-width: 0;
+            padding: 0 1;
+        }
     }
     """
 

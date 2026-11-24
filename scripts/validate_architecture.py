@@ -503,7 +503,10 @@ def _has_inlined_modal_shell_css(css_text: str, cls_name: str = "") -> bool:
         if (
             ".modal-body" in selector
             and "overflow-y: auto" in decls
-            and "max-height: 100%" in decls
+            and (
+                "max-height: 100%" in decls
+                or ("height: 1fr" in decls and "min-height: 0" in decls)
+            )
         ):
             return True
         if (
@@ -515,12 +518,42 @@ def _has_inlined_modal_shell_css(css_text: str, cls_name: str = "") -> bool:
     return False
 
 
+def _has_unnested_modal_breakpoint_css(css_text: str) -> bool:
+    """Return True if a modal stylesheet uses .compact or .narrow without nesting via '&.' inside a modal block."""
+    import re
+
+    cleaned = re.sub(r"/\*.*?\*/", "", css_text, flags=re.DOTALL)
+    depth = 0
+    buf: list[str] = []
+    for ch in cleaned:
+        if ch == "{":
+            selector_group = "".join(buf).strip()
+            buf.clear()
+            for match in re.finditer(
+                r"(?<![\w-])\.(?:compact|narrow)(?![\w-])", selector_group
+            ):
+                if depth == 0:
+                    return True
+                prefix = selector_group[: match.start()]
+                if not re.search(r"&(?:\.[\w-]+)*$", prefix):
+                    return True
+            depth += 1
+        elif ch == "}":
+            buf.clear()
+            depth = max(0, depth - 1)
+        elif ch == ";":
+            buf.clear()
+        else:
+            buf.append(ch)
+    return False
+
+
 def validate_modal_shell_conventions(
     errors: list,
     target_files: set[str] | None = None,
     parsed_files: list[tuple[str, ast.Module]] | None = None,
 ) -> None:
-    """Enforce ResponsiveModalScreen inheritance and prevent re-inlining shared modal shell CSS."""
+    """Enforce ResponsiveModalScreen inheritance, shared shell rules, and nested modal breakpoint CSS."""
     app_asts = (
         parsed_files if parsed_files is not None else _collect_parsed_app_files("app")
     )
@@ -576,12 +609,17 @@ def validate_modal_shell_conventions(
                     attr_name in ("CSS", "MODAL_CSS")
                     and isinstance(val_node, ast.Constant)
                     and isinstance(val_node.value, str)
-                    and _has_inlined_modal_shell_css(val_node.value, node.name)
                 ):
-                    errors.append(
-                        f"{norm_path}:{stmt.lineno}: Modal class '{node.name}' re-inlines shared modal shell CSS rules in '{attr_name}'. "
-                        "Keep shared shell styles in 'app.ui.layout.BASE_MODAL_CSS' and put only deltas in 'MODAL_CSS'."
-                    )
+                    if _has_inlined_modal_shell_css(val_node.value, node.name):
+                        errors.append(
+                            f"{norm_path}:{stmt.lineno}: Modal class '{node.name}' re-inlines shared modal shell CSS rules in '{attr_name}'. "
+                            "Keep shared shell styles in 'app.ui.layout.BASE_MODAL_CSS' and put only deltas in 'MODAL_CSS'."
+                        )
+                    if _has_unnested_modal_breakpoint_css(val_node.value):
+                        errors.append(
+                            f"{norm_path}:{stmt.lineno}: Modal class '{node.name}' defines un-nested '.compact' or '.narrow' selectors in '{attr_name}'. "
+                            f"Nest '&.compact' and '&.narrow' inside '{node.name} {{ ... }}' so SCOPED_CSS binds breakpoints to the dialog root."
+                        )
 
 
 def validate_diagram_schema_and_assets(errors: list) -> None:

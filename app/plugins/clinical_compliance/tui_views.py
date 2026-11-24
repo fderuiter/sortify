@@ -34,11 +34,6 @@ class CROForensicModal(ResponsiveModalScreen[None]):
     .modal-box {
         border: thick $success;
     }
-    .compact .modal-box, .narrow .modal-box {
-        padding: 0 1;
-        width: 96%;
-        max-height: 96%;
-    }
     .modal-title {
         color: $success;
     }
@@ -59,6 +54,25 @@ class CROForensicModal(ResponsiveModalScreen[None]):
     }
     .button-row Button {
         margin-left: 1;
+    }
+    CROForensicModal {
+        &.compact .modal-box, &.narrow .modal-box {
+            padding: 0 1;
+            width: 96%;
+            max-height: 96%;
+        }
+        &.compact ProgressBar {
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+        &.compact .log-area {
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+        &.narrow .button-row Button {
+            min-width: 0;
+            padding: 0 1;
+        }
     }
     """
 

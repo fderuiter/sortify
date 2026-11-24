@@ -35,9 +35,6 @@ class QuarantineVaultModal(ResponsiveModalScreen[None]):
     ]
 
     MODAL_CSS = """
-    QuarantineVaultModal {
-        background: rgba(0, 0, 0, 0.7);
-    }
     .quarantine-modal-box {
         border: thick $warning;
         width: 95%;
@@ -47,11 +44,6 @@ class QuarantineVaultModal(ResponsiveModalScreen[None]):
         max-height: 92%;
         min-height: 20;
         layout: vertical;
-    }
-    .compact .quarantine-modal-box, .narrow .quarantine-modal-box {
-        padding: 0 1;
-        width: 98%;
-        height: 94%;
     }
     .modal-body {
         height: 1fr;
@@ -65,17 +57,11 @@ class QuarantineVaultModal(ResponsiveModalScreen[None]):
         color: $text-muted;
         margin-bottom: 1;
     }
-    .compact .quarantine-subtitle {
-        margin-bottom: 0;
-    }
     .quarantine-filter-row {
         width: 100%;
         height: auto;
         margin-bottom: 1;
         layout: horizontal;
-    }
-    .compact .quarantine-filter-row {
-        margin-bottom: 0;
     }
     #quarantine-search-input {
         width: 1fr;
@@ -100,9 +86,6 @@ class QuarantineVaultModal(ResponsiveModalScreen[None]):
         min-height: 8;
         layout: horizontal;
     }
-    .narrow .quarantine-content-split {
-        layout: vertical;
-    }
     #quarantine-table-pane {
         width: 55%;
         height: 100%;
@@ -115,12 +98,6 @@ class QuarantineVaultModal(ResponsiveModalScreen[None]):
         height: 1fr;
         min-height: 5;
     }
-    .narrow #quarantine-table-pane {
-        width: 100%;
-        height: 50%;
-        margin-right: 0;
-        margin-bottom: 1;
-    }
     #quarantine-detail-pane {
         width: 45%;
         height: 100%;
@@ -128,10 +105,6 @@ class QuarantineVaultModal(ResponsiveModalScreen[None]):
         border: solid $secondary;
         padding: 0 1;
         overflow-y: auto;
-    }
-    .narrow #quarantine-detail-pane {
-        width: 100%;
-        height: 50%;
     }
     .quarantine-detail-header {
         text-style: bold;
@@ -157,22 +130,57 @@ class QuarantineVaultModal(ResponsiveModalScreen[None]):
         grid-gutter: 0 1;
         height: auto;
     }
-    .compact .quarantine-button-row {
-        margin-top: 0;
-    }
     .quarantine-button-row Button {
         width: 100%;
         min-width: 0;
         margin: 0;
     }
-    .compact .quarantine-button-row Button {
-        height: 1;
-        min-height: 1;
-        border: none;
-    }
     Button:focus, Input:focus, Select:focus, DataTable:focus, Checkbox:focus {
         border: heavy $accent;
         text-style: bold;
+    }
+    QuarantineVaultModal {
+        background: rgba(0, 0, 0, 0.7);
+        &.compact .quarantine-modal-box, &.narrow .quarantine-modal-box {
+            padding: 0 1;
+            width: 98%;
+            height: 96%;
+            max-height: 96%;
+        }
+        &.compact .quarantine-subtitle {
+            margin-bottom: 0;
+        }
+        &.compact .quarantine-filter-row {
+            margin-bottom: 0;
+        }
+        &.narrow .quarantine-content-split {
+            layout: vertical;
+            min-height: 0;
+        }
+        &.narrow #quarantine-table-pane {
+            width: 100%;
+            height: 60%;
+            min-height: 6;
+            margin-right: 0;
+            margin-bottom: 0;
+        }
+        &.narrow #quarantine-detail-pane {
+            width: 100%;
+            height: 40%;
+            min-height: 4;
+        }
+        &.compact .quarantine-button-row {
+            margin-top: 0;
+        }
+        &.narrow .quarantine-button-row {
+            grid-size: 2;
+            grid-columns: 1fr 1fr;
+        }
+        &.compact .quarantine-button-row Button {
+            height: 1;
+            min-height: 1;
+            border: none;
+        }
     }
     """
 

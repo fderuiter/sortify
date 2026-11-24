@@ -36,10 +36,6 @@ class DropPlanConfirmModal(ResponsiveModalScreen[bool]):
         max-width: 100;
         max-height: 95%;
     }
-    .modal-body {
-        height: auto;
-        overflow-y: auto;
-    }
     #drop-plan-warnings {
         height: auto;
         max-height: 5;
@@ -98,12 +94,18 @@ class DropPlanConfirmModal(ResponsiveModalScreen[bool]):
         min-width: 12;
         margin: 0 0 0 1;
     }
-    .compact .plan-policy-row Button,
-    .compact .plan-override-row Button,
-    .compact .button-row Button {
-        height: 1;
-        min-height: 1;
-        border: none;
+    DropPlanConfirmModal {
+        &.compact .plan-policy-row Button,
+        &.compact .plan-override-row Button,
+        &.compact .button-row Button {
+            height: 1;
+            min-height: 1;
+            border: none;
+        }
+        &.narrow .plan-policy-row {
+            grid-size: 2;
+            grid-columns: 1fr 1fr;
+        }
     }
     """
 
@@ -426,18 +428,12 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
     ]
 
     MODAL_CSS = """
-    DropZoneModal {
-        background: rgba(0, 0, 0, 0.7);
-    }
     .modal-box {
         border: double $accent;
         width: 92%;
         max-width: 100;
         min-width: 40;
         max-height: 95%;
-    }
-    .compact .modal-box, .narrow .modal-box {
-        width: 98%;
     }
     .modal-title {
         margin-bottom: 0;
@@ -482,21 +478,12 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         min-width: 12;
         margin: 0 0 0 1;
     }
-    .compact .dest-row Button {
-        height: 1;
-        min-height: 1;
-        border: none;
-        min-width: 10;
-    }
     .dropzone-split-container {
         height: auto;
         min-height: 7;
         layout: horizontal;
         margin-top: 0;
         margin-bottom: 0;
-    }
-    .narrow .dropzone-split-container {
-        layout: vertical;
     }
     #dropzone-staging-table {
         width: 60%;
@@ -505,10 +492,6 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         margin-top: 0;
         margin-bottom: 0;
         border: solid $accent;
-    }
-    .narrow #dropzone-staging-table {
-        width: 100%;
-        height: 6;
     }
     #dropzone-metadata-preview {
         width: 40%;
@@ -520,13 +503,6 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         margin-left: 1;
         overflow-x: hidden;
         overflow-y: auto;
-    }
-    .narrow #dropzone-metadata-preview {
-        width: 100%;
-        height: auto;
-        min-height: 4;
-        margin-left: 0;
-        margin-top: 1;
     }
     .preview-header {
         text-style: bold;
@@ -545,11 +521,6 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
     .button-row {
         margin-top: 0;
     }
-    .compact .button-row Button {
-        height: 1;
-        min-height: 1;
-        border: none;
-    }
     .queue-row {
         width: 100%;
         margin-top: 0;
@@ -564,14 +535,79 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         min-width: 0;
         margin: 0;
     }
-    .compact .queue-row Button {
-        height: 1;
-        min-height: 1;
-        border: none;
-    }
     Button:focus, Input:focus, DataTable:focus {
         border: heavy $accent;
         text-style: bold;
+    }
+    DropZoneModal {
+        background: rgba(0, 0, 0, 0.7);
+        &.compact .modal-box, &.narrow .modal-box {
+            width: 98%;
+            max-height: 96%;
+        }
+        &.compact .dropzone-target {
+            border: none;
+            padding: 0;
+        }
+        &.compact .dropzone-subinstructions {
+            display: none;
+        }
+        &.compact Input, &.compact Input:focus {
+            height: 1;
+            border: none;
+        }
+        &.compact .dest-row Button {
+            height: 1;
+            min-height: 1;
+            border: none;
+            min-width: 10;
+        }
+        &.compact .dropzone-split-container {
+            min-height: 6;
+        }
+        &.compact #dropzone-staging-table {
+            height: 6;
+            min-height: 6;
+        }
+        &.compact #dropzone-metadata-preview {
+            height: 6;
+            min-height: 6;
+        }
+        &.compact .button-row Button {
+            height: 1;
+            min-height: 1;
+            border: none;
+        }
+        &.compact .queue-row Button {
+            height: 1;
+            min-height: 1;
+            border: none;
+            padding: 0;
+        }
+        &.narrow .dropzone-split-container {
+            layout: vertical;
+            min-height: 0;
+        }
+        &.narrow #dropzone-staging-table {
+            width: 100%;
+            height: 6;
+            min-height: 6;
+        }
+        &.narrow #dropzone-metadata-preview {
+            width: 100%;
+            height: 4;
+            min-height: 4;
+            margin-left: 0;
+            margin-top: 0;
+        }
+        &.narrow .queue-row {
+            grid-size: 2;
+            grid-columns: 1fr 1fr;
+        }
+        &.narrow .button-row Button {
+            min-width: 0;
+            padding: 0 1;
+        }
     }
     """
 

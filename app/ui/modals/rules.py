@@ -38,9 +38,6 @@ class TemplateGalleryModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
         max-width: 88;
         max-height: 92%;
     }
-    .compact .modal-title {
-        margin-bottom: 0;
-    }
     .field-label {
         margin-top: 1;
         color: $text;
@@ -52,10 +49,6 @@ class TemplateGalleryModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
         padding: 0 1;
         border: solid $accent;
         height: auto;
-    }
-    .compact .template-card {
-        margin-top: 0;
-        margin-bottom: 0;
     }
     .template-desc {
         color: $text-muted;
@@ -72,15 +65,30 @@ class TemplateGalleryModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
         min-width: 0;
         margin: 0;
     }
-    .compact .button-row Button {
-        height: 1;
-        min-height: 1;
-        border: none;
-        margin-bottom: 0;
-    }
     Button:focus, Checkbox:focus {
         border: heavy $accent;
         text-style: bold;
+    }
+    TemplateGalleryModal {
+        &.compact .modal-title {
+            margin-bottom: 0;
+        }
+        &.compact .template-card {
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+        &.compact .button-row {
+            margin-top: 0;
+        }
+        &.compact .button-row Button {
+            height: 1;
+            min-height: 1;
+            border: none;
+            margin-bottom: 0;
+        }
+        &.narrow .button-row Button {
+            padding: 0;
+        }
     }
     """
 
@@ -250,9 +258,6 @@ class ExportRulesModal(_CancelToCloseMixin, ResponsiveModalScreen[Optional[Path]
     .modal-box {
         min-width: 35;
     }
-    .compact .modal-box, .narrow .modal-box {
-        width: 95%;
-    }
     .field-label {
         margin-top: 1;
         color: $text;
@@ -275,6 +280,17 @@ class ExportRulesModal(_CancelToCloseMixin, ResponsiveModalScreen[Optional[Path]
     Button:focus, Input:focus, Select:focus {
         border: heavy $accent;
         text-style: bold;
+    }
+    ExportRulesModal {
+        &.compact .modal-box, &.narrow .modal-box {
+            width: 95%;
+        }
+        &.compact .field-label,
+        &.compact .status-text,
+        &.compact .error-text,
+        &.compact .summary-text {
+            margin-top: 0;
+        }
     }
     """
 
@@ -451,19 +467,12 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Optional[Any]])
         min-width: 35;
         max-height: 92%;
     }
-    .compact .modal-title {
-        margin-bottom: 0;
-    }
     .input-row {
         width: 100%;
         margin-top: 1;
         margin-bottom: 1;
         height: auto;
         align: left middle;
-    }
-    .compact .input-row {
-        margin-top: 0;
-        margin-bottom: 0;
     }
     #input-rule-file-path {
         width: 1fr;
@@ -492,10 +501,6 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Optional[Any]])
         border: solid $accent;
         height: auto;
     }
-    .compact .preview-card {
-        margin-top: 0;
-        margin-bottom: 0;
-    }
     #dt-imported-keywords, #dt-imported-policies, #dt-rule-conflicts {
         width: 100%;
         height: auto;
@@ -511,12 +516,6 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Optional[Any]])
         margin-top: 1;
         text-style: bold;
     }
-    .compact .status-text, .compact .warning-text {
-        margin-top: 0;
-    }
-    .compact .button-row {
-        margin-top: 0;
-    }
     .button-row Button {
         min-width: 10;
         margin-left: 1;
@@ -524,6 +523,34 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Optional[Any]])
     Button:focus, Input:focus, Checkbox:focus {
         border: heavy $accent;
         text-style: bold;
+    }
+    RuleImportModal {
+        &.compact .modal-title {
+            margin-bottom: 0;
+        }
+        &.compact .input-row {
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+        &.compact .preview-card {
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+        &.compact .status-text, &.compact .warning-text {
+            margin-top: 0;
+        }
+        &.compact .button-row {
+            margin-top: 0;
+        }
+        &.narrow #btn-browse-rule-file,
+        &.narrow #btn-parse-rule-file {
+            min-width: 0;
+            padding: 0 1;
+        }
+        &.narrow .button-row Button {
+            min-width: 0;
+            padding: 0 1;
+        }
     }
     """
 
@@ -1177,23 +1204,13 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
         max-width: 76;
         max-height: 92%;
     }
-    .compact .rule-edit-box, .narrow .rule-edit-box {
-        width: 96%;
-        max-height: 96%;
-    }
     .hidden {
         display: none;
-    }
-    .compact .modal-title {
-        margin-bottom: 0;
     }
     .field-label {
         margin-top: 1;
         color: $text;
         text-style: bold;
-    }
-    .compact .field-label {
-        margin-top: 0;
     }
     .rule-flags-row, .clause-flags-row {
         height: auto;
@@ -1258,9 +1275,6 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
         border: solid $accent;
         height: auto;
     }
-    .compact .preview-box {
-        margin-top: 0;
-    }
     .preview-status {
         color: $text;
         margin-top: 0;
@@ -1293,19 +1307,47 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
         min-width: 0;
         margin: 0;
     }
-    .compact .button-row {
-        margin-top: 0;
-    }
-    .compact .button-row Button {
-        height: 1;
-        min-height: 1;
-        border: none;
-        padding: 0;
-        margin: 0;
-    }
     Button:focus, Input:focus, Select:focus, Checkbox:focus {
         border: heavy $accent;
         text-style: bold;
+    }
+    RuleEditModal {
+        &.compact .rule-edit-box, &.narrow .rule-edit-box {
+            width: 96%;
+            max-height: 96%;
+        }
+        &.compact .modal-title {
+            margin-bottom: 0;
+        }
+        &.compact .field-label {
+            margin-top: 0;
+        }
+        &.compact #compound-clauses-section {
+            margin-top: 0;
+        }
+        &.compact .clause-row {
+            margin-bottom: 0;
+        }
+        &.compact .clause-button-row Button {
+            height: 1;
+            min-height: 1;
+            border: none;
+            padding: 0;
+            margin: 0;
+        }
+        &.compact .preview-box {
+            margin-top: 0;
+        }
+        &.compact .button-row {
+            margin-top: 0;
+        }
+        &.compact .button-row Button {
+            height: 1;
+            min-height: 1;
+            border: none;
+            padding: 0;
+            margin: 0;
+        }
     }
     """
 
@@ -2743,9 +2785,6 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
         min-width: 35;
         max-height: 92%;
     }
-    .compact .modal-title {
-        margin-bottom: 0;
-    }
     #rules-table {
         height: auto;
         max-height: 15;
@@ -2753,20 +2792,11 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
         margin-top: 1;
         margin-bottom: 1;
     }
-    .compact #rules-table {
-        margin-top: 0;
-        margin-bottom: 0;
-    }
     .button-row {
         layout: grid;
         grid-size: 4;
         grid-columns: 1fr 1fr 1fr 1fr;
         grid-gutter: 0 1;
-    }
-    .compact .button-row, .narrow .button-row {
-        margin-top: 0;
-        grid-size: 2;
-        grid-columns: 1fr 1fr;
     }
     .button-row Button {
         width: 100%;
@@ -2774,16 +2804,30 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
         padding: 0 1;
         margin: 0;
     }
-    .compact .button-row Button, .narrow .button-row Button {
-        height: 1;
-        min-height: 1;
-        border: none;
-        padding: 0;
-        margin: 0;
-    }
     Button:focus, DataTable:focus {
         border: heavy $accent;
         text-style: bold;
+    }
+    ActiveRuleManagerModal {
+        &.compact .modal-title {
+            margin-bottom: 0;
+        }
+        &.compact #rules-table {
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+        &.compact .button-row, &.narrow .button-row {
+            margin-top: 0;
+            grid-size: 2;
+            grid-columns: 1fr 1fr;
+        }
+        &.compact .button-row Button, &.narrow .button-row Button {
+            height: 1;
+            min-height: 1;
+            border: none;
+            padding: 0;
+            margin: 0;
+        }
     }
     """
 

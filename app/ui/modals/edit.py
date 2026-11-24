@@ -1047,9 +1047,6 @@ class DirectorySelectModal(
         grid-gutter: 0 1;
         min-height: 3;
     }
-    .compact .button-row, .narrow .button-row {
-        grid-size: 3;
-    }
     .button-row Button {
         width: 100%;
         min-width: 0;
@@ -1057,6 +1054,36 @@ class DirectorySelectModal(
     Button:focus, Input:focus {
         border: heavy $accent;
         text-style: bold;
+    }
+    DirectorySelectModal {
+        &.compact .preset-row {
+            margin-top: 0;
+            margin-bottom: 0;
+            min-height: 1;
+        }
+        &.compact .preset-row Button,
+        &.compact .source-actions-row Button {
+            height: 1;
+            min-height: 1;
+            border: none;
+        }
+        &.compact .sources-list {
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+        &.compact .source-actions-row {
+            margin-bottom: 0;
+            min-height: 1;
+        }
+        &.compact .button-row {
+            grid-size: 3;
+        }
+        &.narrow .preset-row {
+            grid-size: 2;
+        }
+        &.narrow .button-row {
+            grid-size: 2;
+        }
     }
     """
 
@@ -1507,9 +1534,6 @@ class _BaseGroupSelectionModal(ResponsiveModalScreen[Optional[dict[str, str]]]):
     ]
 
     MODAL_CSS = """
-    InteractiveCollisionResolverModal, DuplicateReviewModal {
-        background: rgba(0, 0, 0, 0.65);
-    }
     .modal-box {
         max-width: 90;
         min-width: 40;
@@ -1530,9 +1554,6 @@ class _BaseGroupSelectionModal(ResponsiveModalScreen[Optional[dict[str, str]]]):
     }
     #btn-apply-all {
         min-width: 16;
-    }
-    .narrow .batch-bar {
-        height: auto;
     }
     .duplicate-card {
         background: $surface;
@@ -1567,6 +1588,50 @@ class _BaseGroupSelectionModal(ResponsiveModalScreen[Optional[dict[str, str]]]):
     Button:focus, Select:focus {
         border: heavy $accent;
         text-style: bold;
+    }
+    InteractiveCollisionResolverModal, DuplicateReviewModal {
+        background: rgba(0, 0, 0, 0.65);
+        &.compact .modal-subtitle {
+            margin-bottom: 0;
+        }
+        &.compact .batch-bar {
+            margin-top: 0;
+            margin-bottom: 0;
+            height: auto;
+        }
+        &.compact #btn-apply-all {
+            height: 1;
+            min-height: 1;
+            border: none;
+        }
+        &.compact .duplicate-card {
+            padding: 0 1;
+            margin-bottom: 0;
+        }
+        &.compact .action-select {
+            margin-top: 0;
+        }
+        &.compact .button-row {
+            margin-top: 0;
+            min-height: 1;
+        }
+        &.compact .button-row Button {
+            height: 1;
+            min-height: 1;
+            border: none;
+        }
+        &.narrow .batch-bar {
+            layout: vertical;
+            height: auto;
+        }
+        &.narrow .batch-select {
+            width: 100%;
+            margin-right: 0;
+        }
+        &.narrow .button-row Button {
+            min-width: 0;
+            padding: 0 1;
+        }
     }
     """
 
