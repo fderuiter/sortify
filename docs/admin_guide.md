@@ -16,7 +16,13 @@ Whether to rename sorted files using extracted document context and dates during
 - **Type**: `bool`
 - **Default**: `False`
 
-Whether to use the local generative LLM model to synthesize descriptive folder and file names (requires AI consent and the optional 'ml' extra).
+Whether to use local semantic embeddings and/or the generative LLM model to synthesize descriptive folder and file names (requires AI consent and the optional 'ml' extra).
+
+### `RENAME_PATTERN`
+- **Type**: `str`
+- **Default**: `''`
+
+Optional default rename pattern template combining extracted document or file dates with descriptive terms (for example '{date}_{stem}'; supports {date}, {year}, {month}, {day}, {category}, {seq}, {sequence}, {extension}, {stem}, and {original} placeholders).
 
 ### `PRESERVE_HIERARCHY`
 - **Type**: `bool`
@@ -105,7 +111,7 @@ Custom mapping of category folder names to lists of file extensions or extension
 - **Type**: `list[PolicyRule]`
 - **Default**: `[]`
 
-Ordered list of typed PolicyRule dictionaries evaluated from highest integer priority to lowest across 7 rule types ('keyword', 'pattern', 'override', 'action', 'compliance', 'unarchive', 'duplicate'), 6 lifecycle actions ('archive', 'retain', 'quarantine', 'redact', 'unarchive', 'trash'), and 8 post-unarchive actions; warns when higher-priority rules shadow lower-priority rules.
+Ordered list of typed PolicyRule dictionaries evaluated from highest integer priority to lowest across 12 rule types ('keyword', 'pattern', 'override', 'action', 'compliance', 'unarchive', 'duplicate', 'age', 'modified_date', 'created_date', 'exif_date', 'size'), optional rename_pattern templates, 6 lifecycle actions ('archive', 'retain', 'quarantine', 'redact', 'unarchive', 'trash'), and 8 post-unarchive actions; warns when higher-priority rules shadow lower-priority rules.
 
 ### `VISUAL_TIMEOUT`
 - **Type**: `int`
@@ -426,18 +432,23 @@ System settings modified during runtime are dynamically saved to the local JSON 
 
 Each entry in `POLICIES` follows the typed `PolicyRule` schema in `app/config_schema.json`:
 
-- **Required keys**: `type` (`str`), `expression` (non-empty `str`), `target_path` (relative `str`), and `priority` (`int`).
-- **Optional keys**: `halting` (`bool`, default `false`), `enabled` (`bool`, default `true`), `action` (`str`), `detect_original_by` (`str`, default `'first_seen'`), and `post_unarchive_action` (`str`, with legacy aliases `post_action` and `archive_action` accepted when loading existing `settings.json` files).
+- **Required keys**: `type` (`str`), `expression` (non-empty `str`), `target_path` (relative `str`, supporting `{year}`, `{month}`, `{day}`, `{date}`, and `{category}` placeholders), and `priority` (`int`).
+- **Optional keys**: `halting` (`bool`, default `false`), `enabled` (`bool`, default `true`), `action` (`str`), `detect_original_by` (`str`, default `'first_seen'`), `rename_pattern` (`str`, optional filename template supporting `{date}`, `{year}`, `{month}`, `{day}`, `{category}`, `{original}`, `{stem}`, `{extension}`, and `{seq}`), and `post_unarchive_action` (`str`, with legacy aliases `post_action` and `archive_action` accepted when loading existing `settings.json` files).
 
-Compliance and routing policies support all **7** rule `type` values:
+Compliance and routing policies support all **12** rule `type` values:
 
 - **`keyword`**: Case-insensitive substring match against the filename and extracted document text (or the filename alone when a preliminary status match is present; expressions `'secret'` and `'credential'` invoke credential/secret scanning across the path and text).
-- **`pattern`**: Case-insensitive substring match against the **lowercase filename (`os.path.basename(file_path).lower()`) only**—does not inspect extracted document text.
+- **`pattern`**: Case-insensitive substring or glob match against the **lowercase filename (`os.path.basename(file_path).lower()`) only**—does not inspect extracted document text.
 - **`override`**: Case-insensitive match against the **lowercase filename or full file path (`file_path.lower()`)**—does not inspect extracted document text, allowing deterministic path-level routing overrides.
 - **`action`**: Lifecycle directive rule evaluated via case-insensitive substring matching against the filename and extracted document text.
 - **`compliance`**: Regulatory and sensitivity rule evaluated via case-insensitive substring matching against the filename and extracted document text (plus secret detection when `expression` is `'secret'` or `'credential'`).
 - **`unarchive`**: Archive ingestion rule evaluated via case-insensitive substring matching against the filename and extracted document text to trigger archive extraction workflows.
 - **`duplicate`**: Exact byte-verified duplicate rule matching redundant copies in verified clusters (`'*'` matches all duplicates, glob masks match filenames, and `detect_original_by` selects the surviving original across `'first_seen'`, `'name'`, `'created'`, `'lastmodified'`, and `'-'` reverse variants).
+- **`age`**: File age comparison rule evaluated against file modification time (`> 30d`, `>= 6mo`, `< 1y`, `14d..90d`, `older than 30d`, `in the last 7d`).
+- **`modified_date`**: File modification date comparison rule (`< 2025-01-01`, `>= 2024-06-01`, `2024-01-01..2024-12-31`, `older than 90d`, `in the last 14d`).
+- **`created_date`**: Filesystem creation/birth timestamp comparison rule supporting the same ISO date, range, and relative duration expressions as `modified_date`.
+- **`exif_date`**: Embedded photo EXIF (`DateTimeOriginal` / `DateTimeDigitized` / `DateTime`) or PDF metadata (`/CreationDate` / `/ModDate`) date comparison rule; gracefully does not match when no embedded date is present.
+- **`size`**: File byte-size comparison rule supporting `B`, `KB`/`KiB`, `MB`/`MiB`, `GB`/`GiB`, and `TB`/`TiB` units (`> 50MB`, `<= 500KB`, `1MB..100MB`).
 
 ### Lifecycle Actions & Post-Unarchive Directives
 

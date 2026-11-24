@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "7538b148298b37c2dd70dbe17f20ca207606741db1590c9be68619622f52f1ac"
+    "checksum": "88b71632d8b1460890e175e7683f4b22790c3b991ce25ad0b89b6bdc6e6059bc"
   },
   "classes": [
     {
@@ -65,6 +65,16 @@
               "name": "is_sorted"
             },
             {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "abs_file_path"
+            },
+            {
+              "annotation": "datetime | None",
+              "default": "None",
+              "name": "now"
+            },
+            {
               "annotation": "bool",
               "default": "False",
               "name": "is_duplicate"
@@ -98,6 +108,21 @@
               "annotation": "str | None",
               "default": null,
               "name": "status_match"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "abs_file_path"
+            },
+            {
+              "annotation": "datetime | None",
+              "default": "None",
+              "name": "now"
+            },
+            {
+              "annotation": "_LazyFileAttributes | None",
+              "default": "None",
+              "name": "_attrs"
             },
             {
               "annotation": "bool",
@@ -161,6 +186,26 @@
             }
           ],
           "returns": "tuple[bool, str | None]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "validate_metadata_expression",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "rule_type"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "expression"
+            }
+          ],
+          "returns": "None"
         },
         {
           "async": false,
@@ -236,6 +281,70 @@
     {
       "async": false,
       "decorators": [],
+      "name": "evaluate_age_expression",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "expression"
+        },
+        {
+          "annotation": "datetime",
+          "default": null,
+          "name": "mtime"
+        },
+        {
+          "annotation": "Optional[datetime]",
+          "default": "None",
+          "name": "now"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "evaluate_date_expression",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "expression"
+        },
+        {
+          "annotation": "datetime",
+          "default": null,
+          "name": "target_dt"
+        },
+        {
+          "annotation": "Optional[datetime]",
+          "default": "None",
+          "name": "now"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "evaluate_size_expression",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "expression"
+        },
+        {
+          "annotation": "int",
+          "default": null,
+          "name": "size_bytes"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
       "name": "is_masked_by",
       "parameters": [
         {
@@ -268,6 +377,24 @@
         }
       ],
       "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "validate_metadata_expression",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "rule_type"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "expression"
+        }
+      ],
+      "returns": "None"
     }
   ]
 }

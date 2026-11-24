@@ -287,6 +287,7 @@ class SortingPlanNodeModel(DictCompatMixin, BaseModel):
     user_confirmed: Optional[bool] = None
     jev_category: Optional[str] = None
     source_root: Optional[str] = None
+    file_date: Optional[str] = None
     is_duplicate: Optional[bool] = None
     is_duplicate_primary: Optional[bool] = None
     duplicate_of: Optional[str] = None

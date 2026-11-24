@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "34a157aa4b2d7873c54f63b70e333fcf17cdc55b5242bd0dcaf53430469f9055"
+    "checksum": "6bcacd4329b91048ae1f3fbbc0ac30cf62ef6f295eded28baa7feaddfe5b9379"
   },
   "classes": [
     {
@@ -474,6 +474,27 @@
             }
           ],
           "returns": "list[str]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@field_validator('RENAME_PATTERN')",
+            "@classmethod"
+          ],
+          "name": "validate_rename_pattern_setting",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "v"
+            }
+          ],
+          "returns": "str"
         },
         {
           "async": false,

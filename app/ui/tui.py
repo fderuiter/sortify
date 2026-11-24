@@ -1420,6 +1420,11 @@ class AutoSorterTUI(
                         self.settings.QUARANTINE_DIR_NAME = res["QUARANTINE_DIR_NAME"]
                     except Exception:
                         pass
+                if "RENAME_PATTERN" in res:
+                    try:
+                        self.settings.RENAME_PATTERN = res["RENAME_PATTERN"]
+                    except Exception:
+                        pass
                 if hasattr(self.settings, "_save"):
                     self.settings._save()
                 self.update_status()

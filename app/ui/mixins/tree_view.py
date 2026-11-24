@@ -839,6 +839,11 @@ class TreeViewMixin:
                     "duplicate",
                     "secret",
                     "credential",
+                    "age",
+                    "modified_date",
+                    "created_date",
+                    "exif_date",
+                    "size",
                 }:
                     routing_badge = "[POLICY]"
                 elif routed_by == "keyword":

@@ -134,8 +134,152 @@ class HeuristicEvaluator:
         }
 
 
+_DEFAULT_STOP_WORDS = {
+    "the",
+    "and",
+    "for",
+    "this",
+    "that",
+    "with",
+    "from",
+    "inc",
+    "com",
+    "pdf",
+    "docx",
+    "txt",
+    "xlsx",
+    "png",
+    "jpg",
+    "jpeg",
+    "file",
+    "document",
+    "page",
+    "date",
+    "total",
+    "amount",
+    "name",
+    "type",
+    "status",
+    "version",
+    "subject",
+    "dear",
+    "sir",
+    "madam",
+    "regards",
+    "sincerely",
+    "http",
+    "https",
+    "www",
+    "org",
+    "net",
+    "email",
+    "mail",
+    "tel",
+    "fax",
+    "phone",
+    "address",
+}
+
+_MONTH_NAME_TO_NUM = {
+    "january": 1,
+    "jan": 1,
+    "february": 2,
+    "feb": 2,
+    "march": 3,
+    "mar": 3,
+    "april": 4,
+    "apr": 4,
+    "may": 5,
+    "june": 6,
+    "jun": 6,
+    "july": 7,
+    "jul": 7,
+    "august": 8,
+    "aug": 8,
+    "september": 9,
+    "sep": 9,
+    "sept": 9,
+    "october": 10,
+    "oct": 10,
+    "november": 11,
+    "nov": 11,
+    "december": 12,
+    "dec": 12,
+}
+
+
+def _coerce_numeric_vector(raw_vec: object):
+    """Validate and convert an embedding vector into a unit-normalized 1D float32 numpy array."""
+    import numpy as np
+
+    if not isinstance(raw_vec, (list, tuple, np.ndarray)):
+        return None
+    if len(raw_vec) < 2:
+        return None
+    first = raw_vec[0]
+    if isinstance(first, bool) or not isinstance(first, (int, float, np.number)):
+        return None
+    try:
+        arr = np.asarray(raw_vec, dtype=np.float32)
+    except (TypeError, ValueError):
+        return None
+    if arr.ndim != 1 or arr.size < 2 or not np.all(np.isfinite(arr)):
+        return None
+    norm = float(np.linalg.norm(arr))
+    if norm <= 1e-8:
+        return None
+    return arr / norm
+
+
 class ContextExtractor:
-    """Extracts semantic and statistical key terms from document text."""
+    """Extracts semantic and statistical key terms and dates from document text."""
+
+    @staticmethod
+    def extract_document_date(text: str) -> Optional[str]:
+        """Extract an explicit calendar date from document text as YYYY-MM-DD."""
+        if not text or not isinstance(text, str) or text.startswith("[STATUS:"):
+            return None
+        from datetime import datetime
+
+        snippet = text[:4000]
+        # 1. ISO / slash dates: YYYY-MM-DD or YYYY/MM/DD
+        for m in re.finditer(
+            r"\b((?:19|20)\d{2})[\-/](0?[1-9]|1[0-2])[\-/](0?[1-9]|[12]\d|3[01])\b",
+            snippet,
+        ):
+            try:
+                dt = datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+                return dt.strftime("%Y-%m-%d")
+            except ValueError:
+                continue
+
+        # 2. Month DD, YYYY (e.g. March 15, 2024)
+        for m in re.finditer(
+            r"(?i)\b([a-z]{3,9})\.?\s+(0?[1-9]|[12]\d|3[01])(?:st|nd|rd|th)?,?\s+((?:19|20)\d{2})\b",
+            snippet,
+        ):
+            mo = _MONTH_NAME_TO_NUM.get(m.group(1).lower())
+            if mo:
+                try:
+                    dt = datetime(int(m.group(3)), mo, int(m.group(2)))
+                    return dt.strftime("%Y-%m-%d")
+                except ValueError:
+                    continue
+
+        # 3. DD Month YYYY (e.g. 15 March 2024)
+        for m in re.finditer(
+            r"(?i)\b(0?[1-9]|[12]\d|3[01])(?:st|nd|rd|th)?\s+([a-z]{3,9})\.?,?\s+((?:19|20)\d{2})\b",
+            snippet,
+        ):
+            mo = _MONTH_NAME_TO_NUM.get(m.group(2).lower())
+            if mo:
+                try:
+                    dt = datetime(int(m.group(3)), mo, int(m.group(1)))
+                    return dt.strftime("%Y-%m-%d")
+                except ValueError:
+                    continue
+
+        return None
 
     @staticmethod
     def extract_keywords_tfidf(
@@ -158,52 +302,9 @@ class ContextExtractor:
         if not text or not text.strip():
             return []
 
-        default_stops = {
-            "the",
-            "and",
-            "for",
-            "this",
-            "that",
-            "with",
-            "from",
-            "inc",
-            "com",
-            "pdf",
-            "docx",
-            "txt",
-            "xlsx",
-            "png",
-            "jpg",
-            "jpeg",
-            "file",
-            "document",
-            "page",
-            "date",
-            "total",
-            "amount",
-            "name",
-            "type",
-            "status",
-            "version",
-            "subject",
-            "dear",
-            "sir",
-            "madam",
-            "regards",
-            "sincerely",
-            "http",
-            "https",
-            "www",
-            "org",
-            "net",
-            "email",
-            "mail",
-            "tel",
-            "fax",
-            "phone",
-            "address",
-        }
-        all_stop_words = default_stops | (stop_words or set())
+        all_stop_words = (
+            (_DEFAULT_STOP_WORDS | stop_words) if stop_words else _DEFAULT_STOP_WORDS
+        )
 
         # Clean and tokenize text
         words = re.findall(r"\b[a-zA-Z]{3,20}\b", text.lower())
@@ -224,6 +325,118 @@ class ContextExtractor:
                 if len(keywords) >= max_keywords:
                     break
         return keywords
+
+    @staticmethod
+    def extract_keyphrases_semantic(
+        text: str,
+        embedding_manager: object,
+        stop_words: Optional[set[str]] = None,
+        max_keywords: int = 3,
+    ) -> Optional[list[str]]:
+        """Rank candidate phrases and terms by semantic cosine similarity against the document embedding.
+
+        Returns None when embeddings are unavailable or non-numeric so callers fall back to TF-IDF.
+        """
+        if (
+            not text
+            or not text.strip()
+            or text.startswith("[STATUS:")
+            or max_keywords <= 0
+        ):
+            return []
+        if embedding_manager is None or not hasattr(
+            embedding_manager, "generate_embedding"
+        ):
+            return None
+
+        import numpy as np
+
+        from app.core.text_utils import (
+            _is_high_entropy_token,
+            contains_secrets,
+            sanitize_secret_patterns,
+        )
+
+        clean_text = sanitize_secret_patterns(text)
+        if not clean_text or not clean_text.strip():
+            return []
+
+        all_stop_words = (
+            (_DEFAULT_STOP_WORDS | stop_words) if stop_words else _DEFAULT_STOP_WORDS
+        )
+
+        raw_tokens = re.findall(r"\b[a-zA-Z]{3,20}\b", clean_text.lower())
+        content_words = [
+            w
+            for w in raw_tokens
+            if w not in all_stop_words
+            and not _is_high_entropy_token(w)
+            and not contains_secrets(w)
+        ]
+        if not content_words:
+            return []
+
+        gen_fn = getattr(embedding_manager, "generate_embedding")
+        doc_vec = _coerce_numeric_vector(gen_fn(clean_text[:2000]))
+        if doc_vec is None or getattr(embedding_manager, "is_degraded", False) is True:
+            return None
+
+        # Build candidate phrases: adjacent 2-word phrases plus unique content words
+        candidates: list[tuple[str, list[str]]] = []
+        seen_phrases: set[str] = set()
+
+        for i in range(len(raw_tokens) - 1):
+            w1, w2 = raw_tokens[i], raw_tokens[i + 1]
+            if (
+                w1 != w2
+                and w1 not in all_stop_words
+                and w2 not in all_stop_words
+                and not _is_high_entropy_token(w1)
+                and not _is_high_entropy_token(w2)
+                and not contains_secrets(w1)
+                and not contains_secrets(w2)
+            ):
+                phrase = f"{w1} {w2}"
+                if phrase not in seen_phrases:
+                    seen_phrases.add(phrase)
+                    candidates.append((phrase, [w1, w2]))
+                    if len(candidates) >= 16:
+                        break
+
+        for w in content_words:
+            if w not in seen_phrases:
+                seen_phrases.add(w)
+                candidates.append((w, [w]))
+                if len(candidates) >= 36:
+                    break
+
+        scored: list[tuple[float, list[str]]] = []
+        for phrase, parts in candidates:
+            cand_vec = _coerce_numeric_vector(gen_fn(phrase))
+            if cand_vec is None or cand_vec.shape != doc_vec.shape:
+                continue
+            sim = float(np.dot(cand_vec, doc_vec))
+            scored.append((sim, parts))
+
+        if not scored:
+            return None
+
+        scored.sort(key=lambda item: item[0], reverse=True)
+        selected_terms: list[str] = []
+        used_roots: set[str] = set()
+        for _, parts in scored:
+            if len(selected_terms) + len(parts) > max_keywords:
+                continue
+            if any(p in used_roots for p in parts):
+                continue
+            selected_terms.extend(parts)
+            used_roots.update(parts)
+            if len(selected_terms) >= max_keywords:
+                break
+
+        if not selected_terms and scored:
+            selected_terms = scored[0][1][:max_keywords]
+        return selected_terms
 
 
 def is_file_protected_or_locked(
@@ -269,14 +482,24 @@ class FileRenamerEngine:
         original_filename: str,
         text: str,
         stop_words: Optional[set[str]] = None,
+        file_date: Optional[str] = None,
+        category: str = "",
+        seq: int = 1,
+        file_path: Optional[str] = None,
     ) -> str:
         """Generate a context-aware descriptive filename for a file.
 
         Verifies AI consent before using machine learning models.
-        Falls back to TF-IDF keyword extraction when embedding models are offline/rebuilding
-        or when AI consent is withheld.
+        Ranks candidate keyphrases semantically via ONNX embeddings when AI_ASSISTED_NAMING
+        and AI_CONSENT_GRANTED are active, falling back to TF-IDF when offline or withheld,
+        and applies date/rename templates when configured or when assisted naming resolves a date.
         """
-        base, ext = os.path.splitext(original_filename)
+        from app.core.pattern_formatter import (
+            PatternTokenFormatter,
+            resolve_disk_file_date,
+        )
+
+        base, ext = os.path.splitext(os.path.basename(original_filename))
         if not text or text.startswith("[STATUS:"):
             return sanitize_name(original_filename)
 
@@ -293,18 +516,27 @@ class FileRenamerEngine:
 
         use_ml = (
             ai_consent is True
-            and ai_assisted
+            and bool(ai_assisted)
             and self.embedding_manager is not None
-            and not getattr(self.embedding_manager, "is_mock", True)
-            and not self.embedding_manager.is_reconstruction_active()
+            and getattr(self.embedding_manager, "is_mock", True) is False
+            and getattr(self.embedding_manager, "is_degraded", False) is not True
+            and not bool(self.embedding_manager.is_reconstruction_active())
         )
 
-        keywords = []
+        keywords: list[str] = []
+        used_semantic = False
         if use_ml:
             try:
-                keywords = ContextExtractor.extract_keywords_tfidf(
-                    text, stop_words, max_keywords=3
+                semantic_terms = ContextExtractor.extract_keyphrases_semantic(
+                    text, self.embedding_manager, stop_words, max_keywords=3
                 )
+                if semantic_terms is not None:
+                    keywords = semantic_terms
+                    used_semantic = bool(keywords)
+                else:
+                    keywords = ContextExtractor.extract_keywords_tfidf(
+                        text, stop_words, max_keywords=3
+                    )
             except Exception as e:
                 logger.warning(
                     f"ML contextual generation failed: {e}. Falling back to TF-IDF.",
@@ -323,8 +555,42 @@ class FileRenamerEngine:
 
         new_base = "_".join(keywords)
         safe_base = sanitize_name(new_base)
+        if not safe_base:
+            return sanitize_name(original_filename)
 
-        if not safe_base or safe_base.lower() == base.lower():
+        doc_date = ContextExtractor.extract_document_date(text)
+        effective_date = doc_date or file_date or resolve_disk_file_date(file_path)
+
+        configured_template = (
+            str(getattr(self.settings, "RENAME_PATTERN", "") or "").strip()
+            if self.settings
+            else ""
+        )
+        active_template = configured_template
+        if not active_template and used_semantic and effective_date:
+            active_template = "{date}_{stem}"
+
+        if active_template:
+            formatted_name = PatternTokenFormatter.format_pattern(
+                active_template,
+                metadata={
+                    "date": effective_date,
+                    "category": category or "uncategorized",
+                    "stem": safe_base,
+                    "original": safe_base,
+                    "extension": ext,
+                },
+                seq=seq,
+                fallback_original=original_filename,
+                file_path=file_path,
+            )
+            if (
+                formatted_name
+                and os.path.splitext(formatted_name)[0].lower() != base.lower()
+            ):
+                return formatted_name
+
+        if safe_base.lower() == base.lower():
             return sanitize_name(original_filename)
 
         return f"{safe_base}{ext}"
@@ -341,22 +607,125 @@ class FileRenamerEngine:
 
         Purges temporary context buffers immediately after execution.
         """
+        from app.core.pattern_formatter import resolve_disk_file_date
+
         protected_paths = (
             getattr(self.settings, "PROTECTED_PATHS", []) if self.settings else []
         )
+        configured_template = (
+            str(getattr(self.settings, "RENAME_PATTERN", "") or "").strip()
+            if self.settings
+            else ""
+        )
 
         context_buffer: dict[str, str] = {}
+        node_meta_by_key: dict[str, dict[str, object]] = {}
+
+        def _collect_node_meta(curr_node: object, folder_chain: str = "") -> None:
+            if not isinstance(curr_node, dict):
+                return
+            for k, v in curr_node.items():
+                is_file = v is None or (
+                    isinstance(v, dict)
+                    and (
+                        v.get("__type__") == "file"
+                        or "relative_source" in v
+                        or "status" in v
+                        or "routed_by" in v
+                    )
+                )
+                if is_file:
+                    leaf_cat = (
+                        folder_chain.replace("\\", "/").strip("/").split("/")[-1]
+                        if folder_chain
+                        else "uncategorized"
+                    )
+                    meta_entry = {
+                        "category": leaf_cat,
+                        "file_date": v.get("file_date")
+                        if isinstance(v, dict)
+                        else None,
+                        "target_filename": (
+                            v.get("target_filename") if isinstance(v, dict) else None
+                        ),
+                        "is_excluded": (
+                            bool(v.get("is_excluded")) if isinstance(v, dict) else False
+                        ),
+                        "duplicate_action": (
+                            v.get("duplicate_action") if isinstance(v, dict) else None
+                        ),
+                        "policy_action": (
+                            v.get("policy_action") if isinstance(v, dict) else None
+                        ),
+                        "source_root": (
+                            v.get("source_root") if isinstance(v, dict) else None
+                        )
+                        or base_dir,
+                        "source_path": (
+                            v.get("source_path") if isinstance(v, dict) else None
+                        )
+                        or k,
+                    }
+                    norm_k = os.path.normpath(k).replace("\\", "/")
+                    node_meta_by_key[norm_k] = meta_entry
+                    node_meta_by_key[os.path.basename(k).lower()] = meta_entry
+                elif isinstance(v, dict):
+                    next_chain = f"{folder_chain}/{k}" if folder_chain else k
+                    _collect_node_meta(v, next_chain)
+
+        _collect_node_meta(plan)
 
         try:
+            seq_idx = 0
             for filepath, doc_text in documents_map.items():
                 filename = os.path.basename(filepath)
 
                 if is_file_protected_or_locked(filepath, locked_files, protected_paths):
                     continue
 
-                if HeuristicEvaluator.is_poorly_named(filename):
+                norm_fp = os.path.normpath(filepath).replace("\\", "/")
+                meta_info = node_meta_by_key.get(norm_fp) or node_meta_by_key.get(
+                    filename.lower(), {}
+                )
+                if (
+                    meta_info.get("is_excluded")
+                    or meta_info.get("duplicate_action") in ("stage", "trash", "skip")
+                    or meta_info.get("policy_action")
+                    in ("trash", "quarantine", "unarchive")
+                ):
+                    continue
+                existing_target = meta_info.get("target_filename")
+                if existing_target and str(existing_target) != filename:
+                    # Preserve explicit policy rename_pattern assignments
+                    continue
+
+                if HeuristicEvaluator.is_poorly_named(filename) or bool(
+                    configured_template
+                ):
+                    seq_idx += 1
+                    src_root = str(meta_info.get("source_root") or base_dir or "")
+                    src_rel = str(meta_info.get("source_path") or filepath)
+                    if "::" in src_rel:
+                        src_root, src_rel = src_rel.split("::", 1)
+                    abs_candidate = (
+                        os.path.join(src_root, src_rel)
+                        if src_root and not os.path.isabs(src_rel)
+                        else src_rel
+                    )
+                    f_date = (
+                        str(meta_info.get("file_date"))
+                        if meta_info.get("file_date")
+                        else resolve_disk_file_date(abs_candidate)
+                    )
+                    cat_str = str(meta_info.get("category") or "")
                     new_fn = self.generate_contextual_name(
-                        filename, doc_text, stop_words
+                        filename,
+                        doc_text,
+                        stop_words,
+                        file_date=f_date,
+                        category=cat_str,
+                        seq=seq_idx,
+                        file_path=abs_candidate,
                     )
                     if new_fn and new_fn != filename:
                         context_buffer[filepath] = new_fn
@@ -367,6 +736,7 @@ class FileRenamerEngine:
             return plan
         finally:
             context_buffer.clear()
+            node_meta_by_key.clear()
             del context_buffer
             gc.collect()
 
@@ -418,9 +788,13 @@ class FileRenamerEngine:
                             "target_filename": target_fn,
                         }
                     elif isinstance(v, dict):
-                        if not v.get("is_excluded") and v.get(
-                            "duplicate_action"
-                        ) not in ("stage", "trash", "skip"):
+                        if (
+                            not v.get("is_excluded")
+                            and v.get("duplicate_action")
+                            not in ("stage", "trash", "skip")
+                            and v.get("policy_action")
+                            not in ("trash", "quarantine", "unarchive")
+                        ):
                             v["target_filename"] = target_fn
                 elif isinstance(v, dict) and not is_file:
                     _traverse(v)

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "e2a7b5a78d4216b030c052680aae774d77f0a3f650c278ba122ac98e173abfb7"
+    "checksum": "e39d401d28a038dba65f1e9ed667f05ba942c745cddadff433ca0a26cca7bdfb"
   },
   "classes": [
     {
@@ -38,6 +38,51 @@
               "annotation": "str",
               "default": "''",
               "name": "fallback_original"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "file_path"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "format_target_path",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "target_path"
+            },
+            {
+              "annotation": "Optional[dict[str, Any]]",
+              "default": "None",
+              "name": "metadata"
+            },
+            {
+              "annotation": "int",
+              "default": "1",
+              "name": "seq"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "fallback_original"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "file_path"
             }
           ],
           "returns": "str"
@@ -90,9 +135,32 @@
           "annotation": "str",
           "default": "''",
           "name": "fallback_original"
+        },
+        {
+          "annotation": "Optional[str]",
+          "default": "None",
+          "name": "file_path"
         }
       ],
       "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "resolve_disk_file_date",
+      "parameters": [
+        {
+          "annotation": "str | os.PathLike[str] | None",
+          "default": null,
+          "name": "file_path"
+        },
+        {
+          "annotation": "str | os.PathLike[str] | None",
+          "default": "None",
+          "name": "base_dir"
+        }
+      ],
+      "returns": "Optional[str]"
     }
   ]
 }

@@ -60,6 +60,11 @@ EXPECTED_POLICY_TYPES = {
     "compliance",
     "unarchive",
     "duplicate",
+    "age",
+    "modified_date",
+    "created_date",
+    "exif_date",
+    "size",
 }
 EXPECTED_POLICY_ACTIONS = {
     "archive",
@@ -127,7 +132,14 @@ def validate_schema_completeness(schema: dict) -> None:
             f"{sorted(expected_required - required_keys)}."
         )
 
-    expected_optional = {"halting", "enabled", "action", "post_unarchive_action"}
+    expected_optional = {
+        "halting",
+        "enabled",
+        "action",
+        "detect_original_by",
+        "post_unarchive_action",
+        "rename_pattern",
+    }
     missing_optional = expected_optional - set(item_props.keys())
     if missing_optional:
         raise ValueError(
