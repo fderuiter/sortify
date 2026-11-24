@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "7538b148298b37c2dd70dbe17f20ca207606741db1590c9be68619622f52f1ac"
+    "checksum": "da150e79b4711fec8433dfadf914642f6600f29b2fd83c876145d1b684444204"
   },
   "classes": [
     {
@@ -77,6 +77,21 @@
           "decorators": [
             "@staticmethod"
           ],
+          "name": "is_static_status",
+          "parameters": [
+            {
+              "annotation": "str | None",
+              "default": null,
+              "name": "status_match"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
           "name": "match_policy",
           "parameters": [
             {
@@ -103,6 +118,26 @@
               "annotation": "bool",
               "default": "False",
               "name": "is_duplicate"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "rule_inspects_content",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "rule"
             }
           ],
           "returns": "bool"
@@ -236,6 +271,24 @@
     {
       "async": false,
       "decorators": [],
+      "name": "canonicalize_condition_node",
+      "parameters": [
+        {
+          "annotation": "dict[str, Any]",
+          "default": null,
+          "name": "node"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "default_case"
+        }
+      ],
+      "returns": "tuple[Any, ...]"
+    },
+    {
+      "async": false,
+      "decorators": [],
       "name": "is_masked_by",
       "parameters": [
         {
@@ -265,9 +318,83 @@
           "annotation": "str",
           "default": null,
           "name": "filename"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "regex"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "case_sensitive"
         }
       ],
       "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "summarize_policy_conditions",
+      "parameters": [
+        {
+          "annotation": "list[dict[str, Any]]",
+          "default": null,
+          "name": "conditions"
+        },
+        {
+          "annotation": "str",
+          "default": "'all'",
+          "name": "match_mode"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "negate"
+        }
+      ],
+      "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "validate_policy_conditions",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "conditions"
+        },
+        {
+          "annotation": "int",
+          "default": "MAX_CONDITION_NESTING_LEVELS",
+          "name": "max_depth"
+        },
+        {
+          "annotation": "int",
+          "default": "MAX_CONDITION_CLAUSES",
+          "name": "max_clauses"
+        }
+      ],
+      "returns": "list[dict[str, Any]]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "validate_safe_regex",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "pattern"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "case_sensitive"
+        }
+      ],
+      "returns": "re.Pattern[str]"
     }
   ]
 }

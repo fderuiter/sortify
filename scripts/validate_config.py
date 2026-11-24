@@ -127,7 +127,17 @@ def validate_schema_completeness(schema: dict) -> None:
             f"{sorted(expected_required - required_keys)}."
         )
 
-    expected_optional = {"halting", "enabled", "action", "post_unarchive_action"}
+    expected_optional = {
+        "halting",
+        "enabled",
+        "action",
+        "post_unarchive_action",
+        "match_mode",
+        "conditions",
+        "negate",
+        "regex",
+        "case_sensitive",
+    }
     missing_optional = expected_optional - set(item_props.keys())
     if missing_optional:
         raise ValueError(

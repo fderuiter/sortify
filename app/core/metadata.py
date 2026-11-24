@@ -223,15 +223,6 @@ class MetadataPass:
         auto_quarantine_ratings = [
             r for r in (getattr(settings, "AUTO_QUARANTINE_RATINGS", []) or []) if r
         ]
-        has_content_compliance_policy = bool(auto_quarantine_ratings) or any(
-            isinstance(p, dict)
-            and p.get("enabled", True)
-            and (
-                str(p.get("type", "")).lower() == "compliance"
-                or str(p.get("action", "")).lower() in ("quarantine", "redact")
-            )
-            for p in (policies or [])
-        )
 
         # Sort policies in descending order of priority (higher priority number first)
         valid_policies = (
@@ -242,6 +233,9 @@ class MetadataPass:
             ]
             if isinstance(policies, (list, tuple))
             else []
+        )
+        has_content_compliance_policy = bool(auto_quarantine_ratings) or any(
+            PolicyEngine.rule_inspects_content(p) for p in valid_policies
         )
         sorted_policies = PolicyEngine.sort_policies(valid_policies)
 

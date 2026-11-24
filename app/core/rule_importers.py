@@ -6,6 +6,7 @@ rule definitions and safely translate them into Sortify KEYWORD_RULES and POLICI
 
 import abc
 import configparser
+import copy
 import json
 import logging
 import plistlib
@@ -19,6 +20,14 @@ import defusedxml.ElementTree as ET
 from defusedxml.common import DefusedXmlException
 
 from app.core.path_utils import validate_target_path
+from app.core.policy_engine import (
+    MAX_CONDITION_NESTING_LEVELS,
+    VALID_MATCH_MODES,
+    canonicalize_condition_node,
+    summarize_policy_conditions,
+    validate_policy_conditions,
+    validate_safe_regex,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +59,25 @@ _DATE_ATTR_WORDS = frozenset(
         "timestamp",
         "age",
         "time",
+    }
+)
+_XATTR_ATTR_WORDS = frozenset(
+    {
+        "xattr",
+        "xattrs",
+        "extendedattribute",
+        "extendedattributes",
+        "kmditem",
+        "spotlight",
+        "wherefrom",
+        "wherefroms",
+        "findercomment",
+        "colorlabel",
+        "permissions",
+        "posixpermissions",
+        "owner",
+        "uid",
+        "gid",
     }
 )
 _NEGATED_OP_WORDS = frozenset({"not", "none", "exclude", "excludes", "neither"})
@@ -159,7 +187,31 @@ _DROPIT_DATE_KEYS = frozenset(
 _DROPIT_EXCLUDE_KEYS = frozenset(
     {"exclude", "excluded", "excludes", "notpattern", "not_pattern", "ignore"}
 )
-_DROPIT_NEGATE_KEYS = frozenset({"negate", "negated", "isnegated", "is_negated", "not"})
+_DROPIT_NEGATE_KEYS = frozenset(
+    {"negate", "negated", "isnegated", "is_negated", "not", "invert"}
+)
+_DROPIT_REGEX_KEYS = frozenset(
+    {
+        "regex",
+        "regexp",
+        "regularexpression",
+        "regular_expression",
+        "isregex",
+        "is_regex",
+        "useregex",
+        "use_regex",
+    }
+)
+_DROPIT_CASE_KEYS = frozenset(
+    {
+        "casesensitive",
+        "case_sensitive",
+        "iscasesensitive",
+        "is_case_sensitive",
+        "matchcase",
+        "match_case",
+    }
+)
 _UNARCHIVE_ACTION_CORES = frozenset(
     {
         "unarchive",
@@ -251,13 +303,256 @@ def _split_identifier_words(raw: str) -> set[str]:
 
 
 def _classify_condition_attribute(attribute: str) -> str | None:
-    """Return ``'size'`` or ``'date'`` if attribute targets numeric size or temporal metadata."""
+    """Return ``'size'``, ``'date'``, or ``'extended-attribute'`` if attribute is unsupported."""
     words = _split_identifier_words(attribute)
     if words & _SIZE_ATTR_WORDS:
         return "size"
     if words & _DATE_ATTR_WORDS:
         return "date"
+    if words & _XATTR_ATTR_WORDS or str(attribute or "").strip().lower().startswith(
+        "kmditem"
+    ):
+        return "extended-attribute"
     return None
+
+
+def _map_external_field(raw_attr: str) -> str:
+    """Map an external Hazel or TagSpaces target attribute onto a ``PolicyCondition`` field."""
+    compact = re.sub(r"[^a-z0-9]+", "", str(raw_attr or "").strip().lower())
+    if compact in ("extension", "ext", "fileextension", "filesuffix", "suffix"):
+        return "extension"
+    if compact in (
+        "contents",
+        "content",
+        "text",
+        "documenttext",
+        "fulltext",
+        "body",
+    ):
+        return "content"
+    if compact in (
+        "fullpath",
+        "filepath",
+        "posixpath",
+        "path",
+        "relativepath",
+        "folderpath",
+    ):
+        return "path"
+    if compact in ("any", "anytext", "anything", "alltext"):
+        return "any_text"
+    return "name"
+
+
+def _parse_external_condition_operator(
+    raw_op: str,
+    *,
+    is_negated_flag: bool = False,
+    is_regex_flag: bool = False,
+    raw_value: str = "",
+    field_name: str = "name",
+) -> tuple[str | None, bool, str | None]:
+    """Translate an external operator string into ``(policy_operator, negate, error_kind)``."""
+    op_clean = " ".join(str(raw_op or "").strip().lower().split())
+    op_compact = re.sub(r"[\s_-]+", "", op_clean)
+
+    # Check numeric/date comparisons BEFORE generic 'not' word detection (e.g. 'not in the last').
+    if (
+        op_clean in _NUMERIC_OP_EXACT
+        or op_compact in _NUMERIC_OP_EXACT
+        or op_clean.startswith((">", "<"))
+        or any(phrase in op_clean for phrase in _NUMERIC_OP_PHRASES)
+    ):
+        return None, False, "numeric"
+
+    op_neg = False
+    base_op: str | None = None
+
+    if op_clean in ("!=", "<>") or op_compact in (
+        "isnot",
+        "notequal",
+        "notequals",
+        "doesnotequal",
+    ):
+        base_op = "equals"
+        op_neg = True
+    elif op_compact in (
+        "doesnotcontain",
+        "notcontains",
+        "notcontain",
+        "doesnotinclude",
+        "notincludes",
+        "notin",
+        "excludes",
+        "exclude",
+    ):
+        base_op = "contains"
+        op_neg = True
+    elif op_compact in (
+        "doesnotstartwith",
+        "doesnotbeginwith",
+        "notstartswith",
+        "notbeginswith",
+    ):
+        base_op = "starts_with"
+        op_neg = True
+    elif op_compact in ("doesnotendwith", "notendswith"):
+        base_op = "ends_with"
+        op_neg = True
+    elif op_compact in (
+        "doesnotmatchregex",
+        "notmatchesregex",
+        "notregex",
+        "notregexp",
+    ):
+        base_op = "regex"
+        op_neg = True
+    elif op_compact in (
+        "doesnotmatch",
+        "notmatches",
+        "notmatch",
+        "notlike",
+        "notglob",
+    ):
+        base_op = "regex" if is_regex_flag else "glob"
+        op_neg = True
+    elif is_regex_flag or op_compact in (
+        "regex",
+        "regexp",
+        "regularexpression",
+        "matchesregex",
+        "matchregex",
+    ):
+        base_op = "regex"
+    elif op_clean in ("is", "equals", "equal", "==", "=") or op_compact in (
+        "is",
+        "equals",
+        "equal",
+    ):
+        base_op = "equals"
+    elif op_clean in ("begins with", "starts with") or op_compact in (
+        "beginswith",
+        "startswith",
+    ):
+        base_op = "starts_with"
+    elif op_clean == "ends with" or op_compact == "endswith":
+        base_op = "ends_with"
+    elif op_clean in ("matches", "match", "like", "glob", "wildcard") or op_compact in (
+        "matches",
+        "match",
+        "like",
+        "glob",
+        "wildcard",
+    ):
+        if _has_wildcard_or_ext_mask(raw_value):
+            base_op = "glob"
+        elif (
+            raw_value.startswith("^")
+            or raw_value.endswith("$")
+            or any(esc in raw_value for esc in (r"\d", r"\w", r"\s", r"\b", r"\."))
+        ):
+            base_op = "regex"
+        elif field_name == "extension":
+            base_op = "equals"
+        else:
+            base_op = "glob" if ("*" in raw_value or "?" in raw_value) else "contains"
+    elif op_clean in (
+        "",
+        "contains",
+        "contain",
+        "includes",
+        "include",
+        "in",
+    ) or op_compact in (
+        "contains",
+        "contain",
+        "includes",
+        "include",
+        "in",
+    ):
+        if _has_wildcard_or_ext_mask(raw_value) and field_name in ("name", "extension"):
+            base_op = "glob"
+        else:
+            base_op = "contains"
+    else:
+        return None, False, "unsupported"
+
+    return base_op, (bool(is_negated_flag) ^ op_neg), None
+
+
+def _infer_compound_policy_type(
+    conditions: list[dict[str, Any]],
+    *,
+    is_unarchive: bool = False,
+    is_trash: bool = False,
+) -> str:
+    """Select an appropriate ``PolicyRule['type']`` for a compound condition tree."""
+    if is_unarchive:
+        return "unarchive"
+    if is_trash:
+        return "action"
+
+    def _uses_content(nodes: list[dict[str, Any]]) -> bool:
+        for item in nodes:
+            if not isinstance(item, dict):
+                continue
+            sub = item.get("conditions")
+            if isinstance(sub, list):
+                if _uses_content(sub):
+                    return True
+            elif str(item.get("field", "")).lower() in ("content", "any_text"):
+                return True
+        return False
+
+    return "keyword" if _uses_content(conditions) else "pattern"
+
+
+def _is_truthy_flag(val: Any) -> bool:
+    """Parse boolean or string truthy values from INI/XML/JSON/Plist fields."""
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return val != 0
+    if isinstance(val, str):
+        return val.strip().lower() in ("1", "true", "yes", "on", "y")
+    return False
+
+
+def _policy_conflict_signature(policy: dict[str, Any]) -> tuple[Any, ...]:
+    """Compute a canonical identity tuple for conflict detection and deduplicating merges."""
+    p_type = str(policy.get("type", "")).strip().lower()
+    p_mode = str(policy.get("match_mode", "all") or "all").strip().lower()
+    p_neg = bool(policy.get("negate", False))
+    p_regex = bool(policy.get("regex", False))
+    p_case = bool(policy.get("case_sensitive", False))
+    raw_conds = policy.get("conditions")
+    if isinstance(raw_conds, list) and raw_conds:
+        cond_sig = tuple(
+            sorted(
+                canonicalize_condition_node(c, default_case=p_case)
+                for c in raw_conds
+                if isinstance(c, dict)
+            )
+        )
+        return ("compound", p_type, p_mode, p_neg, cond_sig)
+    raw_expr = str(policy.get("expression", "")).strip()
+    expr_sig = raw_expr if (p_case or p_regex) else raw_expr.lower()
+    return ("single", p_type, p_mode, p_neg, p_regex, p_case, expr_sig)
+
+
+def _format_policy_conflict_identifier(policy: dict[str, Any]) -> str:
+    """Format a readable identifier string for a ``RuleConflict`` row."""
+    p_type = str(policy.get("type", "")).strip().lower()
+    raw_expr = str(policy.get("expression", "")).strip()
+    has_conds = isinstance(policy.get("conditions"), list) and bool(
+        policy.get("conditions")
+    )
+    disp_expr = (
+        raw_expr
+        if (has_conds or policy.get("case_sensitive") or policy.get("regex"))
+        else raw_expr.lower()
+    )
+    return f"{disp_expr} ({p_type})" if p_type else disp_expr
 
 
 def _classify_condition_operator(
@@ -580,23 +875,21 @@ class RuleConflictAnalyzer:
                         )
                     )
 
-        # 2. Evaluate policy pattern collisions
+        # 2. Evaluate policy pattern and compound condition collisions
         existing_policies = list(getattr(settings, "POLICIES", []) or [])
         imported_policies = list(getattr(import_result, "policies", []) or [])
 
         for policy in imported_policies:
-            p_type = str(policy.get("type", "")).strip().lower()
-            p_expr = str(policy.get("expression", "")).strip().lower()
+            p_expr = str(policy.get("expression", "")).strip()
             p_target = policy.get("target_path", "")
             p_prio = policy.get("priority", 75)
 
-            if not p_expr:
+            if not p_expr and not policy.get("conditions"):
                 continue
 
+            imp_sig = _policy_conflict_signature(policy)
             for ex_p in existing_policies:
-                ex_type = str(ex_p.get("type", "")).strip().lower()
-                ex_expr = str(ex_p.get("expression", "")).strip().lower()
-                if ex_type == p_type and ex_expr == p_expr:
+                if _policy_conflict_signature(ex_p) == imp_sig:
                     ex_target = ex_p.get("target_path", "")
                     ex_prio = ex_p.get("priority", 75)
                     ex_act = str(ex_p.get("action", "")).strip().lower()
@@ -604,7 +897,7 @@ class RuleConflictAnalyzer:
                     san_ex = normalize_rule_path(ex_target)
                     san_imp = normalize_rule_path(p_target)
                     if san_ex != san_imp or ex_prio != p_prio or ex_act != p_act:
-                        ident = f"{ex_expr} ({ex_type})" if ex_type else ex_expr
+                        ident = _format_policy_conflict_identifier(ex_p)
                         conflicts.append(
                             RuleConflict(
                                 rule_type="policy",
@@ -677,7 +970,7 @@ class ImportResult:
 
         new_keywords = dict(existing_keywords)
         new_disabled = dict(existing_disabled)
-        new_policies = [dict(p) for p in existing_policies]
+        new_policies = [copy.deepcopy(dict(p)) for p in existing_policies]
 
         existing_kw_lower = {k.lower(): k for k in existing_keywords.keys()}
         existing_dis_lower = {k.lower(): k for k in existing_disabled.keys()}
@@ -742,7 +1035,14 @@ class ImportResult:
 
         for policy in self.policies:
             p_type = str(policy.get("type", "")).strip().lower()
+            raw_conds = policy.get("conditions")
             p_expr = str(policy.get("expression", "")).strip()
+            if not p_expr and isinstance(raw_conds, list) and raw_conds:
+                p_expr = summarize_policy_conditions(
+                    raw_conds,
+                    match_mode=str(policy.get("match_mode", "all") or "all").lower(),
+                    negate=bool(policy.get("negate", False)),
+                )
             p_expr_lower = p_expr.lower()
 
             if not p_expr_lower:
@@ -767,27 +1067,30 @@ class ImportResult:
                     f"Policy rule '{p_expr}': converted destination path '{raw_target}' -> '{norm_target}'."
                 )
 
-            pol_entry = dict(policy)
+            pol_entry = copy.deepcopy(dict(policy))
+            pol_entry["expression"] = p_expr
             pol_entry["target_path"] = norm_target
 
-            ident = f"{p_expr_lower} ({p_type})" if p_type else p_expr_lower
-            ident_lower = ident.lower()
-
+            imp_sig = _policy_conflict_signature(pol_entry)
             matching_idx = None
             for idx, existing_p in enumerate(new_policies):
-                ex_type = str(existing_p.get("type", "")).strip().lower()
-                ex_expr = str(existing_p.get("expression", "")).strip().lower()
-                if ex_type == p_type and ex_expr == p_expr_lower:
+                if _policy_conflict_signature(existing_p) == imp_sig:
                     matching_idx = idx
                     break
 
             if matching_idx is not None:
+                ident = _format_policy_conflict_identifier(new_policies[matching_idx])
+                ident_lower = ident.lower()
                 if ident_lower in policy_conflicts:
                     conflict_obj = policy_conflicts[ident_lower]
                     res = resolutions.get(
                         conflict_obj.identifier,
                         resolutions.get(
-                            ident, resolutions.get(p_expr_lower, default_strategy)
+                            ident,
+                            resolutions.get(
+                                p_expr,
+                                resolutions.get(p_expr_lower, default_strategy),
+                            ),
                         ),
                     )
                     if res == "overwrite":
@@ -1269,7 +1572,7 @@ class HazelRuleImporter(BaseRuleImporter):
                     continue
                 target_dir = resolved_dir
 
-            cond_mode = (
+            raw_cond_mode = (
                 str(
                     rule.get("NSRuleConditionMode")
                     or rule.get("ConditionMode")
@@ -1279,17 +1582,29 @@ class HazelRuleImporter(BaseRuleImporter):
                 .strip()
                 .lower()
             )
-            if cond_mode in ("none", "neither", "not"):
+            if raw_cond_mode in ("none", "neither", "not"):
+                resolved_mode = "none"
+            elif raw_cond_mode in ("any", "or"):
+                resolved_mode = "any"
+            elif raw_cond_mode in ("", "all", "and"):
+                resolved_mode = "all"
+            else:
                 result.warnings.append(
-                    f"Hazel rule '{rule_name}' skipped negated condition group ('{cond_mode}')."
+                    f"Hazel rule '{rule_name}' skipped unsupported condition mode '{raw_cond_mode}'."
                 )
                 result.unsupported.append(
                     {
                         "rule": rule_name,
-                        "reason": f"Negated condition group '{cond_mode}' is not supported.",
+                        "reason": f"Unsupported condition mode '{raw_cond_mode}'.",
                     }
                 )
                 continue
+
+            rule_negate = _is_truthy_flag(
+                rule.get("negated") or rule.get("NSRuleNegated") or rule.get("negate")
+            )
+            rule_enabled = rule.get("NSRuleIsEnabled")
+            has_explicit_disabled = isinstance(rule_enabled, bool) and not rule_enabled
 
             conditions = (
                 rule.get("NSRuleConditions")
@@ -1304,16 +1619,17 @@ class HazelRuleImporter(BaseRuleImporter):
                     p_type = (
                         "pattern" if _has_wildcard_or_ext_mask(expr_val) else "keyword"
                     )
-                    result.policies.append(
-                        {
-                            "type": p_type,
-                            "action": "trash",
-                            "expression": expr_val,
-                            "target_path": "",
-                            "priority": 75,
-                            "halting": False,
-                        }
-                    )
+                    pol_no_cond: dict[str, Any] = {
+                        "type": p_type,
+                        "action": "trash",
+                        "expression": expr_val,
+                        "target_path": "",
+                        "priority": 75,
+                        "halting": False,
+                    }
+                    if has_explicit_disabled:
+                        pol_no_cond["enabled"] = False
+                    result.policies.append(pol_no_cond)
                 elif is_unarchive:
                     expr_val = rule_name if rule_name else "*"
                     p_type = (
@@ -1321,28 +1637,39 @@ class HazelRuleImporter(BaseRuleImporter):
                         if _has_wildcard_or_ext_mask(expr_val)
                         else "unarchive"
                     )
-                    result.policies.append(
-                        {
-                            "type": p_type,
-                            "action": "unarchive",
-                            "expression": expr_val,
-                            "target_path": target_dir,
-                            "priority": 75,
-                            "halting": False,
-                        }
-                    )
-                elif rule_name and len(rule_name.split()) == 1:
+                    pol_no_cond = {
+                        "type": p_type,
+                        "action": "unarchive",
+                        "expression": expr_val,
+                        "target_path": target_dir,
+                        "priority": 75,
+                        "halting": False,
+                    }
+                    if has_explicit_disabled:
+                        pol_no_cond["enabled"] = False
+                    result.policies.append(pol_no_cond)
+                elif (
+                    rule_name
+                    and len(rule_name.split()) == 1
+                    and resolved_mode != "none"
+                    and not rule_negate
+                ):
                     result.keyword_rules[rule_name.lower()] = target_dir
                 else:
-                    result.policies.append(
-                        {
-                            "type": "keyword",
-                            "expression": rule_name,
-                            "target_path": target_dir,
-                            "priority": 75,
-                            "halting": False,
-                        }
-                    )
+                    pol_no_cond = {
+                        "type": "keyword",
+                        "expression": rule_name,
+                        "target_path": target_dir,
+                        "priority": 75,
+                        "halting": False,
+                    }
+                    if resolved_mode == "none":
+                        pol_no_cond["match_mode"] = "none"
+                    if rule_negate:
+                        pol_no_cond["negate"] = True
+                    if has_explicit_disabled:
+                        pol_no_cond["enabled"] = False
+                    result.policies.append(pol_no_cond)
                 if throw_away_duplicate and not is_trash:
                     result.policies.append(
                         {
@@ -1356,147 +1683,63 @@ class HazelRuleImporter(BaseRuleImporter):
                     )
                 continue
 
-            for cond in conditions:
-                if not isinstance(cond, dict):
-                    continue
-
-                raw_attr = str(
-                    cond.get("target")
-                    or cond.get("attribute")
-                    or cond.get("Target")
-                    or cond.get("Attribute")
-                    or cond.get("NSRuleConditionTarget")
-                    or ""
+            parsed_tree, saw_duplicate_cond, failed_closed = (
+                self._parse_hazel_condition_list(
+                    conditions,
+                    rule_name=rule_name,
+                    result=result,
+                    depth=1,
                 )
-                attribute = raw_attr.lower()
+            )
+            if failed_closed:
+                continue
 
-                raw_op = str(
-                    cond.get("operator")
-                    or cond.get("qualifier")
-                    or cond.get("Operator")
-                    or cond.get("Qualifier")
-                    or cond.get("NSRuleConditionOperator")
-                    or ""
+            if saw_duplicate_cond and not parsed_tree:
+                dup_pol: dict[str, Any] = {
+                    "type": "duplicate",
+                    "action": "trash" if is_trash else "archive",
+                    "expression": "*",
+                    "target_path": target_dir,
+                    "priority": 80,
+                    "halting": False,
+                }
+                if has_explicit_disabled:
+                    dup_pol["enabled"] = False
+                result.policies.append(dup_pol)
+                continue
+
+            if not parsed_tree:
+                continue
+
+            try:
+                validated_tree = validate_policy_conditions(parsed_tree)
+            except ValueError as exc:
+                result.warnings.append(
+                    f"Hazel rule '{rule_name}' skipped invalid condition group: {exc}"
                 )
-                negated_flag = bool(
-                    cond.get("negated")
-                    or cond.get("isNegated")
-                    or cond.get("Negated")
-                    or cond.get("NSRuleConditionNegated")
-                    or cond.get("not")
-                )
+                result.unsupported.append({"rule": rule_name, "reason": str(exc)})
+                continue
 
-                val = (
-                    cond.get("value")
-                    or cond.get("pattern")
-                    or cond.get("Value")
-                    or cond.get("Pattern")
-                    or cond.get("NSRuleConditionValue")
-                    or cond.get("string")
-                    or cond.get("String")
-                )
+            # Preserve single-clause positive legacy representations when unambiguous
+            single_leaf = (
+                len(validated_tree) == 1
+                and "conditions" not in validated_tree[0]
+                and resolved_mode in ("all", "any")
+                and not rule_negate
+                and not validated_tree[0].get("negate")
+                and not validated_tree[0].get("case_sensitive")
+                and validated_tree[0].get("operator") != "regex"
+                and validated_tree[0].get("field") in ("name", "extension")
+            )
 
-                if any(
-                    tok in attribute
-                    for tok in ("duplicate", "isduplicate", "duplicatefile")
-                ):
-                    result.policies.append(
-                        {
-                            "type": "duplicate",
-                            "action": "trash" if is_trash else "archive",
-                            "expression": "*",
-                            "target_path": target_dir,
-                            "priority": 80,
-                            "halting": False,
-                        }
-                    )
-                    continue
-
-                attr_filter_kind = _classify_condition_attribute(raw_attr)
-                if attr_filter_kind is not None:
-                    result.warnings.append(
-                        f"Hazel rule '{rule_name}' skipped unsupported {attr_filter_kind} filter clause ('{raw_attr}')."
-                    )
-                    result.unsupported.append(
-                        {
-                            "rule": rule_name,
-                            "reason": f"Unsupported {attr_filter_kind} filter attribute '{raw_attr}' omitted.",
-                        }
-                    )
-                    continue
-
-                op_kind = _classify_condition_operator(
-                    raw_op, is_negated_flag=negated_flag
-                )
-                if op_kind == "negated":
-                    desc = raw_op or "negated"
-                    result.warnings.append(
-                        f"Hazel rule '{rule_name}' skipped negated condition operator '{desc}'."
-                    )
-                    result.unsupported.append(
-                        {
-                            "rule": rule_name,
-                            "reason": f"Negated condition operator '{desc}' omitted.",
-                        }
-                    )
-                    continue
-                if op_kind == "numeric":
-                    result.warnings.append(
-                        f"Hazel rule '{rule_name}' skipped numeric/date comparison operator '{raw_op}'."
-                    )
-                    result.unsupported.append(
-                        {
-                            "rule": rule_name,
-                            "reason": f"Numeric/date comparison operator '{raw_op}' omitted.",
-                        }
-                    )
-                    continue
-                if op_kind == "unsupported":
-                    result.warnings.append(
-                        f"Hazel rule '{rule_name}' skipped unsupported condition operator '{raw_op}'."
-                    )
-                    result.unsupported.append(
-                        {
-                            "rule": rule_name,
-                            "reason": f"Unsupported condition operator '{raw_op}' omitted.",
-                        }
-                    )
-                    continue
-
-                if val is None:
-                    continue
-
-                val_str = str(val).strip()
-                if not val_str:
-                    continue
-
-                if val_str.startswith("!") and len(val_str) > 1:
-                    result.warnings.append(
-                        f"Hazel rule '{rule_name}' skipped negated mask '{val_str}'."
-                    )
-                    result.unsupported.append(
-                        {
-                            "rule": rule_name,
-                            "reason": f"Negated mask '{val_str}' omitted.",
-                        }
-                    )
-                    continue
-
-                inline_kind = _classify_inline_filter_token(val_str)
-                if inline_kind is not None:
-                    result.warnings.append(
-                        f"Hazel rule '{rule_name}' skipped unsupported {inline_kind} filter '{val_str}'."
-                    )
-                    result.unsupported.append(
-                        {
-                            "rule": rule_name,
-                            "reason": f"Unsupported {inline_kind} filter '{val_str}' omitted.",
-                        }
-                    )
-                    continue
-
+            if single_leaf:
+                leaf = validated_tree[0]
+                leaf_field = leaf["field"]
+                leaf_op = leaf["operator"]
+                val_str = leaf["value"]
                 matched_expr_for_dup = val_str
-                if op_kind == "starts_with":
+
+                if leaf_op == "starts_with" and leaf_field == "name":
                     expr = val_str if val_str.endswith("*") else f"{val_str}*"
                     matched_expr_for_dup = expr
                     pol_dict: dict[str, Any] = {
@@ -1510,8 +1753,10 @@ class HazelRuleImporter(BaseRuleImporter):
                         pol_dict["action"] = "trash"
                     elif is_unarchive:
                         pol_dict["action"] = "unarchive"
+                    if has_explicit_disabled:
+                        pol_dict["enabled"] = False
                     result.policies.append(pol_dict)
-                elif op_kind == "ends_with":
+                elif leaf_op == "ends_with" and leaf_field == "name":
                     expr = val_str if val_str.startswith("*") else f"*{val_str}"
                     matched_expr_for_dup = expr
                     pol_dict = {
@@ -1525,17 +1770,15 @@ class HazelRuleImporter(BaseRuleImporter):
                         pol_dict["action"] = "trash"
                     elif is_unarchive:
                         pol_dict["action"] = "unarchive"
+                    if has_explicit_disabled:
+                        pol_dict["enabled"] = False
                     result.policies.append(pol_dict)
                 elif (
-                    "extension" in attribute
-                    or "pattern" in attribute
+                    leaf_field == "extension"
+                    or leaf_op == "glob"
                     or _has_wildcard_or_ext_mask(val_str)
                 ):
-                    if (
-                        "extension" in attribute
-                        or "pattern" in attribute
-                        or "*" in val_str
-                    ):
+                    if leaf_field == "extension" or "*" in val_str:
                         expr = (
                             val_str
                             if val_str.startswith("*") or "." in val_str
@@ -1555,44 +1798,71 @@ class HazelRuleImporter(BaseRuleImporter):
                         pol_dict["action"] = "trash"
                     elif is_unarchive:
                         pol_dict["action"] = "unarchive"
+                    if has_explicit_disabled:
+                        pol_dict["enabled"] = False
                     result.policies.append(pol_dict)
+                elif leaf_op == "equals" and leaf_field == "name":
+                    compound_pol: dict[str, Any] = {
+                        "type": _infer_compound_policy_type(
+                            validated_tree, is_unarchive=is_unarchive, is_trash=is_trash
+                        ),
+                        "expression": summarize_policy_conditions(
+                            validated_tree, match_mode="all"
+                        ),
+                        "match_mode": "all",
+                        "conditions": validated_tree,
+                        "target_path": "" if is_trash else target_dir,
+                        "priority": 75,
+                        "halting": False,
+                    }
+                    if is_trash:
+                        compound_pol["action"] = "trash"
+                    elif is_unarchive:
+                        compound_pol["action"] = "unarchive"
+                    if has_explicit_disabled:
+                        compound_pol["enabled"] = False
+                    result.policies.append(compound_pol)
                 elif is_trash:
-                    result.policies.append(
-                        {
-                            "type": "keyword",
-                            "action": "trash",
-                            "expression": val_str,
-                            "target_path": "",
-                            "priority": 75,
-                            "halting": False,
-                        }
-                    )
+                    pol_dict = {
+                        "type": "keyword",
+                        "action": "trash",
+                        "expression": val_str,
+                        "target_path": "",
+                        "priority": 75,
+                        "halting": False,
+                    }
+                    if has_explicit_disabled:
+                        pol_dict["enabled"] = False
+                    result.policies.append(pol_dict)
                 elif is_unarchive:
-                    result.policies.append(
-                        {
-                            "type": "unarchive",
-                            "action": "unarchive",
-                            "expression": val_str,
-                            "target_path": target_dir,
-                            "priority": 75,
-                            "halting": False,
-                        }
-                    )
+                    pol_dict = {
+                        "type": "unarchive",
+                        "action": "unarchive",
+                        "expression": val_str,
+                        "target_path": target_dir,
+                        "priority": 75,
+                        "halting": False,
+                    }
+                    if has_explicit_disabled:
+                        pol_dict["enabled"] = False
+                    result.policies.append(pol_dict)
+                elif (
+                    not has_explicit_disabled
+                    and len(val_str.split()) == 1
+                    and all(c.isalnum() or c in "_-" for c in val_str)
+                ):
+                    result.keyword_rules[val_str.lower()] = target_dir
                 else:
-                    if len(val_str.split()) == 1 and all(
-                        c.isalnum() or c in "_-" for c in val_str
-                    ):
-                        result.keyword_rules[val_str.lower()] = target_dir
-                    else:
-                        result.policies.append(
-                            {
-                                "type": "keyword",
-                                "expression": val_str,
-                                "target_path": target_dir,
-                                "priority": 75,
-                                "halting": False,
-                            }
-                        )
+                    pol_dict = {
+                        "type": "keyword",
+                        "expression": val_str,
+                        "target_path": target_dir,
+                        "priority": 75,
+                        "halting": False,
+                    }
+                    if has_explicit_disabled:
+                        pol_dict["enabled"] = False
+                    result.policies.append(pol_dict)
 
                 if throw_away_duplicate and not is_trash:
                     result.policies.append(
@@ -1605,8 +1875,301 @@ class HazelRuleImporter(BaseRuleImporter):
                             "halting": False,
                         }
                     )
+                continue
+
+            summary_expr = summarize_policy_conditions(
+                validated_tree, match_mode=resolved_mode, negate=rule_negate
+            )
+            compound_pol = {
+                "type": _infer_compound_policy_type(
+                    validated_tree, is_unarchive=is_unarchive, is_trash=is_trash
+                ),
+                "expression": summary_expr,
+                "match_mode": resolved_mode,
+                "conditions": validated_tree,
+                "target_path": "" if is_trash else target_dir,
+                "priority": 75,
+                "halting": False,
+            }
+            if rule_negate:
+                compound_pol["negate"] = True
+            if is_trash:
+                compound_pol["action"] = "trash"
+            elif is_unarchive:
+                compound_pol["action"] = "unarchive"
+            if has_explicit_disabled:
+                compound_pol["enabled"] = False
+            result.policies.append(compound_pol)
+
+            if throw_away_duplicate and not is_trash:
+                dup_pol = {
+                    "type": "duplicate",
+                    "action": "trash",
+                    "expression": summary_expr,
+                    "match_mode": resolved_mode,
+                    "conditions": copy.deepcopy(validated_tree),
+                    "target_path": "",
+                    "priority": 80,
+                    "halting": False,
+                }
+                if rule_negate:
+                    dup_pol["negate"] = True
+                result.policies.append(dup_pol)
 
         return result
+
+    def _parse_hazel_condition_list(
+        self,
+        conditions: list[Any],
+        *,
+        rule_name: str,
+        result: ImportResult,
+        depth: int,
+    ) -> tuple[list[dict[str, Any]], bool, bool]:
+        """Parse Hazel ``NSRuleConditions`` (including nested groups), failing closed on unsupported filters."""
+        if depth > MAX_CONDITION_NESTING_LEVELS:
+            result.warnings.append(
+                f"Hazel rule '{rule_name}' skipped: nested condition groups exceed maximum depth of {MAX_CONDITION_NESTING_LEVELS}."
+            )
+            result.unsupported.append(
+                {
+                    "rule": rule_name,
+                    "reason": f"Condition nesting exceeds {MAX_CONDITION_NESTING_LEVELS} levels.",
+                }
+            )
+            return [], False, True
+
+        parsed_nodes: list[dict[str, Any]] = []
+        saw_duplicate = False
+
+        for cond in conditions:
+            if not isinstance(cond, dict):
+                continue
+
+            nested_conds = (
+                cond.get("NSRuleConditions")
+                or cond.get("Conditions")
+                or cond.get("NSConditions")
+                or cond.get("subrules")
+                or cond.get("subexpressions")
+                or cond.get("conditions")
+            )
+            if isinstance(nested_conds, list):
+                raw_sub_mode = (
+                    str(
+                        cond.get("NSRuleConditionMode")
+                        or cond.get("ConditionMode")
+                        or cond.get("matchType")
+                        or cond.get("match_mode")
+                        or cond.get("type")
+                        or "all"
+                    )
+                    .strip()
+                    .lower()
+                )
+                if raw_sub_mode in ("none", "neither", "not"):
+                    sub_mode = "none"
+                elif raw_sub_mode in ("any", "or"):
+                    sub_mode = "any"
+                elif raw_sub_mode in ("", "all", "and", "group"):
+                    sub_mode = "all"
+                else:
+                    result.warnings.append(
+                        f"Hazel rule '{rule_name}' skipped unsupported nested condition mode '{raw_sub_mode}'."
+                    )
+                    result.unsupported.append(
+                        {
+                            "rule": rule_name,
+                            "reason": f"Unsupported nested condition mode '{raw_sub_mode}'.",
+                        }
+                    )
+                    return [], False, True
+
+                sub_parsed, sub_dup, sub_failed = self._parse_hazel_condition_list(
+                    nested_conds,
+                    rule_name=rule_name,
+                    result=result,
+                    depth=depth + 1,
+                )
+                if sub_failed:
+                    return [], False, True
+                saw_duplicate = saw_duplicate or sub_dup
+                if sub_parsed:
+                    grp_node: dict[str, Any] = {
+                        "match_mode": sub_mode,
+                        "conditions": sub_parsed,
+                    }
+                    if _is_truthy_flag(
+                        cond.get("negated")
+                        or cond.get("isNegated")
+                        or cond.get("Negated")
+                        or cond.get("NSRuleConditionNegated")
+                        or cond.get("not")
+                    ):
+                        grp_node["negate"] = True
+                    parsed_nodes.append(grp_node)
+                continue
+
+            raw_attr = str(
+                cond.get("target")
+                or cond.get("attribute")
+                or cond.get("Target")
+                or cond.get("Attribute")
+                or cond.get("NSRuleConditionTarget")
+                or ""
+            )
+            attribute = raw_attr.lower()
+
+            if any(
+                tok in attribute
+                for tok in ("duplicate", "isduplicate", "duplicatefile")
+            ):
+                saw_duplicate = True
+                continue
+
+            attr_filter_kind = _classify_condition_attribute(raw_attr)
+            if attr_filter_kind is not None:
+                result.warnings.append(
+                    f"Hazel rule '{rule_name}' skipped: unsupported {attr_filter_kind} filter clause ('{raw_attr}')."
+                )
+                result.unsupported.append(
+                    {
+                        "rule": rule_name,
+                        "reason": f"Unsupported {attr_filter_kind} filter attribute '{raw_attr}' omitted (rule skipped).",
+                    }
+                )
+                return [], False, True
+
+            raw_op = str(
+                cond.get("operator")
+                or cond.get("qualifier")
+                or cond.get("Operator")
+                or cond.get("Qualifier")
+                or cond.get("NSRuleConditionOperator")
+                or ""
+            )
+            negated_flag = _is_truthy_flag(
+                cond.get("negated")
+                or cond.get("isNegated")
+                or cond.get("Negated")
+                or cond.get("NSRuleConditionNegated")
+                or cond.get("not")
+            )
+            regex_flag = _is_truthy_flag(
+                cond.get("regex")
+                or cond.get("isRegex")
+                or cond.get("Regex")
+                or cond.get("NSRuleConditionRegex")
+            )
+            case_flag = _is_truthy_flag(
+                cond.get("caseSensitive")
+                or cond.get("isCaseSensitive")
+                or cond.get("CaseSensitive")
+                or cond.get("case_sensitive")
+                or cond.get("NSRuleConditionCaseSensitive")
+            )
+
+            val = (
+                cond.get("value")
+                or cond.get("pattern")
+                or cond.get("Value")
+                or cond.get("Pattern")
+                or cond.get("NSRuleConditionValue")
+                or cond.get("string")
+                or cond.get("String")
+            )
+            val_preview = str(val).strip() if val is not None else ""
+            field_name = (
+                "name" if "pattern" in attribute else _map_external_field(raw_attr)
+            )
+
+            op_mapped, eff_negate, op_err = _parse_external_condition_operator(
+                raw_op,
+                is_negated_flag=negated_flag,
+                is_regex_flag=regex_flag,
+                raw_value=val_preview,
+                field_name=field_name,
+            )
+            if op_err == "numeric":
+                result.warnings.append(
+                    f"Hazel rule '{rule_name}' skipped: unsupported numeric/date comparison operator '{raw_op}'."
+                )
+                result.unsupported.append(
+                    {
+                        "rule": rule_name,
+                        "reason": f"Numeric/date comparison operator '{raw_op}' is not supported (rule skipped).",
+                    }
+                )
+                return [], False, True
+            if op_err is not None or op_mapped is None:
+                result.warnings.append(
+                    f"Hazel rule '{rule_name}' skipped: unsupported condition operator '{raw_op}'."
+                )
+                result.unsupported.append(
+                    {
+                        "rule": rule_name,
+                        "reason": f"Unsupported condition operator '{raw_op}' (rule skipped).",
+                    }
+                )
+                return [], False, True
+
+            if val is None or not val_preview:
+                continue
+
+            val_str = val_preview
+            if val_str.startswith("!") and len(val_str) > 1 and op_mapped != "regex":
+                val_str = val_str[1:].strip()
+                eff_negate = not eff_negate
+                if not val_str:
+                    continue
+
+            if op_mapped != "regex":
+                inline_kind = _classify_inline_filter_token(val_str)
+                if inline_kind is not None:
+                    result.warnings.append(
+                        f"Hazel rule '{rule_name}' skipped: unsupported {inline_kind} filter '{val_str}'."
+                    )
+                    result.unsupported.append(
+                        {
+                            "rule": rule_name,
+                            "reason": f"Unsupported {inline_kind} filter '{val_str}' (rule skipped).",
+                        }
+                    )
+                    return [], False, True
+
+            if "pattern" in attribute and op_mapped not in ("regex", "glob"):
+                op_mapped = "glob"
+                if not _has_wildcard_or_ext_mask(val_str):
+                    val_str = f"*.{val_str}"
+            elif (
+                op_mapped == "glob"
+                and field_name == "name"
+                and not _has_wildcard_or_ext_mask(val_str)
+            ):
+                val_str = f"*{val_str}*"
+
+            if op_mapped == "regex":
+                try:
+                    validate_safe_regex(val_str, case_sensitive=case_flag)
+                except ValueError as exc:
+                    result.warnings.append(
+                        f"Hazel rule '{rule_name}' skipped unsafe/invalid regex '{val_str}': {exc}"
+                    )
+                    result.unsupported.append({"rule": rule_name, "reason": str(exc)})
+                    return [], False, True
+
+            clause: dict[str, Any] = {
+                "field": field_name,
+                "operator": op_mapped,
+                "value": val_str,
+            }
+            if eff_negate:
+                clause["negate"] = True
+            if case_flag:
+                clause["case_sensitive"] = True
+            parsed_nodes.append(clause)
+
+        return parsed_nodes, saw_duplicate, False
 
 
 class DropItRuleImporter(BaseRuleImporter):
@@ -1659,86 +2222,129 @@ class DropItRuleImporter(BaseRuleImporter):
         rule_name: str,
         extra_fields: dict[str, Any],
         result: ImportResult,
-    ) -> tuple[bool, bool]:
-        """Inspect DropIt rule metadata keys for unsupported size, date, or negation clauses.
+    ) -> tuple[bool, dict[str, Any]]:
+        """Inspect DropIt rule metadata keys for exclusions, regex/case flags, or unsupported size/date filters.
 
-        Returns ``(abort_entire_rule, omitted_any_clause)``.
+        Returns ``(abort_entire_rule, parsed_modifiers)``.
         """
-        omitted_any = False
+        modifiers: dict[str, Any] = {
+            "exclude_masks": [],
+            "negate": False,
+            "regex": False,
+            "case_sensitive": False,
+            "match_mode": None,
+            "sortify_conditions": None,
+        }
+
         for raw_k, raw_v in extra_fields.items():
             if raw_v is None:
                 continue
             v_str = str(raw_v).strip()
-            if not v_str:
+            if not v_str and not isinstance(raw_v, bool):
                 continue
             k_norm = raw_k.strip().lower().replace("-", "_")
 
-            if k_norm in _DROPIT_NEGATE_KEYS:
-                if isinstance(raw_v, bool) and raw_v:
-                    is_neg = True
-                else:
-                    is_neg = v_str.lower() in ("1", "true", "yes", "on")
-                if is_neg:
-                    result.warnings.append(
-                        f"DropIt rule '{rule_name}' skipped negated rule condition ('{raw_k}={v_str}')."
-                    )
-                    result.unsupported.append(
-                        {
-                            "rule": rule_name,
-                            "reason": f"Negated rule condition '{raw_k}={v_str}' omitted.",
-                        }
-                    )
-                    return True, True
-
-            if k_norm == "operator":
-                op_kind = _classify_condition_operator(v_str)
-                if op_kind in ("negated", "numeric", "unsupported"):
-                    result.warnings.append(
-                        f"DropIt rule '{rule_name}' skipped unsupported operator '{v_str}'."
-                    )
-                    result.unsupported.append(
-                        {
-                            "rule": rule_name,
-                            "reason": f"Unsupported operator '{v_str}' omitted.",
-                        }
-                    )
-                    return True, True
-
             if k_norm in _DROPIT_SIZE_KEYS:
                 result.warnings.append(
-                    f"DropIt rule '{rule_name}' skipped unsupported size filter ('{raw_k}={v_str}')."
+                    f"DropIt rule '{rule_name}' skipped: unsupported size filter ('{raw_k}={v_str}')."
                 )
                 result.unsupported.append(
                     {
                         "rule": rule_name,
-                        "reason": f"Unsupported size filter '{raw_k}={v_str}' omitted.",
+                        "reason": f"Unsupported size filter '{raw_k}={v_str}' (rule skipped).",
                     }
                 )
-                omitted_any = True
-            elif k_norm in _DROPIT_DATE_KEYS:
-                result.warnings.append(
-                    f"DropIt rule '{rule_name}' skipped unsupported date filter ('{raw_k}={v_str}')."
-                )
-                result.unsupported.append(
-                    {
-                        "rule": rule_name,
-                        "reason": f"Unsupported date filter '{raw_k}={v_str}' omitted.",
-                    }
-                )
-                omitted_any = True
-            elif k_norm in _DROPIT_EXCLUDE_KEYS:
-                result.warnings.append(
-                    f"DropIt rule '{rule_name}' skipped negated/excluded filter ('{raw_k}={v_str}')."
-                )
-                result.unsupported.append(
-                    {
-                        "rule": rule_name,
-                        "reason": f"Excluded pattern '{raw_k}={v_str}' omitted.",
-                    }
-                )
-                omitted_any = True
+                return True, modifiers
 
-        return False, omitted_any
+            if k_norm in _DROPIT_DATE_KEYS:
+                result.warnings.append(
+                    f"DropIt rule '{rule_name}' skipped: unsupported date filter ('{raw_k}={v_str}')."
+                )
+                result.unsupported.append(
+                    {
+                        "rule": rule_name,
+                        "reason": f"Unsupported date filter '{raw_k}={v_str}' (rule skipped).",
+                    }
+                )
+                return True, modifiers
+
+            if k_norm == "operator":
+                op_mapped, op_neg, op_err = _parse_external_condition_operator(v_str)
+                if op_err is not None or op_mapped is None:
+                    result.warnings.append(
+                        f"DropIt rule '{rule_name}' skipped: unsupported operator '{v_str}'."
+                    )
+                    result.unsupported.append(
+                        {
+                            "rule": rule_name,
+                            "reason": f"Unsupported operator '{v_str}' (rule skipped).",
+                        }
+                    )
+                    return True, modifiers
+                if op_mapped == "regex":
+                    modifiers["regex"] = True
+                if op_neg:
+                    modifiers["negate"] = True
+                continue
+
+            if k_norm in _DROPIT_NEGATE_KEYS:
+                if _is_truthy_flag(raw_v):
+                    modifiers["negate"] = True
+                continue
+
+            if k_norm in _DROPIT_REGEX_KEYS:
+                if _is_truthy_flag(raw_v):
+                    modifiers["regex"] = True
+                continue
+
+            if k_norm in _DROPIT_CASE_KEYS:
+                if _is_truthy_flag(raw_v):
+                    modifiers["case_sensitive"] = True
+                continue
+
+            if k_norm in ("matchmode", "match_mode"):
+                mm = v_str.lower()
+                if mm in VALID_MATCH_MODES:
+                    modifiers["match_mode"] = mm
+                continue
+
+            if k_norm in ("sortifyconditions", "sortify_conditions"):
+                try:
+                    loaded_conds = (
+                        json.loads(v_str) if isinstance(raw_v, str) else raw_v
+                    )
+                    modifiers["sortify_conditions"] = validate_policy_conditions(
+                        loaded_conds
+                    )
+                except (ValueError, TypeError) as exc:
+                    result.warnings.append(
+                        f"DropIt rule '{rule_name}' skipped invalid compound conditions: {exc}"
+                    )
+                    result.unsupported.append({"rule": rule_name, "reason": str(exc)})
+                    return True, modifiers
+                continue
+
+            if k_norm in _DROPIT_EXCLUDE_KEYS:
+                for tok in re.split(r"[;|,/]", v_str):
+                    tok_clean = tok.strip()
+                    if tok_clean.startswith(("!", "-")) and len(tok_clean) > 1:
+                        tok_clean = tok_clean[1:].strip()
+                    if tok_clean:
+                        inline_kind = _classify_inline_filter_token(tok_clean)
+                        if inline_kind is not None:
+                            result.warnings.append(
+                                f"DropIt rule '{rule_name}' skipped: unsupported {inline_kind} filter '{tok_clean}'."
+                            )
+                            result.unsupported.append(
+                                {
+                                    "rule": rule_name,
+                                    "reason": f"Unsupported {inline_kind} filter '{tok_clean}' (rule skipped).",
+                                }
+                            )
+                            return True, modifiers
+                        modifiers["exclude_masks"].append(tok_clean)
+
+        return False, modifiers
 
     def _process_dropit_entry(
         self,
@@ -1824,9 +2430,9 @@ class DropItRuleImporter(BaseRuleImporter):
                 return
             target_dir = resolved_dir
 
-        omitted_extra = False
+        modifiers: dict[str, Any] | None = None
         if extra_fields:
-            abort_rule, omitted_extra = self._inspect_dropit_extra_filters(
+            abort_rule, modifiers = self._inspect_dropit_extra_filters(
                 rule_name, extra_fields, result
             )
             if abort_rule:
@@ -1839,7 +2445,7 @@ class DropItRuleImporter(BaseRuleImporter):
             result,
             is_unarchive=is_unarchive,
             is_trash=is_trash,
-            allow_name_fallback=not omitted_extra,
+            modifiers=modifiers,
         )
 
     def _parse_ini(
@@ -2074,95 +2680,257 @@ class DropItRuleImporter(BaseRuleImporter):
         is_unarchive: bool = False,
         is_trash: bool = False,
         allow_name_fallback: bool = True,
+        modifiers: dict[str, Any] | None = None,
     ) -> None:
-        """Convert DropIt pattern mask string into keyword rules or policy rules."""
+        """Convert DropIt pattern, `/` or `#` exclusions, `<Exclude>` tags, and regexes into Sortify rules."""
+        mods = modifiers or {}
+        extra_excludes: list[str] = list(mods.get("exclude_masks") or [])
+        rule_negate = bool(mods.get("negate", False))
+        rule_regex = bool(mods.get("regex", False))
+        rule_case = bool(mods.get("case_sensitive", False))
+        explicit_mode = mods.get("match_mode")
+        sortify_conds = mods.get("sortify_conditions")
+
+        if isinstance(sortify_conds, list) and sortify_conds:
+            mode_val = explicit_mode if explicit_mode in VALID_MATCH_MODES else "all"
+            summary = summarize_policy_conditions(
+                sortify_conds, match_mode=mode_val, negate=rule_negate
+            )
+            pol_rt: dict[str, Any] = {
+                "type": _infer_compound_policy_type(
+                    sortify_conds, is_unarchive=is_unarchive, is_trash=is_trash
+                ),
+                "expression": summary,
+                "match_mode": mode_val,
+                "conditions": sortify_conds,
+                "target_path": "" if is_trash else target_dir,
+                "priority": 75,
+                "halting": False,
+            }
+            if rule_negate:
+                pol_rt["negate"] = True
+            if rule_case:
+                pol_rt["case_sensitive"] = True
+            if is_trash:
+                pol_rt["action"] = "trash"
+            elif is_unarchive:
+                pol_rt["action"] = "unarchive"
+            result.policies.append(pol_rt)
+            return
+
         pattern_clean = str(pattern or "").strip()
-        if not pattern_clean:
-            if not allow_name_fallback:
+
+        # Detect /regex/ literal syntax in DropIt rules
+        if (
+            not rule_regex
+            and len(pattern_clean) > 2
+            and pattern_clean.startswith("/")
+            and pattern_clean.endswith("/")
+        ):
+            rule_regex = True
+            pattern_clean = pattern_clean[1:-1]
+
+        if rule_regex:
+            raw_rx = pattern_clean or (rule_name.strip() if allow_name_fallback else "")
+            if not raw_rx:
                 return
-            masks = [rule_name.strip()] if rule_name.strip() else []
-        else:
-            inc_part = pattern_clean
-            if "#" in pattern_clean:
-                inc_part, *exc_chunks = pattern_clean.split("#")
-                for exc_chunk in exc_chunks:
-                    for exc_tok in re.split(r"[;|,]", exc_chunk):
-                        exc_clean = exc_tok.strip()
-                        if exc_clean:
-                            result.warnings.append(
-                                f"DropIt rule '{rule_name}' skipped negated/excluded pattern mask '{exc_clean}'."
-                            )
-                            result.unsupported.append(
-                                {
-                                    "rule": rule_name,
-                                    "reason": f"Excluded pattern mask '{exc_clean}' omitted.",
-                                }
-                            )
-            masks = [m.strip() for m in re.split(r"[;|,]", inc_part) if m.strip()]
-
-        for mask in masks:
-            if (mask.startswith(("!", "-"))) and len(mask) > 1:
+            try:
+                validate_safe_regex(raw_rx, case_sensitive=rule_case)
+            except ValueError as exc:
                 result.warnings.append(
-                    f"DropIt rule '{rule_name}' skipped negated pattern mask '{mask}'."
+                    f"DropIt rule '{rule_name}' skipped unsafe/invalid regex '{raw_rx}': {exc}"
                 )
-                result.unsupported.append(
-                    {
-                        "rule": rule_name,
-                        "reason": f"Negated pattern mask '{mask}' omitted.",
-                    }
-                )
-                continue
+                result.unsupported.append({"rule": rule_name, "reason": str(exc)})
+                return
 
-            inline_kind = _classify_inline_filter_token(mask)
-            if inline_kind is not None:
-                result.warnings.append(
-                    f"DropIt rule '{rule_name}' skipped unsupported {inline_kind} filter '{mask}'."
-                )
-                result.unsupported.append(
-                    {
-                        "rule": rule_name,
-                        "reason": f"Unsupported {inline_kind} filter '{mask}' omitted.",
-                    }
-                )
-                continue
-
-            if _has_wildcard_or_ext_mask(mask):
-                pol_dict: dict[str, Any] = {
-                    "type": "unarchive" if is_unarchive else "pattern",
-                    "expression": mask,
+            if not extra_excludes:
+                pol_rx: dict[str, Any] = {
+                    "type": "unarchive"
+                    if is_unarchive
+                    else ("action" if is_trash else "pattern"),
+                    "expression": raw_rx,
+                    "regex": True,
                     "target_path": "" if is_trash else target_dir,
                     "priority": 75,
                     "halting": False,
                 }
+                if rule_negate or explicit_mode == "none":
+                    pol_rx["negate"] = True
+                if rule_case:
+                    pol_rx["case_sensitive"] = True
                 if is_trash:
-                    pol_dict["action"] = "trash"
+                    pol_rx["action"] = "trash"
                 elif is_unarchive:
-                    pol_dict["action"] = "unarchive"
-                result.policies.append(pol_dict)
-            elif is_trash:
-                result.policies.append(
+                    pol_rx["action"] = "unarchive"
+                result.policies.append(pol_rx)
+                return
+
+            rx_conds: list[dict[str, Any]] = [
+                {
+                    "field": "name",
+                    "operator": "regex",
+                    "value": raw_rx,
+                    **({"case_sensitive": True} if rule_case else {}),
+                }
+            ]
+            for exc_mask in extra_excludes:
+                exc_op = "glob" if _has_wildcard_or_ext_mask(exc_mask) else "contains"
+                rx_conds.append(
                     {
-                        "type": "keyword",
-                        "action": "trash",
-                        "expression": mask,
-                        "target_path": "",
-                        "priority": 75,
-                        "halting": False,
+                        "field": "name",
+                        "operator": exc_op,
+                        "value": exc_mask,
+                        "negate": True,
+                        **({"case_sensitive": True} if rule_case else {}),
                     }
                 )
+            mode_val = explicit_mode if explicit_mode in VALID_MATCH_MODES else "all"
+            pol_rx_comp: dict[str, Any] = {
+                "type": "unarchive"
+                if is_unarchive
+                else ("action" if is_trash else "pattern"),
+                "expression": summarize_policy_conditions(
+                    rx_conds, match_mode=mode_val, negate=rule_negate
+                ),
+                "match_mode": mode_val,
+                "conditions": rx_conds,
+                "target_path": "" if is_trash else target_dir,
+                "priority": 75,
+                "halting": False,
+            }
+            if rule_negate:
+                pol_rx_comp["negate"] = True
+            if rule_case:
+                pol_rx_comp["case_sensitive"] = True
+            if is_trash:
+                pol_rx_comp["action"] = "trash"
             elif is_unarchive:
-                result.policies.append(
-                    {
-                        "type": "unarchive",
-                        "action": "unarchive",
+                pol_rx_comp["action"] = "unarchive"
+            result.policies.append(pol_rx_comp)
+            return
+
+        include_masks: list[str] = []
+        exclude_masks: list[str] = []
+
+        if not pattern_clean:
+            if allow_name_fallback and not extra_excludes and rule_name.strip():
+                include_masks.append(rule_name.strip())
+        else:
+            # Split # exclusion block first, then DropIt / exclusion separator
+            inc_section = pattern_clean
+            raw_exc_sections: list[str] = []
+            if "#" in inc_section:
+                inc_section, *hash_chunks = inc_section.split("#")
+                raw_exc_sections.extend(hash_chunks)
+            if "/" in inc_section:
+                inc_section, *slash_chunks = inc_section.split("/")
+                raw_exc_sections.extend(slash_chunks)
+
+            for raw_tok in re.split(r"[;|,]", inc_section):
+                tok = raw_tok.strip()
+                if not tok:
+                    continue
+                inline_kind = _classify_inline_filter_token(tok)
+                if inline_kind is not None:
+                    result.warnings.append(
+                        f"DropIt rule '{rule_name}' skipped: unsupported {inline_kind} filter '{tok}'."
+                    )
+                    result.unsupported.append(
+                        {
+                            "rule": rule_name,
+                            "reason": f"Unsupported {inline_kind} filter '{tok}' (rule skipped).",
+                        }
+                    )
+                    return
+                if tok.startswith(("!", "-")) and len(tok) > 1:
+                    neg_tok = tok[1:].strip()
+                    if neg_tok:
+                        neg_inline = _classify_inline_filter_token(neg_tok)
+                        if neg_inline is not None:
+                            result.warnings.append(
+                                f"DropIt rule '{rule_name}' skipped: unsupported {neg_inline} filter '{tok}'."
+                            )
+                            result.unsupported.append(
+                                {
+                                    "rule": rule_name,
+                                    "reason": f"Unsupported {neg_inline} filter '{tok}' (rule skipped).",
+                                }
+                            )
+                            return
+                        exclude_masks.append(neg_tok)
+                else:
+                    include_masks.append(tok)
+
+            for exc_sec in raw_exc_sections:
+                for raw_exc in re.split(r"[;|,/]", exc_sec):
+                    exc_tok = raw_exc.strip()
+                    if exc_tok.startswith(("!", "-")) and len(exc_tok) > 1:
+                        exc_tok = exc_tok[1:].strip()
+                    if not exc_tok:
+                        continue
+                    inline_kind = _classify_inline_filter_token(exc_tok)
+                    if inline_kind is not None:
+                        result.warnings.append(
+                            f"DropIt rule '{rule_name}' skipped: unsupported {inline_kind} filter '{exc_tok}'."
+                        )
+                        result.unsupported.append(
+                            {
+                                "rule": rule_name,
+                                "reason": f"Unsupported {inline_kind} filter '{exc_tok}' (rule skipped).",
+                            }
+                        )
+                        return
+                    exclude_masks.append(exc_tok)
+
+        exclude_masks.extend(extra_excludes)
+
+        if not include_masks and not exclude_masks:
+            return
+
+        # Legacy simple rules when there are no exclusions or compound flags
+        if (
+            not exclude_masks
+            and not rule_negate
+            and not rule_case
+            and explicit_mode not in ("all", "none")
+        ):
+            for mask in include_masks:
+                if _has_wildcard_or_ext_mask(mask):
+                    pol_dict: dict[str, Any] = {
+                        "type": "unarchive" if is_unarchive else "pattern",
                         "expression": mask,
-                        "target_path": target_dir,
+                        "target_path": "" if is_trash else target_dir,
                         "priority": 75,
                         "halting": False,
                     }
-                )
-            else:
-                if len(mask.split()) == 1 and all(
+                    if is_trash:
+                        pol_dict["action"] = "trash"
+                    elif is_unarchive:
+                        pol_dict["action"] = "unarchive"
+                    result.policies.append(pol_dict)
+                elif is_trash:
+                    result.policies.append(
+                        {
+                            "type": "keyword",
+                            "action": "trash",
+                            "expression": mask,
+                            "target_path": "",
+                            "priority": 75,
+                            "halting": False,
+                        }
+                    )
+                elif is_unarchive:
+                    result.policies.append(
+                        {
+                            "type": "unarchive",
+                            "action": "unarchive",
+                            "expression": mask,
+                            "target_path": target_dir,
+                            "priority": 75,
+                            "halting": False,
+                        }
+                    )
+                elif len(mask.split()) == 1 and all(
                     c.isalnum() or c in "_-" for c in mask
                 ):
                     result.keyword_rules[mask.lower()] = target_dir
@@ -2176,6 +2944,71 @@ class DropItRuleImporter(BaseRuleImporter):
                             "halting": False,
                         }
                     )
+            return
+
+        def _mask_to_clause(m: str, *, negated: bool = False) -> dict[str, Any]:
+            op = "glob" if _has_wildcard_or_ext_mask(m) else "contains"
+            c: dict[str, Any] = {"field": "name", "operator": op, "value": m}
+            if negated:
+                c["negate"] = True
+            if rule_case:
+                c["case_sensitive"] = True
+            return c
+
+        pos_clauses = [_mask_to_clause(m, negated=False) for m in include_masks]
+        neg_clauses = [_mask_to_clause(m, negated=True) for m in exclude_masks]
+
+        if not pos_clauses:
+            resolved_mode = "none"
+            cond_tree: list[dict[str, Any]] = [
+                _mask_to_clause(m, negated=False) for m in exclude_masks
+            ]
+        elif not neg_clauses:
+            resolved_mode = (
+                explicit_mode if explicit_mode in VALID_MATCH_MODES else "any"
+            )
+            cond_tree = pos_clauses
+        elif len(pos_clauses) == 1:
+            resolved_mode = "all"
+            cond_tree = [pos_clauses[0], *neg_clauses]
+        else:
+            resolved_mode = "all"
+            cond_tree = [
+                {"match_mode": "any", "conditions": pos_clauses},
+                *neg_clauses,
+            ]
+
+        try:
+            validated_conds = validate_policy_conditions(cond_tree)
+        except ValueError as exc:
+            result.warnings.append(
+                f"DropIt rule '{rule_name}' skipped invalid compound filter: {exc}"
+            )
+            result.unsupported.append({"rule": rule_name, "reason": str(exc)})
+            return
+
+        pol_comp: dict[str, Any] = {
+            "type": _infer_compound_policy_type(
+                validated_conds, is_unarchive=is_unarchive, is_trash=is_trash
+            ),
+            "expression": summarize_policy_conditions(
+                validated_conds, match_mode=resolved_mode, negate=rule_negate
+            ),
+            "match_mode": resolved_mode,
+            "conditions": validated_conds,
+            "target_path": "" if is_trash else target_dir,
+            "priority": 75,
+            "halting": False,
+        }
+        if rule_negate:
+            pol_comp["negate"] = True
+        if rule_case:
+            pol_comp["case_sensitive"] = True
+        if is_trash:
+            pol_comp["action"] = "trash"
+        elif is_unarchive:
+            pol_comp["action"] = "unarchive"
+        result.policies.append(pol_comp)
 
 
 class TagSpacesRuleImporter(BaseRuleImporter):
@@ -2618,6 +3451,40 @@ class TagSpacesRuleImporter(BaseRuleImporter):
         if target_dir is None:
             return
 
+        raw_rule_mode = (
+            str(
+                rule.get("match_mode")
+                or rule.get("matchMode")
+                or rule.get("conditionMode")
+                or rule.get("logic")
+                or rule.get("operator")
+                or "all"
+            )
+            .strip()
+            .lower()
+        )
+        if raw_rule_mode in ("none", "neither", "not"):
+            smart_mode = "none"
+        elif raw_rule_mode in ("any", "or"):
+            smart_mode = "any"
+        elif raw_rule_mode in ("", "all", "and"):
+            smart_mode = "all"
+        else:
+            result.warnings.append(
+                f"TagSpaces rule '{rule_name}' skipped: unsupported match mode '{raw_rule_mode}'."
+            )
+            result.unsupported.append(
+                {
+                    "rule": rule_name,
+                    "reason": f"Unsupported match mode '{raw_rule_mode}' (rule skipped).",
+                }
+            )
+            return
+
+        smart_negate = _is_truthy_flag(
+            rule.get("negated") or rule.get("negate") or rule.get("not")
+        )
+
         conditions = (
             rule.get("conditions")
             or rule.get("condition")
@@ -2628,15 +3495,39 @@ class TagSpacesRuleImporter(BaseRuleImporter):
         if isinstance(conditions, (str, dict)):
             conditions = [conditions]
 
+        parsed_clauses: list[dict[str, Any]] = []
         for cond in conditions:
             if isinstance(cond, str):
-                self._add_smart_rule_condition(
-                    cond,
-                    target_dir,
-                    result,
-                    rule_name=rule_name,
-                    is_unarchive=is_unarchive,
-                )
+                val_clean = cond.strip()
+                if not val_clean:
+                    continue
+                is_neg_tok = False
+                if val_clean.startswith(("!", "-")) and len(val_clean) > 1:
+                    is_neg_tok = True
+                    val_clean = val_clean[1:].strip()
+                    if not val_clean:
+                        continue
+                inline_kind = _classify_inline_filter_token(val_clean)
+                if inline_kind is not None:
+                    result.warnings.append(
+                        f"TagSpaces rule '{rule_name}' skipped: unsupported {inline_kind} filter '{cond.strip()}'."
+                    )
+                    result.unsupported.append(
+                        {
+                            "rule": rule_name,
+                            "reason": f"Unsupported {inline_kind} filter '{cond.strip()}' (rule skipped).",
+                        }
+                    )
+                    return
+                op = "glob" if _has_wildcard_or_ext_mask(val_clean) else "contains"
+                str_clause: dict[str, Any] = {
+                    "field": "name",
+                    "operator": op,
+                    "value": val_clean,
+                }
+                if is_neg_tok:
+                    str_clause["negate"] = True
+                parsed_clauses.append(str_clause)
             elif isinstance(cond, dict):
                 raw_cond_type = str(
                     cond.get("field")
@@ -2645,43 +3536,37 @@ class TagSpacesRuleImporter(BaseRuleImporter):
                     or cond.get("target")
                     or ""
                 )
-                cond_type = raw_cond_type.lower()
+                attr_kind = _classify_condition_attribute(raw_cond_type)
+                if attr_kind is not None:
+                    result.warnings.append(
+                        f"TagSpaces rule '{rule_name}' skipped: unsupported {attr_kind} filter ('{raw_cond_type}')."
+                    )
+                    result.unsupported.append(
+                        {
+                            "rule": rule_name,
+                            "reason": f"Unsupported {attr_kind} filter '{raw_cond_type}' (rule skipped).",
+                        }
+                    )
+                    return
+
                 raw_op = str(
                     cond.get("operator")
                     or cond.get("op")
                     or cond.get("comparator")
                     or ""
                 )
-                neg_flag = bool(
-                    cond.get("negated") or cond.get("isNegated") or cond.get("not")
+                neg_flag = _is_truthy_flag(
+                    cond.get("negated")
+                    or cond.get("negate")
+                    or cond.get("isNegated")
+                    or cond.get("not")
                 )
-
-                attr_kind = _classify_condition_attribute(raw_cond_type)
-                if attr_kind is not None:
-                    result.warnings.append(
-                        f"TagSpaces rule '{rule_name}' skipped unsupported {attr_kind} filter ('{raw_cond_type}')."
-                    )
-                    result.unsupported.append(
-                        {
-                            "rule": rule_name,
-                            "reason": f"Unsupported {attr_kind} filter '{raw_cond_type}' omitted.",
-                        }
-                    )
-                    continue
-
-                op_kind = _classify_condition_operator(raw_op, is_negated_flag=neg_flag)
-                if op_kind in ("negated", "numeric", "unsupported"):
-                    desc = raw_op or "negated"
-                    result.warnings.append(
-                        f"TagSpaces rule '{rule_name}' skipped unsupported condition operator '{desc}'."
-                    )
-                    result.unsupported.append(
-                        {
-                            "rule": rule_name,
-                            "reason": f"Unsupported condition operator '{desc}' omitted.",
-                        }
-                    )
-                    continue
+                regex_flag = _is_truthy_flag(cond.get("regex") or cond.get("isRegex"))
+                case_flag = _is_truthy_flag(
+                    cond.get("caseSensitive")
+                    or cond.get("case_sensitive")
+                    or cond.get("isCaseSensitive")
+                )
 
                 val = str(
                     cond.get("value")
@@ -2691,30 +3576,163 @@ class TagSpacesRuleImporter(BaseRuleImporter):
                     or ""
                 ).strip()
 
+                field_name = _map_external_field(raw_cond_type)
+                if field_name == "extension" and not raw_op:
+                    raw_op = "equals"
+
+                op_mapped, eff_negate, op_err = _parse_external_condition_operator(
+                    raw_op,
+                    is_negated_flag=neg_flag,
+                    is_regex_flag=regex_flag,
+                    raw_value=val,
+                    field_name=field_name,
+                )
+                if op_err is not None or op_mapped is None:
+                    desc = raw_op or "unsupported"
+                    result.warnings.append(
+                        f"TagSpaces rule '{rule_name}' skipped: unsupported condition operator '{desc}'."
+                    )
+                    result.unsupported.append(
+                        {
+                            "rule": rule_name,
+                            "reason": f"Unsupported condition operator '{desc}' (rule skipped).",
+                        }
+                    )
+                    return
+
                 if not val:
                     continue
 
-                if "ext" in cond_type or "extension" in cond_type:
-                    expr = val if val.startswith("*.") else f"*.{val.lstrip('.')}"
-                    pol_dict: dict[str, Any] = {
+                if val.startswith(("!", "-")) and len(val) > 1 and op_mapped != "regex":
+                    val = val[1:].strip()
+                    eff_negate = not eff_negate
+                    if not val:
+                        continue
+
+                if op_mapped != "regex":
+                    inline_kind = _classify_inline_filter_token(val)
+                    if inline_kind is not None:
+                        result.warnings.append(
+                            f"TagSpaces rule '{rule_name}' skipped: unsupported {inline_kind} filter '{val}'."
+                        )
+                        result.unsupported.append(
+                            {
+                                "rule": rule_name,
+                                "reason": f"Unsupported {inline_kind} filter '{val}' (rule skipped).",
+                            }
+                        )
+                        return
+
+                if op_mapped == "regex":
+                    try:
+                        validate_safe_regex(val, case_sensitive=case_flag)
+                    except ValueError as exc:
+                        result.warnings.append(
+                            f"TagSpaces rule '{rule_name}' skipped unsafe/invalid regex '{val}': {exc}"
+                        )
+                        result.unsupported.append(
+                            {"rule": rule_name, "reason": str(exc)}
+                        )
+                        return
+
+                if field_name == "extension" and op_mapped in ("equals", "contains"):
+                    val = val[2:] if val.startswith("*.") else val.lstrip(".")
+
+                dict_clause: dict[str, Any] = {
+                    "field": field_name,
+                    "operator": op_mapped,
+                    "value": val,
+                }
+                if eff_negate:
+                    dict_clause["negate"] = True
+                if case_flag:
+                    dict_clause["case_sensitive"] = True
+                parsed_clauses.append(dict_clause)
+
+        if not parsed_clauses:
+            return
+
+        try:
+            validated_clauses = validate_policy_conditions(parsed_clauses)
+        except ValueError as exc:
+            result.warnings.append(
+                f"TagSpaces rule '{rule_name}' skipped invalid condition group: {exc}"
+            )
+            result.unsupported.append({"rule": rule_name, "reason": str(exc)})
+            return
+
+        # Single positive simple clause preserves legacy representation
+        if (
+            len(validated_clauses) == 1
+            and "conditions" not in validated_clauses[0]
+            and smart_mode in ("all", "any")
+            and not smart_negate
+            and not validated_clauses[0].get("negate")
+            and not validated_clauses[0].get("case_sensitive")
+            and validated_clauses[0].get("operator") != "regex"
+            and validated_clauses[0].get("field") in ("name", "extension")
+        ):
+            leaf = validated_clauses[0]
+            if leaf["field"] == "extension":
+                expr = (
+                    leaf["value"]
+                    if leaf["value"].startswith("*.")
+                    else f"*.{leaf['value'].lstrip('.')}"
+                )
+                pol_dict: dict[str, Any] = {
+                    "type": "unarchive" if is_unarchive else "pattern",
+                    "expression": expr,
+                    "target_path": target_dir,
+                    "priority": 85,
+                    "halting": False,
+                }
+                if is_unarchive:
+                    pol_dict["action"] = "unarchive"
+                result.policies.append(pol_dict)
+            elif leaf["operator"] in ("contains", "glob"):
+                self._add_smart_rule_condition(
+                    leaf["value"],
+                    target_dir,
+                    result,
+                    priority=85,
+                    rule_name=rule_name,
+                    is_unarchive=is_unarchive,
+                )
+            else:
+                result.policies.append(
+                    {
                         "type": "unarchive" if is_unarchive else "pattern",
-                        "expression": expr,
+                        "expression": summarize_policy_conditions(
+                            validated_clauses, match_mode="all"
+                        ),
+                        "match_mode": "all",
+                        "conditions": validated_clauses,
                         "target_path": target_dir,
                         "priority": 85,
                         "halting": False,
+                        **({"action": "unarchive"} if is_unarchive else {}),
                     }
-                    if is_unarchive:
-                        pol_dict["action"] = "unarchive"
-                    result.policies.append(pol_dict)
-                else:
-                    self._add_smart_rule_condition(
-                        val,
-                        target_dir,
-                        result,
-                        priority=85,
-                        rule_name=rule_name,
-                        is_unarchive=is_unarchive,
-                    )
+                )
+            return
+
+        pol_smart: dict[str, Any] = {
+            "type": _infer_compound_policy_type(
+                validated_clauses, is_unarchive=is_unarchive, is_trash=False
+            ),
+            "expression": summarize_policy_conditions(
+                validated_clauses, match_mode=smart_mode, negate=smart_negate
+            ),
+            "match_mode": smart_mode,
+            "conditions": validated_clauses,
+            "target_path": target_dir,
+            "priority": 85,
+            "halting": False,
+        }
+        if smart_negate:
+            pol_smart["negate"] = True
+        if is_unarchive:
+            pol_smart["action"] = "unarchive"
+        result.policies.append(pol_smart)
 
     def _add_smart_rule_condition(
         self,
@@ -2873,11 +3891,68 @@ class SortifyRuleImporter(BaseRuleImporter):
             for pol in raw_pol:
                 if isinstance(pol, dict):
                     p_type = str(pol.get("type", "keyword")).strip().lower()
+                    raw_mm = pol.get("match_mode")
+                    norm_mm: str | None = None
+                    if raw_mm is not None:
+                        if (
+                            not isinstance(raw_mm, str)
+                            or raw_mm.strip().lower() not in VALID_MATCH_MODES
+                        ):
+                            result.warnings.append(
+                                f"Sortify policy rule skipped: invalid match_mode '{raw_mm}'."
+                            )
+                            result.unsupported.append(
+                                {
+                                    "rule": str(pol.get("expression", "")),
+                                    "reason": f"Invalid match_mode '{raw_mm}'.",
+                                }
+                            )
+                            continue
+                        norm_mm = raw_mm.strip().lower()
+
+                    norm_conds: list[dict[str, Any]] | None = None
+                    if pol.get("conditions") is not None:
+                        try:
+                            norm_conds = validate_policy_conditions(pol["conditions"])
+                        except ValueError as exc:
+                            result.warnings.append(
+                                f"Sortify policy rule skipped invalid conditions: {exc}"
+                            )
+                            result.unsupported.append(
+                                {
+                                    "rule": str(pol.get("expression", "")),
+                                    "reason": str(exc),
+                                }
+                            )
+                            continue
+
                     p_expr = str(pol.get("expression", "")).strip()
+                    if not p_expr and norm_conds:
+                        p_expr = summarize_policy_conditions(
+                            norm_conds,
+                            match_mode=norm_mm or "all",
+                            negate=bool(pol.get("negate", False)),
+                        )
                     if not p_expr and p_type == "duplicate":
                         p_expr = "*"
                     if not p_expr:
                         continue
+
+                    if bool(pol.get("regex", False)) and not norm_conds:
+                        try:
+                            validate_safe_regex(
+                                p_expr,
+                                case_sensitive=bool(pol.get("case_sensitive", False)),
+                            )
+                        except ValueError as exc:
+                            result.warnings.append(
+                                f"Sortify policy rule '{p_expr}' skipped unsafe/invalid regex: {exc}"
+                            )
+                            result.unsupported.append(
+                                {"rule": p_expr, "reason": str(exc)}
+                            )
+                            continue
+
                     p_act = str(pol.get("action", "")).strip().lower()
                     raw_target_val = str(pol.get("target_path", ""))
                     if not raw_target_val.strip() and (
@@ -2902,6 +3977,13 @@ class SortifyRuleImporter(BaseRuleImporter):
                         "priority": int(p_prio) if p_prio is not None else 75,
                         "halting": p_halt,
                     }
+                    if norm_mm is not None:
+                        pol_out["match_mode"] = norm_mm
+                    if norm_conds is not None:
+                        pol_out["conditions"] = norm_conds
+                    for bool_key in ("negate", "regex", "case_sensitive"):
+                        if isinstance(pol.get(bool_key), bool):
+                            pol_out[bool_key] = pol[bool_key]
                     if isinstance(pol.get("action"), str) and pol["action"].strip():
                         pol_out["action"] = pol["action"].strip().lower()
                     if isinstance(pol.get("enabled"), bool):

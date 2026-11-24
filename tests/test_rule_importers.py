@@ -182,12 +182,17 @@ def test_hazel_rule_importer_plist():
 
         res = importer.parse_file(temp_path)
         assert isinstance(res, ImportResult)
-        assert "invoice" in res.keyword_rules
-        assert res.keyword_rules["invoice"] == "Financial/Invoices"
+        assert res.keyword_rules == {"tax": "Taxes/2025"}
 
-        # Verify pattern policy generated for extension rule
-        pdf_policies = [p for p in res.policies if p["expression"] in ("*.pdf", "pdf")]
-        assert len(pdf_policies) >= 1
+        # Multi-condition Hazel rule emits one compound 'all' PolicyRule instead of splitting
+        compound_policies = [
+            p
+            for p in res.policies
+            if p.get("target_path") == "Financial/Invoices"
+            and p.get("match_mode") == "all"
+        ]
+        assert len(compound_policies) == 1
+        assert len(compound_policies[0]["conditions"]) == 2
 
         # Verify script action was flagged as unsupported and warning added
         assert len(res.unsupported) >= 1
@@ -515,18 +520,16 @@ def test_tagspaces_rule_importer_smart_rules():
         res = importer.parse_file(temp_path)
         assert isinstance(res, ImportResult)
 
-        # Check policy rule created for extension matcher (*.pdf)
-        pdf_policies = [p for p in res.policies if p["expression"] == "*.pdf"]
-        assert len(pdf_policies) == 1
-        assert pdf_policies[0]["target_path"] == "Documents/PDFs"
-        assert pdf_policies[0]["priority"] == 85
-
-        # Check policy rule created for multi-word phrase condition ("monthly statement")
-        phrase_policies = [
-            p for p in res.policies if p["expression"] == "monthly statement"
+        # Multi-clause TagSpaces smart rule emits a single compound 'all' PolicyRule
+        assert len(res.policies) == 1
+        compound_pol = res.policies[0]
+        assert compound_pol["target_path"] == "Documents/PDFs"
+        assert compound_pol["priority"] == 85
+        assert compound_pol["match_mode"] == "all"
+        assert compound_pol["conditions"] == [
+            {"field": "extension", "operator": "equals", "value": "pdf"},
+            {"field": "name", "operator": "contains", "value": "monthly statement"},
         ]
-        assert len(phrase_policies) == 1
-        assert phrase_policies[0]["target_path"] == "Documents/PDFs"
 
         # Verify script action was flagged as unsupported and warning added
         assert len(res.unsupported) >= 1
@@ -741,14 +744,14 @@ def test_hazel_importer_condition_branches(tmp_path):
 
     res = importer.parse_file(plist_file)
 
-    # Keyword rule generated for single-word condition
-    assert res.keyword_rules.get("receipt") == "Target/Folder"
-
-    # Policies generated for phrase condition and pattern attribute
-    exprs = [p["expression"] for p in res.policies]
-    assert "bank statement" in exprs
-    assert "*.tax_*" in exprs
-    assert "Phrase Rule Without Conditions" in exprs
+    # Multi-clause rule preserved as a single compound 'all' PolicyRule alongside fallback phrase policy
+    assert res.keyword_rules == {}
+    by_target = {p["target_path"]: p for p in res.policies}
+    assert "Target/Folder" in by_target
+    cond_pol = by_target["Target/Folder"]
+    assert cond_pol["match_mode"] == "all"
+    assert len(cond_pol["conditions"]) == 3
+    assert by_target["Target/Phrases"]["expression"] == "Phrase Rule Without Conditions"
 
 
 def test_dropit_importer_file_errors_and_empty_content(tmp_path):
@@ -1050,10 +1053,13 @@ def test_tagspaces_smart_rules_actions_and_conditions(tmp_path):
     # TopLevelScriptRule script detection
     assert any("command/script execution" in w for w in res.warnings)
 
-    # Extension matchers mapped to pattern policies (*.pdf, *.docx)
-    exprs = [p["expression"] for p in res.policies]
-    assert "*.pdf" in exprs
-    assert "*.docx" in exprs
+    # Multi-clause extension matchers combined into one compound 'all' PolicyRule
+    assert len(res.policies) == 1
+    assert res.policies[0]["match_mode"] == "all"
+    assert res.policies[0]["conditions"] == [
+        {"field": "extension", "operator": "equals", "value": "pdf"},
+        {"field": "extension", "operator": "equals", "value": "docx"},
+    ]
 
     # NoTargetSmartRule missing target directory
     assert any("has no target directory" in w for w in res.warnings)
@@ -1299,8 +1305,8 @@ def test_hazel_importer_normalizes_paths_filters_clauses_and_maps_unarchive(tmp_
 
     res = HazelRuleImporter().parse_file(plist_file)
 
-    # 1. Valid 'invoice' condition kept with normalized relative path; draft/size/date NOT turned into keywords!
-    assert res.keyword_rules == {"invoice": "Documents/Invoices"}
+    # 1. Rule containing unsupported Size/Date filters fails closed instead of emitting 'invoice' catch-all!
+    assert res.keyword_rules == {}
     assert "draft" not in res.keyword_rules
     assert "1048576" not in res.keyword_rules
     assert "50mb" not in res.keyword_rules
@@ -1308,20 +1314,25 @@ def test_hazel_importer_normalizes_paths_filters_clauses_and_maps_unarchive(tmp_
     assert "rootfile" not in res.keyword_rules
     assert "pure size rule" not in res.keyword_rules
 
-    # 2. Unarchive rule mapped to built-in unarchive policy with normalized relative folder; Copy PDF rule skipped!
-    assert len(res.policies) == 1
-    pol = res.policies[0]
+    # 2. 'none' mode rule preserved as compound NOR policy; Unarchive rule mapped; Copy PDF rule skipped!
+    assert len(res.policies) == 2
+    by_target = {p["target_path"]: p for p in res.policies}
+    none_pol = by_target["NonSecret"]
+    assert none_pol["match_mode"] == "none"
+    assert none_pol["conditions"] == [
+        {"field": "name", "operator": "contains", "value": "secret"}
+    ]
+
+    pol = by_target["Downloads/Unpacked"]
     assert pol["type"] == "unarchive"
     assert pol["action"] == "unarchive"
     assert pol["expression"] == "*.zip"
     assert pol["target_path"] == "Downloads/Unpacked"
 
-    # 3. Warnings emitted for path conversion, size, date, negated, copy, and unsafe root path
+    # 3. Warnings emitted for path conversion, fail-closed size filter, copy, and unsafe root path
     joined_warnings = "\n".join(res.warnings)
     assert "converted destination path" in joined_warnings.lower()
     assert "size" in joined_warnings.lower()
-    assert "date" in joined_warnings.lower()
-    assert "negated" in joined_warnings.lower()
     assert "copy" in joined_warnings.lower()
     assert "Unsafe Root Destination" in joined_warnings
 
@@ -1365,12 +1376,9 @@ def test_dropit_ini_xml_json_filtering_normalization_and_unarchive(tmp_path):
     # No bogus keyword move rules created for copy/negated/size/date/unsafe rules
     assert res.keyword_rules == {}
 
+    # Association_1 fails closed due to unsupported Size/DateModified filters (no *.pdf catch-all emitted!)
     by_expr = {p["expression"]: p for p in res.policies}
-    assert set(by_expr.keys()) == {"*.pdf", "*.tar.gz", "archive_bundle"}
-
-    assert by_expr["*.pdf"]["type"] == "pattern"
-    assert by_expr["*.pdf"]["target_path"] == "Finance/PDFs"
-    assert "action" not in by_expr["*.pdf"]
+    assert set(by_expr.keys()) == {"*.tar.gz", "archive_bundle"}
 
     assert by_expr["*.tar.gz"]["type"] == "unarchive"
     assert by_expr["*.tar.gz"]["action"] == "unarchive"
@@ -1383,9 +1391,7 @@ def test_dropit_ini_xml_json_filtering_normalization_and_unarchive(tmp_path):
     joined_warnings = "\n".join(res.warnings)
     assert "converted destination path" in joined_warnings.lower()
     assert "Copy" in joined_warnings
-    assert "negated" in joined_warnings.lower()
-    assert "size" in joined_warnings.lower()
-    assert "date" in joined_warnings.lower()
+    assert "size" in joined_warnings.lower() or "date" in joined_warnings.lower()
     assert "traversal" in joined_warnings.lower()
 
 
