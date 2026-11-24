@@ -192,6 +192,44 @@ class KeyAuditLedger:
             )
         return event_id
 
+    def log_trash_handoff(
+        self,
+        session_id: str,
+        staged_path: str,
+        *,
+        original_source: str = "",
+        sha256: str = "",
+        status: str = "EXPORTED_TO_OS_TRASH",
+        reason: Optional[str] = None,
+        db_path: Optional[str] = None,
+    ) -> str:
+        """Record an irreversible staged-duplicate handoff (or headless fallback) to OS Trash."""
+        db_hash = "duplicate_trash"
+        if db_path:
+            try:
+                from app.core.crypto import CryptoManager
+
+                db_hash = CryptoManager.derive_db_hash(db_path)
+            except (ImportError, OSError, ValueError, TypeError):
+                db_hash = "duplicate_trash"
+
+        meta: dict[str, Any] = {
+            "staged_path": staged_path,
+            "original_source": original_source,
+            "sha256": sha256,
+            "irreversible": status == "EXPORTED_TO_OS_TRASH",
+        }
+        if reason:
+            meta["reason"] = reason
+
+        return self.log_key_audit(
+            event_type="OS_TRASH_HANDOFF",
+            db_path_hash=db_hash,
+            session_id=session_id or "nosession",
+            status=status,
+            metadata=meta,
+        )
+
     def get_key_audit_events(
         self,
         session_id: Optional[str] = None,

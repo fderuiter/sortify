@@ -59,6 +59,7 @@ EXPECTED_POLICY_TYPES = {
     "action",
     "compliance",
     "unarchive",
+    "duplicate",
     "age",
     "modified_date",
     "created_date",
@@ -71,6 +72,7 @@ EXPECTED_POLICY_ACTIONS = {
     "quarantine",
     "redact",
     "unarchive",
+    "trash",
 }
 EXPECTED_POST_UNARCHIVE_ACTIONS = {
     "delete",
@@ -134,6 +136,7 @@ def validate_schema_completeness(schema: dict) -> None:
         "halting",
         "enabled",
         "action",
+        "detect_original_by",
         "post_unarchive_action",
         "rename_pattern",
     }

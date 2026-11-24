@@ -346,6 +346,9 @@ def export_active_rules(
                     "Extension" if ("." in p_expr and "*" not in p_expr) else "Name"
                 )
                 cond_op = "matches"
+            elif p_type == "duplicate":
+                cond_target = "Duplicate"
+                cond_op = "is"
             elif p_type in (
                 "size",
                 "age",
@@ -381,11 +384,12 @@ def export_active_rules(
                 cond_target = "Name"
                 cond_op = "contains"
 
-            hazel_act_type = (
-                "NSRuleActionUnarchive"
-                if (p_action == "unarchive" or p_type == "unarchive")
-                else "NSRuleActionMove"
-            )
+            if p_action == "trash":
+                hazel_act_type = "NSRuleActionTrash"
+            elif p_action == "unarchive" or p_type == "unarchive":
+                hazel_act_type = "NSRuleActionUnarchive"
+            else:
+                hazel_act_type = "NSRuleActionMove"
 
             rule_actions: list[dict[str, Any]] = [
                 {
@@ -393,7 +397,7 @@ def export_active_rules(
                     "DestinationPath": p_target,
                 }
             ]
-            if p_rename:
+            if p_rename and p_action != "trash":
                 rule_actions.append(
                     {
                         "NSRuleActionType": "NSRuleActionRename",

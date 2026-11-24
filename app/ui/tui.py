@@ -402,6 +402,7 @@ class AutoSorterTUI(
         self.collision_paths: set[str] = set()
         self._daemon_state: str = "idle"
         self._daemon_is_moving: bool = False
+        self._pending_flush_trash: bool = False
 
     def compose(self) -> ComposeResult:
         """Compose main dual-pane TUI layout."""

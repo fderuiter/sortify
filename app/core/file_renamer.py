@@ -648,6 +648,12 @@ class FileRenamerEngine:
                         "target_filename": (
                             v.get("target_filename") if isinstance(v, dict) else None
                         ),
+                        "is_excluded": (
+                            bool(v.get("is_excluded")) if isinstance(v, dict) else False
+                        ),
+                        "duplicate_action": (
+                            v.get("duplicate_action") if isinstance(v, dict) else None
+                        ),
                         "source_root": (
                             v.get("source_root") if isinstance(v, dict) else None
                         )
@@ -678,6 +684,10 @@ class FileRenamerEngine:
                 meta_info = node_meta_by_key.get(norm_fp) or node_meta_by_key.get(
                     filename.lower(), {}
                 )
+                if meta_info.get("is_excluded") or meta_info.get(
+                    "duplicate_action"
+                ) in ("stage", "trash", "skip"):
+                    continue
                 existing_target = meta_info.get("target_filename")
                 if existing_target and str(existing_target) != filename:
                     # Preserve explicit policy rename_pattern assignments
@@ -772,7 +782,10 @@ class FileRenamerEngine:
                             "target_filename": target_fn,
                         }
                     elif isinstance(v, dict):
-                        v["target_filename"] = target_fn
+                        if not v.get("is_excluded") and v.get(
+                            "duplicate_action"
+                        ) not in ("stage", "trash", "skip"):
+                            v["target_filename"] = target_fn
                 elif isinstance(v, dict) and not is_file:
                     _traverse(v)
 

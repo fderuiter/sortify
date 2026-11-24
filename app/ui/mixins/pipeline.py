@@ -8,6 +8,7 @@ from textual import work
 from textual.widgets import Button, Static
 
 from app.ui.modals.edit import (
+    DuplicateReviewModal,
     InteractiveCollisionResolverModal,
 )
 from app.ui.protocols import TUIHostProtocol
@@ -244,19 +245,83 @@ class SortPipelineMixin:
             return
 
         if getattr(self, "has_critical_errors", False):
-            self.announce(
-                "Cannot execute plan: Critical validation errors exist (see Alert Banner)."
+            v_res = getattr(self, "verification_result", None) or {}
+            collisions_list = v_res.get("collisions") or []
+            has_structural_collision = any(
+                c.get("type") in ("parent_directory_collision", "target_is_directory")
+                for c in collisions_list
             )
-            return
+            has_non_collision_critical = bool(
+                v_res.get("circular_renames")
+                or v_res.get("invalid_renames")
+                or v_res.get("long_paths")
+                or v_res.get("escaping_paths")
+                or has_structural_collision
+                or not collisions_list
+            )
+            if has_non_collision_critical:
+                self.announce(
+                    "Cannot execute plan: Critical validation errors exist (see Alert Banner)."
+                )
+                return
 
         base_dir: str = (
             (self.app_session.base_dir if self.app_session else None)
             or self.base_dir
             or "."
         )
+        self._pending_flush_trash = False
         from app.core.verifier import VerificationEngine
 
-        duplicate_groups = VerificationEngine.get_duplicate_groups(base_dir, exec_plan)
+        detect_original_by = str(
+            getattr(self.settings, "DETECT_ORIGINAL_BY", "first_seen") or "first_seen"
+        )
+
+        def _continue_with_collision_check() -> None:
+            refreshed_exec = self._get_executable_plan()
+            if not self._has_file_nodes(refreshed_exec):
+                self.announce("No remaining checked files to execute after review.")
+                return
+            collision_groups = VerificationEngine.get_collision_groups(
+                base_dir, refreshed_exec
+            )
+            if collision_groups:
+
+                def handle_collision_modal_result(
+                    col_selections: dict[str, str] | None,
+                ) -> None:
+                    if col_selections is None:
+                        self.announce(
+                            "Move execution cancelled during collision resolution."
+                        )
+                        return
+
+                    VerificationEngine.apply_collision_selections(
+                        base_dir,
+                        self.plan,
+                        col_selections,
+                        groups=collision_groups,
+                    )
+                    self.announce(
+                        "Executing file moves according to plan with collision resolution applied..."
+                    )
+                    self.run_execute_worker()
+
+                self.push_screen(
+                    InteractiveCollisionResolverModal(
+                        collision_groups=collision_groups
+                    ),
+                    handle_collision_modal_result,
+                )
+            else:
+                self.announce("Executing file moves according to plan...")
+                self.run_execute_worker()
+
+        duplicate_groups = VerificationEngine.get_duplicate_groups(
+            base_dir,
+            exec_plan,
+            detect_original_by=detect_original_by,
+        )
         if duplicate_groups:
 
             def handle_duplicate_modal_result(
@@ -266,21 +331,24 @@ class SortPipelineMixin:
                     self.announce("Move execution cancelled during duplicate review.")
                     return
 
+                if any(val == "trash" for val in selections.values()):
+                    self._pending_flush_trash = True
+
                 VerificationEngine.apply_deduplication_selections(
-                    base_dir, self.plan, selections
+                    base_dir,
+                    self.plan,
+                    selections,
+                    groups=duplicate_groups,
+                    detect_original_by=detect_original_by,
                 )
-                self.announce(
-                    "Executing file moves according to plan with deduplication applied..."
-                )
-                self.run_execute_worker()
+                _continue_with_collision_check()
 
             self.push_screen(
-                InteractiveCollisionResolverModal(duplicate_groups=duplicate_groups),
+                DuplicateReviewModal(duplicate_groups=duplicate_groups),
                 handle_duplicate_modal_result,
             )
         else:
-            self.announce("Executing file moves according to plan...")
-            self.run_execute_worker()
+            _continue_with_collision_check()
 
     def _normalize_plan_for_verification(
         self: TUIHostProtocol, plan_dict: dict[str, Any], base_dir: str
@@ -533,9 +601,13 @@ class SortPipelineMixin:
             if self.pipeline.state != PipelineLifecycleState.PLANNED:
                 self.pipeline.transition_to(PipelineLifecycleState.PLANNED)
 
+            flush_trash = bool(self._pending_flush_trash)
+            self._pending_flush_trash = False
             result = self.pipeline.execute(
                 exec_plan,
                 progress_callback=move_progress_cb,
+                flush_trash=flush_trash,
+                flush_trashed_only=flush_trash,
             )
             summary = result.summary
             msg = f"Execution completed successfully! [Ctrl+Z] Undo available. Summary: {summary}"

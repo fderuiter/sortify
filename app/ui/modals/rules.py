@@ -883,10 +883,10 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Optional[Any]])
         rk_attr = getattr(event, "row_key", None)
         if rk_attr is not None and getattr(rk_attr, "value", None):
             row_key = str(rk_attr.value)
-        elif isinstance(event, DataTable.CellSelected):
+        elif (coord := getattr(event, "coordinate", None)) is not None:
             try:
                 dt_conf = self.query_one("#dt-rule-conflicts", DataTable)
-                rk = dt_conf.coordinate_to_cell_key(event.coordinate).row_key
+                rk = dt_conf.coordinate_to_cell_key(coord).row_key
                 if rk and rk.value:
                     row_key = str(rk.value)
             except Exception:
@@ -1065,6 +1065,7 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
         ("File Extension", "extension"),
         ("Status", "status"),
         ("Unarchive", "unarchive"),
+        ("Duplicate", "duplicate"),
     ]
 
     def __init__(
@@ -1075,6 +1076,7 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
         rule_type: str = "keyword",
         rename_pattern: str = "",
         priority: int = 75,
+        rule_action: str = "",
     ):
         super().__init__()
         self.title_text = title
@@ -1083,6 +1085,7 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
         self.initial_rule_type = str(rule_type or "keyword").strip().lower()
         self.initial_rename_pattern = str(rename_pattern or "").strip()
         self.initial_priority = int(priority) if priority is not None else 75
+        self.initial_rule_action = str(rule_action or "").strip().lower()
 
     def compose(self) -> ComposeResult:
         """Compose rule editor inputs and action buttons."""
@@ -1159,13 +1162,19 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
         rename_pat = self.query_one("#input-rule-rename-pattern", Input).value.strip()
         err_lbl = self.query_one("#lbl-rule-error", Label)
 
+        if not pattern and selected_type == "duplicate":
+            pattern = "*"
+
         if not pattern:
             err_lbl.update("Rule pattern/keyword cannot be empty.")
             err_lbl.add_class("visible")
             self.announce("Rule pattern/keyword cannot be empty.", priority="assertive")
             return
 
-        if not target:
+        allows_empty_target = (
+            selected_type == "duplicate" or self.initial_rule_action == "trash"
+        )
+        if not target and not allows_empty_target:
             err_lbl.update("Target folder cannot be empty.")
             err_lbl.add_class("visible")
             self.announce("Target folder cannot be empty.", priority="assertive")
@@ -1184,28 +1193,29 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
                     self.app.notify(str(exc), severity="error")
                 return
 
-        try:
-            if "{" in target and "}" in target:
-                PatternTokenFormatter.format_target_path(
-                    target,
-                    metadata={
-                        "date": "2026-01-15",
-                        "category": "sample",
-                        "original": "document",
-                        "stem": "document",
-                        "extension": ".pdf",
-                    },
-                    seq=1,
-                )
-            else:
-                validate_target_path(target, keyword=pattern)
-        except (ValueError, Exception) as exc:
-            err_lbl.update(f"Invalid path: {exc}")
-            err_lbl.add_class("visible")
-            self.announce(f"Invalid target path: {exc}", priority="assertive")
-            if hasattr(self.app, "notify"):
-                self.app.notify(str(exc), severity="error")
-            return
+        if target:
+            try:
+                if "{" in target and "}" in target:
+                    PatternTokenFormatter.format_target_path(
+                        target,
+                        metadata={
+                            "date": "2026-01-15",
+                            "category": "sample",
+                            "original": "document",
+                            "stem": "document",
+                            "extension": ".pdf",
+                        },
+                        seq=1,
+                    )
+                else:
+                    validate_target_path(target, keyword=pattern)
+            except (ValueError, Exception) as exc:
+                err_lbl.update(f"Invalid path: {exc}")
+                err_lbl.add_class("visible")
+                self.announce(f"Invalid target path: {exc}", priority="assertive")
+                if hasattr(self.app, "notify"):
+                    self.app.notify(str(exc), severity="error")
+                return
 
         if rename_pat:
             if "\x00" in rename_pat or ".." in rename_pat.replace("\\", "/").split("/"):
@@ -1535,6 +1545,7 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
                         "pattern": str(pol.get("expression", "")),
                         "target_folder": str(pol.get("target_path", "")),
                         "rename_pattern": str(pol.get("rename_pattern", "") or ""),
+                        "action": str(pol.get("action", "") or ""),
                         "priority": pol.get("priority", 0),
                         "policy_idx": idx,
                         "original": pol,
@@ -1679,6 +1690,8 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
                 }
                 if r_type == "unarchive":
                     new_pol["action"] = "unarchive"
+                elif r_type == "duplicate" and not target:
+                    new_pol["action"] = "trash"
                 if rename_pat:
                     new_pol["rename_pattern"] = rename_pat
                 policies.append(new_pol)
@@ -1793,6 +1806,7 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
                 rule_type=initial_edit_type,
                 rename_pattern=str(rule.get("rename_pattern", "") or ""),
                 priority=int(rule.get("priority") or 75),
+                rule_action=str(rule.get("action", "") or ""),
             ),
             on_rule_edited,
         )

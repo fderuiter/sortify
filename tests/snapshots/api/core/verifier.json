@@ -1,12 +1,42 @@
 {
   "_metadata": {
-    "checksum": "37198bc83154507a1e45b415b306734cb05a0dc331d14d98a1d87be7f3d8e8c0"
+    "checksum": "18dc5d18a44dfb67d0510da508caf88b18bbdd1731d22aa7af422a96d54a6630"
   },
   "classes": [
     {
       "class_name": "VerificationEngine",
       "decorators": [],
       "methods": [
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "apply_collision_selections",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "plan"
+            },
+            {
+              "annotation": "dict[str, str]",
+              "default": null,
+              "name": "selections"
+            },
+            {
+              "annotation": "list[dict] | None",
+              "default": "None",
+              "name": "groups"
+            }
+          ],
+          "returns": "Any"
+        },
         {
           "async": false,
           "decorators": [
@@ -28,9 +58,44 @@
               "annotation": "dict[str, str]",
               "default": null,
               "name": "selections"
+            },
+            {
+              "annotation": "list[dict] | None",
+              "default": "None",
+              "name": "groups"
+            },
+            {
+              "annotation": "str",
+              "default": "'first_seen'",
+              "name": "detect_original_by"
             }
           ],
           "returns": "Any"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "get_collision_groups",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "plan"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "include_resolved"
+            }
+          ],
+          "returns": "list[dict]"
         },
         {
           "async": false,
@@ -48,9 +113,54 @@
               "annotation": "Any",
               "default": null,
               "name": "plan"
+            },
+            {
+              "annotation": "str",
+              "default": "'first_seen'",
+              "name": "detect_original_by"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "include_resolved"
             }
           ],
           "returns": "list[dict]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "get_move_entries",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "plan"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "current_dest"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "active_parent_path"
+            },
+            {
+              "annotation": "int",
+              "default": "0",
+              "name": "depth"
+            }
+          ],
+          "returns": "list[dict[str, Any]]"
         },
         {
           "async": false,

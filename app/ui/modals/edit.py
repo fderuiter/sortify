@@ -1,5 +1,6 @@
 """Dialogs for editing the plan tree: rename, new folder, reassign, directory pickers and duplicate review."""
 
+import contextlib
 import logging
 import os
 import re
@@ -1494,10 +1495,8 @@ def _format_file_size(size_bytes: int) -> str:
     return f"{size:.1f} TB"
 
 
-class InteractiveCollisionResolverModal(
-    ResponsiveModalScreen[Optional[dict[str, str]]]
-):
-    """Interactive per-file collision resolution modal before execution."""
+class _BaseGroupSelectionModal(ResponsiveModalScreen[Optional[dict[str, str]]]):
+    """Shared base modal screen for per-group collision and duplicate review dialogs."""
 
     NARROW_WIDTH_BREAKPOINT = 60
 
@@ -1571,8 +1570,92 @@ class InteractiveCollisionResolverModal(
     }
     """
 
+    DEFAULT_BATCH_ACTION: str = "rename"
+    OPEN_ANNOUNCEMENT: str = ""
+    APPLY_ALL_SCOPE_LABEL: str = "groups"
+    CONFIRM_ANNOUNCEMENT: str = ""
+    CANCEL_ANNOUNCEMENT: str = ""
+
+    duplicate_groups: list[dict[str, Any]]
+    user_selections: dict[str, str]
+
+    def on_mount(self) -> None:
+        """Focus initial widget on mount and announce to screen reader."""
+        super().on_mount()
+        try:
+            self.query_one("#batch-action-select", Select).focus()
+        except (LookupError, AttributeError):
+            if self.duplicate_groups:
+                first_gid = self.duplicate_groups[0]["group_id"]
+                try:
+                    self.query_one(f"#select-action-{first_gid}", Select).focus()
+                except (LookupError, AttributeError):
+                    with contextlib.suppress(LookupError, AttributeError):
+                        self.query_one("#btn-confirm-duplicates", Button).focus()
+            else:
+                with contextlib.suppress(LookupError, AttributeError):
+                    self.query_one("#btn-confirm-duplicates", Button).focus()
+        if self.OPEN_ANNOUNCEMENT:
+            self.announce(self.OPEN_ANNOUNCEMENT)
+
+    @on(Button.Pressed, "#btn-apply-all")
+    def action_apply_to_all(self) -> None:
+        """Apply the selected batch action to all groups."""
+        try:
+            batch_sel = self.query_one("#batch-action-select", Select)
+            batch_value = (
+                str(batch_sel.value)
+                if batch_sel.value is not None
+                else self.DEFAULT_BATCH_ACTION
+            )
+        except (LookupError, AttributeError):
+            batch_value = self.DEFAULT_BATCH_ACTION
+
+        for group in self.duplicate_groups:
+            gid = group["group_id"]
+            self.user_selections[gid] = batch_value
+            with contextlib.suppress(LookupError, AttributeError):
+                sel_widget = self.query_one(f"#select-action-{gid}", Select)
+                sel_widget.value = batch_value
+
+        self.announce(
+            f"Applied '{batch_value}' action to all {self.APPLY_ALL_SCOPE_LABEL}."
+        )
+
+    @on(Select.Changed)
+    def on_select_changed(self, event: Select.Changed) -> None:
+        """Record user selection updates for per-group Select controls."""
+        if event.select.id and event.select.id.startswith("select-action-"):
+            gid = event.select.id.replace("select-action-", "")
+            if event.value is not None:
+                self.user_selections[gid] = str(event.value)
+
+    @on(Button.Pressed, "#btn-confirm-duplicates")
+    def action_confirm(self) -> None:
+        """Confirm selections and dismiss dialog."""
+        if self.CONFIRM_ANNOUNCEMENT:
+            self.announce(self.CONFIRM_ANNOUNCEMENT)
+        self.dismiss(self.user_selections)
+
+    @on(Button.Pressed, "#btn-cancel-duplicates")
+    def action_cancel(self) -> None:
+        """Cancel dialog and abort execution."""
+        if self.CANCEL_ANNOUNCEMENT:
+            self.announce(self.CANCEL_ANNOUNCEMENT)
+        self.dismiss(None)
+
+
+class InteractiveCollisionResolverModal(_BaseGroupSelectionModal):
+    """Interactive per-file collision resolution modal before execution."""
+
+    DEFAULT_BATCH_ACTION = "rename"
+    OPEN_ANNOUNCEMENT = "Opened interactive collision resolver modal."
+    APPLY_ALL_SCOPE_LABEL = "collision groups"
+    CONFIRM_ANNOUNCEMENT = "Applied collision resolution selections."
+    CANCEL_ANNOUNCEMENT = "Cancelled collision resolver dialog."
+
     RESOLVER_OPTIONS = [
-        ("Rename (auto-number duplicates)", "rename"),
+        ("Rename (auto-number colliding files)", "rename"),
         ("Overwrite (replace target file)", "overwrite"),
         ("Skip (exclude colliding file)", "skip"),
         ("Keep Both (preserve destination & prefix source)", "keep_both"),
@@ -1582,16 +1665,27 @@ class InteractiveCollisionResolverModal(
     def __init__(
         self,
         duplicate_groups: Optional[list[dict[str, Any]]] = None,
+        collision_groups: Optional[list[dict[str, Any]]] = None,
     ):
         super().__init__()
-        self.duplicate_groups = duplicate_groups or []
-        self.user_selections: dict[str, str] = {
-            g["group_id"]: g.get("default_action", "rename")
-            for g in self.duplicate_groups
+        groups = (
+            collision_groups if collision_groups is not None else duplicate_groups
+        ) or []
+        self.collision_groups = groups
+        self.duplicate_groups = groups
+        valid_values = {opt[1] for opt in self.RESOLVER_OPTIONS}
+        self.user_selections = {
+            g["group_id"]: (
+                str(g.get("default_action"))
+                if g.get("default_action") in valid_values
+                else "rename"
+            )
+            for g in self.collision_groups
         }
 
     def compose(self) -> ComposeResult:
         """Compose interactive collision resolution dialog widgets."""
+        valid_values = {opt[1] for opt in self.RESOLVER_OPTIONS}
         with ModalBox(classes="modal-box"):
             with Vertical(classes="modal-body"):
                 yield Heading(
@@ -1601,7 +1695,7 @@ class InteractiveCollisionResolverModal(
                     id="modal-title",
                 )
                 yield Label(
-                    "Review destination target collisions and select per-file resolution actions:",
+                    "Distinct files share a proposed destination filename. Select per-target resolution actions:",
                     classes="modal-subtitle",
                 )
 
@@ -1613,32 +1707,37 @@ class InteractiveCollisionResolverModal(
                         classes="batch-select",
                         allow_blank=False,
                     )
-                    batch_sel.tooltip = "Select batch deduplication action to apply to all collision groups"
+                    batch_sel.tooltip = "Select batch collision action to apply to all colliding destination targets"
                     setattr(
                         batch_sel,
                         "aria_label",
-                        "Batch resolution action for all duplicate clusters",
+                        "Batch resolution action for all destination collision groups",
                     )
                     yield batch_sel
 
                     btn_apply = Button("Apply to All", id="btn-apply-all")
                     btn_apply.tooltip = (
-                        "Apply selected resolution action to all duplicate clusters"
+                        "Apply selected collision resolution action to all groups"
                     )
                     setattr(
                         btn_apply,
                         "aria_label",
-                        "Apply selected resolution action to all duplicate clusters",
+                        "Apply selected collision resolution action to all groups",
                     )
                     yield btn_apply
 
                 with Vertical(id="duplicate-groups-list"):
-                    for group in self.duplicate_groups:
+                    for group in self.collision_groups:
                         gid = group["group_id"]
                         tf_name = group.get("target_filename", "Collision")
                         t_dir = group.get("target_dir", "")
                         items = group.get("items", [])
-                        default_action = group.get("default_action", "rename")
+                        raw_default = group.get("default_action", "rename")
+                        default_action = (
+                            str(raw_default)
+                            if raw_default in valid_values
+                            else "rename"
+                        )
 
                         with Vertical(classes="duplicate-card", id=f"card-{gid}"):
                             yield Label(
@@ -1646,7 +1745,7 @@ class InteractiveCollisionResolverModal(
                                 classes="card-title",
                             )
                             yield Label(
-                                f"Colliding source files ({len(items)}):",
+                                f"Colliding distinct source files ({len(items)}):",
                                 classes="card-subtitle",
                             )
                             for item in items:
@@ -1678,82 +1777,225 @@ class InteractiveCollisionResolverModal(
                             setattr(
                                 sel,
                                 "aria_label",
-                                f"Resolution action for duplicate group {tf_name}",
+                                f"Collision resolution action for {tf_name}",
                             )
                             yield sel
 
             with Horizontal(classes="button-row"):
-                yield Button(
+                btn_confirm = Button(
                     "Apply & Execute Moves",
                     variant="primary",
                     id="btn-confirm-duplicates",
                 )
-                yield Button("Cancel", id="btn-cancel-duplicates")
+                btn_confirm.tooltip = (
+                    "Confirm collision resolution selections and continue execution"
+                )
+                setattr(
+                    btn_confirm,
+                    "aria_label",
+                    "Confirm collision resolution selections and continue execution",
+                )
+                yield btn_confirm
 
-    def on_mount(self) -> None:
-        """Focus initial widget on mount and announce to screen reader."""
-        super().on_mount()
-        try:
-            self.query_one("#batch-action-select", Select).focus()
-        except Exception:
-            if self.duplicate_groups:
-                first_gid = self.duplicate_groups[0]["group_id"]
-                try:
-                    self.query_one(f"#select-action-{first_gid}", Select).focus()
-                except Exception:
-                    try:
-                        self.query_one("#btn-confirm-duplicates", Button).focus()
-                    except Exception:
-                        pass
-            else:
-                try:
-                    self.query_one("#btn-confirm-duplicates", Button).focus()
-                except Exception:
-                    pass
-        self.announce("Opened interactive collision resolver modal.")
+                btn_cancel = Button("Cancel", id="btn-cancel-duplicates")
+                btn_cancel.tooltip = "Cancel collision resolution and abort execution"
+                setattr(
+                    btn_cancel,
+                    "aria_label",
+                    "Cancel collision resolution and abort execution",
+                )
+                yield btn_cancel
 
-    @on(Button.Pressed, "#btn-apply-all")
-    def action_apply_to_all(self) -> None:
-        """Apply the selected batch action to all collision groups."""
-        try:
-            batch_sel = self.query_one("#batch-action-select", Select)
-            batch_value = (
-                str(batch_sel.value) if batch_sel.value is not None else "rename"
+
+class DuplicateReviewModal(_BaseGroupSelectionModal):
+    """Dedicated review modal for exact byte-verified duplicate file clusters."""
+
+    DEFAULT_BATCH_ACTION = "stage"
+    OPEN_ANNOUNCEMENT = "Opened byte-verified duplicate review modal."
+    APPLY_ALL_SCOPE_LABEL = "duplicate clusters"
+    CONFIRM_ANNOUNCEMENT = "Applied duplicate cleanup selections."
+    CANCEL_ANNOUNCEMENT = "Cancelled duplicate review dialog."
+
+    DUPLICATE_OPTIONS = [
+        ("Stage Duplicates for Undo (.sortify_duplicates)", "stage"),
+        ("Move Duplicates to OS Trash (via staging)", "trash"),
+        ("Keep Primary File Only (skip copies)", "keep"),
+        ("Rename Copies (keep all with _1 suffix)", "rename"),
+        ("Skip Cluster (leave all untouched)", "skip"),
+    ]
+
+    def __init__(
+        self,
+        duplicate_groups: Optional[list[dict[str, Any]]] = None,
+    ):
+        super().__init__()
+        self.duplicate_groups = duplicate_groups or []
+        valid_values = {opt[1] for opt in self.DUPLICATE_OPTIONS}
+        self.user_selections = {
+            g["group_id"]: (
+                str(g.get("default_action"))
+                if g.get("default_action") in valid_values
+                else "stage"
             )
-        except Exception:
-            batch_value = "rename"
+            for g in self.duplicate_groups
+        }
 
-        for group in self.duplicate_groups:
-            gid = group["group_id"]
-            self.user_selections[gid] = batch_value
-            try:
-                sel_widget = self.query_one(f"#select-action-{gid}", Select)
-                sel_widget.value = batch_value
-            except Exception:
-                pass
+    def compose(self) -> ComposeResult:
+        """Compose byte-verified duplicate cluster review dialog widgets."""
+        valid_values = {opt[1] for opt in self.DUPLICATE_OPTIONS}
+        initial_batch = "stage"
+        if self.duplicate_groups:
+            first_def = self.duplicate_groups[0].get("default_action")
+            if first_def in valid_values:
+                initial_batch = str(first_def)
 
-        self.announce(f"Applied '{batch_value}' action to all duplicate groups.")
+        with ModalBox(classes="modal-box"):
+            with Vertical(classes="modal-body"):
+                yield Heading(
+                    "Byte-Verified Duplicate Review",
+                    level=1,
+                    classes="modal-title",
+                    id="modal-title",
+                )
+                yield Label(
+                    "Exact byte-identical copies detected. Redundant copies move only after the surviving original is verified:",
+                    classes="modal-subtitle",
+                )
 
-    @on(Select.Changed)
-    def on_select_changed(self, event: Select.Changed) -> None:
-        """Record user selection updates for duplicate groups."""
-        if event.select.id and event.select.id.startswith("select-action-"):
-            gid = event.select.id.replace("select-action-", "")
-            if event.value is not None:
-                self.user_selections[gid] = str(event.value)
+                with Horizontal(classes="batch-bar", id="batch-action-bar"):
+                    batch_sel = Select(
+                        self.DUPLICATE_OPTIONS,
+                        value=initial_batch,
+                        id="batch-action-select",
+                        classes="batch-select",
+                        allow_blank=False,
+                    )
+                    batch_sel.tooltip = "Select batch cleanup action to apply to all byte-identical duplicate clusters"
+                    setattr(
+                        batch_sel,
+                        "aria_label",
+                        "Batch cleanup action for all byte-identical duplicate clusters",
+                    )
+                    yield batch_sel
 
-    @on(Button.Pressed, "#btn-confirm-duplicates")
-    def action_confirm(self) -> None:
-        """Confirm deduplication selections and dismiss dialog."""
-        self.announce("Applied duplicate resolution selections.")
-        self.dismiss(self.user_selections)
+                    btn_apply = Button("Apply to All", id="btn-apply-all")
+                    btn_apply.tooltip = (
+                        "Apply selected duplicate cleanup action to all clusters"
+                    )
+                    setattr(
+                        btn_apply,
+                        "aria_label",
+                        "Apply selected duplicate cleanup action to all clusters",
+                    )
+                    yield btn_apply
 
-    @on(Button.Pressed, "#btn-cancel-duplicates")
-    def action_cancel(self) -> None:
-        """Cancel duplicate review and abort execution."""
-        self.announce("Cancelled duplicate review dialog.")
-        self.dismiss(None)
+                with Vertical(id="duplicate-groups-list"):
+                    for group in self.duplicate_groups:
+                        gid = group["group_id"]
+                        tf_name = group.get("target_filename", "Duplicate")
+                        items = group.get("items", [])
+                        raw_default = group.get("default_action", "stage")
+                        default_action = (
+                            str(raw_default) if raw_default in valid_values else "stage"
+                        )
+                        byte_size = group.get("byte_size")
+                        sha_val = str(group.get("sha256") or "")
+                        sel_mode = group.get("detect_original_by") or "first_seen"
+                        meta_parts: list[str] = []
+                        if isinstance(byte_size, int) and byte_size >= 0:
+                            meta_parts.append(_format_file_size(byte_size))
+                        if sha_val:
+                            meta_parts.append(f"sha256:{sha_val[:12]}")
+                        meta_suffix = (
+                            f" ({', '.join(meta_parts)})" if meta_parts else ""
+                        )
+
+                        with Vertical(classes="duplicate-card", id=f"card-{gid}"):
+                            yield Label(
+                                f"Duplicate Cluster: {tf_name}{meta_suffix}",
+                                classes="card-title",
+                            )
+                            yield Label(
+                                f"Verified identical copies ({len(items)}) — original selector: {sel_mode}",
+                                classes="card-subtitle",
+                            )
+                            if group.get("existing_file_on_disk") and group.get(
+                                "primary_source_path"
+                            ):
+                                yield Label(
+                                    f"• [Original on Disk] {group['primary_source_path']}",
+                                    classes="source-item",
+                                )
+                            for idx, item in enumerate(items):
+                                rel_src = item.get("relative_source") or item.get(
+                                    "source_path", ""
+                                )
+                                src_p = item.get("source_path", "")
+                                role_tag = (
+                                    "[Original]"
+                                    if (
+                                        not group.get("existing_file_on_disk")
+                                        and (item.get("is_primary") or idx == 0)
+                                    )
+                                    else "[Duplicate]"
+                                )
+                                size_info = ""
+                                if isinstance(item.get("byte_size"), int):
+                                    size_info = (
+                                        f" ({_format_file_size(item['byte_size'])})"
+                                    )
+                                elif src_p and os.path.exists(src_p):
+                                    try:
+                                        sz = os.path.getsize(src_p)
+                                        size_info = f" ({_format_file_size(sz)})"
+                                    except OSError:
+                                        pass
+                                yield Label(
+                                    f"• {role_tag} {rel_src}{size_info}",
+                                    classes="source-item",
+                                )
+
+                            sel = Select(
+                                self.DUPLICATE_OPTIONS,
+                                value=default_action,
+                                id=f"select-action-{gid}",
+                                classes="action-select",
+                                allow_blank=False,
+                            )
+                            sel.tooltip = (
+                                f"Select duplicate cleanup action for {tf_name}"
+                            )
+                            setattr(
+                                sel,
+                                "aria_label",
+                                f"Duplicate cleanup action for cluster {tf_name}",
+                            )
+                            yield sel
+
+            with Horizontal(classes="button-row"):
+                btn_confirm = Button(
+                    "Confirm Duplicate Cleanup",
+                    variant="primary",
+                    id="btn-confirm-duplicates",
+                )
+                btn_confirm.tooltip = (
+                    "Confirm duplicate cleanup actions and continue execution"
+                )
+                setattr(
+                    btn_confirm,
+                    "aria_label",
+                    "Confirm duplicate cleanup actions and continue execution",
+                )
+                yield btn_confirm
+
+                btn_cancel = Button("Cancel", id="btn-cancel-duplicates")
+                btn_cancel.tooltip = "Cancel duplicate review and abort execution"
+                setattr(
+                    btn_cancel,
+                    "aria_label",
+                    "Cancel duplicate review and abort execution",
+                )
+                yield btn_cancel
 
 
-DuplicateReviewModal = InteractiveCollisionResolverModal
 DirectoryModal = DirectorySelectModal

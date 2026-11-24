@@ -1,4 +1,4 @@
-"""Tests for metadata policy rules (age, dates, EXIF/PDF, size), date/path templates, and semantic renames."""
+"""Tests for metadata policy rules (age, dates, EXIF/PDF, size), date/path templates, semantic renames, and #1182 trash/duplicate coexistence."""
 
 from __future__ import annotations
 
@@ -95,9 +95,16 @@ def test_config_validates_metadata_policies_and_templates():
                 "target_path": "Photos/{year}/{month}",
                 "priority": 10,
             },
+            {
+                "type": "age",
+                "action": "trash",
+                "expression": "> 365d",
+                "target_path": "",
+                "priority": 5,
+            },
         ],
     )
-    assert len(valid_settings.POLICIES) == 5
+    assert len(valid_settings.POLICIES) == 6
     assert valid_settings.RENAME_PATTERN == "{date}_{category}_{stem}{extension}"
 
     # Invalid size/age/date expressions rejected
@@ -801,3 +808,100 @@ def test_validate_metadata_expression_helper():
 
     with pytest.raises(ValueError, match="Unsupported metadata policy rule type"):
         validate_metadata_expression("unknown_type", "> 10")
+
+
+def test_metadata_policies_coexist_with_trash_action_and_byte_duplicates(
+    tmp_path, monkeypatch
+):
+    """Verify metadata rules support action='trash', round-trip via Hazel Trash, and coexist with byte-duplicate staging."""
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path / "coexist_app_state"))
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+
+    # 1. Expired scratch file (> 365d) targeted by age + action="trash" with empty target_path
+    expired_tmp = inbox / "stale_cache.txt"
+    expired_tmp.write_text("stale cache content", encoding="utf-8")
+    ts_2018 = datetime.datetime(2018, 4, 10, 9, 0, 0).timestamp()
+    os.utime(expired_tmp, (ts_2018, ts_2018))
+
+    # 2. Byte-identical duplicate pair (2023 mtime) targeted by modified_date + rename_pattern + DUPLICATE_ACTION="stage"
+    dup_payload = b"Identical contract payload for byte-verified duplicate staging"
+    primary_doc = inbox / "contract_a.txt"
+    dup_copy = inbox / "contract_b.txt"
+    primary_doc.write_bytes(dup_payload)
+    dup_copy.write_bytes(dup_payload)
+    ts_2023 = datetime.datetime(2023, 11, 5, 14, 30, 0).timestamp()
+    os.utime(primary_doc, (ts_2023, ts_2023))
+    os.utime(dup_copy, (ts_2023, ts_2023))
+
+    settings = AppSettings(filepath=str(tmp_path / "coexist_settings.json"))
+    settings.DUPLICATE_ACTION = "stage"
+    settings.DETECT_ORIGINAL_BY = "name"
+    settings.CONTEXTUAL_RENAMING = True
+    settings.POLICIES = [
+        {
+            "type": "age",
+            "action": "trash",
+            "expression": "> 3650d" if False else "> 1800d",
+            "target_path": "",
+            "priority": 95,
+        },
+        {
+            "type": "modified_date",
+            "expression": "< 2025-01-01",
+            "target_path": "Contracts/{year}/{month}",
+            "rename_pattern": "{date}_{stem}{extension}",
+            "priority": 80,
+        },
+    ]
+
+    # Hazel export -> import round-trip preserves Age + NSRuleActionTrash with empty target_path
+    hazel_trash_file = tmp_path / "trash_age.hazelrules"
+    export_active_rules(settings, "hazel", hazel_trash_file)
+    imported_hazel = HazelRuleImporter().parse_file(hazel_trash_file)
+    age_trash_pol = next(p for p in imported_hazel.policies if p["type"] == "age")
+    assert age_trash_pol["action"] == "trash"
+    assert age_trash_pol["target_path"] == ""
+
+    session = AppSession(settings, str(inbox))
+    try:
+        # MetadataPass bypasses stale_cache.txt via static age+trash match
+        bypassed = MetadataPass.run(
+            str(inbox),
+            ["stale_cache.txt", "contract_a.txt", "contract_b.txt"],
+            settings,
+            session.db,
+        )
+        assert "stale_cache.txt" in bypassed
+
+        pipeline = SortPipeline(session)
+        plan, run_res = pipeline.run()
+        assert run_res is not None
+        assert run_res.ok
+
+        # Primary copy (contract_a.txt by 'name') moved into Contracts/2023/11 and renamed with historical date
+        expected_primary = (
+            inbox / "Contracts" / "2023" / "11" / "2023-11-05_contract_a.txt"
+        )
+        assert expected_primary.is_file()
+        assert expected_primary.read_bytes() == dup_payload
+        assert not primary_doc.exists()
+        assert not dup_copy.exists()
+        assert not expired_tmp.exists()
+
+        # Byte duplicate staged into .sortify_duplicates/<sid>/ and trashed file staged into _trash/ (neither renamed by FileRenamerEngine)
+        staging_root = inbox / ".sortify_duplicates"
+        assert staging_root.is_dir()
+        staged_files = [p.name for p in staging_root.rglob("*.txt")]
+        assert "contract_b.txt" in staged_files
+        assert "stale_cache.txt" in staged_files
+
+        # Full session undo restores all three original files cleanly
+        session_id = str(run_res.summary["session_id"])
+        undo_res = pipeline.undo(session_id)
+        assert undo_res.ok
+        assert primary_doc.is_file()
+        assert dup_copy.is_file()
+        assert expired_tmp.is_file()
+    finally:
+        session.close()

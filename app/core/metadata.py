@@ -100,6 +100,85 @@ def get_extension_category_target(item: str, settings) -> str | None:
     return None
 
 
+def _evaluate_static_routing_detail(
+    file_path: str,
+    settings: object,
+    *,
+    filename_only: str | None = None,
+    check_extension_categories: bool = True,
+    sorted_policies: list[dict] | None = None,
+) -> tuple[str | None, bool, str | None, bool]:
+    """Evaluate static routing and return ``(matched_target, has_valid_action, action_name, halt_evaluation)``."""
+    fn_lower = (
+        filename_only
+        if filename_only is not None
+        else os.path.basename(file_path).lower()
+    )
+    if sorted_policies is None:
+        raw_policies = getattr(settings, "POLICIES", []) if settings else []
+        valid_policies = (
+            [
+                p
+                for p in (raw_policies or [])
+                if isinstance(p, dict) or hasattr(p, "model_dump")
+            ]
+            if isinstance(raw_policies, (list, tuple))
+            else []
+        )
+        active_policies = PolicyEngine.sort_policies(valid_policies)
+    else:
+        active_policies = sorted_policies
+
+    eval_out = PolicyEngine.evaluate_policies(
+        file_path,
+        "",
+        "[STATUS:STATIC]",
+        active_policies,
+        return_halting=True,
+        is_sorted=True,
+        abs_file_path=file_path if file_path and os.path.isfile(file_path) else None,
+    )
+    matched_policy, halt_evaluation = (
+        eval_out if isinstance(eval_out, tuple) else (eval_out, False)
+    )
+
+    matched_target: str | None = None
+    matched_action = False
+    matched_action_name: str | None = None
+    if matched_policy is not None:
+        raw_target = matched_policy.get("target_path")
+        if raw_target:
+            matched_target = str(raw_target)
+        raw_action = matched_policy.get("action")
+        if raw_action:
+            norm_act = str(raw_action).strip().lower()
+            matched_action = PolicyEngine.validate_policy_action(norm_act)
+            if matched_action:
+                matched_action_name = norm_act
+
+    if not halt_evaluation and not matched_target and not matched_action:
+        for attr_name in ("KEYWORD_RULES", "LEARNED_RULES"):
+            rules = getattr(settings, attr_name, {}) if settings else {}
+            if isinstance(rules, dict):
+                for keyword, target_folder in rules.items():
+                    kw_str = str(keyword)
+                    if kw_str.strip() and kw_str.lower() in fn_lower and target_folder:
+                        matched_target = str(target_folder)
+                        break
+            if matched_target:
+                break
+
+    if (
+        not halt_evaluation
+        and not matched_target
+        and not matched_action
+        and check_extension_categories
+    ):
+        matched_target = get_extension_category_target(file_path, settings)
+
+    return matched_target, matched_action, matched_action_name, halt_evaluation
+
+
 def evaluate_static_file_routing(
     file_path: str,
     settings: object,
@@ -132,68 +211,15 @@ def evaluate_static_file_routing(
         matched destination folder, whether a valid policy action matched,
         and whether a halting rule stopped downstream evaluation.
     """
-    fn_lower = (
-        filename_only
-        if filename_only is not None
-        else os.path.basename(file_path).lower()
-    )
-    if sorted_policies is None:
-        raw_policies = getattr(settings, "POLICIES", []) if settings else []
-        valid_policies = (
-            [
-                p
-                for p in (raw_policies or [])
-                if isinstance(p, dict) or hasattr(p, "model_dump")
-            ]
-            if isinstance(raw_policies, (list, tuple))
-            else []
+    matched_target, matched_action, _action_name, halt_evaluation = (
+        _evaluate_static_routing_detail(
+            file_path,
+            settings,
+            filename_only=filename_only,
+            check_extension_categories=check_extension_categories,
+            sorted_policies=sorted_policies,
         )
-        active_policies = PolicyEngine.sort_policies(valid_policies)
-    else:
-        active_policies = sorted_policies
-
-    eval_out = PolicyEngine.evaluate_policies(
-        file_path,
-        "",
-        "[STATUS:STATIC]",
-        active_policies,
-        return_halting=True,
-        is_sorted=True,
     )
-    matched_policy, halt_evaluation = (
-        eval_out if isinstance(eval_out, tuple) else (eval_out, False)
-    )
-
-    matched_target: str | None = None
-    matched_action = False
-    if matched_policy is not None:
-        raw_target = matched_policy.get("target_path")
-        if raw_target:
-            matched_target = str(raw_target)
-        raw_action = matched_policy.get("action")
-        if raw_action:
-            matched_action = PolicyEngine.validate_policy_action(str(raw_action))
-
-    if not halt_evaluation and not matched_target and not matched_action:
-        for attr_name in ("KEYWORD_RULES", "LEARNED_RULES"):
-            rules = getattr(settings, attr_name, {}) if settings else {}
-            if isinstance(rules, dict):
-                for keyword, target_folder in rules.items():
-                    kw_str = str(keyword)
-                    if kw_str.strip() and kw_str.lower() in fn_lower and target_folder:
-                        matched_target = str(target_folder)
-                        break
-            if matched_target:
-                break
-
-    if (
-        not halt_evaluation
-        and not matched_target
-        and not matched_action
-        and check_extension_categories
-    ):
-        matched_target = get_extension_category_target(file_path, settings)
-
     return matched_target, matched_action, halt_evaluation
 
 
@@ -314,17 +340,21 @@ class MetadataPass:
             is_supported = registry.is_supported(ext)
 
             matched_target = None
+            matched_action_name: str | None = None
             if file_hash in hash_to_target:
                 matched_target = hash_to_target[file_hash]
             else:
-                matched_target, _matched_action, _halt_eval = (
-                    evaluate_static_file_routing(
-                        item_path,
-                        settings,
-                        filename_only=os.path.basename(rel_p).lower(),
-                        check_extension_categories=not is_supported,
-                        sorted_policies=sorted_policies,
-                    )
+                (
+                    matched_target,
+                    _matched_action,
+                    matched_action_name,
+                    _halt_eval,
+                ) = _evaluate_static_routing_detail(
+                    item_path,
+                    settings,
+                    filename_only=os.path.basename(rel_p).lower(),
+                    check_extension_categories=not is_supported,
+                    sorted_policies=sorted_policies,
                 )
 
             norm_rel_p = rel_p.replace("\\", "/")
@@ -334,7 +364,7 @@ class MetadataPass:
                 if mt_clean in rejected_set or (mt_clean.split("/")[0] in rejected_set):
                     matched_target = None
 
-            if matched_target and (
+            if (matched_target or matched_action_name in ("trash", "skip")) and (
                 not is_supported or not has_content_compliance_policy
             ):
                 bypassed_files.append(item)

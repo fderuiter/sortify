@@ -111,7 +111,7 @@ Custom mapping of category folder names to lists of file extensions or extension
 - **Type**: `list[PolicyRule]`
 - **Default**: `[]`
 
-Ordered list of typed PolicyRule dictionaries evaluated from highest integer priority to lowest across 11 rule types ('keyword', 'pattern', 'override', 'action', 'compliance', 'unarchive', 'age', 'modified_date', 'created_date', 'exif_date', 'size'), optional rename_pattern templates, 5 lifecycle actions ('archive', 'retain', 'quarantine', 'redact', 'unarchive'), and 8 post-unarchive actions; warns when higher-priority rules shadow lower-priority rules.
+Ordered list of typed PolicyRule dictionaries evaluated from highest integer priority to lowest across 12 rule types ('keyword', 'pattern', 'override', 'action', 'compliance', 'unarchive', 'duplicate', 'age', 'modified_date', 'created_date', 'exif_date', 'size'), optional rename_pattern templates, 6 lifecycle actions ('archive', 'retain', 'quarantine', 'redact', 'unarchive', 'trash'), and 8 post-unarchive actions; warns when higher-priority rules shadow lower-priority rules.
 
 ### `VISUAL_TIMEOUT`
 - **Type**: `int`
@@ -257,6 +257,20 @@ Visual text and caption extraction backend: 'easyocr' for standard OCR or 'flore
 
 Resolution strategy when a destination file already exists: 'skip' leaves the source untouched, 'rename' appends a numeric suffix, and 'overwrite' replaces the target.
 
+### `DUPLICATE_ACTION`
+- **Type**: `str`
+- **Default**: `'off'`
+- **Allowed**: `off`, `review`, `skip`, `stage`, `trash`
+
+Handling mode for exact byte-identical duplicate clusters during scan and sort: 'off' treats copies normally, 'review' prompts in interactive TUI, 'skip' excludes redundant copies, 'stage' displaces copies into .sortify_duplicates/<session_id>/ for undo, and 'trash' stages verified copies for OS Trash disposal.
+
+### `DETECT_ORIGINAL_BY`
+- **Type**: `str`
+- **Default**: `'first_seen'`
+- **Allowed**: `first_seen`, `name`, `created`, `lastmodified`, `-first_seen`, `-name`, `-created`, `-lastmodified`
+
+Selector used to choose the surviving original file in each byte-identical duplicate cluster ('first_seen', 'name', 'created', 'lastmodified', or '-' reverse order variants).
+
 ### `SORTING_STRATEGY`
 - **Type**: `str`
 - **Default**: `'default'`
@@ -274,6 +288,12 @@ Whether clinical sorting strategies standardize filenames using Trial Master Fil
 - **Default**: `True`
 
 Whether clinical compliance runs automatically generate a regulatory audit trail report upon completion.
+
+### `CLINICAL_SUPPRESS_DUPLICATES`
+- **Type**: `bool`
+- **Default**: `False`
+
+Whether clinical multi-study ingestion skips copying byte-verified duplicate artifacts instead of creating numbered _1 copies while preserving manifest lineage.
 
 ### `COHERENCE_THRESHOLD`
 - **Type**: `float`
@@ -412,27 +432,34 @@ System settings modified during runtime are dynamically saved to the local JSON 
 
 Each entry in `POLICIES` follows the typed `PolicyRule` schema in `app/config_schema.json`:
 
-- **Required keys**: `type` (`str`), `expression` (non-empty `str`), `target_path` (relative `str`), and `priority` (`int`).
-- **Optional keys**: `halting` (`bool`, default `false`), `enabled` (`bool`, default `true`), `action` (`str`), and `post_unarchive_action` (`str`, with legacy aliases `post_action` and `archive_action` accepted when loading existing `settings.json` files).
+- **Required keys**: `type` (`str`), `expression` (non-empty `str`), `target_path` (relative `str`, supporting `{year}`, `{month}`, `{day}`, `{date}`, and `{category}` placeholders), and `priority` (`int`).
+- **Optional keys**: `halting` (`bool`, default `false`), `enabled` (`bool`, default `true`), `action` (`str`), `detect_original_by` (`str`, default `'first_seen'`), `rename_pattern` (`str`, optional filename template supporting `{date}`, `{year}`, `{month}`, `{day}`, `{category}`, `{original}`, `{stem}`, `{extension}`, and `{seq}`), and `post_unarchive_action` (`str`, with legacy aliases `post_action` and `archive_action` accepted when loading existing `settings.json` files).
 
-Compliance and routing policies support all **6** rule `type` values:
+Compliance and routing policies support all **12** rule `type` values:
 
 - **`keyword`**: Case-insensitive substring match against the filename and extracted document text (or the filename alone when a preliminary status match is present; expressions `'secret'` and `'credential'` invoke credential/secret scanning across the path and text).
-- **`pattern`**: Case-insensitive substring match against the **lowercase filename (`os.path.basename(file_path).lower()`) only**—does not inspect extracted document text.
+- **`pattern`**: Case-insensitive substring or glob match against the **lowercase filename (`os.path.basename(file_path).lower()`) only**—does not inspect extracted document text.
 - **`override`**: Case-insensitive match against the **lowercase filename or full file path (`file_path.lower()`)**—does not inspect extracted document text, allowing deterministic path-level routing overrides.
 - **`action`**: Lifecycle directive rule evaluated via case-insensitive substring matching against the filename and extracted document text.
 - **`compliance`**: Regulatory and sensitivity rule evaluated via case-insensitive substring matching against the filename and extracted document text (plus secret detection when `expression` is `'secret'` or `'credential'`).
 - **`unarchive`**: Archive ingestion rule evaluated via case-insensitive substring matching against the filename and extracted document text to trigger archive extraction workflows.
+- **`duplicate`**: Exact byte-verified duplicate rule matching redundant copies in verified clusters (`'*'` matches all duplicates, glob masks match filenames, and `detect_original_by` selects the surviving original across `'first_seen'`, `'name'`, `'created'`, `'lastmodified'`, and `'-'` reverse variants).
+- **`age`**: File age comparison rule evaluated against file modification time (`> 30d`, `>= 6mo`, `< 1y`, `14d..90d`, `older than 30d`, `in the last 7d`).
+- **`modified_date`**: File modification date comparison rule (`< 2025-01-01`, `>= 2024-06-01`, `2024-01-01..2024-12-31`, `older than 90d`, `in the last 14d`).
+- **`created_date`**: Filesystem creation/birth timestamp comparison rule supporting the same ISO date, range, and relative duration expressions as `modified_date`.
+- **`exif_date`**: Embedded photo EXIF (`DateTimeOriginal` / `DateTimeDigitized` / `DateTime`) or PDF metadata (`/CreationDate` / `/ModDate`) date comparison rule; gracefully does not match when no embedded date is present.
+- **`size`**: File byte-size comparison rule supporting `B`, `KB`/`KiB`, `MB`/`MiB`, `GB`/`GiB`, and `TB`/`TiB` units (`> 50MB`, `<= 500KB`, `1MB..100MB`).
 
 ### Lifecycle Actions & Post-Unarchive Directives
 
-When a policy rule specifies an optional `action` key (`PolicyEngine.SUPPORTED_ACTIONS`), it must be one of the **5** supported lifecycle actions:
+When a policy rule specifies an optional `action` key (`PolicyEngine.SUPPORTED_ACTIONS`), it must be one of the **6** supported lifecycle actions:
 
 - **`archive`**: Route or package matching files into designated archive storage.
 - **`retain`**: Keep matching files under retention governance at the target destination.
 - **`quarantine`**: Intercept and stage matching files in compliance quarantine for forensic review before release.
 - **`redact`**: Flag or process matching files through PII/secret redaction handling.
 - **`unarchive`**: Safely extract supported `.zip` archives into `target_path` with zip-bomb/size safety checks and enqueue extracted child files for sorting.
+- **`trash`**: Stage redundant or matching copies into `.sortify_duplicates/<session_id>/_trash/` after primary move verification for reversible session undo and optional native OS Trash export.
 
 When `action` is set to `'unarchive'`, `post_unarchive_action` controls how the original archive file is handled after extraction and supports **8** values across three behaviors:
 
@@ -563,10 +590,13 @@ Automation pipelines invoking CLI commands with `--json` can rely on determinist
 ##### `sort`
 ```text
 usage: smart-autosorter sort [-h] [--preset {demo,downloads,documents}]
-                             [--json] [--dest-dir DEST_DIR] [--dry-run] [-q]
-                             [--no-color] [--max-folders MAX_FOLDERS]
+                             [--json] [--dest-dir DEST_DIR] [--dry-run]
+                             [--flush-trash] [-q] [--no-color]
+                             [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
                              [--conflict-policy {skip,rename}]
+                             [--duplicates {off,skip,stage,trash}]
+                             [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
                              [--contextual-renaming]
                              [--no-contextual-renaming] [--tui]
                              [--interactive]
@@ -588,6 +618,8 @@ options:
   --dest-dir DEST_DIR   Destination directory for sorted files
   --dry-run             Perform dry run analysis without executing physical
                         moves
+  --flush-trash         Export staged duplicate copies to the OS Trash after
+                        move verification
   -q, --quiet           Suppress informational prints and non-essential
                         progress output
   --no-color            Disable ANSI color and style formatting
@@ -597,6 +629,12 @@ options:
                         Sorting strategy
   --conflict-policy {skip,rename}
                         Conflict resolution policy
+  --duplicates {off,skip,stage,trash}
+                        Byte-identical duplicate handling mode (off, skip,
+                        stage, trash)
+  --detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}
+                        Criterion used to select the surviving original in
+                        duplicate clusters
   --contextual-renaming
                         Enable AI contextual renaming
   --no-contextual-renaming
@@ -623,6 +661,8 @@ usage: smart-autosorter scan [-h] [--preset {demo,downloads,documents}]
                              [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
                              [--conflict-policy {skip,rename}]
+                             [--duplicates {off,skip,stage,trash}]
+                             [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
                              [--contextual-renaming]
                              [--no-contextual-renaming] [--tui]
                              [--interactive]
@@ -650,6 +690,12 @@ options:
                         Sorting strategy
   --conflict-policy {skip,rename}
                         Conflict resolution policy
+  --duplicates {off,skip,stage,trash}
+                        Byte-identical duplicate handling mode (off, skip,
+                        stage, trash)
+  --detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}
+                        Criterion used to select the surviving original in
+                        duplicate clusters
   --contextual-renaming
                         Enable AI contextual renaming
   --no-contextual-renaming
@@ -675,6 +721,8 @@ usage: smart-autosorter config [-h] [--show] [--json] [--set KEY VALUE] [-q]
                                [--no-color] [--max-folders MAX_FOLDERS]
                                [--strategy {default,generative,clinical_tmf,clinical_isf}]
                                [--conflict-policy {skip,rename}]
+                               [--duplicates {off,skip,stage,trash}]
+                               [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
                                [--contextual-renaming]
                                [--no-contextual-renaming] [--tui]
                                [--interactive]
@@ -697,6 +745,12 @@ options:
                         Sorting strategy
   --conflict-policy {skip,rename}
                         Conflict resolution policy
+  --duplicates {off,skip,stage,trash}
+                        Byte-identical duplicate handling mode (off, skip,
+                        stage, trash)
+  --detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}
+                        Criterion used to select the surviving original in
+                        duplicate clusters
   --contextual-renaming
                         Enable AI contextual renaming
   --no-contextual-renaming
@@ -722,6 +776,8 @@ usage: smart-autosorter daemon [-h] [--watch] [-q] [--no-color]
                                [--max-folders MAX_FOLDERS]
                                [--strategy {default,generative,clinical_tmf,clinical_isf}]
                                [--conflict-policy {skip,rename}]
+                               [--duplicates {off,skip,stage,trash}]
+                               [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
                                [--contextual-renaming]
                                [--no-contextual-renaming] [--tui]
                                [--interactive]
@@ -748,6 +804,12 @@ options:
                         Sorting strategy
   --conflict-policy {skip,rename}
                         Conflict resolution policy
+  --duplicates {off,skip,stage,trash}
+                        Byte-identical duplicate handling mode (off, skip,
+                        stage, trash)
+  --detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}
+                        Criterion used to select the surviving original in
+                        duplicate clusters
   --contextual-renaming
                         Enable AI contextual renaming
   --no-contextual-renaming
@@ -774,6 +836,8 @@ usage: smart-autosorter undo [-h] [--session-id SESSION_ID] [--list]
                              [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
                              [--conflict-policy {skip,rename}]
+                             [--duplicates {off,skip,stage,trash}]
+                             [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
                              [--contextual-renaming]
                              [--no-contextual-renaming] [--tui]
                              [--interactive]
@@ -800,6 +864,12 @@ options:
                         Sorting strategy
   --conflict-policy {skip,rename}
                         Conflict resolution policy
+  --duplicates {off,skip,stage,trash}
+                        Byte-identical duplicate handling mode (off, skip,
+                        stage, trash)
+  --detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}
+                        Criterion used to select the surviving original in
+                        duplicate clusters
   --contextual-renaming
                         Enable AI contextual renaming
   --no-contextual-renaming
@@ -825,6 +895,8 @@ usage: smart-autosorter drop [-h] [--dest-dir DEST_DIR] [--dry-run] [--json]
                              [-q] [--no-color] [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
                              [--conflict-policy {skip,rename}]
+                             [--duplicates {off,skip,stage,trash}]
+                             [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
                              [--contextual-renaming]
                              [--no-contextual-renaming] [--tui]
                              [--interactive]
@@ -852,6 +924,12 @@ options:
                         Sorting strategy
   --conflict-policy {skip,rename}
                         Conflict resolution policy
+  --duplicates {off,skip,stage,trash}
+                        Byte-identical duplicate handling mode (off, skip,
+                        stage, trash)
+  --detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}
+                        Criterion used to select the surviving original in
+                        duplicate clusters
   --contextual-renaming
                         Enable AI contextual renaming
   --no-contextual-renaming

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "77dc6a754dba62441ed6affca251e4b3af112efad6e9adcc8f64b1885ce34a43"
+    "checksum": "c3d86096e6737fad7fc38c6ca12e5278dd1b97e6a9f22aaba888e6784bd89bf4"
   },
   "classes": [
     {
@@ -26,6 +26,16 @@
               "annotation": "bool",
               "default": "True",
               "name": "smart_renaming"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "suppress_duplicates"
+            },
+            {
+              "annotation": "str",
+              "default": "'off'",
+              "name": "duplicate_action"
             }
           ],
           "returns": null

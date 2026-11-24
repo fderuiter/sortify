@@ -5,7 +5,7 @@
       "description": "Typed dictionary schema for unified compliance and routing policy rules.",
       "properties": {
         "type": {
-          "description": "Rule evaluation strategy: 'keyword', 'action', 'compliance', or 'unarchive' match filenames and document text; 'pattern' matches lowercase filenames only; 'override' matches lowercase filenames or full file paths; 'age', 'modified_date', 'created_date', 'exif_date', and 'size' evaluate file timestamps, EXIF/PDF headers, and byte sizes.",
+          "description": "Rule evaluation strategy: 'keyword', 'action', 'compliance', or 'unarchive' match filenames and document text; 'pattern' matches lowercase filenames only; 'override' matches lowercase filenames or full file paths; 'duplicate' matches byte-verified duplicate files; 'age', 'modified_date', 'created_date', 'exif_date', and 'size' evaluate file timestamps, EXIF/PDF headers, and byte sizes.",
           "enum": [
             "keyword",
             "pattern",
@@ -13,6 +13,7 @@
             "action",
             "compliance",
             "unarchive",
+            "duplicate",
             "age",
             "modified_date",
             "created_date",
@@ -60,9 +61,25 @@
             "retain",
             "quarantine",
             "redact",
-            "unarchive"
+            "unarchive",
+            "trash"
           ],
           "title": "Action",
+          "type": "string"
+        },
+        "detect_original_by": {
+          "description": "Optional original-file selection mode for 'duplicate' policy rules ('first_seen', 'name', 'created', 'lastmodified', or '-' reverse variants).",
+          "enum": [
+            "first_seen",
+            "name",
+            "created",
+            "lastmodified",
+            "-first_seen",
+            "-name",
+            "-created",
+            "-lastmodified"
+          ],
+          "title": "Detect Original By",
           "type": "string"
         },
         "post_unarchive_action": {
@@ -200,7 +217,7 @@
       "type": "object"
     },
     "POLICIES": {
-      "description": "Ordered list of typed PolicyRule dictionaries evaluated from highest integer priority to lowest across 11 rule types ('keyword', 'pattern', 'override', 'action', 'compliance', 'unarchive', 'age', 'modified_date', 'created_date', 'exif_date', 'size'), optional rename_pattern templates, 5 lifecycle actions ('archive', 'retain', 'quarantine', 'redact', 'unarchive'), and 8 post-unarchive actions; warns when higher-priority rules shadow lower-priority rules.",
+      "description": "Ordered list of typed PolicyRule dictionaries evaluated from highest integer priority to lowest across 12 rule types ('keyword', 'pattern', 'override', 'action', 'compliance', 'unarchive', 'duplicate', 'age', 'modified_date', 'created_date', 'exif_date', 'size'), optional rename_pattern templates, 6 lifecycle actions ('archive', 'retain', 'quarantine', 'redact', 'unarchive', 'trash'), and 8 post-unarchive actions; warns when higher-priority rules shadow lower-priority rules.",
       "items": {
         "$ref": "#/$defs/PolicyRule"
       },
@@ -372,6 +389,35 @@
       "title": "Conflict Policy",
       "type": "string"
     },
+    "DUPLICATE_ACTION": {
+      "default": "off",
+      "description": "Handling mode for exact byte-identical duplicate clusters during scan and sort: 'off' treats copies normally, 'review' prompts in interactive TUI, 'skip' excludes redundant copies, 'stage' displaces copies into .sortify_duplicates/<session_id>/ for undo, and 'trash' stages verified copies for OS Trash disposal.",
+      "enum": [
+        "off",
+        "review",
+        "skip",
+        "stage",
+        "trash"
+      ],
+      "title": "Duplicate Action",
+      "type": "string"
+    },
+    "DETECT_ORIGINAL_BY": {
+      "default": "first_seen",
+      "description": "Selector used to choose the surviving original file in each byte-identical duplicate cluster ('first_seen', 'name', 'created', 'lastmodified', or '-' reverse order variants).",
+      "enum": [
+        "first_seen",
+        "name",
+        "created",
+        "lastmodified",
+        "-first_seen",
+        "-name",
+        "-created",
+        "-lastmodified"
+      ],
+      "title": "Detect Original By",
+      "type": "string"
+    },
     "SORTING_STRATEGY": {
       "default": "default",
       "description": "Document clustering and taxonomy strategy identifier (for example 'default' TF-IDF/embedding clustering, 'generative', 'clinical_tmf', or 'clinical_isf').",
@@ -388,6 +434,12 @@
       "default": true,
       "description": "Whether clinical compliance runs automatically generate a regulatory audit trail report upon completion.",
       "title": "Clinical Generate Audit Report",
+      "type": "boolean"
+    },
+    "CLINICAL_SUPPRESS_DUPLICATES": {
+      "default": false,
+      "description": "Whether clinical multi-study ingestion skips copying byte-verified duplicate artifacts instead of creating numbered _1 copies while preserving manifest lineage.",
+      "title": "Clinical Suppress Duplicates",
       "type": "boolean"
     },
     "COHERENCE_THRESHOLD": {

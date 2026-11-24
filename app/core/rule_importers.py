@@ -190,6 +190,26 @@ _MOVE_ACTION_CORES = frozenset(
 _COPY_ACTION_CORES = frozenset(
     {"copy", "copyfile", "copyto", "copytofolder", "duplicate"}
 )
+_TRASH_ACTION_CORES = frozenset(
+    {
+        "trash",
+        "movetotrash",
+        "sendtotrash",
+        "putintrash",
+        "throwaway",
+        "recycle",
+        "recyclebin",
+        "movetorecyclebin",
+        "sendtorecyclebin",
+        "deletetorecyclebin",
+        "deleterecyclebin",
+        "delete",
+        "remove",
+    }
+)
+_PERMANENT_DELETE_MODES = frozenset(
+    {"directlydelete", "permanent", "permanently", "safelyerase", "shred", "wipe"}
+)
 _RENAME_ACTION_CORES = frozenset(
     {"rename", "renamefile", "setname", "applyrenamepattern"}
 )
@@ -227,6 +247,19 @@ _HAZEL_ANGLE_RENAME_SUBS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"<\s*(?:ext|extension)\s*>", re.IGNORECASE), "{extension}"),
     (re.compile(r"<\s*(?:#|seq|sequence)\s*>", re.IGNORECASE), "{seq}"),
 )
+
+
+def _is_system_trash_destination(raw_path: str | None) -> bool:
+    """Return True when an external destination path targets macOS Trash or Windows Recycle Bin."""
+    if not raw_path or not str(raw_path).strip():
+        return False
+    cleaned = str(raw_path).strip().strip("\"'").replace("\\", "/").rstrip("/")
+    lower = cleaned.lower()
+    if lower in (".trash", "~/.trash", "trash", "recycle bin", "$recycle.bin"):
+        return True
+    return bool(re.search(r"(?:^|/)(?:\.trash|\$recycle\.bin)$", lower))
+
+
 _INLINE_SIZE_RE = re.compile(
     r"^(?:"
     r"(?:size|filesize|file_size|bytes?)\s*(?:[<>]=?|!=|==|=|:)\s*\S+"
@@ -860,10 +893,17 @@ class RuleConflictAnalyzer:
                 if ex_type == p_type and ex_expr == p_expr:
                     ex_target = ex_p.get("target_path", "")
                     ex_prio = ex_p.get("priority", 75)
+                    ex_act = str(ex_p.get("action", "")).strip().lower()
+                    p_act = str(policy.get("action", "")).strip().lower()
                     ex_ren = str(ex_p.get("rename_pattern", "") or "").strip()
                     san_ex = normalize_rule_path(ex_target)
                     san_imp = normalize_rule_path(p_target)
-                    if san_ex != san_imp or ex_prio != p_prio or ex_ren != p_ren:
+                    if (
+                        san_ex != san_imp
+                        or ex_prio != p_prio
+                        or ex_act != p_act
+                        or ex_ren != p_ren
+                    ):
                         ident = f"{ex_expr} ({ex_type})" if ex_type else ex_expr
                         conflicts.append(
                             RuleConflict(
@@ -1024,8 +1064,13 @@ class ImportResult:
                     continue
 
             raw_target = str(policy.get("target_path", ""))
-            norm_target, was_conv, err = normalize_imported_target_path(raw_target)
-            if err is not None or not norm_target:
+            p_action = str(policy.get("action", "")).strip().lower()
+            allows_empty_target = p_action == "trash" or p_type == "duplicate"
+            if not raw_target.strip() and allows_empty_target:
+                norm_target, was_conv, err = "", False, None
+            else:
+                norm_target, was_conv, err = normalize_imported_target_path(raw_target)
+            if err is not None or (not norm_target and not allows_empty_target):
                 reason = err or "Empty destination folder"
                 self.warnings.append(
                     f"Policy rule '{p_expr}' skipped before merge: {reason}"
@@ -1089,6 +1134,28 @@ class ImportResult:
         if import_disabled or hasattr(settings, "DISABLED_KEYWORD_RULES"):
             setattr(settings, "DISABLED_KEYWORD_RULES", new_disabled)
         setattr(settings, "POLICIES", new_policies)
+
+        if not import_disabled and hasattr(settings, "DUPLICATE_ACTION"):
+            for pol_item in new_policies:
+                if (
+                    str(pol_item.get("type", "")).strip().lower() == "duplicate"
+                    and str(pol_item.get("expression", "")).strip() == "*"
+                    and pol_item.get("enabled", True) is not False
+                ):
+                    dup_act = str(pol_item.get("action", "")).strip().lower()
+                    if dup_act in ("trash", "stage", "skip") and (
+                        getattr(settings, "DUPLICATE_ACTION", "off") == "off"
+                        or default_strategy == "overwrite"
+                    ):
+                        setattr(settings, "DUPLICATE_ACTION", dup_act)
+                    det_mode = pol_item.get("detect_original_by")
+                    if (
+                        isinstance(det_mode, str)
+                        and det_mode.strip()
+                        and hasattr(settings, "DETECT_ORIGINAL_BY")
+                    ):
+                        setattr(settings, "DETECT_ORIGINAL_BY", det_mode.strip())
+                    break
 
         if (
             hasattr(settings, "flush")
@@ -1235,6 +1302,8 @@ class BaseRuleImporter(abc.ABC):
             else compact
         )
 
+        if core in _TRASH_ACTION_CORES:
+            return "trash", raw_label
         if core in _UNARCHIVE_ACTION_CORES:
             return "unarchive", raw_label
         if core in _MOVE_ACTION_CORES:
@@ -1296,7 +1365,23 @@ class HazelRuleImporter(BaseRuleImporter):
             return result
 
         rules_list: list[Any] = []
+        folder_throw_away_duplicates = False
         if isinstance(plist_data, dict):
+            folder_opts = (
+                plist_data.get("FolderOptions")
+                or plist_data.get("NSFolderOptions")
+                or plist_data
+            )
+            if isinstance(folder_opts, dict) and any(
+                bool(folder_opts.get(k))
+                for k in (
+                    "RemoveDuplicates",
+                    "DuplicateFiles",
+                    "ThrowAwayDuplicates",
+                    "NSRemoveDuplicates",
+                )
+            ):
+                folder_throw_away_duplicates = True
             rules_list = (
                 plist_data.get("Rules")
                 or plist_data.get("HazelRules")
@@ -1313,6 +1398,18 @@ class HazelRuleImporter(BaseRuleImporter):
                 f"Unrecognized Hazel rule package structure in '{p.name}'."
             )
             return result
+
+        if folder_throw_away_duplicates:
+            result.policies.append(
+                {
+                    "type": "duplicate",
+                    "action": "trash",
+                    "expression": "*",
+                    "target_path": "",
+                    "priority": 80,
+                    "halting": False,
+                }
+            )
 
         for idx, rule in enumerate(rules_list):
             if not isinstance(rule, dict):
@@ -1337,6 +1434,12 @@ class HazelRuleImporter(BaseRuleImporter):
             raw_target = ""
             raw_rename_pattern = ""
             is_unarchive = False
+            is_trash = False
+            throw_away_duplicate = bool(
+                rule.get("ThrowAwayDuplicate")
+                or rule.get("NSRuleThrowAwayDuplicate")
+                or rule.get("throwAwayDuplicate")
+            )
             saw_explicit_actions = False
             saw_supported_action = False
 
@@ -1384,8 +1487,19 @@ class HazelRuleImporter(BaseRuleImporter):
                     saw_supported_action = True
                     if act_kind == "unarchive":
                         is_unarchive = True
+                    elif act_kind == "trash":
+                        is_trash = True
 
                     if isinstance(act, dict):
+                        if any(
+                            bool(act.get(k))
+                            for k in (
+                                "ThrowAwayDuplicate",
+                                "NSRuleThrowAwayDuplicate",
+                                "throwAwayDuplicate",
+                            )
+                        ):
+                            throw_away_duplicate = True
                         act_target = (
                             act.get("DestinationPath")
                             or act.get("Destination")
@@ -1395,7 +1509,10 @@ class HazelRuleImporter(BaseRuleImporter):
                             or act.get("TargetFolder")
                         )
                         if act_target and isinstance(act_target, str):
-                            raw_target = act_target
+                            if _is_system_trash_destination(act_target):
+                                is_trash = True
+                            else:
+                                raw_target = act_target
                         act_rename = (
                             act.get("RenamePattern")
                             or act.get("rename_pattern")
@@ -1411,7 +1528,10 @@ class HazelRuleImporter(BaseRuleImporter):
                         if act_rename and isinstance(act_rename, str):
                             raw_rename_pattern = act_rename
                     elif isinstance(act, str) and ("/" in act or "\\" in act):
-                        raw_target = act
+                        if _is_system_trash_destination(act):
+                            is_trash = True
+                        else:
+                            raw_target = act
 
             top_action_raw = (
                 rule.get("NSRuleActionType")
@@ -1457,6 +1577,9 @@ class HazelRuleImporter(BaseRuleImporter):
                 if top_kind == "unarchive":
                     is_unarchive = True
                     saw_supported_action = True
+                elif top_kind == "trash":
+                    is_trash = True
+                    saw_supported_action = True
 
             if not raw_rename_pattern:
                 top_rename = rule.get("RenamePattern") or rule.get("rename_pattern")
@@ -1464,7 +1587,7 @@ class HazelRuleImporter(BaseRuleImporter):
                     raw_rename_pattern = top_rename
 
             rule_rename_pattern = ""
-            if raw_rename_pattern:
+            if raw_rename_pattern and not is_trash:
                 norm_ren, ren_err = _normalize_imported_rename_pattern(
                     raw_rename_pattern
                 )
@@ -1483,24 +1606,31 @@ class HazelRuleImporter(BaseRuleImporter):
                     or rule.get("TargetFolder")
                 )
                 if top_target and isinstance(top_target, str):
-                    raw_target = top_target
+                    if _is_system_trash_destination(top_target):
+                        is_trash = True
+                    else:
+                        raw_target = top_target
 
-            if not raw_target:
-                if saw_explicit_actions and not saw_supported_action:
+            if is_trash:
+                target_dir = ""
+            else:
+                if not raw_target:
+                    if saw_explicit_actions and not saw_supported_action:
+                        continue
+                    result.warnings.append(
+                        f"Hazel rule '{rule_name}' has no target destination folder; omitted auto-routing."
+                    )
+                    result.unsupported.append(
+                        {"rule": rule_name, "reason": "Missing target destination path"}
+                    )
                     continue
-                result.warnings.append(
-                    f"Hazel rule '{rule_name}' has no target destination folder; omitted auto-routing."
-                )
-                result.unsupported.append(
-                    {"rule": rule_name, "reason": "Missing target destination path"}
-                )
-                continue
 
-            target_dir = self._resolve_safe_destination(
-                raw_target, rule_name, result, "Hazel rule"
-            )
-            if target_dir is None:
-                continue
+                resolved_dir = self._resolve_safe_destination(
+                    raw_target, rule_name, result, "Hazel rule"
+                )
+                if resolved_dir is None:
+                    continue
+                target_dir = resolved_dir
 
             cond_mode = (
                 str(
@@ -1532,7 +1662,22 @@ class HazelRuleImporter(BaseRuleImporter):
             )
 
             if not isinstance(conditions, list) or not conditions:
-                if is_unarchive:
+                if is_trash:
+                    expr_val = rule_name if rule_name else "*"
+                    p_type = (
+                        "pattern" if _has_wildcard_or_ext_mask(expr_val) else "keyword"
+                    )
+                    result.policies.append(
+                        {
+                            "type": p_type,
+                            "action": "trash",
+                            "expression": expr_val,
+                            "target_path": "",
+                            "priority": 75,
+                            "halting": False,
+                        }
+                    )
+                elif is_unarchive:
                     expr_val = rule_name if rule_name else "*"
                     p_type = (
                         "pattern"
@@ -1567,6 +1712,17 @@ class HazelRuleImporter(BaseRuleImporter):
                     if rule_rename_pattern:
                         pol_no_cond["rename_pattern"] = rule_rename_pattern
                     result.policies.append(pol_no_cond)
+                if throw_away_duplicate and not is_trash:
+                    result.policies.append(
+                        {
+                            "type": "duplicate",
+                            "action": "trash",
+                            "expression": rule_name if rule_name else "*",
+                            "target_path": "",
+                            "priority": 80,
+                            "halting": False,
+                        }
+                    )
                 continue
 
             def _has_nested_subconditions(c: dict[str, Any]) -> bool:
@@ -1605,7 +1761,7 @@ class HazelRuleImporter(BaseRuleImporter):
                 )
 
             def _attach_optional_rename(p_dict: dict[str, Any]) -> dict[str, Any]:
-                if rule_rename_pattern:
+                if rule_rename_pattern and not is_trash:
                     p_dict["rename_pattern"] = rule_rename_pattern
                 return p_dict
 
@@ -1619,6 +1775,8 @@ class HazelRuleImporter(BaseRuleImporter):
                 raw_attr = str(
                     cond.get("target")
                     or cond.get("attribute")
+                    or cond.get("Target")
+                    or cond.get("Attribute")
                     or cond.get("NSRuleConditionTarget")
                     or ""
                 )
@@ -1627,12 +1785,15 @@ class HazelRuleImporter(BaseRuleImporter):
                 raw_op = str(
                     cond.get("operator")
                     or cond.get("qualifier")
+                    or cond.get("Operator")
+                    or cond.get("Qualifier")
                     or cond.get("NSRuleConditionOperator")
                     or ""
                 )
                 negated_flag = bool(
                     cond.get("negated")
                     or cond.get("isNegated")
+                    or cond.get("Negated")
                     or cond.get("NSRuleConditionNegated")
                     or cond.get("not")
                 )
@@ -1640,9 +1801,28 @@ class HazelRuleImporter(BaseRuleImporter):
                 val = (
                     cond.get("value")
                     or cond.get("pattern")
+                    or cond.get("Value")
+                    or cond.get("Pattern")
                     or cond.get("NSRuleConditionValue")
                     or cond.get("string")
+                    or cond.get("String")
                 )
+
+                if any(
+                    tok in attribute
+                    for tok in ("duplicate", "isduplicate", "duplicatefile")
+                ):
+                    result.policies.append(
+                        {
+                            "type": "duplicate",
+                            "action": "trash" if is_trash else "archive",
+                            "expression": "*",
+                            "target_path": target_dir,
+                            "priority": 80,
+                            "halting": False,
+                        }
+                    )
+                    continue
 
                 attr_filter_kind = _classify_condition_attribute(raw_attr)
                 if attr_filter_kind is not None:
@@ -1668,13 +1848,26 @@ class HazelRuleImporter(BaseRuleImporter):
                         meta_pol: dict[str, Any] = {
                             "type": meta_type,
                             "expression": meta_expr,
-                            "target_path": target_dir,
+                            "target_path": "" if is_trash else target_dir,
                             "priority": 75,
                             "halting": False,
                         }
-                        if is_unarchive:
+                        if is_trash:
+                            meta_pol["action"] = "trash"
+                        elif is_unarchive:
                             meta_pol["action"] = "unarchive"
                         result.policies.append(_attach_optional_rename(meta_pol))
+                        if throw_away_duplicate and not is_trash:
+                            result.policies.append(
+                                {
+                                    "type": "duplicate",
+                                    "action": "trash",
+                                    "expression": "*",
+                                    "target_path": "",
+                                    "priority": 80,
+                                    "halting": False,
+                                }
+                            )
                     else:
                         reason_msg = (
                             meta_err
@@ -1761,28 +1954,35 @@ class HazelRuleImporter(BaseRuleImporter):
                     )
                     continue
 
+                matched_expr_for_dup = val_str
                 if op_kind == "starts_with":
                     expr = val_str if val_str.endswith("*") else f"{val_str}*"
+                    matched_expr_for_dup = expr
                     pol_dict: dict[str, Any] = {
                         "type": "unarchive" if is_unarchive else "pattern",
                         "expression": expr,
-                        "target_path": target_dir,
+                        "target_path": "" if is_trash else target_dir,
                         "priority": 75,
                         "halting": False,
                     }
-                    if is_unarchive:
+                    if is_trash:
+                        pol_dict["action"] = "trash"
+                    elif is_unarchive:
                         pol_dict["action"] = "unarchive"
                     result.policies.append(_attach_optional_rename(pol_dict))
                 elif op_kind == "ends_with":
                     expr = val_str if val_str.startswith("*") else f"*{val_str}"
+                    matched_expr_for_dup = expr
                     pol_dict = {
                         "type": "unarchive" if is_unarchive else "pattern",
                         "expression": expr,
-                        "target_path": target_dir,
+                        "target_path": "" if is_trash else target_dir,
                         "priority": 75,
                         "halting": False,
                     }
-                    if is_unarchive:
+                    if is_trash:
+                        pol_dict["action"] = "trash"
+                    elif is_unarchive:
                         pol_dict["action"] = "unarchive"
                     result.policies.append(_attach_optional_rename(pol_dict))
                 elif (
@@ -1802,16 +2002,30 @@ class HazelRuleImporter(BaseRuleImporter):
                         )
                     else:
                         expr = val_str
+                    matched_expr_for_dup = expr
                     pol_dict = {
                         "type": "unarchive" if is_unarchive else "pattern",
                         "expression": expr,
-                        "target_path": target_dir,
+                        "target_path": "" if is_trash else target_dir,
                         "priority": 75,
                         "halting": False,
                     }
-                    if is_unarchive:
+                    if is_trash:
+                        pol_dict["action"] = "trash"
+                    elif is_unarchive:
                         pol_dict["action"] = "unarchive"
                     result.policies.append(_attach_optional_rename(pol_dict))
+                elif is_trash:
+                    result.policies.append(
+                        {
+                            "type": "keyword",
+                            "action": "trash",
+                            "expression": val_str,
+                            "target_path": "",
+                            "priority": 75,
+                            "halting": False,
+                        }
+                    )
                 elif is_unarchive:
                     result.policies.append(
                         _attach_optional_rename(
@@ -1844,6 +2058,18 @@ class HazelRuleImporter(BaseRuleImporter):
                                 }
                             )
                         )
+
+                if throw_away_duplicate and not is_trash:
+                    result.policies.append(
+                        {
+                            "type": "duplicate",
+                            "action": "trash",
+                            "expression": matched_expr_for_dup,
+                            "target_path": "",
+                            "priority": 80,
+                            "halting": False,
+                        }
+                    )
 
         return result
 
@@ -2025,21 +2251,43 @@ class DropItRuleImporter(BaseRuleImporter):
             return
 
         is_unarchive = act_kind == "unarchive"
+        is_trash = act_kind == "trash" or _is_system_trash_destination(dest)
 
-        if not dest or not str(dest).strip():
-            result.warnings.append(
-                f"DropIt rule '{rule_name}' has no target directory; omitted auto-routing."
-            )
-            result.unsupported.append(
-                {"rule": rule_name, "reason": "Missing target destination path"}
-            )
-            return
+        if is_trash and extra_fields:
+            for raw_k, raw_v in extra_fields.items():
+                k_compact = re.sub(r"[^a-z0-9]+", "", str(raw_k).lower())
+                if k_compact in ("deletemode", "deletionmode", "erasemode"):
+                    mode_compact = re.sub(r"[^a-z0-9]+", "", str(raw_v or "").lower())
+                    if mode_compact in _PERMANENT_DELETE_MODES:
+                        result.unsupported.append(
+                            {
+                                "rule": rule_name,
+                                "reason": f"Permanent delete mode '{raw_v}' omitted for safety.",
+                            }
+                        )
+                        result.warnings.append(
+                            f"DropIt rule '{rule_name}' skipped permanent delete mode '{raw_v}'."
+                        )
+                        return
 
-        target_dir = self._resolve_safe_destination(
-            str(dest), rule_name, result, "DropIt rule"
-        )
-        if target_dir is None:
-            return
+        if is_trash:
+            target_dir = ""
+        else:
+            if not dest or not str(dest).strip():
+                result.warnings.append(
+                    f"DropIt rule '{rule_name}' has no target directory; omitted auto-routing."
+                )
+                result.unsupported.append(
+                    {"rule": rule_name, "reason": "Missing target destination path"}
+                )
+                return
+
+            resolved_dir = self._resolve_safe_destination(
+                str(dest), rule_name, result, "DropIt rule"
+            )
+            if resolved_dir is None:
+                return
+            target_dir = resolved_dir
 
         omitted_extra = False
         if extra_fields:
@@ -2055,6 +2303,7 @@ class DropItRuleImporter(BaseRuleImporter):
             target_dir,
             result,
             is_unarchive=is_unarchive,
+            is_trash=is_trash,
             allow_name_fallback=not omitted_extra,
         )
 
@@ -2102,6 +2351,8 @@ class DropItRuleImporter(BaseRuleImporter):
                         "directory",
                         "folder",
                         "target",
+                        "action",
+                        "type",
                     )
                 ):
                     continue
@@ -2286,6 +2537,7 @@ class DropItRuleImporter(BaseRuleImporter):
         result: ImportResult,
         *,
         is_unarchive: bool = False,
+        is_trash: bool = False,
         allow_name_fallback: bool = True,
     ) -> None:
         """Convert DropIt pattern mask string into keyword rules or policy rules."""
@@ -2343,13 +2595,26 @@ class DropItRuleImporter(BaseRuleImporter):
                 pol_dict: dict[str, Any] = {
                     "type": "unarchive" if is_unarchive else "pattern",
                     "expression": mask,
-                    "target_path": target_dir,
+                    "target_path": "" if is_trash else target_dir,
                     "priority": 75,
                     "halting": False,
                 }
-                if is_unarchive:
+                if is_trash:
+                    pol_dict["action"] = "trash"
+                elif is_unarchive:
                     pol_dict["action"] = "unarchive"
                 result.policies.append(pol_dict)
+            elif is_trash:
+                result.policies.append(
+                    {
+                        "type": "keyword",
+                        "action": "trash",
+                        "expression": mask,
+                        "target_path": "",
+                        "priority": 75,
+                        "halting": False,
+                    }
+                )
             elif is_unarchive:
                 result.policies.append(
                     {
@@ -3074,16 +3339,25 @@ class SortifyRuleImporter(BaseRuleImporter):
                 if isinstance(pol, dict):
                     p_type = str(pol.get("type", "keyword")).strip().lower()
                     p_expr = str(pol.get("expression", "")).strip()
+                    if not p_expr and p_type == "duplicate":
+                        p_expr = "*"
                     if not p_expr:
                         continue
-                    p_target = self._resolve_safe_destination(
-                        str(pol.get("target_path", "")),
-                        p_expr,
-                        result,
-                        "Sortify policy rule",
-                    )
-                    if not p_target:
-                        continue
+                    p_act = str(pol.get("action", "")).strip().lower()
+                    raw_target_val = str(pol.get("target_path", ""))
+                    if not raw_target_val.strip() and (
+                        p_act == "trash" or p_type == "duplicate"
+                    ):
+                        p_target = ""
+                    else:
+                        p_target = self._resolve_safe_destination(
+                            raw_target_val,
+                            p_expr,
+                            result,
+                            "Sortify policy rule",
+                        )
+                        if not p_target:
+                            continue
                     p_prio = pol.get("priority", 75)
                     p_halt = bool(pol.get("halting", False))
                     pol_out: dict[str, Any] = {
@@ -3101,6 +3375,13 @@ class SortifyRuleImporter(BaseRuleImporter):
                         pol_out["post_unarchive_action"] = pol["post_unarchive_action"]
                     if isinstance(pol.get("post_unarchive_target"), str):
                         pol_out["post_unarchive_target"] = pol["post_unarchive_target"]
+                    if (
+                        isinstance(pol.get("detect_original_by"), str)
+                        and pol["detect_original_by"].strip()
+                    ):
+                        pol_out["detect_original_by"] = pol[
+                            "detect_original_by"
+                        ].strip()
                     if (
                         isinstance(pol.get("rename_pattern"), str)
                         and pol["rename_pattern"].strip()

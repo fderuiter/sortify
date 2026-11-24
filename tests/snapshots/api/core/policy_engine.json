@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "9a88cf6112963284677239d65991b1e7429aa1a0d50bbb0be1ca12fb00621d14"
+    "checksum": "88b71632d8b1460890e175e7683f4b22790c3b991ce25ad0b89b6bdc6e6059bc"
   },
   "classes": [
     {
@@ -73,6 +73,11 @@
               "annotation": "datetime | None",
               "default": "None",
               "name": "now"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "is_duplicate"
             }
           ],
           "returns": "PolicyEvaluationResult | None | tuple[PolicyEvaluationResult | None, bool]"
@@ -118,6 +123,11 @@
               "annotation": "_LazyFileAttributes | None",
               "default": "None",
               "name": "_attrs"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "is_duplicate"
             }
           ],
           "returns": "bool"

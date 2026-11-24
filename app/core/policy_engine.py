@@ -529,7 +529,14 @@ class _LazyFileAttributes:
 class PolicyEngine:
     """Standalone evaluation engine for enforcing compliance overrides on folder locks and lifecycle policy actions."""
 
-    SUPPORTED_ACTIONS = {"archive", "retain", "quarantine", "redact", "unarchive"}
+    SUPPORTED_ACTIONS = {
+        "archive",
+        "retain",
+        "quarantine",
+        "redact",
+        "unarchive",
+        "trash",
+    }
     METADATA_RULE_TYPES = METADATA_POLICY_TYPES
 
     @staticmethod
@@ -600,6 +607,8 @@ class PolicyEngine:
         abs_file_path: str | None = None,
         now: datetime | None = None,
         _attrs: _LazyFileAttributes | None = None,
+        *,
+        is_duplicate: bool = False,
     ) -> bool:
         """Evaluate a single compliance or routing policy rule against a file."""
         rule_type = (
@@ -634,6 +643,16 @@ class PolicyEngine:
             return PolicyEngine.contains_secrets(
                 file_path
             ) or PolicyEngine.contains_secrets(doc_text_str)
+
+        if rule_type == "duplicate":
+            if not is_duplicate:
+                return False
+            if not expression or expression == "*":
+                return True
+            if match_pattern_expression(expression, fn_only):
+                return True
+            text_to_search = fn_only if status_match else (fn_only + " " + dl_lower)
+            return expression in text_to_search
 
         if rule_type == "unarchive":
             if expression:
@@ -691,6 +710,8 @@ class PolicyEngine:
         is_sorted: bool = False,
         abs_file_path: str | None = None,
         now: datetime | None = None,
+        *,
+        is_duplicate: bool = False,
     ) -> PolicyEvaluationResult | None | tuple[PolicyEvaluationResult | None, bool]:
         """Find the highest priority matching compliance or routing policy rule for a file."""
         if not policies:
@@ -723,6 +744,7 @@ class PolicyEngine:
                 abs_file_path=disk_path,
                 now=now,
                 _attrs=attrs,
+                is_duplicate=is_duplicate,
             ):
                 matched_policy = rule
                 break

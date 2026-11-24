@@ -369,7 +369,8 @@ def test_per_node_overwrite_displaces_to_backup_and_serializes_concurrent_same_t
             }
         }
 
-        groups = VerificationEngine.get_duplicate_groups(str(root1), plan)
+        assert VerificationEngine.get_duplicate_groups(str(root1), plan) == []
+        groups = VerificationEngine.get_collision_groups(str(root1), plan)
         assert len(groups) == 1
         gid = groups[0]["group_id"]
 
