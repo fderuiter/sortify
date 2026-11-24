@@ -820,6 +820,30 @@ def normalize_rule_path(path_str: str | None) -> str:
     return clean
 
 
+def _find_matching_policy_index(
+    policies: list[dict[str, Any]],
+    policy_type: str,
+    expression: str,
+    *,
+    strip_fields: bool = True,
+) -> int | None:
+    """Return the index of the first policy matching ``(type, expression)`` case-insensitively."""
+    want_type = (
+        str(policy_type).strip().lower() if strip_fields else str(policy_type).lower()
+    )
+    want_expr = (
+        str(expression).strip().lower() if strip_fields else str(expression).lower()
+    )
+    for idx, existing_p in enumerate(policies):
+        raw_type = str(existing_p.get("type", ""))
+        raw_expr = str(existing_p.get("expression", ""))
+        ex_type = raw_type.strip().lower() if strip_fields else raw_type.lower()
+        ex_expr = raw_expr.strip().lower() if strip_fields else raw_expr.lower()
+        if ex_type == want_type and ex_expr == want_expr:
+            return idx
+    return None
+
+
 class RuleConflictAnalyzer:
     """Evaluates incoming keyword rules and policy patterns against existing settings to detect collisions and overlaps."""
 
@@ -887,40 +911,42 @@ class RuleConflictAnalyzer:
             if not p_expr:
                 continue
 
-            for ex_p in existing_policies:
+            matching_idx = _find_matching_policy_index(
+                existing_policies, p_type, p_expr
+            )
+            if matching_idx is not None:
+                ex_p = existing_policies[matching_idx]
                 ex_type = str(ex_p.get("type", "")).strip().lower()
                 ex_expr = str(ex_p.get("expression", "")).strip().lower()
-                if ex_type == p_type and ex_expr == p_expr:
-                    ex_target = ex_p.get("target_path", "")
-                    ex_prio = ex_p.get("priority", 75)
-                    ex_act = str(ex_p.get("action", "")).strip().lower()
-                    p_act = str(policy.get("action", "")).strip().lower()
-                    ex_ren = str(ex_p.get("rename_pattern", "") or "").strip()
-                    san_ex = normalize_rule_path(ex_target)
-                    san_imp = normalize_rule_path(p_target)
-                    if (
-                        san_ex != san_imp
-                        or ex_prio != p_prio
-                        or ex_act != p_act
-                        or ex_ren != p_ren
-                    ):
-                        ident = f"{ex_expr} ({ex_type})" if ex_type else ex_expr
-                        conflicts.append(
-                            RuleConflict(
-                                rule_type="policy",
-                                identifier=ident,
-                                existing_target=str(ex_target),
-                                imported_target=str(p_target),
-                                existing_priority=int(ex_prio)
-                                if ex_prio is not None
-                                else None,
-                                imported_priority=int(p_prio)
-                                if p_prio is not None
-                                else None,
-                                resolution="keep_existing",
-                            )
+                ex_target = ex_p.get("target_path", "")
+                ex_prio = ex_p.get("priority", 75)
+                ex_act = str(ex_p.get("action", "")).strip().lower()
+                p_act = str(policy.get("action", "")).strip().lower()
+                ex_ren = str(ex_p.get("rename_pattern", "") or "").strip()
+                san_ex = normalize_rule_path(ex_target)
+                san_imp = normalize_rule_path(p_target)
+                if (
+                    san_ex != san_imp
+                    or ex_prio != p_prio
+                    or ex_act != p_act
+                    or ex_ren != p_ren
+                ):
+                    ident = f"{ex_expr} ({ex_type})" if ex_type else ex_expr
+                    conflicts.append(
+                        RuleConflict(
+                            rule_type="policy",
+                            identifier=ident,
+                            existing_target=str(ex_target),
+                            imported_target=str(p_target),
+                            existing_priority=int(ex_prio)
+                            if ex_prio is not None
+                            else None,
+                            imported_priority=int(p_prio)
+                            if p_prio is not None
+                            else None,
+                            resolution="keep_existing",
                         )
-                    break
+                    )
 
         return conflicts
 
@@ -1101,13 +1127,9 @@ class ImportResult:
             ident = f"{p_expr_lower} ({p_type})" if p_type else p_expr_lower
             ident_lower = ident.lower()
 
-            matching_idx = None
-            for idx, existing_p in enumerate(new_policies):
-                ex_type = str(existing_p.get("type", "")).strip().lower()
-                ex_expr = str(existing_p.get("expression", "")).strip().lower()
-                if ex_type == p_type and ex_expr == p_expr_lower:
-                    matching_idx = idx
-                    break
+            matching_idx = _find_matching_policy_index(
+                new_policies, p_type, p_expr_lower
+            )
 
             if matching_idx is not None:
                 if ident_lower in policy_conflicts:
@@ -1314,6 +1336,257 @@ class BaseRuleImporter(abc.ABC):
             return "copy", raw_label
         return "unsupported", raw_label
 
+    def _validate_rule_action(
+        self,
+        action_data: Any,
+        rule_name: str,
+        result: ImportResult,
+        source_label: str,
+        *,
+        embedded_script: bool = False,
+        record_script: bool = True,
+    ) -> tuple[bool, str]:
+        """Classify an action and record unsupported or script omissions when disallowed."""
+        act_kind, act_label = self._classify_action_kind(action_data)
+        if act_kind == "script":
+            if record_script:
+                if embedded_script:
+                    reason = "Embedded script action omitted for security."
+                    warning = (
+                        f"{source_label} '{rule_name}' contains embedded script action "
+                        "which was omitted for security."
+                    )
+                else:
+                    reason = f"External script/command action '{act_label}' omitted."
+                    warning = (
+                        f"{source_label} '{rule_name}' contains command/script execution "
+                        "action which was omitted for security."
+                    )
+                result.unsupported.append({"rule": rule_name, "reason": reason})
+                result.warnings.append(warning)
+            return False, "script"
+        if act_kind == "copy":
+            result.unsupported.append(
+                {
+                    "rule": rule_name,
+                    "reason": f"Unsupported copy action '{act_label}' omitted.",
+                }
+            )
+            result.warnings.append(
+                f"{source_label} '{rule_name}' skipped unsupported copy action '{act_label}'."
+            )
+            return False, "copy"
+        if act_kind == "unsupported":
+            result.unsupported.append(
+                {
+                    "rule": rule_name,
+                    "reason": f"Unsupported action '{act_label}' omitted.",
+                }
+            )
+            result.warnings.append(
+                f"{source_label} '{rule_name}' skipped unsupported action '{act_label}'."
+            )
+            return False, "unsupported"
+        return True, act_kind
+
+    def _validate_condition_clause(
+        self,
+        raw_attr: str,
+        raw_op: str,
+        negated_flag: bool,
+        rule_name: str,
+        result: ImportResult,
+        source_label: str,
+        *,
+        reject_metadata_attrs: bool = False,
+        detailed_operator_messages: bool = False,
+        operator_noun: str = "condition operator",
+    ) -> str | None:
+        """Validate condition attribute and operator, returning supported operator kind or ``None``."""
+        if reject_metadata_attrs:
+            attr_kind = _classify_condition_attribute(raw_attr)
+            if attr_kind is not None:
+                result.warnings.append(
+                    f"{source_label} '{rule_name}' skipped unsupported {attr_kind} filter ('{raw_attr}')."
+                )
+                result.unsupported.append(
+                    {
+                        "rule": rule_name,
+                        "reason": f"Unsupported {attr_kind} filter '{raw_attr}' omitted.",
+                    }
+                )
+                return None
+
+        op_kind = _classify_condition_operator(raw_op, is_negated_flag=negated_flag)
+        if op_kind not in ("negated", "numeric", "unsupported"):
+            return op_kind
+
+        if detailed_operator_messages:
+            if op_kind == "negated":
+                desc = raw_op or "negated"
+                warn_detail = f"negated condition operator '{desc}'"
+                reason = f"Negated condition operator '{desc}' omitted."
+            elif op_kind == "numeric":
+                warn_detail = f"numeric/date comparison operator '{raw_op}'"
+                reason = f"Numeric/date comparison operator '{raw_op}' omitted."
+            else:
+                warn_detail = f"unsupported condition operator '{raw_op}'"
+                reason = f"Unsupported condition operator '{raw_op}' omitted."
+        else:
+            desc = raw_op or "negated"
+            warn_detail = f"unsupported {operator_noun} '{desc}'"
+            reason = f"Unsupported {operator_noun} '{desc}' omitted."
+
+        result.warnings.append(f"{source_label} '{rule_name}' skipped {warn_detail}.")
+        result.unsupported.append({"rule": rule_name, "reason": reason})
+        return None
+
+    def _emit_mask_rule(
+        self,
+        raw_mask: Any,
+        target_dir: str,
+        result: ImportResult,
+        *,
+        rule_name: str,
+        source_label: str,
+        priority: int = 75,
+        unsupported_key: str = "rule",
+        mask_noun: str = "mask",
+        negated_prefixes: tuple[str, ...] = ("!", "-"),
+        check_inline_filters: bool = True,
+        op_kind: str = "supported",
+        attribute: str = "",
+        normalize_bare_wildcard_ext: bool = False,
+        is_unarchive: bool = False,
+        is_trash: bool = False,
+        rename_pattern: str = "",
+    ) -> str | None:
+        """Validate a pattern/keyword mask and emit the mapped keyword rule or policy."""
+        if raw_mask is None:
+            return None
+        val_clean = str(raw_mask).strip()
+        if not val_clean:
+            return None
+
+        if val_clean.startswith(negated_prefixes) and len(val_clean) > 1:
+            if unsupported_key == "tag":
+                result.warnings.append(
+                    f"TagSpaces tag '{val_clean}' skipped negated pattern."
+                )
+                result.unsupported.append(
+                    {"tag": val_clean, "reason": "Negated tag pattern omitted."}
+                )
+            else:
+                result.warnings.append(
+                    f"{source_label} '{rule_name}' skipped negated {mask_noun} '{val_clean}'."
+                )
+                result.unsupported.append(
+                    {
+                        unsupported_key: rule_name,
+                        "reason": f"Negated {mask_noun} '{val_clean}' omitted.",
+                    }
+                )
+            return None
+
+        if check_inline_filters:
+            inline_kind = _classify_inline_filter_token(val_clean)
+            if inline_kind is not None:
+                result.warnings.append(
+                    f"{source_label} '{rule_name}' skipped unsupported {inline_kind} filter '{val_clean}'."
+                )
+                result.unsupported.append(
+                    {
+                        unsupported_key: rule_name,
+                        "reason": f"Unsupported {inline_kind} filter '{val_clean}' omitted.",
+                    }
+                )
+                return None
+
+        is_pattern = False
+        expr = val_clean
+        if op_kind == "starts_with":
+            is_pattern = True
+            expr = val_clean if val_clean.endswith("*") else f"{val_clean}*"
+        elif op_kind == "ends_with":
+            is_pattern = True
+            expr = val_clean if val_clean.startswith("*") else f"*{val_clean}"
+        elif (
+            "extension" in attribute
+            or "pattern" in attribute
+            or _has_wildcard_or_ext_mask(val_clean)
+        ):
+            is_pattern = True
+            if (
+                "extension" in attribute
+                or "pattern" in attribute
+                or (normalize_bare_wildcard_ext and "*" in val_clean)
+            ):
+                expr = (
+                    val_clean
+                    if val_clean.startswith("*") or "." in val_clean
+                    else f"*.{val_clean}"
+                )
+
+        if is_pattern:
+            pol_dict: dict[str, Any] = {
+                "type": "unarchive" if is_unarchive else "pattern",
+                "expression": expr,
+                "target_path": "" if is_trash else target_dir,
+                "priority": priority,
+                "halting": False,
+            }
+            if is_trash:
+                pol_dict["action"] = "trash"
+            elif is_unarchive:
+                pol_dict["action"] = "unarchive"
+            if rename_pattern and not is_trash:
+                pol_dict["rename_pattern"] = rename_pattern
+            result.policies.append(pol_dict)
+            return expr
+
+        if is_trash:
+            result.policies.append(
+                {
+                    "type": "keyword",
+                    "action": "trash",
+                    "expression": val_clean,
+                    "target_path": "",
+                    "priority": priority,
+                    "halting": False,
+                }
+            )
+        elif is_unarchive:
+            pol_dict = {
+                "type": "unarchive",
+                "action": "unarchive",
+                "expression": val_clean,
+                "target_path": target_dir,
+                "priority": priority,
+                "halting": False,
+            }
+            if rename_pattern:
+                pol_dict["rename_pattern"] = rename_pattern
+            result.policies.append(pol_dict)
+        elif (
+            len(val_clean.split()) == 1
+            and all(c.isalnum() or c in "_-" for c in val_clean)
+            and not rename_pattern
+        ):
+            result.keyword_rules[val_clean.lower()] = target_dir
+        else:
+            pol_dict = {
+                "type": "keyword",
+                "expression": val_clean,
+                "target_path": target_dir,
+                "priority": priority,
+                "halting": False,
+            }
+            if rename_pattern:
+                pol_dict["rename_pattern"] = rename_pattern
+            result.policies.append(pol_dict)
+
+        return val_clean
+
 
 class HazelRuleImporter(BaseRuleImporter):
     """Importer strategy for Hazel .hazelrules XML/plist packages."""
@@ -1445,45 +1718,17 @@ class HazelRuleImporter(BaseRuleImporter):
 
             if isinstance(actions, list):
                 for act in actions:
-                    act_kind, act_label = self._classify_action_kind(act)
-                    if act_kind == "script":
-                        saw_explicit_actions = True
-                        result.unsupported.append(
-                            {
-                                "rule": rule_name,
-                                "reason": "Embedded script action omitted for security.",
-                            }
-                        )
-                        result.warnings.append(
-                            f"Hazel rule '{rule_name}' contains embedded script action which was omitted for security."
-                        )
-                        continue
-                    if act_kind == "copy":
-                        saw_explicit_actions = True
-                        result.unsupported.append(
-                            {
-                                "rule": rule_name,
-                                "reason": f"Unsupported copy action '{act_label}' omitted.",
-                            }
-                        )
-                        result.warnings.append(
-                            f"Hazel rule '{rule_name}' skipped unsupported copy action '{act_label}'."
-                        )
-                        continue
-                    if act_kind == "unsupported":
-                        saw_explicit_actions = True
-                        result.unsupported.append(
-                            {
-                                "rule": rule_name,
-                                "reason": f"Unsupported action '{act_label}' omitted.",
-                            }
-                        )
-                        result.warnings.append(
-                            f"Hazel rule '{rule_name}' skipped unsupported action '{act_label}'."
-                        )
+                    saw_explicit_actions = True
+                    supported, act_kind = self._validate_rule_action(
+                        act,
+                        rule_name,
+                        result,
+                        "Hazel rule",
+                        embedded_script=True,
+                    )
+                    if not supported:
                         continue
 
-                    saw_explicit_actions = True
                     saw_supported_action = True
                     if act_kind == "unarchive":
                         is_unarchive = True
@@ -1540,39 +1785,14 @@ class HazelRuleImporter(BaseRuleImporter):
                 or ""
             )
             if top_action_raw:
-                top_kind, top_label = self._classify_action_kind(top_action_raw)
-                if top_kind == "script":
-                    result.unsupported.append(
-                        {
-                            "rule": rule_name,
-                            "reason": "Embedded script action omitted for security.",
-                        }
-                    )
-                    result.warnings.append(
-                        f"Hazel rule '{rule_name}' contains embedded script action which was omitted for security."
-                    )
-                    continue
-                if top_kind == "copy":
-                    result.unsupported.append(
-                        {
-                            "rule": rule_name,
-                            "reason": f"Unsupported copy action '{top_label}' omitted.",
-                        }
-                    )
-                    result.warnings.append(
-                        f"Hazel rule '{rule_name}' skipped unsupported copy action '{top_label}'."
-                    )
-                    continue
-                if top_kind == "unsupported":
-                    result.unsupported.append(
-                        {
-                            "rule": rule_name,
-                            "reason": f"Unsupported action '{top_label}' omitted.",
-                        }
-                    )
-                    result.warnings.append(
-                        f"Hazel rule '{rule_name}' skipped unsupported action '{top_label}'."
-                    )
+                supported, top_kind = self._validate_rule_action(
+                    top_action_raw,
+                    rule_name,
+                    result,
+                    "Hazel rule",
+                    embedded_script=True,
+                )
+                if not supported:
                     continue
                 if top_kind == "unarchive":
                     is_unarchive = True
@@ -1884,180 +2104,34 @@ class HazelRuleImporter(BaseRuleImporter):
                         )
                     continue
 
-                op_kind = _classify_condition_operator(
-                    raw_op, is_negated_flag=negated_flag
+                op_kind = self._validate_condition_clause(
+                    raw_attr,
+                    raw_op,
+                    negated_flag,
+                    rule_name,
+                    result,
+                    "Hazel rule",
+                    detailed_operator_messages=True,
                 )
-                if op_kind == "negated":
-                    desc = raw_op or "negated"
-                    result.warnings.append(
-                        f"Hazel rule '{rule_name}' skipped negated condition operator '{desc}'."
-                    )
-                    result.unsupported.append(
-                        {
-                            "rule": rule_name,
-                            "reason": f"Negated condition operator '{desc}' omitted.",
-                        }
-                    )
-                    continue
-                if op_kind == "numeric":
-                    result.warnings.append(
-                        f"Hazel rule '{rule_name}' skipped numeric/date comparison operator '{raw_op}'."
-                    )
-                    result.unsupported.append(
-                        {
-                            "rule": rule_name,
-                            "reason": f"Numeric/date comparison operator '{raw_op}' omitted.",
-                        }
-                    )
-                    continue
-                if op_kind == "unsupported":
-                    result.warnings.append(
-                        f"Hazel rule '{rule_name}' skipped unsupported condition operator '{raw_op}'."
-                    )
-                    result.unsupported.append(
-                        {
-                            "rule": rule_name,
-                            "reason": f"Unsupported condition operator '{raw_op}' omitted.",
-                        }
-                    )
+                if op_kind is None:
                     continue
 
-                if val is None:
+                matched_expr_for_dup = self._emit_mask_rule(
+                    val,
+                    target_dir,
+                    result,
+                    rule_name=rule_name,
+                    source_label="Hazel rule",
+                    negated_prefixes=("!",),
+                    op_kind=op_kind,
+                    attribute=attribute,
+                    normalize_bare_wildcard_ext=True,
+                    is_unarchive=is_unarchive,
+                    is_trash=is_trash,
+                    rename_pattern=rule_rename_pattern,
+                )
+                if matched_expr_for_dup is None:
                     continue
-
-                val_str = str(val).strip()
-                if not val_str:
-                    continue
-
-                if val_str.startswith("!") and len(val_str) > 1:
-                    result.warnings.append(
-                        f"Hazel rule '{rule_name}' skipped negated mask '{val_str}'."
-                    )
-                    result.unsupported.append(
-                        {
-                            "rule": rule_name,
-                            "reason": f"Negated mask '{val_str}' omitted.",
-                        }
-                    )
-                    continue
-
-                inline_kind = _classify_inline_filter_token(val_str)
-                if inline_kind is not None:
-                    result.warnings.append(
-                        f"Hazel rule '{rule_name}' skipped unsupported {inline_kind} filter '{val_str}'."
-                    )
-                    result.unsupported.append(
-                        {
-                            "rule": rule_name,
-                            "reason": f"Unsupported {inline_kind} filter '{val_str}' omitted.",
-                        }
-                    )
-                    continue
-
-                matched_expr_for_dup = val_str
-                if op_kind == "starts_with":
-                    expr = val_str if val_str.endswith("*") else f"{val_str}*"
-                    matched_expr_for_dup = expr
-                    pol_dict: dict[str, Any] = {
-                        "type": "unarchive" if is_unarchive else "pattern",
-                        "expression": expr,
-                        "target_path": "" if is_trash else target_dir,
-                        "priority": 75,
-                        "halting": False,
-                    }
-                    if is_trash:
-                        pol_dict["action"] = "trash"
-                    elif is_unarchive:
-                        pol_dict["action"] = "unarchive"
-                    result.policies.append(_attach_optional_rename(pol_dict))
-                elif op_kind == "ends_with":
-                    expr = val_str if val_str.startswith("*") else f"*{val_str}"
-                    matched_expr_for_dup = expr
-                    pol_dict = {
-                        "type": "unarchive" if is_unarchive else "pattern",
-                        "expression": expr,
-                        "target_path": "" if is_trash else target_dir,
-                        "priority": 75,
-                        "halting": False,
-                    }
-                    if is_trash:
-                        pol_dict["action"] = "trash"
-                    elif is_unarchive:
-                        pol_dict["action"] = "unarchive"
-                    result.policies.append(_attach_optional_rename(pol_dict))
-                elif (
-                    "extension" in attribute
-                    or "pattern" in attribute
-                    or _has_wildcard_or_ext_mask(val_str)
-                ):
-                    if (
-                        "extension" in attribute
-                        or "pattern" in attribute
-                        or "*" in val_str
-                    ):
-                        expr = (
-                            val_str
-                            if val_str.startswith("*") or "." in val_str
-                            else f"*.{val_str}"
-                        )
-                    else:
-                        expr = val_str
-                    matched_expr_for_dup = expr
-                    pol_dict = {
-                        "type": "unarchive" if is_unarchive else "pattern",
-                        "expression": expr,
-                        "target_path": "" if is_trash else target_dir,
-                        "priority": 75,
-                        "halting": False,
-                    }
-                    if is_trash:
-                        pol_dict["action"] = "trash"
-                    elif is_unarchive:
-                        pol_dict["action"] = "unarchive"
-                    result.policies.append(_attach_optional_rename(pol_dict))
-                elif is_trash:
-                    result.policies.append(
-                        {
-                            "type": "keyword",
-                            "action": "trash",
-                            "expression": val_str,
-                            "target_path": "",
-                            "priority": 75,
-                            "halting": False,
-                        }
-                    )
-                elif is_unarchive:
-                    result.policies.append(
-                        _attach_optional_rename(
-                            {
-                                "type": "unarchive",
-                                "action": "unarchive",
-                                "expression": val_str,
-                                "target_path": target_dir,
-                                "priority": 75,
-                                "halting": False,
-                            }
-                        )
-                    )
-                else:
-                    if (
-                        len(val_str.split()) == 1
-                        and all(c.isalnum() or c in "_-" for c in val_str)
-                        and not rule_rename_pattern
-                    ):
-                        result.keyword_rules[val_str.lower()] = target_dir
-                    else:
-                        result.policies.append(
-                            _attach_optional_rename(
-                                {
-                                    "type": "keyword",
-                                    "expression": val_str,
-                                    "target_path": target_dir,
-                                    "priority": 75,
-                                    "halting": False,
-                                }
-                            )
-                        )
 
                 if throw_away_duplicate and not is_trash:
                     result.policies.append(
@@ -2156,17 +2230,18 @@ class DropItRuleImporter(BaseRuleImporter):
                     return True, True
 
             if k_norm == "operator":
-                op_kind = _classify_condition_operator(v_str)
-                if op_kind in ("negated", "numeric", "unsupported"):
-                    result.warnings.append(
-                        f"DropIt rule '{rule_name}' skipped unsupported operator '{v_str}'."
+                if (
+                    self._validate_condition_clause(
+                        "",
+                        v_str,
+                        False,
+                        rule_name,
+                        result,
+                        "DropIt rule",
+                        operator_noun="operator",
                     )
-                    result.unsupported.append(
-                        {
-                            "rule": rule_name,
-                            "reason": f"Unsupported operator '{v_str}' omitted.",
-                        }
-                    )
+                    is None
+                ):
                     return True, True
 
             if k_norm in _DROPIT_SIZE_KEYS:
@@ -2215,39 +2290,10 @@ class DropItRuleImporter(BaseRuleImporter):
         extra_fields: dict[str, Any] | None = None,
     ) -> None:
         """Validate action, destination, and filter clauses for a single DropIt association."""
-        act_kind, act_label = self._classify_action_kind(action)
-        if act_kind == "script":
-            result.unsupported.append(
-                {
-                    "rule": rule_name,
-                    "reason": f"External script/command action '{act_label}' omitted.",
-                }
-            )
-            result.warnings.append(
-                f"DropIt rule '{rule_name}' contains command/script execution action which was omitted for security."
-            )
-            return
-        if act_kind == "copy":
-            result.unsupported.append(
-                {
-                    "rule": rule_name,
-                    "reason": f"Unsupported copy action '{act_label}' omitted.",
-                }
-            )
-            result.warnings.append(
-                f"DropIt rule '{rule_name}' skipped unsupported copy action '{act_label}'."
-            )
-            return
-        if act_kind == "unsupported":
-            result.unsupported.append(
-                {
-                    "rule": rule_name,
-                    "reason": f"Unsupported action '{act_label}' omitted.",
-                }
-            )
-            result.warnings.append(
-                f"DropIt rule '{rule_name}' skipped unsupported action '{act_label}'."
-            )
+        supported, act_kind = self._validate_rule_action(
+            action, rule_name, result, "DropIt rule"
+        )
+        if not supported:
             return
 
         is_unarchive = act_kind == "unarchive"
@@ -2566,81 +2612,16 @@ class DropItRuleImporter(BaseRuleImporter):
             masks = [m.strip() for m in re.split(r"[;|,]", inc_part) if m.strip()]
 
         for mask in masks:
-            if (mask.startswith(("!", "-"))) and len(mask) > 1:
-                result.warnings.append(
-                    f"DropIt rule '{rule_name}' skipped negated pattern mask '{mask}'."
-                )
-                result.unsupported.append(
-                    {
-                        "rule": rule_name,
-                        "reason": f"Negated pattern mask '{mask}' omitted.",
-                    }
-                )
-                continue
-
-            inline_kind = _classify_inline_filter_token(mask)
-            if inline_kind is not None:
-                result.warnings.append(
-                    f"DropIt rule '{rule_name}' skipped unsupported {inline_kind} filter '{mask}'."
-                )
-                result.unsupported.append(
-                    {
-                        "rule": rule_name,
-                        "reason": f"Unsupported {inline_kind} filter '{mask}' omitted.",
-                    }
-                )
-                continue
-
-            if _has_wildcard_or_ext_mask(mask):
-                pol_dict: dict[str, Any] = {
-                    "type": "unarchive" if is_unarchive else "pattern",
-                    "expression": mask,
-                    "target_path": "" if is_trash else target_dir,
-                    "priority": 75,
-                    "halting": False,
-                }
-                if is_trash:
-                    pol_dict["action"] = "trash"
-                elif is_unarchive:
-                    pol_dict["action"] = "unarchive"
-                result.policies.append(pol_dict)
-            elif is_trash:
-                result.policies.append(
-                    {
-                        "type": "keyword",
-                        "action": "trash",
-                        "expression": mask,
-                        "target_path": "",
-                        "priority": 75,
-                        "halting": False,
-                    }
-                )
-            elif is_unarchive:
-                result.policies.append(
-                    {
-                        "type": "unarchive",
-                        "action": "unarchive",
-                        "expression": mask,
-                        "target_path": target_dir,
-                        "priority": 75,
-                        "halting": False,
-                    }
-                )
-            else:
-                if len(mask.split()) == 1 and all(
-                    c.isalnum() or c in "_-" for c in mask
-                ):
-                    result.keyword_rules[mask.lower()] = target_dir
-                else:
-                    result.policies.append(
-                        {
-                            "type": "keyword",
-                            "expression": mask,
-                            "target_path": target_dir,
-                            "priority": 75,
-                            "halting": False,
-                        }
-                    )
+            self._emit_mask_rule(
+                mask,
+                target_dir,
+                result,
+                rule_name=rule_name,
+                source_label="DropIt rule",
+                mask_noun="pattern mask",
+                is_unarchive=is_unarchive,
+                is_trash=is_trash,
+            )
 
 
 class TagSpacesRuleImporter(BaseRuleImporter):
@@ -2882,43 +2863,43 @@ class TagSpacesRuleImporter(BaseRuleImporter):
         if isinstance(raw_children, (str, dict)):
             raw_children = [raw_children]
 
-        for tag_item in raw_tags:
-            if isinstance(tag_item, str):
-                self._add_tag_rule(tag_item, target_dir, result)
-            elif isinstance(tag_item, dict):
-                if any(
-                    k in tag_item for k in ("children", "subgroups", "groups", "tags")
-                ):
-                    self._traverse_tag_group(tag_item, current_path, result)
-                else:
-                    tag_name = (
-                        tag_item.get("title")
-                        or tag_item.get("name")
-                        or tag_item.get("text")
-                        or tag_item.get("tag")
-                        or tag_item.get("label")
-                        or ""
-                    )
-                    if tag_name:
-                        self._add_tag_rule(str(tag_name), target_dir, result)
+        self._traverse_tag_entries(raw_tags, current_path, target_dir, result)
+        self._traverse_tag_entries(
+            raw_children,
+            current_path,
+            target_dir,
+            result,
+            include_styled_groups=True,
+        )
 
-        for child in raw_children:
-            if isinstance(child, str):
-                self._add_tag_rule(child, target_dir, result)
-            elif isinstance(child, dict):
-                if (
-                    any(k in child for k in ("children", "subgroups", "groups", "tags"))
-                    or "color" in child
-                    or "textcolor" in child
-                ):
-                    self._traverse_tag_group(child, current_path, result)
+    def _traverse_tag_entries(
+        self,
+        entries: list[Any],
+        current_path: list[str],
+        target_dir: str,
+        result: ImportResult,
+        *,
+        include_styled_groups: bool = False,
+    ) -> None:
+        """Process a list of TagSpaces tag or subgroup entries recursively."""
+        group_keys = (
+            ("children", "subgroups", "groups", "tags", "color", "textcolor")
+            if include_styled_groups
+            else ("children", "subgroups", "groups", "tags")
+        )
+        for item in entries:
+            if isinstance(item, str):
+                self._add_tag_rule(item, target_dir, result)
+            elif isinstance(item, dict):
+                if any(k in item for k in group_keys):
+                    self._traverse_tag_group(item, current_path, result)
                 else:
                     tag_name = (
-                        child.get("title")
-                        or child.get("name")
-                        or child.get("text")
-                        or child.get("tag")
-                        or child.get("label")
+                        item.get("title")
+                        or item.get("name")
+                        or item.get("text")
+                        or item.get("tag")
+                        or item.get("label")
                         or ""
                     )
                     if tag_name:
@@ -2941,40 +2922,15 @@ class TagSpacesRuleImporter(BaseRuleImporter):
             )
             return
 
-        if (tag_clean.startswith(("!", "-"))) and len(tag_clean) > 1:
-            result.warnings.append(
-                f"TagSpaces tag '{tag_clean}' skipped negated pattern."
-            )
-            result.unsupported.append(
-                {"tag": tag_clean, "reason": "Negated tag pattern omitted."}
-            )
-            return
-
-        if _has_wildcard_or_ext_mask(tag_clean):
-            result.policies.append(
-                {
-                    "type": "pattern",
-                    "expression": tag_clean,
-                    "target_path": target_dir,
-                    "priority": 75,
-                    "halting": False,
-                }
-            )
-        else:
-            if len(tag_clean.split()) == 1 and all(
-                c.isalnum() or c in "_-" for c in tag_clean
-            ):
-                result.keyword_rules[tag_clean.lower()] = target_dir
-            else:
-                result.policies.append(
-                    {
-                        "type": "keyword",
-                        "expression": tag_clean,
-                        "target_path": target_dir,
-                        "priority": 75,
-                        "halting": False,
-                    }
-                )
+        self._emit_mask_rule(
+            tag_clean,
+            target_dir,
+            result,
+            rule_name=tag_clean,
+            source_label="TagSpaces tag",
+            unsupported_key="tag",
+            check_inline_filters=False,
+        )
 
     def _process_smart_rule(
         self, rule: dict[str, Any], idx: int, result: ImportResult
@@ -2997,33 +2953,18 @@ class TagSpacesRuleImporter(BaseRuleImporter):
         action_dest = ""
 
         for act in actions:
-            act_kind, act_label = self._classify_action_kind(act)
-            if act_kind == "script":
-                has_script = True
-                continue
-            if act_kind == "copy":
-                saw_non_script_unsupported = True
-                result.unsupported.append(
-                    {
-                        "rule": rule_name,
-                        "reason": f"Unsupported copy action '{act_label}' omitted.",
-                    }
-                )
-                result.warnings.append(
-                    f"TagSpaces rule '{rule_name}' skipped unsupported copy action '{act_label}'."
-                )
-                continue
-            if act_kind == "unsupported":
-                saw_non_script_unsupported = True
-                result.unsupported.append(
-                    {
-                        "rule": rule_name,
-                        "reason": f"Unsupported action '{act_label}' omitted.",
-                    }
-                )
-                result.warnings.append(
-                    f"TagSpaces rule '{rule_name}' skipped unsupported action '{act_label}'."
-                )
+            supported, act_kind = self._validate_rule_action(
+                act,
+                rule_name,
+                result,
+                "TagSpaces rule",
+                record_script=False,
+            )
+            if not supported:
+                if act_kind == "script":
+                    has_script = True
+                else:
+                    saw_non_script_unsupported = True
                 continue
 
             if act_kind == "unarchive":
@@ -3095,11 +3036,13 @@ class TagSpacesRuleImporter(BaseRuleImporter):
 
         for cond in conditions:
             if isinstance(cond, str):
-                self._add_smart_rule_condition(
+                self._emit_mask_rule(
                     cond,
                     target_dir,
                     result,
+                    priority=85,
                     rule_name=rule_name,
+                    source_label="TagSpaces rule",
                     is_unarchive=is_unarchive,
                 )
             elif isinstance(cond, dict):
@@ -3121,31 +3064,18 @@ class TagSpacesRuleImporter(BaseRuleImporter):
                     cond.get("negated") or cond.get("isNegated") or cond.get("not")
                 )
 
-                attr_kind = _classify_condition_attribute(raw_cond_type)
-                if attr_kind is not None:
-                    result.warnings.append(
-                        f"TagSpaces rule '{rule_name}' skipped unsupported {attr_kind} filter ('{raw_cond_type}')."
+                if (
+                    self._validate_condition_clause(
+                        raw_cond_type,
+                        raw_op,
+                        neg_flag,
+                        rule_name,
+                        result,
+                        "TagSpaces rule",
+                        reject_metadata_attrs=True,
                     )
-                    result.unsupported.append(
-                        {
-                            "rule": rule_name,
-                            "reason": f"Unsupported {attr_kind} filter '{raw_cond_type}' omitted.",
-                        }
-                    )
-                    continue
-
-                op_kind = _classify_condition_operator(raw_op, is_negated_flag=neg_flag)
-                if op_kind in ("negated", "numeric", "unsupported"):
-                    desc = raw_op or "negated"
-                    result.warnings.append(
-                        f"TagSpaces rule '{rule_name}' skipped unsupported condition operator '{desc}'."
-                    )
-                    result.unsupported.append(
-                        {
-                            "rule": rule_name,
-                            "reason": f"Unsupported condition operator '{desc}' omitted.",
-                        }
-                    )
+                    is None
+                ):
                     continue
 
                 val = str(
@@ -3172,91 +3102,15 @@ class TagSpacesRuleImporter(BaseRuleImporter):
                         pol_dict["action"] = "unarchive"
                     result.policies.append(pol_dict)
                 else:
-                    self._add_smart_rule_condition(
+                    self._emit_mask_rule(
                         val,
                         target_dir,
                         result,
                         priority=85,
                         rule_name=rule_name,
+                        source_label="TagSpaces rule",
                         is_unarchive=is_unarchive,
                     )
-
-    def _add_smart_rule_condition(
-        self,
-        val_str: str,
-        target_dir: str,
-        result: ImportResult,
-        priority: int = 85,
-        *,
-        rule_name: str = "TagSpaces Smart Rule",
-        is_unarchive: bool = False,
-    ) -> None:
-        """Add smart rule condition matcher to keyword rules or policy list."""
-        val_clean = val_str.strip()
-        if not val_clean:
-            return
-
-        if (val_clean.startswith(("!", "-"))) and len(val_clean) > 1:
-            result.warnings.append(
-                f"TagSpaces rule '{rule_name}' skipped negated mask '{val_clean}'."
-            )
-            result.unsupported.append(
-                {
-                    "rule": rule_name,
-                    "reason": f"Negated mask '{val_clean}' omitted.",
-                }
-            )
-            return
-
-        inline_kind = _classify_inline_filter_token(val_clean)
-        if inline_kind is not None:
-            result.warnings.append(
-                f"TagSpaces rule '{rule_name}' skipped unsupported {inline_kind} filter '{val_clean}'."
-            )
-            result.unsupported.append(
-                {
-                    "rule": rule_name,
-                    "reason": f"Unsupported {inline_kind} filter '{val_clean}' omitted.",
-                }
-            )
-            return
-
-        if _has_wildcard_or_ext_mask(val_clean):
-            pol_dict: dict[str, Any] = {
-                "type": "unarchive" if is_unarchive else "pattern",
-                "expression": val_clean,
-                "target_path": target_dir,
-                "priority": priority,
-                "halting": False,
-            }
-            if is_unarchive:
-                pol_dict["action"] = "unarchive"
-            result.policies.append(pol_dict)
-        elif is_unarchive:
-            result.policies.append(
-                {
-                    "type": "unarchive",
-                    "action": "unarchive",
-                    "expression": val_clean,
-                    "target_path": target_dir,
-                    "priority": priority,
-                    "halting": False,
-                }
-            )
-        elif len(val_clean.split()) == 1 and all(
-            c.isalnum() or c in "_-" for c in val_clean
-        ):
-            result.keyword_rules[val_clean.lower()] = target_dir
-        else:
-            result.policies.append(
-                {
-                    "type": "keyword",
-                    "expression": val_clean,
-                    "target_path": target_dir,
-                    "priority": priority,
-                    "halting": False,
-                }
-            )
 
 
 class SortifyRuleImporter(BaseRuleImporter):
