@@ -81,7 +81,7 @@ def test_db_worker_background_job_sandboxes_socket():
         worker.stop()
 
 
-def test_mover_chunked_relocation_routes_through_shared_pool(tmp_path):
+def test_mover_chunked_relocation_routes_through_shared_pool(tmp_path, monkeypatch):
     """Verify mover file relocation executes chunks via SharedWorkerPool threads."""
     base_dir = str(tmp_path)
     plan = {}
@@ -108,7 +108,7 @@ def test_mover_chunked_relocation_routes_through_shared_pool(tmp_path):
         executed_threads.add(threading.current_thread().name)
         return orig_process(*args, **kwargs)
 
-    pytest.MonkeyPatch().setattr(mover, "_process_move_item", mock_process_move_item)
+    monkeypatch.setattr(mover, "_process_move_item", mock_process_move_item)
 
     summary = execute_moves(base_dir, plan, db, hm, chunk_size=3)
     assert not summary.get("cancelled")

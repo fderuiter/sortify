@@ -91,14 +91,12 @@ def find_abandoned_sessions(store=None, session_root: Path | None = None) -> lis
         for (sid,) in orphan_intents:
             if sid and sid not in seen_sids:
                 srow = conn.execute(
-                    "SELECT session_id, base_dir, status FROM sessions WHERE session_id = ?",
+                    "SELECT 1 FROM sessions WHERE session_id = ?",
                     (sid,),
                 ).fetchone()
-                if srow:
-                    rows.append((srow[0], srow[1], srow[2]))
-                else:
+                if srow is None:
                     rows.append((sid, "", "uncommitted"))
-                seen_sids.add(sid)
+                    seen_sids.add(sid)
     except Exception as exc:  # noqa: BLE001 - moves table may not exist in legacy database
         logger.debug("Skipping orphan moves lookup on legacy database: %s", exc)
     steps = {sid: _step_count_with_legacy_fallback(conn, sid) for sid, _b, _s in rows}

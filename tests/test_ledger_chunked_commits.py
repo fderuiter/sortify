@@ -529,9 +529,14 @@ def test_legacy_ledger_readonly_fallback_across_catalog_cli_and_audit_export(
                     INSERT INTO sessions (session_id, timestamp, base_dir, status)
                     VALUES
                         ('legacy_done', 1700000000.0, ?, 'completed'),
-                        ('legacy_crashed', 1700000100.0, ?, 'active')
+                        ('legacy_crashed', 1700000100.0, ?, 'active'),
+                        ('ignored_intent_sess', 1700000150.0, ?, 'abandoned')
                     """,
-                    (str(tmp_path / "dir_done"), str(tmp_path / "dir_crash")),
+                    (
+                        str(tmp_path / "dir_done"),
+                        str(tmp_path / "dir_crash"),
+                        str(tmp_path / "dir_ignored"),
+                    ),
                 )
                 conn.execute(
                     """
@@ -545,7 +550,9 @@ def test_legacy_ledger_readonly_fallback_across_catalog_cli_and_audit_export(
                 conn.execute(
                     """
                     INSERT INTO moves (session_id, seq, src, dst, state, created_at, updated_at)
-                    VALUES ('orphan_intent_sess', 1, '/tmp/o.txt', '/tmp/Docs/o.txt', 'intent', 1700000200.0, 1700000200.0)
+                    VALUES
+                        ('orphan_intent_sess', 1, '/tmp/o.txt', '/tmp/Docs/o.txt', 'intent', 1700000200.0, 1700000200.0),
+                        ('ignored_intent_sess', 1, '/tmp/i.txt', '/tmp/Docs/i.txt', 'intent', 1700000151.0, 1700000151.0)
                     """
                 )
 
@@ -578,6 +585,7 @@ def test_legacy_ledger_readonly_fallback_across_catalog_cli_and_audit_export(
         assert abandoned["legacy_crashed"]["step_count"] == 1
         assert "orphan_intent_sess" in abandoned
         assert abandoned["orphan_intent_sess"]["step_count"] == 1
+        assert "ignored_intent_sess" not in abandoned
 
         # 2. Audit export reads legacy step_ledger rows without mutating them
         export_path = tmp_path / "legacy_audit.json"
@@ -653,3 +661,80 @@ def test_legacy_ledger_readonly_fallback_across_catalog_cli_and_audit_export(
     finally:
         services.close()
         db_conn.clear_connection_cache(only_current_and_inactive=False)
+
+
+def test_mover_duck_typed_single_item_ledger_fallback() -> None:
+    """Chunked mover helpers gracefully fall back when a duck-typed ledger lacks batch methods."""
+
+    class _MinimalMovesLedger:
+        def __init__(self) -> None:
+            self.events: list[tuple[str, Any]] = []
+            self._seq = 0
+
+        def record_intent(
+            self,
+            session_id: str,
+            src: str,
+            dst: str,
+            *,
+            src_sha256: str | None = None,
+            size: int | None = None,
+        ) -> int:
+            self._seq += 1
+            self.events.append(("intent", (session_id, src, dst, src_sha256, size)))
+            return self._seq
+
+        def mark_done(
+            self,
+            session_id: str,
+            seq: int,
+            *,
+            dst: str | None = None,
+            displaced: str | None = None,
+        ) -> None:
+            self.events.append(("done", (session_id, seq, dst, displaced)))
+
+        def mark_verified(self, session_id: str, seq: int) -> None:
+            self.events.append(("verified", (session_id, seq)))
+
+        def mark_failed(
+            self, session_id: str, seq: int, error: str | None = None
+        ) -> None:
+            self.events.append(("failed", (session_id, seq, error)))
+
+    ledger = _MinimalMovesLedger()
+    assert mover_mod._record_move_intents_batch(ledger, "s1", []) == []
+    assert mover_mod._record_move_intents_batch(
+        None, "s1", [("/a", "/b", "sha", 10)]
+    ) == [None]
+    seqs = mover_mod._record_move_intents_batch(
+        ledger,
+        "s1",
+        [("/a", "/b", "sha1", 10), ("/c", "/d", None, None), ("/e", "/f", "sha3", 5)],
+    )
+    assert seqs == [1, 2, 3]
+    assert (
+        mover_mod._flush_chunk_completions_and_db(None, ledger, "s1", [], []) is False
+    )
+    flushed = mover_mod._flush_chunk_completions_and_db(
+        None,
+        ledger,
+        "s1",
+        [
+            {"seq": 1, "state": VERIFIED, "dst": "/b", "displaced": None},
+            {"seq": 2, "state": "done", "dst": "/d", "displaced": "/bak"},
+            {"seq": 3, "state": "failed", "error": "boom"},
+        ],
+        [],
+    )
+    assert flushed is True
+    kinds = [kind for kind, _ in ledger.events]
+    assert kinds == [
+        "intent",
+        "intent",
+        "intent",
+        "done",
+        "verified",
+        "done",
+        "failed",
+    ]
