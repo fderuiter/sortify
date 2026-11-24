@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "13293328d0b0cfa8a3bfc08cfc3f7a6094e4ac758153a3bc5a8dd5007c556416"
+    "checksum": "bbc2f2d415d4e1e27a7e69cd5674931a27016150ac2e5b60044f12e9d02fa89d"
   },
   "classes": [
     {
@@ -66,8 +66,8 @@
               "name": "self"
             },
             {
-              "annotation": null,
-              "default": null,
+              "annotation": "Any",
+              "default": "None",
               "name": "session"
             },
             {
@@ -119,12 +119,60 @@
               "name": "move_context"
             },
             {
+              "annotation": "bool",
+              "default": "False",
+              "name": "flush_trash"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "flush_trashed_only"
+            },
+            {
+              "annotation": "Callable[[str], Any] | None",
+              "default": "None",
+              "name": "trash_fn"
+            },
+            {
               "annotation": null,
               "default": null,
               "name": "**kwargs"
             }
           ],
           "returns": "SortResult"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "flush_trash",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "session_id"
+            },
+            {
+              "annotation": "float | None",
+              "default": "None",
+              "name": "max_age_days"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "trashed_only"
+            },
+            {
+              "annotation": "Callable[[str], Any] | None",
+              "default": "None",
+              "name": "trash_fn"
+            }
+          ],
+          "returns": "dict[str, Any]"
         },
         {
           "async": false,
@@ -196,6 +244,21 @@
         },
         {
           "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "planned_items",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "list[Any]"
+        },
+        {
+          "async": false,
           "decorators": [],
           "name": "run",
           "parameters": [
@@ -218,6 +281,16 @@
               "annotation": "Callable[[Any], AbstractContextManager[Any]] | None",
               "default": "None",
               "name": "move_context"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "flush_trash"
+            },
+            {
+              "annotation": "Callable[[str], Any] | None",
+              "default": "None",
+              "name": "trash_fn"
             },
             {
               "annotation": null,
@@ -376,6 +449,39 @@
     {
       "async": false,
       "decorators": [],
+      "name": "apply_drop_reroot",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "session"
+        },
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "plan"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "base_dir"
+        },
+        {
+          "annotation": "str | None",
+          "default": null,
+          "name": "resolved_dest"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "force_reroot"
+        }
+      ],
+      "returns": "tuple[Any, bool]"
+    },
+    {
+      "async": false,
+      "decorators": [],
       "name": "drop_scope",
       "parameters": [
         {
@@ -385,6 +491,70 @@
         }
       ],
       "returns": "tuple[str, list | None]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "expand_drop_scope_files",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "path"
+        },
+        {
+          "annotation": "Any",
+          "default": "None",
+          "name": "settings"
+        },
+        {
+          "annotation": "str | None",
+          "default": "None",
+          "name": "group_root"
+        }
+      ],
+      "returns": "tuple[str, list[str]]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "group_drop_targets",
+      "parameters": [
+        {
+          "annotation": "Sequence[str]",
+          "default": null,
+          "name": "paths"
+        },
+        {
+          "annotation": "Any",
+          "default": "None",
+          "name": "settings"
+        },
+        {
+          "annotation": "dict[str, str | None] | None",
+          "default": "None",
+          "name": "staged_roots"
+        }
+      ],
+      "returns": "dict[str, list[str]]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "is_rerooted_destination",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "base_dir"
+        },
+        {
+          "annotation": "str | None",
+          "default": null,
+          "name": "resolved_dest"
+        }
+      ],
+      "returns": "bool"
     },
     {
       "async": false,
@@ -408,6 +578,47 @@
         }
       ],
       "returns": "dict[str, Any]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "restore_rerooted_source_dir",
+      "parameters": [
+        {
+          "annotation": "str | None",
+          "default": null,
+          "name": "source_dir"
+        },
+        {
+          "annotation": "bool",
+          "default": null,
+          "name": "was_dir"
+        },
+        {
+          "annotation": "bool",
+          "default": null,
+          "name": "re_rooted"
+        }
+      ],
+      "returns": "None"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "validate_drop_destination",
+      "parameters": [
+        {
+          "annotation": "str | None",
+          "default": null,
+          "name": "dest_dir"
+        },
+        {
+          "annotation": "Any",
+          "default": "None",
+          "name": "settings"
+        }
+      ],
+      "returns": "tuple[str | None, str | None]"
     },
     {
       "async": false,

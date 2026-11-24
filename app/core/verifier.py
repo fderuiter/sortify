@@ -219,6 +219,9 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
     return True, None
 
 
+_RECOVERABLE_COLLISION_TYPES = ("target_collision", "duplicate_target")
+
+
 class VerificationEngine:
     """Engine to verify file operations before execution."""
 
@@ -229,8 +232,13 @@ class VerificationEngine:
             return False
         if result.get("has_critical_errors") is not None:
             return bool(result.get("has_critical_errors"))
+        critical_collisions = [
+            c
+            for c in result.get("collisions", [])
+            if c.get("type") not in _RECOVERABLE_COLLISION_TYPES
+        ]
         return bool(
-            result.get("collisions")
+            critical_collisions
             or result.get("circular_renames")
             or result.get("invalid_renames")
             or result.get("long_paths")
@@ -305,6 +313,8 @@ class VerificationEngine:
         if not isinstance(plan, dict):
             return moves
 
+        from app.core.scanner import parse_item_identifier
+
         for key, content in plan.items():
             node_type = _get_val(content, "node_type") or _get_val(content, "__type__")
             is_node = (
@@ -322,12 +332,17 @@ class VerificationEngine:
                 ):
                     continue
 
+                parsed_root, rel_key = parse_item_identifier(str(key), base_dir)
                 src_root = _get_val(content, "source_root")
+                if not src_root and "::" in str(key):
+                    src_root = parsed_root
                 effective_base = src_root if src_root else base_dir
 
                 src_p = _get_val(content, "source_path")
                 if src_p and "::" in str(src_p):
-                    parsed_r, parsed_p = str(src_p).split("::", 1)
+                    parsed_r, parsed_p = parse_item_identifier(
+                        str(src_p), effective_base
+                    )
                     effective_base = src_root or parsed_r
                     src_p = parsed_p
 
@@ -398,20 +413,23 @@ class VerificationEngine:
                             os.path.join(effective_base, src_p)
                         )
                     elif rel_src_val is not None:
-                        relative_source = rel_src_val
+                        _, relative_source = parse_item_identifier(
+                            str(rel_src_val), effective_base
+                        )
                         source_path = os.path.normpath(
                             os.path.join(effective_base, relative_source)
                         )
                     else:
                         source_path = os.path.normpath(
-                            os.path.join(effective_base, key)
+                            os.path.join(effective_base, rel_key)
                         )
 
                 tgt_fn = _get_val(content, "target_filename")
                 if tgt_fn is not None:
-                    filename = re.split(r"[/\\]+", tgt_fn)[-1]
+                    _, clean_tf = parse_item_identifier(str(tgt_fn), effective_base)
+                    filename = re.split(r"[/\\]+", clean_tf)[-1]
                 else:
-                    filename = re.split(r"[/\\]+", key)[-1]
+                    filename = re.split(r"[/\\]+", rel_key)[-1]
 
                 from app.core.path_utils import _is_absolute_path
 
@@ -427,9 +445,27 @@ class VerificationEngine:
 
                 if re.match(r"^[a-zA-Z]:[/\\]", dest_dir):
                     sep = "\\" if "\\" in dest_dir else "/"
-                    dest_path = f"{dest_dir.rstrip('/\\')}{sep}{filename}"
+                    planned_dest_path = f"{dest_dir.rstrip('/\\')}{sep}{filename}"
                 else:
-                    dest_path = os.path.normpath(os.path.join(dest_dir, filename))
+                    planned_dest_path = os.path.normpath(
+                        os.path.join(dest_dir, filename)
+                    )
+
+                dup_action = _get_val(content, "duplicate_action")
+                pol_action = _get_val(content, "policy_action")
+                if dup_action in ("stage", "trash") or pol_action == "trash":
+                    from app.core.resilient_file_ops import duplicate_staging_relpath
+
+                    stage_rel = duplicate_staging_relpath(
+                        source_path or key, base_dir, source_root=effective_base
+                    )
+                    dest_path = os.path.normpath(
+                        os.path.join(
+                            base_dir, ".sortify_duplicates", "_staged", stage_rel
+                        )
+                    )
+                else:
+                    dest_path = planned_dest_path
                 moves.append((key, source_path, dest_path))
             else:
                 from app.core.path_utils import _is_absolute_path
@@ -457,27 +493,308 @@ class VerificationEngine:
         return moves
 
     @staticmethod
-    def get_duplicate_groups(base_dir: str, plan: Any) -> list[dict]:
-        """Detect duplicate destination target collisions and return grouped duplicate clusters."""
-        moves_list = VerificationEngine.get_moves(base_dir, plan)
-        if not moves_list:
+    def get_move_entries(
+        base_dir: str,
+        plan: Any,
+        current_dest: str = "",
+        active_parent_path: str = "",
+        depth: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Collect rich metadata dictionaries for every active file node in ``plan``."""
+        base_dir = os.path.normpath(base_dir)
+        entries: list[dict[str, Any]] = []
+        if hasattr(plan, "plan") and isinstance(plan.plan, dict):
+            plan = plan.plan
+        if not isinstance(plan, dict):
+            return entries
+
+        from app.core.path_utils import _is_absolute_path
+        from app.core.scanner import parse_item_identifier
+
+        for key, content in plan.items():
+            node_type = _get_val(content, "node_type") or _get_val(content, "__type__")
+            is_node = (
+                content is None
+                or node_type in ("file", "directory")
+                or isinstance(content, BaseModel)
+            )
+            if is_node:
+                if node_type == "directory":
+                    continue
+                if (
+                    _get_val(content, "is_excluded")
+                    or _get_val(content, "excluded")
+                    or _get_val(content, "is_checked") is False
+                ):
+                    continue
+
+                # Reuse get_moves resolution on a single-entry subplan for exact parity
+                single_moves = VerificationEngine.get_moves(
+                    base_dir,
+                    {key: content},
+                    current_dest=current_dest,
+                    active_parent_path=active_parent_path,
+                    depth=depth,
+                )
+                if not single_moves:
+                    continue
+                _, source_path, dest_path = single_moves[0]
+
+                parsed_root, rel_key = parse_item_identifier(str(key), base_dir)
+                src_root = _get_val(content, "source_root") or (
+                    parsed_root if "::" in str(key) else base_dir
+                )
+                tgt_fn = _get_val(content, "target_filename")
+                if tgt_fn is not None:
+                    _, clean_tf = parse_item_identifier(str(tgt_fn), src_root)
+                    filename = re.split(r"[/\\]+", clean_tf)[-1]
+                else:
+                    filename = re.split(r"[/\\]+", rel_key)[-1]
+                dest_override = _get_val(content, "destination_override")
+                if dest_override and _is_absolute_path(dest_override):
+                    dest_dir = dest_override
+                elif dest_override:
+                    dest_dir = os.path.join(base_dir, dest_override)
+                elif _is_absolute_path(current_dest):
+                    dest_dir = current_dest
+                else:
+                    dest_dir = os.path.join(base_dir, current_dest)
+
+                if re.match(r"^[a-zA-Z]:[/\\]", dest_dir):
+                    sep = "\\" if "\\" in dest_dir else "/"
+                    planned_dest = f"{dest_dir.rstrip('/\\')}{sep}{filename}"
+                else:
+                    planned_dest = os.path.normpath(os.path.join(dest_dir, filename))
+
+                entries.append(
+                    {
+                        "node_key": key,
+                        "source_path": os.path.normpath(os.path.abspath(source_path)),
+                        "dest_path": os.path.normpath(os.path.abspath(dest_path)),
+                        "planned_dest_path": os.path.normpath(
+                            os.path.abspath(planned_dest)
+                        ),
+                        "content": content,
+                        "source_root": src_root,
+                        "parent_dict": plan,
+                        "current_dest": current_dest,
+                    }
+                )
+            else:
+                if depth == 0 and _is_absolute_path(key):
+                    next_dest = key
+                    next_active_parent = active_parent_path
+                else:
+                    next_dest = os.path.join(current_dest, key)
+                    next_active_parent = (
+                        active_parent_path
+                        if _is_absolute_path(key)
+                        else os.path.join(active_parent_path, key)
+                    )
+                entries.extend(
+                    VerificationEngine.get_move_entries(
+                        base_dir,
+                        content,
+                        next_dest,
+                        next_active_parent,
+                        depth + 1,
+                    )
+                )
+        return entries
+
+    @staticmethod
+    def get_duplicate_groups(
+        base_dir: str,
+        plan: Any,
+        detect_original_by: str = "first_seen",
+        include_resolved: bool = False,
+    ) -> list[dict]:
+        """Detect byte-identical duplicate file clusters across active plan items."""
+        from app.core.resilient_file_ops import (
+            group_byte_identical_files,
+            same_file_content,
+        )
+
+        entries = VerificationEngine.get_move_entries(base_dir, plan)
+        if not entries:
             return []
 
         base_dir_abs = os.path.abspath(base_dir) if base_dir else ""
-        dest_to_moves: dict[str, list[tuple[str, str]]] = {}
-        for rel_path, src, dst in moves_list:
-            abs_src = os.path.normpath(os.path.abspath(src))
-            abs_dst = os.path.normpath(os.path.abspath(dst))
-            dest_to_moves.setdefault(abs_dst, []).append((rel_path, abs_src))
+        src_to_entry: dict[str, dict[str, Any]] = {}
+        ordered_sources: list[str] = []
+        moving_sources: set[str] = set()
 
-        groups = []
+        for entry in entries:
+            abs_src = entry["source_path"]
+            moving_sources.add(abs_src)
+            if abs_src not in src_to_entry:
+                src_to_entry[abs_src] = entry
+                ordered_sources.append(abs_src)
+
+        # Include any stationary existing file at a planned destination that has identical bytes
+        stationary_candidates: list[str] = []
+        seen_stationary: set[str] = set()
+        for entry in entries:
+            planned_dst = entry["planned_dest_path"]
+            if (
+                planned_dst not in moving_sources
+                and planned_dst not in seen_stationary
+                and os.path.isfile(planned_dst)
+                and not os.path.islink(planned_dst)
+            ):
+                try:
+                    if not (
+                        os.path.exists(entry["source_path"])
+                        and os.path.samefile(planned_dst, entry["source_path"])
+                    ) and same_file_content(planned_dst, entry["source_path"]):
+                        stationary_candidates.append(planned_dst)
+                        seen_stationary.add(planned_dst)
+                except OSError:
+                    continue
+
+        candidate_paths = [*stationary_candidates, *ordered_sources]
+        clusters = group_byte_identical_files(
+            candidate_paths, detect_original_by=detect_original_by
+        )
+        if not clusters:
+            return []
+
+        groups: list[dict[str, Any]] = []
         group_counter = 1
 
-        for dst_path, sources in dest_to_moves.items():
-            existing_on_disk = os.path.exists(dst_path)
+        for cluster in clusters:
+            cluster_paths = cluster["paths"]
+            stationary_in_cluster = [
+                p
+                for p in cluster_paths
+                if p in seen_stationary and p not in src_to_entry
+            ]
+            plan_paths_in_cluster = [p for p in cluster_paths if p in src_to_entry]
+            if not plan_paths_in_cluster:
+                continue
+
+            # If there is a stationary file already at destination, treat it as surviving original
+            if stationary_in_cluster:
+                primary_src = stationary_in_cluster[0]
+                primary_target = primary_src
+                existing_on_disk = True
+                redundant_plan_paths = plan_paths_in_cluster
+            else:
+                if len(plan_paths_in_cluster) < 2:
+                    continue
+                primary_src = cluster["original"]
+                if primary_src not in src_to_entry:
+                    primary_src = plan_paths_in_cluster[0]
+                primary_entry = src_to_entry[primary_src]
+                primary_target = primary_entry["planned_dest_path"]
+                existing_on_disk = False
+                redundant_plan_paths = [
+                    p for p in plan_paths_in_cluster if p != primary_src
+                ]
+
+            if not include_resolved and all(
+                bool(_get_val(src_to_entry[p]["content"], "duplicate_resolved"))
+                for p in redundant_plan_paths
+            ):
+                continue
+
+            items: list[dict[str, Any]] = []
+            ordered_for_modal = (
+                redundant_plan_paths
+                if existing_on_disk
+                else [primary_src, *redundant_plan_paths]
+            )
+            default_action = "stage"
+            for idx, p in enumerate(ordered_for_modal):
+                entry = src_to_entry[p]
+                c_node = entry["content"]
+                pre_action = _get_val(c_node, "duplicate_action")
+                if pre_action in ("stage", "trash", "keep", "rename", "skip"):
+                    default_action = str(pre_action)
+                rel_src = (
+                    os.path.relpath(p, base_dir_abs)
+                    if base_dir_abs and p.startswith(base_dir_abs)
+                    else p
+                )
+                items.append(
+                    {
+                        "node_key": entry["node_key"],
+                        "source_path": p,
+                        "relative_source": rel_src,
+                        "target_filename": os.path.basename(entry["planned_dest_path"]),
+                        "target_path": entry["planned_dest_path"],
+                        "is_primary": (not existing_on_disk and idx == 0),
+                        "byte_size": cluster["byte_size"],
+                    }
+                )
+
+            gid = f"dup_{group_counter}"
+            group_counter += 1
+            groups.append(
+                {
+                    "group_id": gid,
+                    "group_kind": "duplicate",
+                    "target_path": primary_target,
+                    "target_filename": os.path.basename(primary_target),
+                    "target_dir": os.path.dirname(primary_target),
+                    "existing_file_on_disk": existing_on_disk,
+                    "primary_source_path": primary_src,
+                    "byte_size": cluster["byte_size"],
+                    "sha256": cluster["sha256"],
+                    "detect_original_by": cluster["detect_original_by"],
+                    "items": items,
+                    "default_action": default_action,
+                }
+            )
+
+        return groups
+
+    @staticmethod
+    def get_collision_groups(
+        base_dir: str, plan: Any, *, include_resolved: bool = False
+    ) -> list[dict]:
+        """Detect destination target collisions among distinct files."""
+        from app.core.resilient_file_ops import same_file_content
+
+        entries = VerificationEngine.get_move_entries(base_dir, plan)
+        if not entries:
+            return []
+
+        base_dir_abs = os.path.abspath(base_dir) if base_dir else ""
+        dest_to_entries: dict[str, list[dict[str, Any]]] = {}
+        moving_sources = {entry["source_path"] for entry in entries}
+
+        for entry in entries:
+            content = entry["content"]
+            if (
+                _get_val(content, "duplicate_action")
+                in (
+                    "stage",
+                    "trash",
+                    "skip",
+                )
+                or _get_val(content, "policy_action") == "trash"
+            ):
+                continue
+            if not include_resolved and (
+                _get_val(content, "overwrite") or _get_val(content, "allow_overwrite")
+            ):
+                continue
+            dest_to_entries.setdefault(entry["dest_path"], []).append(entry)
+
+        groups: list[dict[str, Any]] = []
+        group_counter = 1
+
+        for dst_path, dst_entries in dest_to_entries.items():
+            existing_on_disk = (
+                os.path.lexists(dst_path)
+                and not os.path.isdir(dst_path)
+                and dst_path not in moving_sources
+            )
             is_existing_collision = False
             if existing_on_disk:
-                for rel_p, src_p in sources:
+                for entry in dst_entries:
+                    src_p = entry["source_path"]
                     if src_p != dst_path:
                         try:
                             if not (
@@ -490,168 +807,264 @@ class VerificationEngine:
                             is_existing_collision = True
                             break
 
-            if len(sources) > 1 or is_existing_collision:
-                items = []
-                for rel_p, src_p in sources:
-                    rel_src = (
-                        os.path.relpath(src_p, base_dir_abs)
-                        if base_dir_abs and src_p.startswith(base_dir_abs)
-                        else src_p
-                    )
-                    items.append(
-                        {
-                            "node_key": rel_p,
-                            "source_path": src_p,
-                            "relative_source": rel_src,
-                            "target_filename": os.path.basename(dst_path),
-                            "target_path": dst_path,
-                        }
-                    )
+            if len(dst_entries) <= 1 and not is_existing_collision:
+                continue
 
-                group_id = f"group_{group_counter}"
-                group_counter += 1
-                groups.append(
+            # Exclude pure byte-identical clusters unless user already resolved duplicate review
+            comparison_paths = [entry["source_path"] for entry in dst_entries]
+            if is_existing_collision:
+                comparison_paths.insert(0, dst_path)
+
+            all_exist_regular = all(
+                os.path.isfile(p) and not os.path.islink(p) for p in comparison_paths
+            )
+            any_unresolved_dup = any(
+                not bool(_get_val(entry["content"], "duplicate_resolved"))
+                for entry in dst_entries
+            )
+            if (
+                all_exist_regular
+                and len(comparison_paths) >= 2
+                and any_unresolved_dup
+                and all(
+                    same_file_content(comparison_paths[0], p)
+                    for p in comparison_paths[1:]
+                )
+            ):
+                continue
+
+            items = []
+            for entry in dst_entries:
+                src_p = entry["source_path"]
+                rel_src = (
+                    os.path.relpath(src_p, base_dir_abs)
+                    if base_dir_abs and src_p.startswith(base_dir_abs)
+                    else src_p
+                )
+                items.append(
                     {
-                        "group_id": group_id,
-                        "target_path": dst_path,
+                        "node_key": entry["node_key"],
+                        "source_path": src_p,
+                        "relative_source": rel_src,
                         "target_filename": os.path.basename(dst_path),
-                        "target_dir": os.path.dirname(dst_path),
-                        "existing_file_on_disk": existing_on_disk,
-                        "items": items,
-                        "default_action": "rename",
+                        "target_path": dst_path,
                     }
                 )
+
+            group_id = f"group_{group_counter}"
+            group_counter += 1
+            groups.append(
+                {
+                    "group_id": group_id,
+                    "group_kind": "collision",
+                    "target_path": dst_path,
+                    "target_filename": os.path.basename(dst_path),
+                    "target_dir": os.path.dirname(dst_path),
+                    "existing_file_on_disk": is_existing_collision,
+                    "items": items,
+                    "default_action": "rename",
+                }
+            )
 
         return groups
 
     @staticmethod
-    def apply_deduplication_selections(
-        base_dir: str, plan: Any, selections: dict[str, str]
+    def apply_collision_selections(
+        base_dir: str,
+        plan: Any,
+        selections: dict[str, str],
+        groups: list[dict] | None = None,
     ) -> Any:
-        """Apply user deduplication selections (keep, rename, skip) to move plan items."""
-        groups = VerificationEngine.get_duplicate_groups(base_dir, plan)
-        if not groups or not selections:
+        """Apply collision resolution selections (rename, overwrite, keep_both, keep, skip) to plan."""
+        target_groups = (
+            groups
+            if groups is not None
+            else VerificationEngine.get_collision_groups(
+                base_dir, plan, include_resolved=True
+            )
+        )
+        return VerificationEngine.apply_deduplication_selections(
+            base_dir, plan, selections, groups=target_groups
+        )
+
+    @staticmethod
+    def apply_deduplication_selections(
+        base_dir: str,
+        plan: Any,
+        selections: dict[str, str],
+        groups: list[dict] | None = None,
+        detect_original_by: str = "first_seen",
+    ) -> Any:
+        """Apply duplicate or collision resolution selections to move plan items."""
+        if not selections:
             return plan
 
-        action_map = {}
+        if groups is None:
+            dup_groups = VerificationEngine.get_duplicate_groups(
+                base_dir,
+                plan,
+                detect_original_by=detect_original_by,
+                include_resolved=True,
+            )
+            col_groups = VerificationEngine.get_collision_groups(
+                base_dir, plan, include_resolved=True
+            )
+            groups = [*dup_groups, *col_groups]
+
+        if not groups:
+            return plan
+
+        from app.core.scanner import parse_item_identifier
+
+        entries = VerificationEngine.get_move_entries(base_dir, plan)
+        entry_by_src = {entry["source_path"]: entry for entry in entries}
+        entry_by_key = {entry["node_key"]: entry for entry in entries}
+
         for group in groups:
             gid = group["group_id"]
-            t_path = group["target_path"]
+            t_path = group.get("target_path", "")
+            group_kind = group.get("group_kind") or (
+                "duplicate" if str(gid).startswith("dup_") else "collision"
+            )
             action = (
                 selections.get(gid)
-                or selections.get(t_path)
-                or group.get("default_action", "rename")
-            )
-            action_map[t_path] = (group, action)
-
-        if not action_map:
-            return plan
-
-        def _traverse_and_update(node, current_dest=""):
-            curr_dict = (
-                node.plan
-                if hasattr(node, "plan") and isinstance(node.plan, dict)
-                else node
-            )
-            if not isinstance(curr_dict, dict):
-                return
-
-            for key, content in curr_dict.items():
-                node_type = _get_val(content, "node_type") or _get_val(
-                    content, "__type__"
+                or (selections.get(t_path) if t_path else None)
+                or group.get(
+                    "default_action",
+                    "stage" if group_kind == "duplicate" else "rename",
                 )
-                is_file_or_dir = (
-                    content is None
-                    or node_type in ("file", "directory")
-                    or isinstance(content, BaseModel)
+            )
+            items = group.get("items", [])
+            existing_on_disk = bool(group.get("existing_file_on_disk"))
+            primary_src = group.get("primary_source_path") or (
+                items[0].get("source_path") if items else None
+            )
+
+            for idx, item_obj in enumerate(items):
+                src_p = item_obj.get("source_path")
+                n_key = item_obj.get("node_key")
+                entry = (
+                    entry_by_src.get(os.path.normpath(os.path.abspath(src_p)))
+                    if src_p
+                    else None
+                ) or (entry_by_key.get(n_key) if n_key else None)
+                if not entry:
+                    continue
+
+                content = entry["content"]
+                if content is None and isinstance(entry.get("parent_dict"), dict):
+                    content = {
+                        "__type__": "file",
+                        "relative_source": item_obj.get("relative_source") or n_key,
+                    }
+                    entry["parent_dict"][n_key] = content
+                    entry["content"] = content
+
+                raw_tf = (
+                    _get_val(content, "target_filename")
+                    or item_obj.get("target_filename")
+                    or n_key
                 )
-                if is_file_or_dir:
-                    if node_type == "directory":
-                        continue
+                _, clean_raw_tf = parse_item_identifier(
+                    str(raw_tf), entry.get("source_root") or base_dir
+                )
+                filename = re.split(r"[/\\]+", str(clean_raw_tf))[-1]
+                item_action = (
+                    (selections.get(src_p) if src_p else None)
+                    or (selections.get(n_key) if n_key else None)
+                    or selections.get(f"{gid}_{idx}")
+                    or action
+                )
+                is_primary_item = (
+                    group_kind == "duplicate"
+                    and not existing_on_disk
+                    and (bool(item_obj.get("is_primary")) or idx == 0)
+                )
 
-                    rel_src = _get_val(content, "relative_source") or key
-                    source_path = os.path.normpath(os.path.join(base_dir, rel_src))
-                    raw_tf = _get_val(content, "target_filename") or key
-                    filename = re.split(r"[/\\]+", raw_tf)[-1]
-                    dest_dir = os.path.normpath(os.path.join(base_dir, current_dest))
-                    dest_path = os.path.normpath(os.path.join(dest_dir, filename))
+                if group_kind == "duplicate" and item_action in ("stage", "trash"):
+                    _set_val(content, "duplicate_resolved", True)
+                    if is_primary_item:
+                        _set_val(content, "is_duplicate", False)
+                        _set_val(content, "is_duplicate_primary", True)
+                        _set_val(content, "duplicate_action", None)
+                        _set_val(content, "confirmed", True)
+                        _set_val(content, "is_confirmed", True)
+                        _set_val(content, "is_excluded", False)
+                        _set_val(content, "status", "Confirmed")
+                    else:
+                        _set_val(content, "is_duplicate", True)
+                        _set_val(content, "is_duplicate_primary", False)
+                        if primary_src:
+                            _set_val(content, "duplicate_of", primary_src)
+                        _set_val(content, "duplicate_action", item_action)
+                        _set_val(content, "confirmed", True)
+                        _set_val(content, "is_confirmed", True)
+                        _set_val(content, "is_excluded", False)
+                        _set_val(
+                            content,
+                            "status",
+                            "Staged Duplicate"
+                            if item_action == "stage"
+                            else "Trash Duplicate",
+                        )
+                elif item_action == "skip":
+                    if group_kind == "duplicate":
+                        _set_val(content, "duplicate_resolved", True)
+                        _set_val(content, "duplicate_action", "skip")
+                    _set_val(content, "is_excluded", True)
+                    _set_val(content, "is_checked", False)
+                    _set_val(content, "status", "Skipped")
+                elif item_action == "overwrite":
+                    if group_kind == "duplicate":
+                        _set_val(content, "duplicate_resolved", True)
+                        _set_val(content, "duplicate_action", None)
+                    _set_val(content, "overwrite", True)
+                    _set_val(content, "allow_overwrite", True)
+                    _set_val(content, "confirmed", True)
+                    _set_val(content, "is_confirmed", True)
+                    _set_val(content, "status", "Confirmed")
+                    _set_val(content, "is_excluded", False)
+                elif item_action == "keep_both":
+                    from datetime import datetime
 
-                    if dest_path in action_map:
-                        group_info, action = action_map[dest_path]
-                        items = group_info["items"]
-                        item_index = -1
-                        for idx, item in enumerate(items):
-                            if (
-                                item["source_path"] == source_path
-                                or item["node_key"] == key
-                            ):
-                                item_index = idx
-                                break
+                    if group_kind == "duplicate":
+                        _set_val(content, "duplicate_resolved", True)
+                        _set_val(content, "duplicate_action", None)
+                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    prefix = f"{ts}_" if idx == 0 else f"{ts}_{idx}_"
+                    new_name = f"{prefix}{filename}"
+                    _set_val(content, "target_filename", new_name)
+                    _set_val(content, "confirmed", True)
+                    _set_val(content, "is_confirmed", True)
+                    _set_val(content, "status", "Confirmed")
+                    _set_val(content, "is_excluded", False)
+                elif item_action == "rename":
+                    if group_kind == "duplicate":
+                        _set_val(content, "duplicate_resolved", True)
+                        _set_val(content, "duplicate_action", None)
+                    if idx > 0 or existing_on_disk:
+                        stem, ext = os.path.splitext(filename)
+                        counter = idx if idx > 0 else 1
+                        new_name = f"{stem}_{counter}{ext}"
+                        _set_val(content, "target_filename", new_name)
+                    _set_val(content, "confirmed", True)
+                    _set_val(content, "is_confirmed", True)
+                    _set_val(content, "status", "Confirmed")
+                    _set_val(content, "is_excluded", False)
+                elif item_action == "keep":
+                    if group_kind == "duplicate":
+                        _set_val(content, "duplicate_resolved", True)
+                    if idx == 0 and not existing_on_disk:
+                        _set_val(content, "duplicate_action", None)
+                        _set_val(content, "confirmed", True)
+                        _set_val(content, "is_confirmed", True)
+                        _set_val(content, "status", "Confirmed")
+                    else:
+                        _set_val(content, "duplicate_action", "skip")
+                        _set_val(content, "is_excluded", True)
+                        _set_val(content, "is_checked", False)
+                        _set_val(content, "status", "Skipped")
 
-                        if item_index >= 0:
-                            item_obj = items[item_index]
-                            item_action = (
-                                selections.get(item_obj.get("source_path"))
-                                or selections.get(item_obj.get("node_key"))
-                                or selections.get(f"{gid}_{item_index}")
-                                or action
-                            )
-                            if item_action == "skip":
-                                _set_val(content, "is_excluded", True)
-                                _set_val(content, "is_checked", False)
-                                _set_val(content, "status", "Skipped")
-                            elif item_action == "overwrite":
-                                _set_val(content, "overwrite", True)
-                                _set_val(content, "allow_overwrite", True)
-                                _set_val(content, "confirmed", True)
-                                _set_val(content, "is_confirmed", True)
-                                _set_val(content, "status", "Confirmed")
-                                _set_val(content, "is_excluded", False)
-                            elif item_action == "keep_both":
-                                from datetime import datetime
-
-                                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                prefix = f"{ts}_"
-                                if item_index > 0:
-                                    prefix = f"{ts}_{item_index}_"
-                                new_name = f"{prefix}{filename}"
-                                _set_val(content, "target_filename", new_name)
-                                _set_val(content, "confirmed", True)
-                                _set_val(content, "is_confirmed", True)
-                                _set_val(content, "status", "Confirmed")
-                                _set_val(content, "is_excluded", False)
-                            elif item_action == "rename":
-                                if (
-                                    item_index > 0
-                                    or group_info["existing_file_on_disk"]
-                                ):
-                                    stem, ext = os.path.splitext(filename)
-                                    counter = (
-                                        item_index
-                                        if group_info["existing_file_on_disk"]
-                                        else item_index
-                                    )
-                                    if counter == 0:
-                                        counter = 1
-                                    new_name = f"{stem}_{counter}{ext}"
-                                    _set_val(content, "target_filename", new_name)
-                                _set_val(content, "confirmed", True)
-                                _set_val(content, "is_confirmed", True)
-                                _set_val(content, "status", "Confirmed")
-                                _set_val(content, "is_excluded", False)
-                            elif item_action == "keep":
-                                if item_index == 0:
-                                    _set_val(content, "confirmed", True)
-                                    _set_val(content, "is_confirmed", True)
-                                    _set_val(content, "status", "Confirmed")
-                                else:
-                                    _set_val(content, "is_excluded", True)
-                                    _set_val(content, "is_checked", False)
-                                    _set_val(content, "status", "Skipped")
-                else:
-                    _traverse_and_update(content, os.path.join(current_dest, key))
-
-        _traverse_and_update(plan)
         return plan
 
 
@@ -1064,6 +1477,31 @@ class VirtualFilesystemTracker:
         collisions = self.check_collisions(
             moves_list, base_dir, conflict_policy=conflict_policy
         )
+        recoverable_collisions = [
+            c for c in collisions if c.get("type") in _RECOVERABLE_COLLISION_TYPES
+        ]
+        seen_dup_paths = {
+            c.get("path")
+            for c in recoverable_collisions
+            if c.get("type") == "duplicate_target"
+        }
+        dest_to_srcs: dict[str, list[str]] = {}
+        for _, src, dst in moves_list:
+            abs_dst = os.path.abspath(dst)
+            dest_to_srcs.setdefault(abs_dst, []).append(os.path.abspath(src))
+        for dst, srcs in dest_to_srcs.items():
+            if len(srcs) > 1 and dst not in seen_dup_paths:
+                recoverable_collisions.append(
+                    {
+                        "path": dst,
+                        "type": "duplicate_target",
+                        "sources": srcs,
+                        "message": f"Multiple files are planned to be moved to the same destination: {dst}",
+                    }
+                )
+        critical_collisions = [
+            c for c in collisions if c.get("type") not in _RECOVERABLE_COLLISION_TYPES
+        ]
         circular_renames = self.check_circular_renames(moves_list)
 
         # Simulate final VFS state
@@ -1098,6 +1536,8 @@ class VirtualFilesystemTracker:
         warnings = []
         for c in collisions:
             warnings.append(c["message"])
+        for rc in recoverable_collisions:
+            warnings.append(rc["message"])
         for r in circular_renames:
             warnings.append(r["message"])
         for link in broken_links:
@@ -1116,6 +1556,7 @@ class VirtualFilesystemTracker:
 
         success = (
             len(collisions) == 0
+            and len(recoverable_collisions) == 0
             and len(circular_renames) == 0
             and len(broken_links) == 0
             and len(long_paths) == 0
@@ -1125,7 +1566,7 @@ class VirtualFilesystemTracker:
         )
 
         has_critical_errors = (
-            len(collisions) > 0
+            len(critical_collisions) > 0
             or len(circular_renames) > 0
             or len(invalid_renames) > 0
             or len(long_paths) > 0
@@ -1135,6 +1576,7 @@ class VirtualFilesystemTracker:
             "success": success,
             "has_critical_errors": has_critical_errors,
             "collisions": collisions,
+            "recoverable_collisions": recoverable_collisions,
             "circular_renames": circular_renames,
             "broken_links": broken_links,
             "long_paths": long_paths,
@@ -1169,6 +1611,7 @@ class VirtualFilesystemTracker:
     def check_rename_proposals(self, base_dir: str, plan: dict) -> tuple[list, list]:
         """Check all rename proposals in plan for OS character safety, extension preservation, and user confirmation."""
         from app.core.path_utils import is_valid_name
+        from app.core.scanner import parse_item_identifier
 
         invalid_renames = []
         unconfirmed_renames = []
@@ -1194,19 +1637,57 @@ class VirtualFilesystemTracker:
                 if is_file_or_dir:
                     if node_type == "directory":
                         continue
+                    if (
+                        _get_val(content, "is_excluded")
+                        or _get_val(content, "excluded")
+                        or _get_val(content, "is_checked") is False
+                        or _get_val(content, "duplicate_action")
+                        in ("stage", "trash", "skip")
+                        or _get_val(content, "policy_action") == "trash"
+                    ):
+                        continue
 
-                    rel_src = _get_val(content, "relative_source") or key
+                    parsed_root, rel_key = parse_item_identifier(str(key), base_dir)
+                    src_root = _get_val(content, "source_root")
+                    if not src_root and "::" in str(key):
+                        src_root = parsed_root
+                    effective_base = src_root if src_root else base_dir
+
+                    raw_rel_src = _get_val(content, "relative_source")
+                    if raw_rel_src is not None:
+                        _, rel_src = parse_item_identifier(
+                            str(raw_rel_src), effective_base
+                        )
+                    else:
+                        rel_src = rel_key
                     src_filename = re.split(r"[/\\]+", rel_src)[-1]
 
-                    raw_tf = _get_val(content, "target_filename") or key
-                    target_filename = re.split(r"[/\\]+", raw_tf)[-1]
+                    raw_tf = _get_val(content, "target_filename")
+                    if raw_tf is not None:
+                        _, clean_tf = parse_item_identifier(str(raw_tf), effective_base)
+                        target_filename = re.split(r"[/\\]+", clean_tf)[-1]
+                    else:
+                        target_filename = re.split(r"[/\\]+", rel_key)[-1]
 
                     # Check if target_filename differs from src_filename (rename proposal)
                     if target_filename != src_filename:
-                        src_stem, src_ext = os.path.splitext(src_filename)
-                        tgt_stem, tgt_ext = os.path.splitext(target_filename)
+                        _src_stem, src_ext = os.path.splitext(src_filename)
+                        _tgt_stem, tgt_ext = os.path.splitext(target_filename)
 
-                        source_path = os.path.normpath(os.path.join(base_dir, rel_src))
+                        src_p = _get_val(content, "source_path")
+                        if src_p:
+                            _, clean_sp = parse_item_identifier(
+                                str(src_p), effective_base
+                            )
+                            source_path = os.path.normpath(
+                                clean_sp
+                                if os.path.isabs(clean_sp)
+                                else os.path.join(effective_base, clean_sp)
+                            )
+                        else:
+                            source_path = os.path.normpath(
+                                os.path.join(effective_base, rel_src)
+                            )
                         dest_dir = os.path.normpath(
                             os.path.join(base_dir, current_dest)
                         )

@@ -6,17 +6,20 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Optional
 
+from textual import on
 from textual.app import App
 from textual.binding import Binding
 from textual.screen import ModalScreen, Screen
-from textual.widgets import Button
+from textual.widgets import Button, Input, Select
 
 from app.core.path_utils import scrub_user_home_paths
 from app.core.text_utils import sanitize_secret_patterns
 from app.ui.heading import Heading
+from app.ui.notifications import TROUBLESHOOTING_URL
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +32,62 @@ class A11yMixin:
         self.announcements: list[dict[str, Any]] = []
         self.last_announcement: Optional[str] = None
         self._speech_thread: Optional[threading.Thread] = None
+
+    def _resolve_app_instance(self) -> Optional[Any]:
+        """Return the owning Textual App instance if mounted or self is an App."""
+        if isinstance(self, App):
+            return self
+        try:
+            return getattr(self, "_app", None) or getattr(self, "app", None)
+        except Exception:
+            return None
+
+    def _is_character_input_focused(self) -> bool:
+        """Return True if an Input or Select widget (or Select overlay) holds active focus."""
+        app_obj = self._resolve_app_instance()
+        focused = getattr(self, "focused", None) or getattr(app_obj, "focused", None)
+        if focused is None:
+            return False
+        if isinstance(focused, (Input, Select)):
+            return True
+        ancestors = getattr(focused, "ancestors_with_self", ())
+        return any(isinstance(anc, (Input, Select)) for anc in ancestors)
+
+    def _character_shortcuts_enabled(self) -> bool:
+        """Return True if single-character keyboard shortcuts are enabled."""
+        app_obj = self._resolve_app_instance()
+        settings = getattr(self, "settings", None) or getattr(app_obj, "settings", None)
+        if settings is None:
+            return True
+        return bool(getattr(settings, "ENABLE_CHARACTER_KEY_SHORTCUTS", True))
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        """Gate character-triggered help overlay bindings on shortcut setting."""
+        if action == "open_help_overlay" and parameters and parameters[0] is True:
+            if not self._character_shortcuts_enabled():
+                return False
+        check_fn = getattr(super(), "check_action", None)
+        if callable(check_fn):
+            return check_fn(action, parameters)
+        return True
+
+    def action_open_help_overlay(self, from_character: bool = False) -> None:
+        """Open keyboard shortcut cheat sheet overlay lazily from any screen or modal."""
+        if from_character and (
+            self._is_character_input_focused()
+            or not self._character_shortcuts_enabled()
+        ):
+            return
+        from app.ui.modals.help import ShortcutCheatSheetModal
+
+        app_obj = self._resolve_app_instance()
+        if app_obj is None:
+            return
+        if isinstance(getattr(app_obj, "screen", None), ShortcutCheatSheetModal):
+            return
+        push_fn = getattr(app_obj, "push_screen", None)
+        if callable(push_fn):
+            push_fn(ShortcutCheatSheetModal())
 
     def update_status(self, text: str) -> None:
         """Update visual status region on self or parent application."""
@@ -125,7 +184,11 @@ class A11yMixin:
                 except Exception:
                     message = ""
 
-        full_msg = f"{message} [Help: {help_url}]" if help_url else message
+        full_msg = (
+            f"{message} [Help: {help_url}]"
+            if help_url and help_url not in message
+            else message
+        )
         entry = {
             "message": full_msg,
             "priority": priority,
@@ -338,6 +401,34 @@ class A11yMixin:
             "status_bar_available": status_bar_available,
         }
 
+    HELP_URL: str = TROUBLESHOOTING_URL
+
+    def _call_ui(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
+        """Safely dispatch a UI callback onto the main Textual thread."""
+        app_obj = None
+        try:
+            app_obj = getattr(self, "app", None)
+        except Exception:
+            app_obj = None
+
+        if (
+            app_obj is not None
+            and app_obj is not self
+            and hasattr(app_obj, "call_from_thread")
+        ):
+            thread_id = getattr(app_obj, "_thread_id", None)
+            if not isinstance(thread_id, int) or thread_id != threading.get_ident():
+                try:
+                    app_obj.call_from_thread(func, *args, **kwargs)
+                    return
+                except Exception as exc:
+                    logger.debug(f"call_from_thread failed: {exc}")
+
+        try:
+            func(*args, **kwargs)
+        except Exception as exc:
+            logger.debug(f"Direct UI function call failed: {exc}")
+
     def _show_help_button(self, help_url: str) -> None:
         """Show the Help button and record contextual help_url."""
         self.help_url = help_url
@@ -351,14 +442,37 @@ class A11yMixin:
             except Exception:
                 pass
 
-        app_obj = getattr(self, "app", None)
-        if app_obj and hasattr(app_obj, "call_from_thread"):
+        self._call_ui(_unhide)
+
+    @on(Button.Pressed, "#btn-help")
+    def action_help(self) -> None:
+        """Open offline contextual troubleshooting help modal for this screen."""
+        url = (
+            getattr(self, "help_url", None)
+            or getattr(self, "HELP_URL", None)
+            or TROUBLESHOOTING_URL
+        )
+        self.open_help_section(url)
+
+    def open_help_section(self, help_url: Optional[str] = None) -> None:
+        """Open local offline troubleshooting help modal for ``help_url``."""
+        from app.ui.modals.help import TroubleshootingHelpModal
+
+        target_url = (
+            help_url
+            or getattr(self, "help_url", None)
+            or getattr(self, "HELP_URL", None)
+            or TROUBLESHOOTING_URL
+        )
+        self.announce(f"Opened documentation link: {target_url}")
+
+        app_obj = self._resolve_app_instance()
+        push_fn = getattr(app_obj, "push_screen", None) if app_obj is not None else None
+        if callable(push_fn):
             try:
-                app_obj.call_from_thread(_unhide)
+                push_fn(TroubleshootingHelpModal(help_url=target_url))
             except Exception:
-                _unhide()
-        else:
-            _unhide()
+                logger.debug("Failed pushing TroubleshootingHelpModal", exc_info=True)
 
 
 @dataclass

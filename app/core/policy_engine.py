@@ -89,7 +89,14 @@ class PolicyEvaluationResult(BaseModel):
 class PolicyEngine:
     """Standalone evaluation engine for enforcing compliance overrides on folder locks and lifecycle policy actions."""
 
-    SUPPORTED_ACTIONS = {"archive", "retain", "quarantine", "redact", "unarchive"}
+    SUPPORTED_ACTIONS = {
+        "archive",
+        "retain",
+        "quarantine",
+        "redact",
+        "unarchive",
+        "trash",
+    }
 
     @staticmethod
     def validate_policy_action(action: str) -> bool:
@@ -107,7 +114,12 @@ class PolicyEngine:
 
     @staticmethod
     def match_policy(
-        rule: dict, file_path: str, doc_text: str, status_match: str | None
+        rule: dict,
+        file_path: str,
+        doc_text: str,
+        status_match: str | None,
+        *,
+        is_duplicate: bool = False,
     ) -> bool:
         """Evaluate a single compliance policy rule against a file."""
         rule_type = (
@@ -133,6 +145,16 @@ class PolicyEngine:
                 file_path
             ) or PolicyEngine.contains_secrets(doc_text_str)
 
+        if rule_type == "duplicate":
+            if not is_duplicate:
+                return False
+            if not expression or expression == "*":
+                return True
+            if match_pattern_expression(expression, fn_only):
+                return True
+            text_to_search = fn_only if status_match else (fn_only + " " + dl_lower)
+            return expression in text_to_search
+
         if rule_type == "unarchive":
             if expression:
                 if match_pattern_expression(expression, fn_only):
@@ -149,6 +171,13 @@ class PolicyEngine:
         elif rule_type == "pattern":
             return match_pattern_expression(expression, fn_only)
         elif rule_type == "override":
+            if not expression:
+                action_val = (
+                    rule.get("action")
+                    if isinstance(rule, dict)
+                    else getattr(rule, "action", None)
+                )
+                return bool(action_val)
             return (
                 expression == fn_only
                 or expression in fn_only
@@ -180,6 +209,8 @@ class PolicyEngine:
         policies: list[dict],
         return_halting: bool = False,
         is_sorted: bool = False,
+        *,
+        is_duplicate: bool = False,
     ) -> PolicyEvaluationResult | None | tuple[PolicyEvaluationResult | None, bool]:
         """Find the highest priority matching compliance policy rule for a file."""
         if not policies:
@@ -198,7 +229,13 @@ class PolicyEngine:
             )
             if not is_enabled:
                 continue
-            if cls.match_policy(rule, file_path, doc_text, status_match):
+            if cls.match_policy(
+                rule,
+                file_path,
+                doc_text,
+                status_match,
+                is_duplicate=is_duplicate,
+            ):
                 matched_policy = rule
                 break
             else:

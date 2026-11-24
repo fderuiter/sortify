@@ -322,6 +322,14 @@ def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
     if contextual_renaming is not None:
         settings.override("CONTEXTUAL_RENAMING", contextual_renaming)
 
+    duplicates = getattr(args, "duplicates", None)
+    if duplicates is not None:
+        settings.override("DUPLICATE_ACTION", duplicates)
+
+    detect_original_by = getattr(args, "detect_original_by", None)
+    if detect_original_by is not None:
+        settings.override("DETECT_ORIGINAL_BY", detect_original_by)
+
     # Handle AI consent flags and environment variables
     accept_consent = _extract_bool_arg(args, "accept_ai_consent")
     decline_consent = _extract_bool_arg(args, "decline_ai_consent")
@@ -759,7 +767,8 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
                 "plan": serializable_plan,
             }
         else:
-            outcome = pipeline.execute(plan)
+            flush_trash = bool(getattr(args, "flush_trash", False))
+            outcome = pipeline.execute(plan, flush_trash=flush_trash)
             result = {
                 "status": "success",
                 "dry_run": False,
@@ -776,27 +785,51 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
             sys.stdout.write(json.dumps(result, indent=2) + "\n")
             sys.stdout.flush()
         else:
-            _print_plan_for_humans(
-                serializable_plan,
-                target_path,
-                "Would move" if dry_run else "Moved",
-                quiet=quiet,
-            )
-            if not quiet:
-                if dry_run:
+            if dry_run:
+                _print_plan_for_humans(
+                    serializable_plan,
+                    target_path,
+                    "Would move",
+                    quiet=quiet,
+                )
+                if not quiet:
                     print(
                         "Dry run: no files were moved. Run again without --dry-run "
                         "to move them, or add --json for machine-readable output.",
                         file=sys.stderr,
                     )
-                else:
-                    print(outcome.describe(), file=sys.stderr)
-                    for source, reason in outcome.failed:
-                        print(f"  Failed: {source}: {reason}", file=sys.stderr)
+            else:
+                moved_count = len(outcome.moved) + len(outcome.quarantined)
+                if moved_count == 0 and not outcome.failed:
                     print(
-                        "To undo this sort, run: smart-autosorter undo --latest",
+                        f"Nothing to sort in '{target_path}'.",
                         file=sys.stderr,
                     )
+                    if not quiet and outcome.skipped:
+                        print(outcome.describe(), file=sys.stderr)
+                else:
+                    lines, _n_files, n_folders = format_plan_tree(serializable_plan)
+                    if lines:
+                        if not quiet:
+                            print(
+                                f"Moved {moved_count} file(s) into {n_folders} folder(s) in '{target_path}':",
+                                file=sys.stderr,
+                            )
+                        print("\n".join(lines))
+                    elif moved_count == 0:
+                        print(
+                            f"Nothing to sort in '{target_path}'.",
+                            file=sys.stderr,
+                        )
+                    if not quiet:
+                        print(outcome.describe(), file=sys.stderr)
+                        for source, reason in outcome.failed:
+                            print(f"  Failed: {source}: {reason}", file=sys.stderr)
+                        if moved_count > 0 and outcome.session_id:
+                            print(
+                                "To undo this sort, run: smart-autosorter undo --latest",
+                                file=sys.stderr,
+                            )
 
         sys.exit(0)
     except Exception as e:
@@ -1135,9 +1168,12 @@ def handle_undo_command(args: argparse.Namespace, settings: AppSettings):
                 "base_dir": None,
             }
     elif latest_flag:
-        # Skip sorts already undone, so running `undo --latest` again reaches the previous sort.
+        # Skip sorts already undone or empty, so running `undo --latest` reaches the latest real sort.
         undoable = [
-            s for s in all_sessions if str(s.get("status", "")).lower() != "rolled_back"
+            s
+            for s in all_sessions
+            if str(s.get("status", "")).lower() not in ("rolled_back", "abandoned")
+            and int(s.get("step_count") or 0) > 0
         ]
         if undoable:
             target_session = undoable[0]
@@ -1152,10 +1188,14 @@ def handle_undo_command(args: argparse.Namespace, settings: AppSettings):
     target_session_id: str = cast(dict[str, Any], target_session)["session_id"]
 
     try:
-        from app.core.history import open_session_history
+        from app.core.pipeline import SortPipeline
 
-        with open_session_history() as history_mgr:
-            history_mgr.rollback(target_session_id, ignore_missing=force_flag)
+        undo_result = SortPipeline(None, settings=settings).undo(
+            target_session_id,
+            ignore_missing=force_flag,
+        )
+        if "error" in undo_result.summary:
+            raise RuntimeError(str(undo_result.summary["error"]))
 
         result = {
             "status": "success",
@@ -1230,15 +1270,14 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
             exit_code=1,
         )
 
-    from app.core.mover import is_subpath_or_equal
     from app.core.pipeline import (
         SortPipeline,
-        _relativize_items_to_base,
-        drop_scope,
-        reroot_plan,
+        apply_drop_reroot,
+        expand_drop_scope_files,
+        restore_rerooted_source_dir,
+        validate_drop_destination,
         validate_drop_paths,
     )
-    from app.core.scanner import ScanFilter, get_files_recursively
     from app.core.session import AppSession
 
     validated_paths, issues = validate_drop_paths(raw_paths, settings=settings)
@@ -1265,50 +1304,39 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
         )
 
     dest_dir = getattr(args, "dest_dir", None)
-    resolved_dest: str | None = None
-    if dest_dir:
-        resolved_dest = str(Path(dest_dir).expanduser().resolve())
-        protected_paths = getattr(settings, "PROTECTED_PATHS", []) or []
-        if isinstance(protected_paths, (list, tuple, set)) and any(
-            prot and is_subpath_or_equal(resolved_dest, prot)
-            for prot in protected_paths
-        ):
-            emit_cli_error(
-                f"Error: Destination path '{dest_dir}' is protected.",
-                json_mode=json_output,
-                exit_code=1,
-            )
-        if os.path.exists(resolved_dest) and not os.path.isdir(resolved_dest):
-            emit_cli_error(
-                f"Error: Destination path '{dest_dir}' is not a directory.",
-                json_mode=json_output,
-                exit_code=1,
-            )
+    resolved_dest, dest_err = validate_drop_destination(dest_dir, settings=settings)
+    if dest_err == "protected":
+        emit_cli_error(
+            f"Error: Destination path '{dest_dir}' is protected.",
+            json_mode=json_output,
+            exit_code=1,
+        )
+    if dest_err == "not_directory":
+        emit_cli_error(
+            f"Error: Destination path '{dest_dir}' is not a directory.",
+            json_mode=json_output,
+            exit_code=1,
+        )
 
     dry_run = getattr(args, "dry_run", False)
     quiet = getattr(args, "quiet", False)
 
     processed_results = []
     for path in validated_paths:
-        base_dir, files = drop_scope(path)
-        if files is None:
-            drop_filter = ScanFilter.from_settings(settings=settings, base_dir=base_dir)
-            drop_filter.max_depth = None
-            norm_files = get_files_recursively(
-                base_dir, settings=settings, scan_filter=drop_filter
-            )
-        else:
-            norm_files = _relativize_items_to_base(files, base_dir)
+        base_dir, norm_files = expand_drop_scope_files(path, settings=settings)
 
         session = None
         try:
             session = AppSession(settings, base_dir=base_dir)
             pipeline = SortPipeline(session)
             plan = pipeline.plan(norm_files, dest_dir=resolved_dest)
-
-            if resolved_dest:
-                plan = reroot_plan(plan, resolved_dest, source_dir=base_dir)
-                session.base_dir = resolved_dest
+            plan, re_rooted = apply_drop_reroot(
+                session,
+                plan,
+                base_dir,
+                resolved_dest,
+                force_reroot=True,
+            )
 
             serializable_plan = _make_json_serializable(plan)
             if dry_run:
@@ -1316,14 +1344,11 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
             else:
                 src_was_dir = os.path.isdir(base_dir)
                 summary = pipeline.execute(plan).summary
-                if (
-                    resolved_dest
-                    and src_was_dir
-                    and os.path.normcase(os.path.abspath(resolved_dest))
-                    != os.path.normcase(os.path.abspath(base_dir))
-                    and not os.path.exists(base_dir)
-                ):
-                    os.makedirs(base_dir, exist_ok=True)
+                restore_rerooted_source_dir(
+                    base_dir,
+                    was_dir=src_was_dir,
+                    re_rooted=re_rooted,
+                )
 
             processed_results.append(
                 {
@@ -1377,14 +1402,51 @@ class SortifyArgumentParser(argparse.ArgumentParser):
 
     _active_cli_args: Any = None
 
+    @staticmethod
+    def _normalize_dash_option_values(raw_args: list[str]) -> list[str]:
+        """Allow '--detect-original-by -created' alongside '--detect-original-by=-created'."""
+        normalized: list[str] = []
+        idx = 0
+        while idx < len(raw_args):
+            token = raw_args[idx]
+            if token == "--":
+                normalized.extend(raw_args[idx:])
+                break
+            if (
+                token == "--detect-original-by"
+                and idx + 1 < len(raw_args)
+                and raw_args[idx + 1].startswith("-")
+                and not raw_args[idx + 1].startswith("--")
+            ):
+                normalized.append(f"{token}={raw_args[idx + 1]}")
+                idx += 2
+                continue
+            normalized.append(token)
+            idx += 1
+        return normalized
+
+    def parse_known_args(
+        self,
+        args: Any = None,
+        namespace: Any = None,
+    ) -> tuple[Any, list[str]]:
+        """Normalize dash-prefixed option values before delegating to argparse."""
+        raw_list = list(sys.argv[1:]) if args is None else list(args)
+        normalized = self._normalize_dash_option_values(raw_list)
+        if SortifyArgumentParser._active_cli_args is None:
+            SortifyArgumentParser._active_cli_args = normalized
+        return super().parse_known_args(args=normalized, namespace=namespace)
+
     def parse_args(
         self,
         args: Any = None,
         namespace: Any = None,
     ) -> Any:
         """Parse CLI arguments and record active arguments for error handling."""
-        SortifyArgumentParser._active_cli_args = args
-        return super().parse_args(args=args, namespace=namespace)
+        raw_list = list(sys.argv[1:]) if args is None else list(args)
+        normalized = self._normalize_dash_option_values(raw_list)
+        SortifyArgumentParser._active_cli_args = normalized
+        return super().parse_args(args=normalized, namespace=namespace)
 
     def error(self, message: str) -> NoReturn:
         """Emit structured JSON error or standard argparse text error.
@@ -1525,6 +1587,29 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
             help="Conflict resolution policy",
         )
         subparser.add_argument(
+            "--duplicates",
+            type=str,
+            choices=["off", "skip", "stage", "trash"],
+            default=None,
+            help="Byte-identical duplicate handling mode (off, skip, stage, trash)",
+        )
+        subparser.add_argument(
+            "--detect-original-by",
+            type=str,
+            choices=[
+                "first_seen",
+                "-first_seen",
+                "name",
+                "-name",
+                "created",
+                "-created",
+                "lastmodified",
+                "-lastmodified",
+            ],
+            default=None,
+            help="Criterion used to select the surviving original in duplicate clusters",
+        )
+        subparser.add_argument(
             "--contextual-renaming",
             action="store_true",
             default=None,
@@ -1616,6 +1701,12 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         "--dry-run",
         action="store_true",
         help="Perform dry run analysis without executing physical moves",
+    )
+    parser_sort.add_argument(
+        "--flush-trash",
+        action="store_true",
+        default=False,
+        help="Export staged duplicate copies to the OS Trash after move verification",
     )
     add_common_override_args(parser_sort)
 

@@ -513,7 +513,7 @@ async def test_daemon_phase0_starter_packs_route_three_files_with_zero_duplicate
                 for p in ws.rglob("*")
                 if p.is_file()
                 and not any(
-                    part.startswith(".") or part.startswith("_Quarantine")
+                    part.startswith((".", "_Quarantine"))
                     for part in p.relative_to(ws).parts
                 )
             )

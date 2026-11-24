@@ -12,7 +12,7 @@ from app.ui.tui import AutoSorterTUI, DuplicateReviewModal
 
 
 def test_get_duplicate_groups_single_and_multi_collisions(tmp_path):
-    """Test detection of duplicate destination target collisions in move plans."""
+    """Test separation of distinct-file target collisions and byte-identical duplicate clusters."""
     base_dir = str(tmp_path)
     file1 = tmp_path / "doc1.pdf"
     file2 = tmp_path / "doc2.pdf"
@@ -34,13 +34,21 @@ def test_get_duplicate_groups_single_and_multi_collisions(tmp_path):
         },
     }
 
-    groups = VerificationEngine.get_duplicate_groups(base_dir, plan)
+    assert VerificationEngine.get_duplicate_groups(base_dir, plan) == []
+    groups = VerificationEngine.get_collision_groups(base_dir, plan)
     assert len(groups) == 1
     group = groups[0]
     assert group["target_filename"] == "report.pdf"
     assert len(group["items"]) == 2
     assert group["items"][0]["source_path"] == os.path.normpath(str(file1))
     assert group["items"][1]["source_path"] == os.path.normpath(str(file2))
+
+    # Byte-identical files with different names group into get_duplicate_groups
+    file2.write_text("content 1")
+    plan["doc2.pdf"]["target_filename"] = "report_copy.pdf"
+    dup_groups = VerificationEngine.get_duplicate_groups(base_dir, plan)
+    assert len(dup_groups) == 1
+    assert len(dup_groups[0]["items"]) == 2
 
 
 def test_apply_deduplication_selections_rename(tmp_path):
@@ -66,7 +74,7 @@ def test_apply_deduplication_selections_rename(tmp_path):
         },
     }
 
-    groups = VerificationEngine.get_duplicate_groups(base_dir, plan)
+    groups = VerificationEngine.get_collision_groups(base_dir, plan)
     assert len(groups) == 1
     gid = groups[0]["group_id"]
 
@@ -104,7 +112,7 @@ def test_apply_deduplication_selections_skip(tmp_path):
         },
     }
 
-    groups = VerificationEngine.get_duplicate_groups(base_dir, plan)
+    groups = VerificationEngine.get_collision_groups(base_dir, plan)
     assert len(groups) == 1
     gid = groups[0]["group_id"]
 
@@ -142,7 +150,7 @@ def test_apply_deduplication_selections_keep(tmp_path):
         },
     }
 
-    groups = VerificationEngine.get_duplicate_groups(base_dir, plan)
+    groups = VerificationEngine.get_collision_groups(base_dir, plan)
     assert len(groups) == 1
     gid = groups[0]["group_id"]
 
@@ -201,7 +209,63 @@ async def test_duplicate_review_modal_pilot():
 
 @pytest.mark.anyio
 async def test_tui_action_execute_sort_intercepts_duplicates(tmp_path):
-    """Test AutoSorterTUI.action_execute_sort intercepts duplicates and pops DuplicateReviewModal."""
+    """Test AutoSorterTUI.action_execute_sort intercepts byte duplicates with DuplicateReviewModal."""
+    base_dir = str(tmp_path)
+    file1 = tmp_path / "doc1.pdf"
+    file2 = tmp_path / "doc2.pdf"
+    file1.write_text("identical byte payload")
+    file2.write_text("identical byte payload")
+
+    plan = {
+        "doc1.pdf": {
+            "node_type": "file",
+            "relative_source": "doc1.pdf",
+            "target_filename": "report.pdf",
+            "is_checked": True,
+        },
+        "doc2.pdf": {
+            "node_type": "file",
+            "relative_source": "doc2.pdf",
+            "target_filename": "report (1).pdf",
+            "is_checked": True,
+        },
+    }
+
+    settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
+    app = AutoSorterTUI(settings=settings)
+
+    mock_session = mock.MagicMock()
+    mock_session.base_dir = base_dir
+    app.app_session = mock_session
+    app.plan = plan
+
+    async with app.run_test() as pilot:
+        with mock.patch.object(app, "run_execute_worker") as mock_worker:
+            app.action_execute_sort()
+            await pilot.pause()
+
+            # Verify DuplicateReviewModal screen is top screen for byte-identical copies
+            assert isinstance(app.screen, DuplicateReviewModal)
+            modal = app.screen
+            assert len(modal.duplicate_groups) == 1
+
+            # Confirm modal (default action 'stage')
+            modal.action_confirm()
+            await pilot.pause()
+
+            assert plan["doc1.pdf"]["target_filename"] == "report.pdf"
+            assert plan["doc2.pdf"]["duplicate_action"] == "stage"
+            mock_worker.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_tui_action_execute_sort_opens_collision_resolver_for_distinct_files(
+    tmp_path,
+):
+    """Distinct files sharing target_filename open InteractiveCollisionResolverModal instead of DuplicateReviewModal."""
+    from app.ui.modals.edit import InteractiveCollisionResolverModal
+
     base_dir = str(tmp_path)
     file1 = tmp_path / "doc1.pdf"
     file2 = tmp_path / "doc2.pdf"
@@ -237,16 +301,14 @@ async def test_tui_action_execute_sort_intercepts_duplicates(tmp_path):
             app.action_execute_sort()
             await pilot.pause()
 
-            # Verify DuplicateReviewModal screen is top screen
-            assert isinstance(app.screen, DuplicateReviewModal)
+            assert isinstance(app.screen, InteractiveCollisionResolverModal)
+            assert not isinstance(app.screen, DuplicateReviewModal)
             modal = app.screen
             assert len(modal.duplicate_groups) == 1
 
-            # Confirm modal
             modal.action_confirm()
             await pilot.pause()
 
-            # Verify deduplication was applied and run_execute_worker was called
             assert plan["doc1.pdf"]["target_filename"] == "report.pdf"
             assert plan["doc2.pdf"]["target_filename"] == "report_1.pdf"
             mock_worker.assert_called_once()
@@ -386,7 +448,7 @@ def test_apply_deduplication_selections_overwrite_and_keep_both(tmp_path):
         },
     }
 
-    groups = VerificationEngine.get_duplicate_groups(base_dir, plan)
+    groups = VerificationEngine.get_collision_groups(base_dir, plan)
     gid = groups[0]["group_id"]
 
     # Test overwrite
@@ -409,8 +471,10 @@ def test_apply_deduplication_selections_overwrite_and_keep_both(tmp_path):
     assert plan_keep_both["doc2.pdf"].get("confirmed") is True
 
 
-def test_verifier_categorizes_destination_collisions_as_critical_errors(tmp_path):
-    """Test that destination collisions set has_critical_errors to True."""
+def test_verifier_categorizes_destination_collisions_as_recoverable_and_structural_as_critical(
+    tmp_path,
+):
+    """Test that file destination collisions report as recoverable_collisions (non-critical) while directory collisions stay critical."""
     base_dir = str(tmp_path)
     f1 = tmp_path / "a.txt"
     f2 = tmp_path / "b.txt"
@@ -423,18 +487,41 @@ def test_verifier_categorizes_destination_collisions_as_critical_errors(tmp_path
             "relative_source": "a.txt",
             "target_filename": "out.txt",
             "is_checked": True,
+            "confirmed": True,
         },
         "b.txt": {
             "node_type": "file",
             "relative_source": "b.txt",
             "target_filename": "out.txt",
             "is_checked": True,
+            "confirmed": True,
         },
     }
 
     result = VerificationEngine.verify_plan_integrity(base_dir, plan)
     assert len(result["collisions"]) > 0
-    assert result["has_critical_errors"] is True
+    assert len(result["recoverable_collisions"]) > 0
+    assert result["recoverable_collisions"][0]["type"] == "duplicate_target"
+    assert result["has_critical_errors"] is False
+    assert VerificationEngine.is_critical_error(result) is False
+
+    # Structural collision (file targeting an existing directory) remains a critical error
+    existing_dir = tmp_path / "ExistingDir"
+    existing_dir.mkdir()
+    structural_plan = {
+        "a.txt": {
+            "node_type": "file",
+            "relative_source": "a.txt",
+            "target_filename": "ExistingDir",
+            "is_checked": True,
+            "confirmed": True,
+        }
+    }
+    structural_result = VerificationEngine.verify_plan_integrity(
+        base_dir, structural_plan
+    )
+    assert structural_result["has_critical_errors"] is True
+    assert VerificationEngine.is_critical_error(structural_result) is True
 
 
 @pytest.mark.anyio

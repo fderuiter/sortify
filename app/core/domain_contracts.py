@@ -287,9 +287,16 @@ class SortingPlanNodeModel(DictCompatMixin, BaseModel):
     user_confirmed: Optional[bool] = None
     jev_category: Optional[str] = None
     source_root: Optional[str] = None
+    is_duplicate: Optional[bool] = None
+    is_duplicate_primary: Optional[bool] = None
+    duplicate_of: Optional[str] = None
+    duplicate_group_id: Optional[str] = None
+    duplicate_action: Optional[str] = None
     policy_action: Optional[str] = None
     post_unarchive_action: Optional[str] = None
     post_unarchive_target: Optional[str] = None
+    is_excluded: Optional[bool] = None
+    is_checked: Optional[bool] = None
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 

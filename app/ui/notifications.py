@@ -217,7 +217,11 @@ class NotificationManager:
             float(timeout / 1000.0) if timeout and timeout > 100 else (timeout or 5)
         )
 
-        display_msg = f"{message} [Help: {help_url}]" if help_url else message
+        display_msg = (
+            f"{message} [Help: {help_url}]"
+            if help_url and help_url not in message
+            else message
+        )
 
         def _do_notify():
             toast_ok = False
@@ -270,7 +274,7 @@ class NotificationManager:
     ) -> None:
         clean_msg = sanitize_secret_patterns(scrub_user_home_paths(message))
         full_msg = f"{caption}: {clean_msg}" if caption else clean_msg
-        if help_url:
+        if help_url and help_url not in full_msg:
             full_msg = f"{full_msg} [Help: {help_url}]"
 
         tag = (type or "info").upper()

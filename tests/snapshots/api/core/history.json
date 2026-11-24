@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "896b665ae2171612dd0cee498949ed2a1b2d6b72b624f78a0de2b09892bf6d43"
+    "checksum": "ee0b3980d236b52c1138d9d96e1534344bb9d79e6ed73aca9ecde202db55b062"
   },
   "classes": [
     {
@@ -94,6 +94,49 @@
         {
           "async": false,
           "decorators": [],
+          "name": "flush_staged_duplicates",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "session_id"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "base_dir"
+            },
+            {
+              "annotation": "Optional[float]",
+              "default": "None",
+              "name": "max_age_days"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "trashed_only"
+            },
+            {
+              "annotation": "Optional[Any]",
+              "default": "None",
+              "name": "trash_fn"
+            },
+            {
+              "annotation": "Optional[Any]",
+              "default": "None",
+              "name": "audit_ledger"
+            }
+          ],
+          "returns": "dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [],
           "name": "get_session_moves",
           "parameters": [
             {
@@ -177,6 +220,31 @@
             }
           ],
           "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "simulate_rollback_steps",
+          "parameters": [
+            {
+              "annotation": "Sequence[dict[str, Any]]",
+              "default": null,
+              "name": "steps_to_analyze"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "session_id"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "ignore_missing"
+            }
+          ],
+          "returns": "dict[str, Any]"
         },
         {
           "async": false,

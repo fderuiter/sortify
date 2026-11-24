@@ -2,7 +2,9 @@
 
 import logging
 import os
+from collections.abc import Collection, Sequence
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -149,3 +151,55 @@ def forget_abandoned_session(session_info: dict, store=None) -> None:
     """Leave an unfinished session as it is and stop offering to recover it."""
     if session_info.get("session_id"):
         mark_session_abandoned(session_info["session_id"], store=store)
+
+
+def get_session_moves(session_id: str, store=None) -> list[dict[str, Any]]:
+    """Return recorded move operations for ``session_id`` from the app store."""
+    from app.core.history import open_session_history
+
+    ctx = open_session_history() if store is None else open_session_history(store)
+    with ctx as history_mgr:
+        return history_mgr.get_session_moves(session_id)
+
+
+def preview_session_rollback(
+    session_id: str | None,
+    *,
+    selected_step_ids: Collection[int | str] | None = None,
+    ignore_missing: bool = False,
+    fallback_items: Sequence[dict[str, Any]] | None = None,
+    store=None,
+) -> dict[str, Any]:
+    """Simulate a selective or full rollback without modifying files on disk."""
+    from app.core.history import HistoryManager, open_session_history
+
+    if session_id:
+        try:
+            ctx = (
+                open_session_history() if store is None else open_session_history(store)
+            )
+            with ctx as history_mgr:
+                preview = history_mgr.preview_rollback(
+                    session_id=session_id,
+                    selected_step_ids=selected_step_ids,
+                    ignore_missing=ignore_missing,
+                )
+            if preview.get("total_operations", 0) > 0 or not fallback_items:
+                return preview
+        except Exception:  # fall back to preloaded items when store is unavailable
+            if fallback_items is None:
+                raise
+
+    items = list(fallback_items or [])
+    if selected_step_ids is not None:
+        sel_set = {str(x) for x in selected_step_ids}
+        steps_to_analyze = [
+            item for item in items if str(item.get("step_id")) in sel_set
+        ]
+    else:
+        steps_to_analyze = items
+    return HistoryManager.simulate_rollback_steps(
+        steps_to_analyze,
+        session_id=session_id,
+        ignore_missing=ignore_missing,
+    )

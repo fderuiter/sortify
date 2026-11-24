@@ -401,9 +401,12 @@ class TreeViewMixin:
                     return True
                 if self._has_file_nodes(v):
                     return True
-            elif isinstance(v, list) and len(v) > 0:
-                return True
-            elif isinstance(v, str) and k != "action":
+            elif (
+                isinstance(v, list)
+                and len(v) > 0
+                or isinstance(v, str)
+                and k != "action"
+            ):
                 return True
         return False
 

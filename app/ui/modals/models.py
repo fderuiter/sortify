@@ -7,12 +7,10 @@ from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, ProgressBar
 
-from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
-from app.ui.layout import ModalBox, ResponsiveLayoutMixin
+from app.ui.layout import ModalBox, ResponsiveModalScreen
 
 
 def _is_onnxruntime_available() -> bool:
@@ -28,54 +26,29 @@ def _is_onnxruntime_available() -> bool:
         return False
 
 
-class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
+class ModelManagerModal(ResponsiveModalScreen[None]):
     """Modal screen for interactive local ONNX model management."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Close dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
-    ModelManagerModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
+    MODAL_CSS = """
     .modal-box {
         padding: 0 1;
-        background: $panel;
-        border: thick $primary;
         width: 92%;
         max-width: 88;
-        min-width: 30;
-        height: auto;
         max-height: 92%;
-        overflow-y: hidden;
-    }
-    .compact .modal-box, .narrow .modal-box {
-        padding: 0 1;
-        width: 96%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
     }
     .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 0;
-    }
-    .compact .modal-title {
         margin-bottom: 0;
     }
     .field-label {
         margin-top: 0;
         color: $text;
         text-style: bold;
-    }
-    .compact .field-label {
-        margin-top: 0;
     }
     .info-label {
         margin-top: 0;
@@ -96,14 +69,10 @@ class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         color: $warning;
     }
     .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
         layout: grid;
         grid-size: 3;
         grid-columns: 1fr 1fr 1fr;
         grid-gutter: 0 1;
-        height: auto;
     }
     .compact .button-row {
         margin-top: 0;
@@ -221,7 +190,7 @@ class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
     def on_mount(self) -> None:
         """Focus initial input, set polling timer, and announce modal launch."""
-        self._update_layout(self.size.width)
+        super().on_mount()
         self.query_one("#input-proxy", Input).focus()
         self.announce("Opened Model Management dialog.")
         self._refresh_ui_state()
@@ -455,7 +424,4 @@ class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         self.announce("Closed Model Management dialog.")
         self.dismiss(None)
 
-    def action_cancel(self) -> None:
-        """Cancel and close model management dialog."""
-        self.announce("Closed Model Management dialog.")
-        self.dismiss(None)
+    action_cancel = action_close

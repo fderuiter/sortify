@@ -11,6 +11,7 @@ from app.core.link_manager import LinkManager
 from app.core.path_utils import is_junction_entry
 
 _DEFAULT_QUARANTINE_DIRS = ("_Quarantine_Staging", "_Compliance_Quarantine")
+_INTERNAL_OWNED_DIRS = (".sortify_duplicates", ".sortify_overwritten", ".branches")
 DEFAULT_IGNORED_EXTENSIONS = (".crdownload", ".tmp", ".download")
 _ACTIVE_SCAN_FILTER: ContextVar[Optional["ScanFilter"]] = ContextVar(
     "_ACTIVE_SCAN_FILTER", default=None
@@ -71,12 +72,10 @@ def _get_quarantine_ignore_prefixes(settings: Any = None) -> tuple[str, ...]:
 
 
 def _is_quarantine_entry_name(name: str, ignore_prefixes: tuple[str, ...]) -> bool:
-    """Return True if directory/entry name belongs to staging, backup, or compliance quarantine."""
-    if (
-        name.startswith("_Quarantine_Staging")
-        or name.startswith("_Compliance_Quarantine")
-        or name in (".sortify_overwritten", ".branches")
-    ):
+    """Return True if directory/entry name belongs to internal staging, backup, or compliance quarantine."""
+    if name in _INTERNAL_OWNED_DIRS:
+        return True
+    if name.startswith(("_Quarantine_Staging", "_Compliance_Quarantine")):
         return True
     return name in ignore_prefixes
 

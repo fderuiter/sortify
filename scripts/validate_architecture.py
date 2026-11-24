@@ -84,7 +84,7 @@ _TOOLING = ("scripts", "sandbox_cli", "pytest")
 IMPORT_LAYER_RULES = {
     "app.core": ("app.ui", "app.cli", "app.main", "app.plugins") + _TOOLING,
     "app.plugins": ("app.cli", "app.main", "app.ui.tui") + _TOOLING,
-    "app.ui": ("app.cli", "app.main") + _TOOLING,
+    "app.ui": ("app.cli", "app.main", "app.core.history") + _TOOLING,
     "app.cli": ("app.ui", "app.main") + _TOOLING,
     "app.main": _TOOLING,
 }
@@ -350,11 +350,11 @@ class UtilityAntiDuplicationVisitor(ast.NodeVisitor):
             )
 
         # Requirement 4: Record function hash for structural anti-duplication comparison if non-excluded
-        if func_name not in EXCLUDED_METHOD_NAMES:
-            # Check if function body is non-trivial (more than 1 statement, or not a simple stub)
-            if len(node.body) > 1 or (
-                node.body
-                and not isinstance(node.body[0], (ast.Pass, ast.Return, ast.Raise))
+        if func_name not in EXCLUDED_METHOD_NAMES and not _is_overload_decorated(node):
+            effective_body = _effective_function_body(node)
+            # Check if function body is non-trivial after stripping any leading docstring
+            if len(effective_body) > 1 or (
+                effective_body and not _is_trivial_stub_statement(effective_body[0])
             ):
                 h = compute_normalized_ast_hash(node)
                 self.function_hashes.setdefault(h, []).append(
@@ -368,6 +368,42 @@ class UtilityAntiDuplicationVisitor(ast.NodeVisitor):
 
     def visit_AsyncFunctionDef(self, node):
         self._check_function(node)
+
+
+def _is_overload_decorated(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """Return True when function is a typing.overload signature stub."""
+    for dec in node.decorator_list:
+        if isinstance(dec, ast.Name) and dec.id == "overload":
+            return True
+        if isinstance(dec, ast.Attribute) and dec.attr == "overload":
+            return True
+    return False
+
+
+def _effective_function_body(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> list[ast.stmt]:
+    """Return function body statements with any leading docstring literal removed."""
+    body = node.body
+    if (
+        body
+        and isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Constant)
+        and isinstance(body[0].value.value, str)
+    ):
+        return body[1:]
+    return body
+
+
+def _is_trivial_stub_statement(stmt: ast.stmt) -> bool:
+    """Return True for single-statement Pass, Return, Raise, or Ellipsis stubs."""
+    if isinstance(stmt, (ast.Pass, ast.Return, ast.Raise)):
+        return True
+    return (
+        isinstance(stmt, ast.Expr)
+        and isinstance(stmt.value, ast.Constant)
+        and stmt.value.value is Ellipsis
+    )
 
 
 def _collect_parsed_app_files(app_root: str = "app") -> list[tuple[str, ast.Module]]:
@@ -415,32 +451,137 @@ def validate_codebase_duplication(
         if target_files is not None and filepath in target_files:
             errors.extend(file_errors)
 
-    # Compare normalized function hashes across distinct files
-    for h, locs in function_hashes.items():
-        distinct_files = {loc[0] for loc in locs}
-        if len(distinct_files) > 1:
+    # Compare normalized function hashes across same-file and cross-file definitions
+    for _h, locs in function_hashes.items():
+        if len(locs) > 1:
             if target_files is None:
                 primary_file, primary_line, primary_name = locs[0]
                 for dup_file, dup_line, dup_name in locs[1:]:
-                    if dup_file != primary_file:
-                        errors.append(
-                            f"{dup_file}:{dup_line}: Duplicate function body found for '{dup_name}'. "
-                            f"Structurally identical to function '{primary_name}' in {primary_file}:{primary_line}. "
-                            "Consolidate logic into a shared module."
-                        )
+                    errors.append(
+                        f"{dup_file}:{dup_line}: Duplicate function body found for '{dup_name}'. "
+                        f"Structurally identical to function '{primary_name}' in {primary_file}:{primary_line}. "
+                        "Consolidate logic into a shared module or helper."
+                    )
             else:
-                for curr_file, curr_line, curr_name in locs:
+                for idx, (curr_file, curr_line, curr_name) in enumerate(locs):
                     if curr_file in target_files:
-                        other_locs = [
-                            (f, line, name) for f, line, name in locs if f != curr_file
-                        ]
+                        other_locs = [loc for j, loc in enumerate(locs) if j != idx]
                         if other_locs:
                             other_file, other_line, other_name = other_locs[0]
                             errors.append(
                                 f"{curr_file}:{curr_line}: Duplicate function body found for '{curr_name}'. "
                                 f"Structurally identical to function '{other_name}' in {other_file}:{other_line}. "
-                                "Consolidate logic into a shared module."
+                                "Consolidate logic into a shared module or helper."
                             )
+
+
+def _extract_base_class_name(base: ast.expr) -> str | None:
+    """Extract terminal class identifier from a ClassDef base expression."""
+    target = base.value if isinstance(base, ast.Subscript) else base
+    if isinstance(target, ast.Name):
+        return target.id
+    if isinstance(target, ast.Attribute):
+        return target.attr
+    return None
+
+
+def _has_inlined_modal_shell_css(css_text: str, cls_name: str = "") -> bool:
+    """Return True if a modal CSS string re-inlines shared BASE_MODAL_CSS shell rules."""
+    import re
+
+    for match in re.finditer(r"([^{}]+)\{([^{}]*)\}", css_text):
+        selector = match.group(1).strip()
+        decls = match.group(2)
+        if "rgba(0, 0, 0, 0.6)" in decls:
+            return True
+        if (
+            (cls_name and cls_name in selector)
+            or "ModalScreen" in selector
+            or "ResponsiveModalScreen" in selector
+        ) and "align: center middle" in decls:
+            return True
+        if (
+            ".modal-body" in selector
+            and "overflow-y: auto" in decls
+            and "max-height: 100%" in decls
+        ):
+            return True
+        if (
+            ".button-row" in selector
+            and "dock: bottom" in decls
+            and "align: right middle" in decls
+        ):
+            return True
+    return False
+
+
+def validate_modal_shell_conventions(
+    errors: list,
+    target_files: set[str] | None = None,
+    parsed_files: list[tuple[str, ast.Module]] | None = None,
+) -> None:
+    """Enforce ResponsiveModalScreen inheritance and prevent re-inlining shared modal shell CSS."""
+    app_asts = (
+        parsed_files if parsed_files is not None else _collect_parsed_app_files("app")
+    )
+    for filepath, tree in app_asts:
+        norm_path = filepath.replace("\\", "/")
+        if target_files is not None and norm_path not in target_files:
+            continue
+        if norm_path == "app/ui/layout.py":
+            continue
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            base_names = {
+                name
+                for b in node.bases
+                if (name := _extract_base_class_name(b)) is not None
+            }
+            if "ModalScreen" in base_names:
+                errors.append(
+                    f"{norm_path}:{node.lineno}: Class '{node.name}' inherits directly from 'ModalScreen'. "
+                    "Inherit from 'app.ui.layout.ResponsiveModalScreen' instead."
+                )
+
+            is_modal_cls = (
+                node.name.endswith("Modal")
+                or "ResponsiveModalScreen" in base_names
+                or "ModalScreen" in base_names
+            )
+            if not is_modal_cls:
+                continue
+
+            for stmt in node.body:
+                attr_name: str | None = None
+                val_node: ast.expr | None = None
+                if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1:
+                    tgt = stmt.targets[0]
+                    if isinstance(tgt, ast.Name):
+                        attr_name = tgt.id
+                        val_node = stmt.value
+                elif isinstance(stmt, ast.AnnAssign) and isinstance(
+                    stmt.target, ast.Name
+                ):
+                    attr_name = stmt.target.id
+                    val_node = stmt.value
+
+                if attr_name == "CSS":
+                    errors.append(
+                        f"{norm_path}:{stmt.lineno}: Modal class '{node.name}' defines 'CSS' directly. "
+                        "Declare subclass overrides in 'MODAL_CSS' on 'ResponsiveModalScreen' instead."
+                    )
+                if (
+                    attr_name in ("CSS", "MODAL_CSS")
+                    and isinstance(val_node, ast.Constant)
+                    and isinstance(val_node.value, str)
+                    and _has_inlined_modal_shell_css(val_node.value, node.name)
+                ):
+                    errors.append(
+                        f"{norm_path}:{stmt.lineno}: Modal class '{node.name}' re-inlines shared modal shell CSS rules in '{attr_name}'. "
+                        "Keep shared shell styles in 'app.ui.layout.BASE_MODAL_CSS' and put only deltas in 'MODAL_CSS'."
+                    )
 
 
 def validate_diagram_schema_and_assets(errors: list) -> None:
@@ -942,8 +1083,11 @@ def main():
 
         Visitor().visit(tree)
 
-    # Rule 3: Anti-duplication, canonical utility registration, and primitive duplicate pattern checks
+    # Rule 3: Anti-duplication, canonical utility registration, and modal shell conventions
     validate_codebase_duplication(
+        errors, target_files=target_files, parsed_files=parsed_files
+    )
+    validate_modal_shell_conventions(
         errors, target_files=target_files, parsed_files=parsed_files
     )
 

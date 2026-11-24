@@ -8,12 +8,10 @@ from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Select, Switch, TabbedContent, TabPane
 
-from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
-from app.ui.layout import ModalBox, ResponsiveLayoutMixin
+from app.ui.layout import ModalBox, ResponsiveModalScreen
 from app.ui.modals.models import ModelManagerModal
 from app.ui.modals.rules import TemplateGalleryModal
 from app.ui.notifications import TROUBLESHOOTING_URL
@@ -56,279 +54,130 @@ def _get_model_cache_footprint_mb() -> float:
     return 0.0
 
 
-class ScrubArtifactsModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[bool]):
+class _ArtifactConfirmModal(ResponsiveModalScreen[bool]):
+    """Private base confirmation modal for AI artifact scrubbing dialogs."""
+
+    MODAL_TITLE: str = ""
+    WARNING_TEXT: str = ""
+    CANCEL_LABEL: str = "Cancel"
+    CANCEL_BUTTON_ID: str = "btn-cancel"
+    CONFIRM_LABEL: str = "Confirm"
+    CONFIRM_BUTTON_ID: str = "btn-confirm"
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
+    ]
+
+    MODAL_CSS = """
+    .info-label {
+        margin-top: 1;
+        color: $text;
+    }
+    .warning-label {
+        margin-top: 1;
+        margin-bottom: 1;
+        color: $warning;
+        text-style: bold;
+    }
+    .button-row {
+        min-height: 3;
+    }
+    .button-row Button {
+        margin-left: 1;
+    }
+    """
+
+    def __init__(self, vector_count: int, cache_size_mb: float):
+        super().__init__()
+        self.vector_count = vector_count
+        self.cache_size_mb = cache_size_mb
+
+    def compose(self) -> ComposeResult:
+        """Compose modal layout with footprint labels, warning text, and action buttons."""
+        with ModalBox(classes="modal-box"):
+            with Vertical(classes="modal-body"):
+                yield Heading(self.MODAL_TITLE, level=1, classes="modal-title")
+                yield Label(
+                    f"Stored Document Vectors: {self.vector_count} records",
+                    classes="info-label",
+                    id="lbl-vector-count",
+                )
+                yield Label(
+                    f"Model Cache Footprint: {self.cache_size_mb:.2f} MB",
+                    classes="info-label",
+                    id="lbl-cache-size",
+                )
+                yield Label(self.WARNING_TEXT, classes="warning-label")
+            with Horizontal(classes="button-row"):
+                yield Button(
+                    self.CANCEL_LABEL, id=self.CANCEL_BUTTON_ID, variant="default"
+                )
+                yield Button(
+                    self.CONFIRM_LABEL, id=self.CONFIRM_BUTTON_ID, variant="error"
+                )
+
+    @on(Button.Pressed)
+    def _on_button_pressed(self, event: Button.Pressed) -> None:
+        """Dispatch confirm or cancel action based on configured button IDs."""
+        if event.button.id == self.CONFIRM_BUTTON_ID:
+            self.action_confirm()
+        elif event.button.id == self.CANCEL_BUTTON_ID:
+            self.action_cancel()
+
+    def action_confirm(self) -> None:
+        """Confirm action and dismiss modal with True."""
+        self.dismiss(True)
+
+    def action_cancel(self) -> None:
+        """Cancel action and dismiss modal with False."""
+        self.dismiss(False)
+
+
+class ScrubArtifactsModal(_ArtifactConfirmModal):
     """Modal dialog for confirming manual scrubbing of AI vector database rows and model cache files."""
 
-    BINDINGS = [
-        Binding("escape", "cancel", "Cancel dialog", show=True),
-    ]
-
-    CSS = """
-    ScrubArtifactsModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
-    .modal-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
-        width: 90%;
-        max-width: 80;
-        min-width: 30;
-        height: auto;
-        max-height: 90%;
-        overflow-y: hidden;
-    }
-    .compact .modal-box, .narrow .modal-box {
-        padding: 0 1;
-        width: 96%;
-        max-height: 96%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
-    }
-    .info-label {
-        margin-top: 1;
-        color: $text;
-    }
-    .warning-label {
-        margin-top: 1;
-        margin-bottom: 1;
-        color: $warning;
-        text-style: bold;
-    }
-    .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
-        height: auto;
-        min-height: 3;
-        align: right middle;
-    }
-    .button-row Button {
-        margin-left: 1;
-    }
-    """
-
-    def __init__(self, vector_count: int, cache_size_mb: float):
-        super().__init__()
-        self.vector_count = vector_count
-        self.cache_size_mb = cache_size_mb
-
-    def compose(self) -> ComposeResult:
-        """Compose modal layout with warning labels and action buttons."""
-        with ModalBox(classes="modal-box"):
-            with Vertical(classes="modal-body"):
-                yield Heading(
-                    "Scrub AI Artifacts Confirmation", level=1, classes="modal-title"
-                )
-                yield Label(
-                    f"Stored Document Vectors: {self.vector_count} records",
-                    classes="info-label",
-                    id="lbl-vector-count",
-                )
-                yield Label(
-                    f"Model Cache Footprint: {self.cache_size_mb:.2f} MB",
-                    classes="info-label",
-                    id="lbl-cache-size",
-                )
-                yield Label(
-                    "Warning: This operation will permanently remove all stored document vector embeddings "
-                    "from the SQLite database and purge local model cache files from disk. "
-                    "Are you sure you want to scrub AI artifacts?",
-                    classes="warning-label",
-                )
-            with Horizontal(classes="button-row"):
-                yield Button("Cancel", id="btn-cancel-scrub", variant="default")
-                yield Button(
-                    "Scrub AI Artifacts", id="btn-confirm-scrub", variant="error"
-                )
-
-    def on_mount(self) -> None:
-        """Apply responsive layout classes on mount."""
-        self._update_layout(self.size.width, self.size.height)
-
-    @on(Button.Pressed, "#btn-confirm-scrub")
-    def action_confirm(self) -> None:
-        """Confirm artifact scrubbing and dismiss modal with True."""
-        self.dismiss(True)
-
-    @on(Button.Pressed, "#btn-cancel-scrub")
-    def action_cancel(self) -> None:
-        """Cancel artifact scrubbing and dismiss modal with False."""
-        self.dismiss(False)
+    MODAL_TITLE = "Scrub AI Artifacts Confirmation"
+    WARNING_TEXT = (
+        "Warning: This operation will permanently remove all stored document vector embeddings "
+        "from the SQLite database and purge local model cache files from disk. "
+        "Are you sure you want to scrub AI artifacts?"
+    )
+    CANCEL_LABEL = "Cancel"
+    CANCEL_BUTTON_ID = "btn-cancel-scrub"
+    CONFIRM_LABEL = "Scrub AI Artifacts"
+    CONFIRM_BUTTON_ID = "btn-confirm-scrub"
 
 
-class ConsentRevocationModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[bool]):
+class ConsentRevocationModal(_ArtifactConfirmModal):
     """Modal dialog for confirming revocation of AI consent and cascading artifact scrubbing."""
 
-    BINDINGS = [
-        Binding("escape", "cancel", "Cancel dialog", show=True),
-    ]
-
-    CSS = """
-    ConsentRevocationModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
-    .modal-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
-        width: 90%;
-        max-width: 80;
-        min-width: 30;
-        height: auto;
-        max-height: 90%;
-        overflow-y: hidden;
-    }
-    .compact .modal-box, .narrow .modal-box {
-        padding: 0 1;
-        width: 96%;
-        max-height: 96%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
-    }
-    .info-label {
-        margin-top: 1;
-        color: $text;
-    }
-    .warning-label {
-        margin-top: 1;
-        margin-bottom: 1;
-        color: $warning;
-        text-style: bold;
-    }
-    .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
-        height: auto;
-        min-height: 3;
-        align: right middle;
-    }
-    .button-row Button {
-        margin-left: 1;
-    }
-    """
-
-    def __init__(self, vector_count: int, cache_size_mb: float):
-        super().__init__()
-        self.vector_count = vector_count
-        self.cache_size_mb = cache_size_mb
-
-    def compose(self) -> ComposeResult:
-        """Compose modal layout with warning labels and consent revocation action buttons."""
-        with ModalBox(classes="modal-box"):
-            with Vertical(classes="modal-body"):
-                yield Heading(
-                    "Confirm AI Consent Revocation", level=1, classes="modal-title"
-                )
-                yield Label(
-                    f"Stored Document Vectors: {self.vector_count} records",
-                    classes="info-label",
-                    id="lbl-vector-count",
-                )
-                yield Label(
-                    f"Model Cache Footprint: {self.cache_size_mb:.2f} MB",
-                    classes="info-label",
-                    id="lbl-cache-size",
-                )
-                yield Label(
-                    "Revoking AI consent will disable AI features, unload models from memory, "
-                    "scrub stored document vectors from SQLite tables, and purge model cache files from disk. "
-                    "Do you wish to proceed?",
-                    classes="warning-label",
-                )
-            with Horizontal(classes="button-row"):
-                yield Button(
-                    "Keep Consent Active", id="btn-cancel-revoke", variant="default"
-                )
-                yield Button(
-                    "Revoke Consent & Scrub Data",
-                    id="btn-confirm-revoke",
-                    variant="error",
-                )
-
-    def on_mount(self) -> None:
-        """Apply responsive layout classes on mount."""
-        self._update_layout(self.size.width, self.size.height)
-
-    @on(Button.Pressed, "#btn-confirm-revoke")
-    def action_confirm(self) -> None:
-        """Confirm consent revocation and dismiss modal with True."""
-        self.dismiss(True)
-
-    @on(Button.Pressed, "#btn-cancel-revoke")
-    def action_cancel(self) -> None:
-        """Cancel consent revocation and dismiss modal with False."""
-        self.dismiss(False)
+    MODAL_TITLE = "Confirm AI Consent Revocation"
+    WARNING_TEXT = (
+        "Revoking AI consent will disable AI features, unload models from memory, "
+        "scrub stored document vectors from SQLite tables, and purge model cache files from disk. "
+        "Do you wish to proceed?"
+    )
+    CANCEL_LABEL = "Keep Consent Active"
+    CANCEL_BUTTON_ID = "btn-cancel-revoke"
+    CONFIRM_LABEL = "Revoke Consent & Scrub Data"
+    CONFIRM_BUTTON_ID = "btn-confirm-revoke"
 
 
-class SettingsModal(
-    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict[str, Any]]]
-):
+class SettingsModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
     """Modal dialog for modifying application settings."""
 
     AUTO_FOCUS = None
+    HELP_URL = f"{TROUBLESHOOTING_URL}#settings-configuration"
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
-    SettingsModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
-    .modal-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
-        width: 90%;
-        max-width: 80;
-        min-width: 30;
-        height: auto;
-        max-height: 90%;
-        overflow-y: hidden;
-    }
-    .compact .modal-box {
-        padding: 0 1;
-        width: 96%;
-        max-height: 96%;
-    }
-    .narrow .modal-box {
-        padding: 0 1;
-        width: 96%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
-    }
+    MODAL_CSS = """
     .field-label {
         margin-top: 1;
         color: $text;
@@ -341,13 +190,9 @@ class SettingsModal(
         align: left middle;
     }
     .button-row {
-        dock: bottom;
-        width: 100%;
         layout: grid;
         grid-size: 3;
         grid-gutter: 0 1;
-        margin-top: 1;
-        height: auto;
         min-height: 3;
     }
     .narrow .button-row {
@@ -360,9 +205,6 @@ class SettingsModal(
     Button:focus, Input:focus, Select:focus, Switch:focus {
         border: heavy $accent;
         text-style: bold;
-    }
-    Button.hidden {
-        display: none;
     }
     SettingsModal TabbedContent {
         height: auto;
@@ -725,7 +567,7 @@ class SettingsModal(
 
     def on_mount(self) -> None:
         """Focus initial input field on mount and emit announcement."""
-        self._update_layout(self.size.width, self.size.height)
+        super().on_mount()
         self.query_one("#input-protected", Input).focus(scroll_visible=False)
         self.query_one(".modal-box", ModalBox).scroll_home(
             animate=False, immediate=True
@@ -1131,19 +973,6 @@ class SettingsModal(
         }
         self.announce("Saved application settings.")
         self.dismiss(res)
-
-    @on(Button.Pressed, "#btn-help")
-    def action_help(self) -> None:
-        """Open settings troubleshooting documentation."""
-        url = getattr(
-            self,
-            "help_url",
-            f"{TROUBLESHOOTING_URL}#settings-configuration",
-        )
-        from app.ui.notifications import notify
-
-        notify(f"Opening help link: {url}", type="info", help_url=url)
-        self.announce(f"Opened documentation link: {url}")
 
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:

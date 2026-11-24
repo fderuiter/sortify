@@ -418,7 +418,10 @@ class FileRenamerEngine:
                             "target_filename": target_fn,
                         }
                     elif isinstance(v, dict):
-                        v["target_filename"] = target_fn
+                        if not v.get("is_excluded") and v.get(
+                            "duplicate_action"
+                        ) not in ("stage", "trash", "skip"):
+                            v["target_filename"] = target_fn
                 elif isinstance(v, dict) and not is_file:
                     _traverse(v)
 

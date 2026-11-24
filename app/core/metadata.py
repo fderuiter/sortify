@@ -7,7 +7,7 @@ import os
 
 from app.core.extractor import get_file_hash
 from app.core.extractor_strategies import registry
-from app.core.policy_engine import match_pattern_expression
+from app.core.policy_engine import PolicyEngine
 from app.core.progress import emit_progress
 
 DEFAULT_EXTENSION_CATEGORIES = {
@@ -100,6 +100,103 @@ def get_extension_category_target(item: str, settings) -> str | None:
     return None
 
 
+def evaluate_static_file_routing(
+    file_path: str,
+    settings: object,
+    *,
+    filename_only: str | None = None,
+    check_extension_categories: bool = True,
+    sorted_policies: list[dict] | None = None,
+) -> tuple[str | None, bool, bool]:
+    """Evaluate static policies, keyword/learned rules, and extension categories.
+
+    Parameters
+    ----------
+    file_path : str
+        File path to evaluate against static rules.
+    settings : object
+        Application settings containing ``POLICIES``, ``KEYWORD_RULES``,
+        ``LEARNED_RULES``, and ``EXTENSION_CATEGORIES``.
+    filename_only : str | None, optional
+        Pre-computed lowercase basename of ``file_path``.
+    check_extension_categories : bool, optional
+        Whether to evaluate ``get_extension_category_target`` when no policy
+        or keyword/learned rule matches.
+    sorted_policies : list[dict] | None, optional
+        Pre-sorted policy definitions to avoid re-sorting on every file.
+
+    Returns
+    -------
+    tuple[str | None, bool, bool]
+        ``(matched_target, matched_action, halt_evaluation)`` describing any
+        matched destination folder, whether a valid policy action matched,
+        and whether a halting rule stopped downstream evaluation.
+    """
+    fn_lower = (
+        filename_only
+        if filename_only is not None
+        else os.path.basename(file_path).lower()
+    )
+    if sorted_policies is None:
+        raw_policies = getattr(settings, "POLICIES", []) if settings else []
+        valid_policies = (
+            [
+                p
+                for p in (raw_policies or [])
+                if isinstance(p, dict) or hasattr(p, "model_dump")
+            ]
+            if isinstance(raw_policies, (list, tuple))
+            else []
+        )
+        active_policies = PolicyEngine.sort_policies(valid_policies)
+    else:
+        active_policies = sorted_policies
+
+    eval_out = PolicyEngine.evaluate_policies(
+        file_path,
+        "",
+        "[STATUS:STATIC]",
+        active_policies,
+        return_halting=True,
+        is_sorted=True,
+    )
+    matched_policy, halt_evaluation = (
+        eval_out if isinstance(eval_out, tuple) else (eval_out, False)
+    )
+
+    matched_target: str | None = None
+    matched_action = False
+    if matched_policy is not None:
+        raw_target = matched_policy.get("target_path")
+        if raw_target:
+            matched_target = str(raw_target)
+        raw_action = matched_policy.get("action")
+        if raw_action:
+            matched_action = PolicyEngine.validate_policy_action(str(raw_action))
+
+    if not halt_evaluation and not matched_target and not matched_action:
+        for attr_name in ("KEYWORD_RULES", "LEARNED_RULES"):
+            rules = getattr(settings, attr_name, {}) if settings else {}
+            if isinstance(rules, dict):
+                for keyword, target_folder in rules.items():
+                    kw_str = str(keyword)
+                    if kw_str.strip() and kw_str.lower() in fn_lower and target_folder:
+                        matched_target = str(target_folder)
+                        break
+            if matched_target:
+                break
+
+    if (
+        not halt_evaluation
+        and not matched_target
+        and not matched_action
+        and check_extension_categories
+    ):
+        matched_target = get_extension_category_target(file_path, settings)
+
+    return matched_target, matched_action, halt_evaluation
+
+
 class MetadataPass:
     """Component to execute static rule matching logic prior to heavy ingestion."""
 
@@ -122,28 +219,41 @@ class MetadataPass:
 
         effective_callback = progress_callback or callback
 
-        keyword_rules = getattr(settings, "KEYWORD_RULES", {})
-        learned_rules = getattr(settings, "LEARNED_RULES", {})
         policies = getattr(settings, "POLICIES", [])
         auto_quarantine_ratings = [
             r for r in (getattr(settings, "AUTO_QUARANTINE_RATINGS", []) or []) if r
         ]
-        has_content_compliance_policy = bool(auto_quarantine_ratings) or any(
-            isinstance(p, dict)
-            and p.get("enabled", True)
-            and (
-                str(p.get("type", "")).lower() in ("compliance", "action")
-                or str(p.get("action", "")).lower()
-                in ("quarantine", "redact", "archive", "retain")
-                or str(p.get("expression", "")).strip().lower()
-                in ("secret", "credential")
+
+        def _policy_field(pol: object, key: str, default: object = "") -> object:
+            return (
+                pol.get(key, default)
+                if isinstance(pol, dict)
+                else getattr(pol, key, default)
             )
-            for p in (policies or [])
-        )
 
         # Sort policies in descending order of priority (higher priority number first)
-        sorted_policies = sorted(
-            policies, key=lambda x: x.get("priority", 0), reverse=True
+        valid_policies = (
+            [
+                p
+                for p in (policies or [])
+                if isinstance(p, dict) or hasattr(p, "model_dump")
+            ]
+            if isinstance(policies, (list, tuple))
+            else []
+        )
+        sorted_policies = PolicyEngine.sort_policies(valid_policies)
+
+        has_content_compliance_policy = bool(auto_quarantine_ratings) or any(
+            bool(_policy_field(p, "enabled", True))
+            and (
+                str(_policy_field(p, "type", "") or "").lower()
+                in ("compliance", "action")
+                or str(_policy_field(p, "action", "") or "").lower()
+                in ("quarantine", "redact", "archive", "retain")
+                or str(_policy_field(p, "expression", "") or "").strip().lower()
+                in ("secret", "credential")
+            )
+            for p in sorted_policies
         )
 
         if db and hasattr(db, "worker"):
@@ -222,82 +332,39 @@ class MetadataPass:
                 matched_target = hash_to_target[file_hash]
                 matched_from_policy = True
             else:
-                filename_only = os.path.basename(rel_p).lower()
-                file_path_lower = item_path.lower()
-                halt_evaluation = False
-
-                for policy in sorted_policies:
-                    if not policy.get("enabled", True):
+                for pol_cand in sorted_policies:
+                    if not _policy_field(pol_cand, "enabled", True):
                         continue
-                    p_type = policy.get("type", "").lower()
-                    expression = policy.get("expression", "")
-                    target_path = policy.get("target_path")
-                    expr_lower = expression.lower()
-
-                    is_match = False
-                    if p_type == "override":
-                        if (
-                            expr_lower == filename_only
-                            or expr_lower in filename_only
-                            or expr_lower in file_path_lower
-                        ):
-                            is_match = True
-                    elif p_type == "pattern":
-                        if match_pattern_expression(expr_lower, filename_only):
-                            is_match = True
-                    elif p_type == "unarchive":
-                        if expr_lower and match_pattern_expression(
-                            expr_lower, filename_only
-                        ):
-                            is_match = True
-                    elif p_type == "keyword":
-                        if expr_lower and expr_lower in filename_only:
-                            is_match = True
-
-                    if is_match:
-                        matched_target = target_path
-                        matched_policy_action = str(
-                            policy.get("action", "") or ""
-                        ).lower()
+                    p_type = str(_policy_field(pol_cand, "type", "") or "").lower()
+                    if PolicyEngine.match_policy(
+                        pol_cand, item_path, "", "[STATUS:STATIC]"
+                    ):
                         matched_from_policy = True
+                        matched_policy_action = str(
+                            _policy_field(pol_cand, "action", "") or ""
+                        ).lower()
                         break
-                    else:
-                        if p_type in (
-                            "keyword",
-                            "action",
-                            "compliance",
-                            "secret",
-                            "credential",
-                            "",
-                        ):
-                            unmatched_higher_content_policy = True
-                        if policy.get("halting", False):
-                            halt_evaluation = True
-                            break
+                    if p_type in (
+                        "keyword",
+                        "action",
+                        "compliance",
+                        "secret",
+                        "credential",
+                        "",
+                    ):
+                        unmatched_higher_content_policy = True
+                    if _policy_field(pol_cand, "halting", False):
+                        break
 
-                if (
-                    not halt_evaluation
-                    and not matched_target
-                    and not matched_policy_action
-                ):
-                    for keyword, target_folder in keyword_rules.items():
-                        if keyword.strip() and keyword.lower() in filename_only:
-                            matched_target = target_folder
-                            break
-                    if not matched_target:
-                        for keyword, target_folder in learned_rules.items():
-                            if keyword.strip() and keyword.lower() in filename_only:
-                                matched_target = target_folder
-                                break
-
-                # Evaluate extension category mapping / MIME fallback rules for unregistered extensions
-                if (
-                    not halt_evaluation
-                    and not matched_target
-                    and not matched_policy_action
-                    and not is_supported
-                ):
-                    matched_target = get_extension_category_target(item, settings)
+                matched_target, _matched_action, _halt_eval = (
+                    evaluate_static_file_routing(
+                        item_path,
+                        settings,
+                        filename_only=os.path.basename(rel_p).lower(),
+                        check_extension_categories=not is_supported,
+                        sorted_policies=sorted_policies,
+                    )
+                )
 
             norm_rel_p = rel_p.replace("\\", "/")
             rejected_set = rejected_by_doc.get(norm_rel_p, set())
@@ -306,7 +373,7 @@ class MetadataPass:
                 if mt_clean in rejected_set or (mt_clean.split("/")[0] in rejected_set):
                     matched_target = None
 
-            if (matched_target or matched_policy_action == "unarchive") and (
+            if (matched_target or matched_policy_action in ("unarchive", "trash")) and (
                 not is_supported
                 or (
                     not has_content_compliance_policy

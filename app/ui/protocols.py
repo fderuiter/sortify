@@ -46,6 +46,7 @@ class TUIHostProtocol(Protocol):
     _daemon_is_moving: bool
     _tree_expansion_memory: dict[str, bool]
     _last_cursor_key: Optional[str]
+    _pending_flush_trash: bool
 
     @overload
     def query_one(self, selector: str) -> Widget: ...

@@ -16,9 +16,9 @@ import sys
 import threading
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import contextmanager
-from typing import Optional
+from typing import Any, Optional
 
 from app.core.exceptions import PartialMoveError
 from app.core.path_utils import is_junction_path
@@ -72,7 +72,7 @@ def verify_file_hash(
             )
             if not windows and not retry_empty:
                 return False
-        except Exception as error:  # noqa: BLE001 - legacy readers may raise any exception; failure must never verify bytes
+        except Exception as error:
             logging.debug("Hash verification read failed (%s)", type(error).__name__)
             if not recovery and not windows:
                 return False
@@ -726,6 +726,328 @@ def same_file_content(path_a: str, path_b: str) -> bool:
         return _hash_file(path_a) == _hash_file(path_b)
     except OSError:
         return False
+
+
+DETECT_ORIGINAL_BY_MODES: tuple[str, ...] = (
+    "first_seen",
+    "name",
+    "created",
+    "lastmodified",
+    "-first_seen",
+    "-name",
+    "-created",
+    "-lastmodified",
+)
+
+
+def raw_file_hash(filepath: str | os.PathLike, algorithm: str = "sha256") -> str:
+    """Compute a raw byte digest without stripping Office or media metadata headers.
+
+    Parameters
+    ----------
+    filepath : str | os.PathLike
+        Path to the regular file to hash.
+    algorithm : str, optional
+        Hash algorithm name, by default ``"sha256"``.
+
+    Returns
+    -------
+    str
+        Hexadecimal digest of the exact file bytes.
+    """
+    if algorithm.lower() == "sha256":
+        return _hash_file(os.fspath(filepath))
+    hasher = hashlib.new(algorithm)
+    with open(os.fspath(filepath), "rb") as f:
+        while chunk := f.read(65536):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def _file_created_timestamp(filepath: str) -> float:
+    """Return filesystem creation timestamp (birth time when supported, else ctime)."""
+    st = os.stat(filepath)
+    birth = getattr(st, "st_birthtime", None)
+    if isinstance(birth, (int, float)):
+        return float(birth)
+    ctime_ns = getattr(st, "st_ctime_ns", None)
+    if isinstance(ctime_ns, int):
+        return float(ctime_ns) / 1_000_000_000.0
+    return float(st.st_mtime)
+
+
+def select_original_from_cluster(
+    paths: Sequence[str], mode: str = "first_seen"
+) -> tuple[str, list[str]]:
+    """Select the surviving original and ordered duplicates from a byte-identical cluster.
+
+    Parameters
+    ----------
+    paths : Sequence[str]
+        Candidate paths belonging to one verified byte-identical cluster.
+    mode : str, optional
+        Selection mode matching Organize duplicate filter selectors:
+        ``"first_seen"``, ``"name"``, ``"created"``, ``"lastmodified"``, or
+        reverse variants prefixed with ``"-"``.
+
+    Returns
+    -------
+    tuple[str, list[str]]
+        ``(selected_original, remaining_duplicates)`` ordered deterministically.
+
+    Raises
+    ------
+    ValueError
+        If ``paths`` is empty or ``mode`` is not recognized.
+    """
+    if not paths:
+        raise ValueError("Cannot select an original from an empty cluster.")
+
+    norm_mode = str(mode or "first_seen").strip().lower()
+    if norm_mode not in DETECT_ORIGINAL_BY_MODES:
+        raise ValueError(
+            f"Unsupported detect_original_by mode '{mode}'. "
+            f"Expected one of: {', '.join(DETECT_ORIGINAL_BY_MODES)}."
+        )
+
+    reverse = norm_mode.startswith("-")
+    base_mode = norm_mode[1:] if reverse else norm_mode
+    indexed = list(enumerate(paths))
+
+    if base_mode == "first_seen":
+        ordered = [p for _, p in (reversed(indexed) if reverse else indexed)]
+    elif base_mode == "name":
+        ordered = [
+            p
+            for _, p in sorted(
+                indexed,
+                key=lambda item: (
+                    os.path.splitext(os.path.basename(item[1]))[0].casefold(),
+                    os.path.splitext(os.path.basename(item[1]))[1].casefold(),
+                    item[1].casefold(),
+                    item[0],
+                ),
+                reverse=reverse,
+            )
+        ]
+    elif base_mode == "created":
+
+        def _created_key(item: tuple[int, str]) -> tuple[float, str, int]:
+            idx, path = item
+            try:
+                ts = _file_created_timestamp(path)
+            except OSError:
+                ts = float("inf")
+            return (ts, os.path.basename(path).casefold(), idx)
+
+        ordered = [p for _, p in sorted(indexed, key=_created_key, reverse=reverse)]
+    else:  # lastmodified
+
+        def _mtime_key(item: tuple[int, str]) -> tuple[float, str, int]:
+            idx, path = item
+            try:
+                ts = float(os.path.getmtime(path))
+            except OSError:
+                ts = float("inf")
+            return (ts, os.path.basename(path).casefold(), idx)
+
+        ordered = [p for _, p in sorted(indexed, key=_mtime_key, reverse=reverse)]
+
+    return ordered[0], ordered[1:]
+
+
+def group_byte_identical_files(
+    file_paths: Sequence[str],
+    detect_original_by: str = "first_seen",
+) -> list[dict[str, Any]]:
+    """Group regular files with identical raw bytes using size pre-filtering and byte verification.
+
+    Parameters
+    ----------
+    file_paths : Sequence[str]
+        Candidate file paths in scan order.
+    detect_original_by : str, optional
+        Selector mode for choosing the primary surviving file per cluster,
+        by default ``"first_seen"``.
+
+    Returns
+    -------
+    list[dict[str, Any]]
+        Verified duplicate clusters, each containing ``original``, ``duplicates``,
+        ``paths``, ``byte_size``, and ``sha256``.
+    """
+    norm_mode = str(detect_original_by or "first_seen").strip().lower()
+    if norm_mode not in DETECT_ORIGINAL_BY_MODES:
+        raise ValueError(
+            f"Unsupported detect_original_by mode '{detect_original_by}'. "
+            f"Expected one of: {', '.join(DETECT_ORIGINAL_BY_MODES)}."
+        )
+
+    size_buckets: dict[int, list[str]] = {}
+    seen_real_files: list[str] = []
+
+    for raw_path in file_paths:
+        if not raw_path:
+            continue
+        path = os.path.abspath(os.fspath(raw_path))
+        if os.path.islink(path) or not os.path.isfile(path):
+            continue
+        # Skip duplicate references to the exact same inode / path in input list
+        already_seen = False
+        for existing in seen_real_files:
+            try:
+                if os.path.samefile(existing, path):
+                    already_seen = True
+                    break
+            except OSError:
+                continue
+        if already_seen:
+            continue
+        try:
+            file_size = os.path.getsize(path)
+        except OSError:
+            continue
+        seen_real_files.append(path)
+        size_buckets.setdefault(file_size, []).append(path)
+
+    clusters: list[dict[str, Any]] = []
+    for byte_size, same_size_paths in size_buckets.items():
+        if len(same_size_paths) < 2:
+            continue
+
+        digest_buckets: dict[str, list[str]] = {}
+        for path in same_size_paths:
+            try:
+                digest = raw_file_hash(path)
+            except OSError:
+                continue
+            digest_buckets.setdefault(digest, []).append(path)
+
+        for digest, candidate_paths in digest_buckets.items():
+            if len(candidate_paths) < 2:
+                continue
+            primary, rest = select_original_from_cluster(
+                candidate_paths, mode=norm_mode
+            )
+            verified_rest = [cand for cand in rest if same_file_content(primary, cand)]
+            if not verified_rest:
+                continue
+            clusters.append(
+                {
+                    "original": primary,
+                    "duplicates": verified_rest,
+                    "paths": [primary, *verified_rest],
+                    "byte_size": byte_size,
+                    "sha256": digest,
+                    "detect_original_by": norm_mode,
+                }
+            )
+
+    return clusters
+
+
+def duplicate_staging_relpath(
+    source_path: str | os.PathLike,
+    base_dir: str | os.PathLike,
+    source_root: Optional[str | os.PathLike] = None,
+) -> str:
+    """Compute a collision-free relative path under ``.sortify_duplicates/<session>/`` for a source file.
+
+    Parameters
+    ----------
+    source_path : str | os.PathLike
+        Original source path of the redundant or trashed file.
+    base_dir : str | os.PathLike
+        Session base directory where ``.sortify_duplicates`` resides.
+    source_root : str | os.PathLike | None, optional
+        Optional multi-root origin directory when ``source_path`` comes from an external root.
+
+    Returns
+    -------
+    str
+        Safe relative path guaranteed not to escape the session staging folder.
+    """
+    abs_src = os.path.normpath(os.path.abspath(os.fspath(source_path)))
+    abs_base = os.path.normpath(os.path.abspath(os.fspath(base_dir)))
+    effective_root = (
+        os.path.normpath(os.path.abspath(os.fspath(source_root)))
+        if source_root
+        else abs_base
+    )
+
+    try:
+        rel = os.path.relpath(abs_src, effective_root)
+    except ValueError:
+        rel = abs_src
+
+    rel_norm = rel.replace("\\", "/")
+    if (
+        rel_norm.startswith("../")
+        or rel_norm == ".."
+        or os.path.isabs(rel)
+        or ":" in rel_norm
+    ):
+        digest_prefix = hashlib.sha256(
+            os.path.dirname(abs_src).encode("utf-8", errors="replace")
+        ).hexdigest()[:8]
+        rel_norm = f"_ext_{digest_prefix}/{os.path.basename(abs_src)}"
+    elif os.path.normcase(effective_root) != os.path.normcase(abs_base):
+        root_prefix = hashlib.sha256(
+            effective_root.encode("utf-8", errors="replace")
+        ).hexdigest()[:8]
+        rel_norm = f"_root_{root_prefix}/{rel_norm.lstrip('/')}"
+
+    return os.path.normpath(rel_norm.lstrip("/\\"))
+
+
+def send_to_os_trash(
+    path: str | os.PathLike,
+    *,
+    trash_fn: Optional[Callable[[str], Any]] = None,
+) -> tuple[bool, Optional[str]]:
+    """Export a confirmed staged file to native OS Trash with graceful headless fallback.
+
+    Parameters
+    ----------
+    path : str | os.PathLike
+        Path to the staged duplicate file to send to OS Trash.
+    trash_fn : Callable[[str], Any] | None, optional
+        Injectable Trash callable; defaults to ``send2trash.send2trash``.
+
+    Returns
+    -------
+    tuple[bool, str | None]
+        ``(True, None)`` when exported to OS Trash; ``(False, reason)`` when OS Trash
+        is unavailable or fails (leaving the staged file intact on disk).
+    """
+    target = os.path.abspath(os.fspath(path))
+    if not os.path.lexists(target):
+        return False, f"Staged path does not exist: {target}"
+
+    effective_trash_fn = trash_fn
+    if effective_trash_fn is None:
+        try:
+            from send2trash import send2trash as _send2trash
+
+            effective_trash_fn = _send2trash
+        except ImportError as exc:
+            logging.warning(
+                "send2trash is unavailable (%s); keeping staged copy at %s.",
+                exc,
+                target,
+            )
+            return False, f"send2trash unavailable: {exc}"
+
+    try:
+        effective_trash_fn(target)
+        return True, None
+    except (OSError, RuntimeError, ValueError, TypeError) as exc:
+        logging.warning(
+            "OS Trash unavailable or failed for %s (%s); keeping staged copy active.",
+            target,
+            exc,
+        )
+        return False, str(exc)
 
 
 def _set_posix_mode(path: str, mode: int) -> None:

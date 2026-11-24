@@ -47,6 +47,7 @@ dependencies = [
     "pydantic",
     "psutil",
     "defusedxml>=0.7.1",
+    "send2trash>=2.1.0",
 ]
 
 [project.urls]
@@ -102,6 +103,15 @@ select = [
     "UP006",
     "UP007",
     "UP035",
+    "PIE790",
+    "PIE810",
+    "SIM101",
+    "SIM114",
+    "C414",
+    "C416",
+    "C420",
+    "RUF059",
+    "RUF100",
 ]
 ignore = ["E501"]
 
@@ -109,11 +119,9 @@ ignore = ["E501"]
 convention = "numpy"
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["D", "F841", "E741", "BLE001", "S110", "SIM105"]
+"tests/*" = ["D", "F841", "RUF059", "E741", "BLE001", "S110", "SIM105"]
 "scripts/*" = ["D", "BLE001", "S110", "SIM105"]
 ".agents/*" = ["BLE001", "S110", "SIM105"]
-"app/core/metadata.py" = ["F841"]
-"app/core/verifier.py" = ["F401", "E741"]
 
 # Exception-handling baseline for #783: files that predate the rule. Fix a file
 # and delete its line; never add one.

@@ -3,6 +3,7 @@
 import logging
 import os
 import time
+from collections.abc import Callable
 from contextlib import contextmanager
 from typing import Any, Optional
 
@@ -10,19 +11,17 @@ from textual import on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select, Static
 from textual.widgets.data_table import ColumnKey, RowKey
 
-from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
-from app.ui.layout import ModalBox, ResponsiveLayoutMixin
+from app.ui.layout import ModalBox, ResponsiveModalScreen
 from app.ui.modals.edit import DirectorySelectModal
 
 logger = logging.getLogger(__name__)
 
 
-class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
+class QuarantineVaultModal(ResponsiveModalScreen[None]):
     """Interactive Modal Screen for Compliance Quarantine Vault & Audit Log Review."""
 
     BINDINGS = [
@@ -31,24 +30,23 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         Binding("d", "dismiss_selected", "Dismiss item", show=True),
         Binding("i", "reinspect_selected", "Re-inspect item", show=True),
         Binding("ctrl+r", "refresh_records", "Refresh vault", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
+    MODAL_CSS = """
     QuarantineVaultModal {
-        align: center middle;
         background: rgba(0, 0, 0, 0.7);
     }
     .quarantine-modal-box {
-        padding: 1 2;
-        background: $panel;
         border: thick $warning;
         width: 95%;
         max-width: 110;
         min-width: 40;
         height: 92%;
+        max-height: 92%;
         min-height: 20;
         layout: vertical;
-        overflow-y: hidden;
     }
     .compact .quarantine-modal-box, .narrow .quarantine-modal-box {
         padding: 0 1;
@@ -56,9 +54,7 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         height: 94%;
     }
     .modal-body {
-        width: 100%;
         height: 1fr;
-        overflow-y: auto;
     }
     .quarantine-title {
         text-style: bold;
@@ -302,7 +298,7 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
     def on_mount(self) -> None:
         """Initialize data table columns and trigger initial record fetch on mount."""
-        self._update_layout(self.size.width)
+        super().on_mount()
         dt = self.query_one("#quarantine-table", DataTable)
         dt.add_columns(
             ("Sel", "Sel"),
@@ -315,14 +311,12 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         self.announce("Opened Quarantine Vault modal.")
         self.action_refresh_records()
 
+    @on(Button.Pressed, "#btn-quarantine-close")
     def action_cancel(self) -> None:
-        """Close quarantine vault modal on Escape key press."""
+        """Close quarantine vault modal on Escape key or Close button press."""
         self.dismiss(None)
 
-    @on(Button.Pressed, "#btn-quarantine-close")
-    def action_close_button(self) -> None:
-        """Close quarantine vault modal via close button."""
-        self.dismiss(None)
+    action_close_button = action_cancel
 
     @contextmanager
     def _open_db(self):
@@ -333,23 +327,6 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
             with acquire_services() as services:
                 yield services.db
-
-    def _call_ui(self, func, *args, **kwargs) -> None:
-        try:
-            app_obj = self.app
-        except Exception:
-            app_obj = None
-
-        if app_obj and hasattr(app_obj, "call_from_thread"):
-            try:
-                app_obj.call_from_thread(func, *args, **kwargs)
-                return
-            except Exception:
-                pass
-        try:
-            func(*args, **kwargs)
-        except Exception:
-            pass
 
     @on(Button.Pressed, "#btn-quarantine-refresh")
     def action_refresh_records(self) -> None:
@@ -613,37 +590,85 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
         self.app.push_screen(DirectorySelectModal(base_dir), _dir_selected_callback)
 
+    @staticmethod
+    def _normalize_batch_job_ids(job_ids: Any) -> list[str]:
+        """Normalize single or iterable job identifiers into a clean list of job IDs."""
+        raw_list = [job_ids] if isinstance(job_ids, (str, dict)) else list(job_ids)
+        return [
+            str(j.get("job_id")) if isinstance(j, dict) else str(j)
+            for j in raw_list
+            if j and (not isinstance(j, dict) or j.get("job_id"))
+        ]
+
+    def _run_batch_operation(
+        self,
+        job_ids: Any,
+        *,
+        action_fn: Callable[[Any, list[str]], list[Any]],
+        on_complete: Callable[[list[Any]], None],
+        error_log_label: str,
+        error_announce_label: str,
+        include_policies: bool = True,
+    ) -> None:
+        """Execute a quarantine batch service action and dispatch UI completion."""
+        try:
+            clean_job_ids = self._normalize_batch_job_ids(job_ids)
+            with self._open_db() as db_inst:
+                from app.core.quarantine_interceptor import QuarantineInterceptorService
+
+                if include_policies:
+                    runtime_settings = getattr(
+                        getattr(self, "app", None), "settings", None
+                    )
+                    service = QuarantineInterceptorService(
+                        db=db_inst,
+                        policies=self.policies,
+                        runtime_settings=runtime_settings,
+                    )
+                else:
+                    service = QuarantineInterceptorService(db=db_inst)
+                results = action_fn(service, clean_job_ids)
+                self._call_ui(on_complete, results)
+        except Exception as e:
+            logger.error(f"Failed {error_log_label}: {e}", exc_info=True)
+            self._call_ui(self.announce, f"{error_announce_label} failed: {e}")
+
+    def _complete_batch_operation(
+        self,
+        results: list[Any],
+        *,
+        title: str,
+        is_success: Callable[[dict[str, Any]], bool],
+        ok_notify_type: str,
+    ) -> None:
+        """Announce batch completion summary, notify user, clear selection, and refresh."""
+        success_count = sum(1 for r in results if is_success(r))
+        fail_count = len(results) - success_count
+        msg = f"{title}: {success_count} succeeded, {fail_count} failed."
+        self.announce(msg)
+        try:
+            from app.ui.notifications import notify
+
+            notify(msg, type=ok_notify_type if fail_count == 0 else "warning")
+        except Exception:
+            pass
+        self.selected_job_ids.clear()
+        self.fetch_records_async()
+
     @work(thread=True)
     def execute_batch_release_async(
         self, job_ids: Any, target_dir: str, allow_external: bool = True
     ) -> None:
         """Asynchronously release batch of quarantine items on background worker thread."""
-        try:
-            if isinstance(job_ids, (str, dict)):
-                raw_list = [job_ids]
-            else:
-                raw_list = list(job_ids)
-            clean_job_ids = [
-                j.get("job_id") if isinstance(j, dict) else str(j)
-                for j in raw_list
-                if j
-            ]
-            with self._open_db() as db_inst:
-                from app.core.quarantine_interceptor import QuarantineInterceptorService
-
-                runtime_settings = getattr(getattr(self, "app", None), "settings", None)
-                service = QuarantineInterceptorService(
-                    db=db_inst,
-                    policies=self.policies,
-                    runtime_settings=runtime_settings,
-                )
-                results = service.release_quarantine_batch(
-                    clean_job_ids, dest_dir=target_dir, allow_external=allow_external
-                )
-                self._call_ui(self._on_batch_release_complete, results)
-        except Exception as e:
-            logger.error(f"Failed batch quarantine release: {e}", exc_info=True)
-            self._call_ui(self.announce, f"Batch release failed: {e}")
+        self._run_batch_operation(
+            job_ids,
+            action_fn=lambda service, ids: service.release_quarantine_batch(
+                ids, dest_dir=target_dir, allow_external=allow_external
+            ),
+            on_complete=self._on_batch_release_complete,
+            error_log_label="batch quarantine release",
+            error_announce_label="Batch release",
+        )
 
     def execute_release_async(
         self, job_id: Any, dest_dir: str, allow_external: bool = True
@@ -654,18 +679,12 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         )
 
     def _on_batch_release_complete(self, results: list[dict[str, Any]]) -> None:
-        success_count = sum(1 for r in results if r.get("status") == "RELEASED")
-        fail_count = len(results) - success_count
-        msg = f"Batch Release Complete: {success_count} succeeded, {fail_count} failed."
-        self.announce(msg)
-        try:
-            from app.ui.notifications import notify
-
-            notify(msg, type="success" if fail_count == 0 else "warning")
-        except Exception:
-            pass
-        self.selected_job_ids.clear()
-        self.fetch_records_async()
+        self._complete_batch_operation(
+            results,
+            title="Batch Release Complete",
+            is_success=lambda r: r.get("status") == "RELEASED",
+            ok_notify_type="success",
+        )
 
     @on(Button.Pressed, "#btn-quarantine-dismiss")
     def action_dismiss_selected(self) -> None:
@@ -681,43 +700,26 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
     @work(thread=True)
     def execute_batch_dismiss_async(self, job_ids: Any) -> None:
         """Asynchronously mark quarantine items as dismissed on background worker thread."""
-        try:
-            if isinstance(job_ids, (str, dict)):
-                raw_list = [job_ids]
-            else:
-                raw_list = list(job_ids)
-            clean_job_ids = [
-                j.get("job_id") if isinstance(j, dict) else str(j)
-                for j in raw_list
-                if j
-            ]
-            with self._open_db() as db_inst:
-                from app.core.quarantine_interceptor import QuarantineInterceptorService
-
-                service = QuarantineInterceptorService(db=db_inst)
-                results = service.dismiss_quarantine_batch(clean_job_ids)
-                self._call_ui(self._on_batch_dismiss_complete, results)
-        except Exception as e:
-            logger.error(f"Failed batch quarantine dismiss: {e}", exc_info=True)
-            self._call_ui(self.announce, f"Batch dismiss failed: {e}")
+        self._run_batch_operation(
+            job_ids,
+            action_fn=lambda service, ids: service.dismiss_quarantine_batch(ids),
+            on_complete=self._on_batch_dismiss_complete,
+            error_log_label="batch quarantine dismiss",
+            error_announce_label="Batch dismiss",
+            include_policies=False,
+        )
 
     def execute_dismiss_async(self, job_id: Any) -> None:
         """Compatibility helper for single item dismissal."""
         self.execute_batch_dismiss_async([job_id])
 
     def _on_batch_dismiss_complete(self, results: list[dict[str, Any]]) -> None:
-        success_count = sum(1 for r in results if r.get("status") == "DISMISSED")
-        fail_count = len(results) - success_count
-        msg = f"Batch Dismiss Complete: {success_count} succeeded, {fail_count} failed."
-        self.announce(msg)
-        try:
-            from app.ui.notifications import notify
-
-            notify(msg, type="info" if fail_count == 0 else "warning")
-        except Exception:
-            pass
-        self.selected_job_ids.clear()
-        self.fetch_records_async()
+        self._complete_batch_operation(
+            results,
+            title="Batch Dismiss Complete",
+            is_success=lambda r: r.get("status") == "DISMISSED",
+            ok_notify_type="info",
+        )
 
     @on(Button.Pressed, "#btn-quarantine-reinspect")
     def action_reinspect_selected(self) -> None:
@@ -735,49 +737,24 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
     @work(thread=True)
     def execute_batch_reinspect_async(self, job_ids: Any) -> None:
         """Asynchronously re-inspect batch of quarantine items on worker thread."""
-        try:
-            if isinstance(job_ids, (str, dict)):
-                raw_list = [job_ids]
-            else:
-                raw_list = list(job_ids)
-            clean_job_ids = [
-                j.get("job_id") if isinstance(j, dict) else str(j)
-                for j in raw_list
-                if j
-            ]
-            with self._open_db() as db_inst:
-                from app.core.quarantine_interceptor import QuarantineInterceptorService
-
-                runtime_settings = getattr(getattr(self, "app", None), "settings", None)
-                service = QuarantineInterceptorService(
-                    db=db_inst,
-                    policies=self.policies,
-                    runtime_settings=runtime_settings,
-                )
-                results = service.process_quarantine_batch(clean_job_ids)
-                self._call_ui(self._on_batch_reinspect_complete, results)
-        except Exception as e:
-            logger.error(f"Failed batch re-inspection: {e}", exc_info=True)
-            self._call_ui(self.announce, f"Batch re-inspection failed: {e}")
+        self._run_batch_operation(
+            job_ids,
+            action_fn=lambda service, ids: service.process_quarantine_batch(ids),
+            on_complete=self._on_batch_reinspect_complete,
+            error_log_label="batch re-inspection",
+            error_announce_label="Batch re-inspection",
+        )
 
     def execute_reinspect_async(self, job_id: Any) -> None:
         """Compatibility helper for single item re-inspection."""
         self.execute_batch_reinspect_async([job_id])
 
     def _on_batch_reinspect_complete(self, results: list[Any]) -> None:
-        success_count = sum(
-            1
-            for r in results
-            if (r.get("status") or "").upper() not in ("FAILED", "ERROR")
+        self._complete_batch_operation(
+            results,
+            title="Batch Re-inspection Complete",
+            is_success=lambda r: (
+                (r.get("status") or "").upper() not in ("FAILED", "ERROR")
+            ),
+            ok_notify_type="info",
         )
-        fail_count = len(results) - success_count
-        msg = f"Batch Re-inspection Complete: {success_count} succeeded, {fail_count} failed."
-        self.announce(msg)
-        try:
-            from app.ui.notifications import notify
-
-            notify(msg, type="info" if fail_count == 0 else "warning")
-        except Exception:
-            pass
-        self.selected_job_ids.clear()
-        self.fetch_records_async()

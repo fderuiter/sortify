@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "6dc783062859c942749de51dfb7e935ce2d04cf9d841e96b1f5e7e40434c4205"
+    "checksum": "23e1185b43dbff579c8199bd4788e05f2edb20b098ffaebd3d31774112a45d26"
   },
   "classes": [
     {
@@ -125,6 +125,35 @@
       ]
     },
     {
+      "class_name": "EmlExtractor",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    {
       "class_name": "ExtractorRegistry",
       "decorators": [],
       "methods": [
@@ -203,6 +232,35 @@
       ]
     },
     {
+      "class_name": "HtmlExtractor",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    {
       "class_name": "ImageExtractor",
       "decorators": [],
       "methods": [
@@ -230,6 +288,122 @@
               "annotation": null,
               "default": "None",
               "name": "progress_callback"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    {
+      "class_name": "JsonExtractor",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    {
+      "class_name": "LogExtractor",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    {
+      "class_name": "MarkdownExtractor",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    {
+      "class_name": "OdtExtractor",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
             }
           ],
           "returns": "str"
@@ -299,6 +473,93 @@
       ]
     },
     {
+      "class_name": "PptxExtractor",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    {
+      "class_name": "RtfExtractor",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    {
+      "class_name": "TsvExtractor",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    {
       "class_name": "TxtExtractor",
       "decorators": [],
       "methods": [
@@ -329,6 +590,64 @@
     },
     {
       "class_name": "XlsxExtractor",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    {
+      "class_name": "XmlExtractor",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    {
+      "class_name": "YamlExtractor",
       "decorators": [],
       "methods": [
         {
