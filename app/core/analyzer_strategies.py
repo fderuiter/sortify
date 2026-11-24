@@ -997,16 +997,55 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
         except Exception:
             return "Miscellaneous"
 
+    def _get_cluster_top_terms(self, documents: list, top_n: int = 4) -> str:
+        """Extract sanitized top TF-IDF keywords representing a document cluster."""
+        if not documents:
+            return ""
+        try:
+            import numpy as np
+            from sklearn.feature_extraction.text import TfidfVectorizer
+
+            from app.core.text_utils import sanitize_secret_patterns
+
+            sanitized_docs = [
+                sanitize_secret_patterns(sanitize_text(doc))
+                if doc and not str(doc).startswith("[STATUS:")
+                else ""
+                for doc in documents
+            ]
+            if not any(d.strip() for d in sanitized_docs):
+                return ""
+
+            vectorizer = TfidfVectorizer(
+                stop_words=list(self.stop_words), max_features=self.max_features
+            )
+            X = vectorizer.fit_transform(sanitized_docs)
+            feature_names = vectorizer.get_feature_names_out()
+            if len(feature_names) == 0:
+                return ""
+
+            scores = np.asarray(X.sum(axis=0)).ravel()
+            nonzero_indices = [
+                idx for idx in scores.argsort()[::-1] if scores[idx] > 0
+            ][:top_n]
+            if not nonzero_indices:
+                return ""
+            return ", ".join(str(feature_names[i]) for i in nonzero_indices)
+        except Exception:
+            return ""
+
     def _cluster_recursive(self, filenames: list, documents: list, depth: int) -> dict:
         plan = {}
 
         if depth >= self.max_depth or len(documents) < 3:
+            cluster_terms = self._get_cluster_top_terms(documents)
             for f in filenames:
                 plan[f] = {
                     "__type__": "file",
                     "relative_source": f,
                     "source_path": f,
                     "routed_by": "clustering",
+                    "match": cluster_terms or "none",
                 }
             return {"Miscellaneous": plan} if depth == 1 else plan
 
@@ -1060,12 +1099,14 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                 )
                 X = vectorizer.fit_transform(sanitized_docs)
             except Exception:
+                cluster_terms = self._get_cluster_top_terms(documents)
                 for f in filenames:
                     plan[f] = {
                         "__type__": "file",
                         "relative_source": f,
                         "source_path": f,
                         "routed_by": "clustering",
+                        "match": cluster_terms or "none",
                     }
                 return {"Miscellaneous": plan} if depth == 1 else plan
 
@@ -1097,6 +1138,7 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                 # The partition can't be split any further. Below the top
                 # level the caller already named this folder, so add the
                 # files directly instead of nesting a same-named folder.
+                cluster_terms = self._get_cluster_top_terms(sub_documents)
                 target = plan.setdefault(folder_name, {}) if depth == 1 else plan
                 for f in sub_filenames:
                     target[f] = {
@@ -1104,6 +1146,7 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                         "relative_source": f,
                         "source_path": f,
                         "routed_by": "clustering",
+                        "match": cluster_terms or "none",
                     }
             else:
                 sub_plan = self._cluster_recursive(

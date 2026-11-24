@@ -626,8 +626,17 @@ def test_rule_editor_settings_modal_and_hazel_sortify_roundtrip(tmp_path):
     """Verify RuleEditModal, ActiveRuleManagerModal, SettingsModal, and Sortify/Hazel import-export round-trips."""
     settings = AppSettings(filepath=str(tmp_path / "rules_ui_settings.json"))
 
+    ws_dir = tmp_path / "live_preview_ws"
+    ws_dir.mkdir()
+    old_sample = ws_dir / "old_statement.pdf"
+    old_sample.write_bytes(b"%PDF-1.4\n%sample")
+    old_ts = datetime.datetime(2020, 6, 15, 10, 0, 0).timestamp()
+    os.utime(old_sample, (old_ts, old_ts))
+    fresh_sample = ws_dir / "today_memo.txt"
+    fresh_sample.write_text("fresh workspace memo", encoding="utf-8")
+
     async def _run_ui() -> None:
-        app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
+        app = AutoSorterTUI(settings=settings, base_dir=str(ws_dir))
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
 
@@ -642,19 +651,30 @@ def test_rule_editor_settings_modal_and_hazel_sortify_roundtrip(tmp_path):
             await pilot.pause()
             assert settings.RENAME_PATTERN == "{date}_{stem}{extension}"
 
-            # 2. Open ActiveRuleManagerModal and add an 'age' policy rule with {year}/{month} and rename_pattern
+            # 2. Open ActiveRuleManagerModal and add an 'age' policy rule with {year}/{month}, rename_pattern, and live inline preview
             app.push_screen(ActiveRuleManagerModal(settings))
             await pilot.pause()
 
             app.screen.query_one("#btn-add-rule", Button).press()
             await pilot.pause()
             assert isinstance(app.screen, RuleEditModal)
+            assert app.screen.audit_a11y_compliance()["violations"] == []
 
-            app.screen.query_one("#select-rule-type", Select).value = "age"
+            app.screen.query_one("#select-rule-kind", Select).value = "policy"
+            app.screen.query_one("#select-policy-type", Select).value = "age"
+            app.screen.query_one(
+                "#select-sample-file", Select
+            ).value = "old_statement.pdf"
             app.screen.query_one("#input-rule-pattern", Input).value = "bad_expr"
             app.screen.query_one(
                 "#input-rule-target", Input
             ).value = "Archive/{year}/{month}"
+            await pilot.pause()
+            preview_bad = str(
+                app.screen.query_one("#lbl-rule-preview", Label).render()
+            ).lower()
+            assert "invalid age expression" in preview_bad
+
             app.screen.query_one("#btn-save-rule", Button).press()
             await pilot.pause()
             # Still on RuleEditModal due to validation error
@@ -663,9 +683,15 @@ def test_rule_editor_settings_modal_and_hazel_sortify_roundtrip(tmp_path):
             assert err_text.strip() != ""
 
             app.screen.query_one("#input-rule-pattern", Input).value = "> 30d"
+            app.screen.query_one("#input-policy-priority", Input).value = "75"
             app.screen.query_one(
                 "#input-rule-rename-pattern", Input
             ).value = "{date}_{stem}{extension}"
+            await pilot.pause()
+            preview_ok = str(app.screen.query_one("#lbl-rule-preview", Label).render())
+            assert "✓ MATCH" in preview_ok
+            assert "1 of 2" in preview_ok
+
             app.screen.query_one("#btn-save-rule", Button).press()
             await pilot.pause()
 
@@ -968,7 +994,8 @@ def test_rule_edit_and_settings_modals_validate_all_policy_types_and_rename_temp
                 in str(edit_modal.query_one("#lbl-rule-error", Label).render()).lower()
             )
 
-            edit_modal.query_one("#select-rule-type", Select).value = "duplicate"
+            edit_modal.query_one("#select-rule-kind", Select).value = "policy"
+            edit_modal.query_one("#select-policy-type", Select).value = "duplicate"
             edit_modal.query_one("#input-rule-pattern", Input).value = ""
             edit_modal.query_one("#input-rule-target", Input).value = ""
             edit_modal.query_one("#input-rule-rename-pattern", Input).value = ""
@@ -980,6 +1007,30 @@ def test_rule_edit_and_settings_modals_validate_all_policy_types_and_rename_temp
             assert dup_pol["expression"] == "*"
             assert dup_pol["target_path"] == ""
             assert dup_pol["action"] == "trash"
+
+            # 3. Verify plan tree renders [POLICY] badge and Policy Priority in routing inspector for metadata-routed nodes
+            tui.plan = {
+                "Archive": {
+                    "old_report.pdf": {
+                        "__type__": "file",
+                        "filepath": str(tmp_path / "old_report.pdf"),
+                        "routed_by": "age",
+                        "match": "> 30d",
+                        "policy_priority": 80,
+                    }
+                }
+            }
+            tui.rebuild_tree()
+            await pilot.pause()
+            from textual.widgets import Tree
+
+            tree = tui.query_one("#plan-tree", Tree)
+            leaf = tree.root.children[0].children[0]
+            assert "[POLICY]" in leaf.label.plain
+            inspector_txt = tui._update_inspector(leaf, announce=False)
+            assert "Routing Source:" in inspector_txt and "age" in inspector_txt
+            assert "Policy Priority:" in inspector_txt and "80" in inspector_txt
+            assert "Matched Rule:" in inspector_txt and "> 30d" in inspector_txt
 
     asyncio.run(_exercise_modals())
 
