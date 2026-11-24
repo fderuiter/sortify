@@ -231,6 +231,18 @@ class ScanFilter:
             return self._all_segments(rel)
         return None
 
+    def _full_segments(
+        self, path_str: str, base_dir: Optional[str] = None
+    ) -> tuple[str, ...]:
+        """Return all path segments for path_str, resolving relative paths against base_dir."""
+        eff_base = os.path.abspath(base_dir) if base_dir else self.base_dir
+        expanded = os.path.expanduser(str(path_str))
+        if not os.path.isabs(expanded) and eff_base:
+            full_path = os.path.abspath(os.path.join(eff_base, expanded))
+        else:
+            full_path = expanded
+        return self._all_segments(full_path)
+
     def is_protected(self, path_str: str, base_dir: Optional[str] = None) -> bool:
         """Return True when path_str is inside or equal to any configured PROTECTED_PATHS."""
         if not path_str:
@@ -255,8 +267,7 @@ class ScanFilter:
         """Return True when path_str is a .app bundle directory or nested inside one."""
         if not path_str:
             return False
-        scoped = self._scoped_relative_parts(path_str, base_dir=base_dir)
-        parts = scoped if scoped is not None else self._all_segments(path_str)
+        parts = self._full_segments(path_str, base_dir=base_dir)
         for idx, part in enumerate(parts):
             if part.lower().endswith(".app"):
                 # Either an ancestor directory segment (idx < len - 1) or a .app directory/entry itself.
@@ -281,8 +292,9 @@ class ScanFilter:
 
     def is_quarantine(self, path_str: str, base_dir: Optional[str] = None) -> bool:
         """Return True when path_str belongs to a staging or compliance quarantine folder."""
-        scoped = self._scoped_relative_parts(path_str, base_dir=base_dir)
-        parts = scoped if scoped is not None else self._all_segments(path_str)
+        if not path_str:
+            return False
+        parts = self._full_segments(path_str, base_dir=base_dir)
         return any(
             _is_quarantine_entry_name(part, self.quarantine_prefixes) for part in parts
         )
@@ -429,9 +441,11 @@ def _scan_dir_recursive(
     files: list[str] = []
     try:
         scan_target = os.path.join(base, rel_path) if rel_path else base
-        if scan_filter.is_protected(
-            scan_target, base_dir=base
-        ) or scan_filter.is_app_bundle(scan_target, base_dir=base):
+        if (
+            scan_filter.is_protected(scan_target, base_dir=base)
+            or scan_filter.is_app_bundle(scan_target, base_dir=base)
+            or scan_filter.is_quarantine(scan_target, base_dir=base)
+        ):
             return files
 
         with os.scandir(scan_target) as entries:

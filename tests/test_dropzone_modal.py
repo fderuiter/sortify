@@ -283,21 +283,22 @@ async def test_dropzone_staging_table_population_and_filtering(tmp_path):
             "clip.mp4": "Ready",
             "bundle.zip": "Ready",
             "scratch.tmp": "Unsupported",
-            "mystery.xyz123": "Unsupported",
+            "mystery.xyz123": "Ready",
         }
 
-        # Press Filter Unsupported button
+        # Press Filter Unsupported button (removes ignored extensions like .tmp, keeps all non-ignored files)
         active_modal.query_one("#btn-filter-unsupported", Button).press()
         await pilot.pause()
 
-        assert len(active_modal.staged_items) == 4
-        assert table.row_count == 4
+        assert len(active_modal.staged_items) == 5
+        assert table.row_count == 5
         assert all(item["status"] == "Ready" for item in active_modal.staged_items)
         assert [item["filename"] for item in active_modal.staged_items] == [
             "report.pdf",
             "image.png",
             "clip.mp4",
             "bundle.zip",
+            "mystery.xyz123",
         ]
 
 
@@ -701,7 +702,7 @@ async def test_dropzone_nested_folder_routes_to_selected_destination(
         assert isinstance(dropzone, DropZoneModal)
 
         dest_inp = dropzone.query_one("#input-dest-dir", Input)
-        assert dest_inp.value == str(tmp_path)
+        assert dest_inp.value == ""
 
         # Focused paste on #input-dest-dir must NOT stage the destination path
         dest_inp.focus()
@@ -735,6 +736,8 @@ async def test_dropzone_nested_folder_routes_to_selected_destination(
 
         assert dropzone.processed_result["status"] == "success"
         assert dropzone.processed_result["processed_count"] == 2
+        assert dropzone.processed_result["destination_dir"] == str(dest_dir.resolve())
+        assert dropzone.processed_result["session_id"]
         moved_names = {p.name for p in dest_dir.rglob("*") if p.is_file()}
         assert moved_names == {"invoice_1.txt", "bundle_2.zip"}
 
@@ -848,9 +851,252 @@ async def test_tui_open_dropzone_stages_initial_paths_on_mount(tmp_path, monkeyp
         await pilot.pause()
         assert isinstance(tui.screen, DropZoneModal)
         modal = tui.screen
-        assert modal.query_one("#input-dest-dir", Input).value == str(
-            dest_dir.resolve()
-        )
+        assert modal.query_one("#input-dest-dir", Input).value == ""
         assert len(modal.staged_items) == 1
         assert modal.staged_items[0]["filename"] == "photo.png"
         assert modal.staged_items[0]["status"] == "Ready"
+
+    tui_with_dest = AutoSorterTUI(
+        settings=settings,
+        base_dir=str(dest_dir),
+        skip_wizard=True,
+        open_dropzone=True,
+        initial_drop_paths=[str(sample)],
+        initial_dest_dir=str(dest_dir),
+    )
+    async with tui_with_dest.run_test(size=(100, 40)) as pilot:
+        await pilot.pause()
+        assert isinstance(tui_with_dest.screen, DropZoneModal)
+        modal_with_dest = tui_with_dest.screen
+        assert modal_with_dest.query_one("#input-dest-dir", Input).value == str(
+            dest_dir.resolve()
+        )
+
+
+@pytest.mark.anyio
+async def test_dropzone_blocks_app_bundle_and_quarantine_and_routes_sketch_fig_to_misc(
+    tmp_path, monkeypatch
+):
+    """Dropping Calculator.app or _Compliance_Quarantine marks BLOCKED with 0 internal files while .sketch/.fig sort to Miscellaneous."""
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path / "app_dir"))
+    settings = DummySettings(tmp_path)
+    work = tmp_path / "work"
+    work.mkdir()
+
+    calc_app = work / "Calculator.app"
+    (calc_app / "Contents" / "MacOS").mkdir(parents=True)
+    app_exe = calc_app / "Contents" / "MacOS" / "Calculator"
+    app_exe.write_text("binary")
+
+    quarantine = work / "_Compliance_Quarantine"
+    quarantine.mkdir()
+    quarantine_doc = quarantine / "quarantined.pdf"
+    quarantine_doc.write_text("sensitive")
+
+    sketch_file = work / "ui_kit.sketch"
+    sketch_file.write_bytes(b"\x89SKETCH")
+    fig_file = work / "flow.fig"
+    fig_file.write_bytes(b"\x89FIGMA")
+
+    app = ModalTestApp(settings=settings, base_dir=str(work))
+    async with app.run_test(size=(110, 50)) as pilot:
+        await pilot.pause()
+        modal = app.screen
+        assert isinstance(modal, DropZoneModal)
+
+        modal.stage_paths(
+            "\n".join(str(p) for p in (calc_app, quarantine, sketch_file, fig_file))
+        )
+        await pilot.pause()
+
+        by_name = {it["filename"]: it["status"] for it in modal.staged_items}
+        assert by_name == {
+            "Calculator.app": "BLOCKED",
+            "_Compliance_Quarantine": "BLOCKED",
+            "ui_kit.sketch": "Ready",
+            "flow.fig": "Ready",
+        }
+        # Zero internal files from Calculator.app or _Compliance_Quarantine were staged
+        assert len(modal.staged_items) == 4
+
+        modal.trigger_drop_triage()
+        await _wait_for(
+            app, pilot, lambda: isinstance(app.screen, DropPlanConfirmModal)
+        )
+        app.screen.query_one("#btn-confirm-drop-plan", Button).press()
+        await _wait_for(app, pilot, lambda: modal.processed_result is not None)
+
+        assert modal.processed_result["status"] == "success"
+        assert (work / "Miscellaneous" / "ui_kit.sketch").exists()
+        assert (work / "Miscellaneous" / "flow.fig").exists()
+        assert app_exe.exists()
+        assert quarantine_doc.exists()
+
+
+@pytest.mark.anyio
+async def test_dropzone_queue_priority_preview_overrides_workspace_sync_and_ctrl_z_undo(
+    tmp_path, monkeypatch
+):
+    """Moving a colliding item up wins clean name; confirm modal renders warnings/overrides; destination_dir syncs empty base_dir; Ctrl+Z undoes multi-folder drop."""
+    from textual.widgets import DataTable, Input, Static
+
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path / "app_dir"))
+    settings = DummySettings(tmp_path)
+    settings.AI_CONSENT_GRANTED = True
+
+    folder_1 = tmp_path / "folder_1"
+    folder_2 = tmp_path / "folder_2"
+    dest_dir = tmp_path / "shared_dest"
+    folder_1.mkdir()
+    folder_2.mkdir()
+    dest_dir.mkdir()
+
+    col_1 = folder_1 / "mockup.sketch"
+    col_2 = folder_2 / "mockup.sketch"
+    override_doc = folder_1 / "brand.fig"
+    exclude_doc = folder_2 / "draft.fig"
+    col_1.write_text("first_staged")
+    col_2.write_text("moved_up_winner")
+    override_doc.write_text("custom_folder")
+    exclude_doc.write_text("stay_put")
+
+    # Start AutoSorterTUI with empty base_dir to verify AC 9 workspace sync
+    tui = AutoSorterTUI(
+        settings=settings,
+        base_dir="",
+        skip_wizard=True,
+    )
+    scan_calls: list[str] = []
+    orig_scan = tui.action_scan_directory
+
+    def spy_scan():
+        scan_calls.append(tui.base_dir)
+        return orig_scan()
+
+    monkeypatch.setattr(tui, "action_scan_directory", spy_scan)
+
+    async with tui.run_test(size=(120, 50)) as pilot:
+        await pilot.pause()
+        tui.action_open_dropzone()
+        await _wait_for(tui, pilot, lambda: isinstance(tui.screen, DropZoneModal))
+        dropzone = tui.screen
+        assert isinstance(dropzone, DropZoneModal)
+        assert dropzone.query_one("#input-dest-dir", Input).value == ""
+
+        dropzone.stage_paths(
+            "\n".join(str(p) for p in (col_1, col_2, override_doc, exclude_doc))
+        )
+        await pilot.pause()
+
+        # Move col_2 (row index 1) up above col_1 (row index 0)
+        staging_table = dropzone.query_one("#dropzone-staging-table", DataTable)
+        staging_table.move_cursor(row=1)
+        await pilot.pause()
+        dropzone.move_selected_item_up()
+        await pilot.pause()
+        assert dropzone.staged_items[0]["path"] == str(col_2.resolve())
+        assert dropzone.staged_items[1]["path"] == str(col_1.resolve())
+
+        dropzone.query_one("#input-dest-dir", Input).value = str(dest_dir)
+        await pilot.pause()
+        dropzone.trigger_drop_triage()
+        await _wait_for(
+            tui, pilot, lambda: isinstance(tui.screen, DropPlanConfirmModal)
+        )
+
+        confirm_modal = tui.screen
+        assert isinstance(confirm_modal, DropPlanConfirmModal)
+        warnings_banner = confirm_modal.query_one("#drop-plan-warnings", Static)
+        assert not warnings_banner.has_class("hidden")
+        assert "mockup.sketch" in str(warnings_banner.render())
+
+        # Override brand.fig (row 2) folder to CustomBrand and exclude draft.fig (row 3)
+        plan_table = confirm_modal.query_one("#drop-plan-items-table", DataTable)
+        plan_table.move_cursor(row=2)
+        await pilot.pause()
+        confirm_modal.query_one(
+            "#input-plan-folder-override", Input
+        ).value = "CustomBrand"
+        await pilot.pause()
+        confirm_modal.apply_folder_override()
+        await pilot.pause()
+
+        plan_table.move_cursor(row=3)
+        await pilot.pause()
+        confirm_modal.toggle_selected_exclusion()
+        await pilot.pause()
+
+        confirm_modal.query_one("#btn-confirm-drop-plan", Button).press()
+        await _wait_for(
+            tui,
+            pilot,
+            lambda: (
+                not isinstance(tui.screen, DropZoneModal)
+                and not isinstance(tui.screen, DropPlanConfirmModal)
+            ),
+        )
+        await pilot.pause()
+
+        # AC 6: Higher-ranked col_2 won clean mockup.sketch
+        assert (
+            dest_dir / "Miscellaneous" / "mockup.sketch"
+        ).read_text() == "moved_up_winner"
+        assert (
+            dest_dir / "Miscellaneous" / "mockup_1.sketch"
+        ).read_text() == "first_staged"
+        # AC 7: Folder override and exclusion applied
+        assert (dest_dir / "CustomBrand" / "brand.fig").read_text() == "custom_folder"
+        assert exclude_doc.exists()
+        # AC 9: Empty base_dir updated to destination_dir and action_scan_directory triggered
+        assert tui.base_dir == str(dest_dir.resolve())
+        assert str(dest_dir.resolve()) in scan_calls
+
+        # Wait for background scan worker if active before testing Ctrl+Z undo
+        await _wait_for(tui, pilot, lambda: not any(w.is_running for w in tui.workers))
+
+        # AC 2 & AC 8: Multi-folder in-place drop (blank #input-dest-dir) + single Ctrl+Z undo
+        in_a = tmp_path / "inplace_a"
+        in_b = tmp_path / "inplace_b"
+        in_a.mkdir()
+        in_b.mkdir()
+        f_a = in_a / "one.sketch"
+        f_b = in_b / "two.fig"
+        f_a.write_text("one")
+        f_b.write_text("two")
+
+        tui.action_open_dropzone()
+        await _wait_for(tui, pilot, lambda: isinstance(tui.screen, DropZoneModal))
+        dz2 = tui.screen
+        assert isinstance(dz2, DropZoneModal)
+        assert dz2.query_one("#input-dest-dir", Input).value == ""
+        dz2.stage_paths(f"{f_a}\n{f_b}")
+        await pilot.pause()
+        dz2.trigger_drop_triage()
+        await _wait_for(
+            tui, pilot, lambda: isinstance(tui.screen, DropPlanConfirmModal)
+        )
+        tui.screen.query_one("#btn-confirm-drop-plan", Button).press()
+        await _wait_for(
+            tui,
+            pilot,
+            lambda: (
+                not isinstance(tui.screen, DropZoneModal)
+                and not isinstance(tui.screen, DropPlanConfirmModal)
+            ),
+        )
+        await pilot.pause()
+
+        assert (in_a / "Miscellaneous" / "one.sketch").exists()
+        assert (in_b / "Miscellaneous" / "two.fig").exists()
+
+        # Press Ctrl+Z to undo the multi-folder drop in one step
+        from app.ui.tui import RollbackConfirmModal
+
+        await pilot.press("ctrl+z")
+        await _wait_for(
+            tui, pilot, lambda: isinstance(tui.screen, RollbackConfirmModal)
+        )
+        tui.screen.query_one("#btn-confirm-rollback", Button).press()
+        await _wait_for(tui, pilot, lambda: f_a.exists() and f_b.exists())
+        assert f_a.read_text() == "one"
+        assert f_b.read_text() == "two"

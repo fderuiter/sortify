@@ -47,6 +47,8 @@ class TUIHostProtocol(Protocol):
     _tree_expansion_memory: dict[str, bool]
     _last_cursor_key: Optional[str]
     _pending_flush_trash: bool
+    initial_dest_dir: Optional[str]
+    _last_drop_session_id: Optional[str]
     _manual_plan_edits: dict[str, dict[str, Any]]
     _manual_empty_folders: set[str]
 

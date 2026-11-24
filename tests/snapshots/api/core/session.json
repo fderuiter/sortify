@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "a9eb6b8fd369a32bdee550166ce68f5c1a68b53afc3e7517f50774bee0c7712d"
+    "checksum": "a539eb345a5d9c537b01b2f22f96cfb6cae07cb08be8a1029a96bcd33263383b"
   },
   "classes": [
     {
@@ -143,6 +143,26 @@
             }
           ],
           "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "lock_folders",
+          "parameters": [
+            {
+              "annotation": "list[str] | tuple[str, ...] | set[str]",
+              "default": null,
+              "name": "folders"
+            },
+            {
+              "annotation": "float",
+              "default": "0.0",
+              "name": "timeout"
+            }
+          ],
+          "returns": "contextlib.ExitStack"
         },
         {
           "async": false,
