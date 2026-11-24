@@ -1,12 +1,57 @@
 {
   "_metadata": {
-    "checksum": "ce595b3d1c7925635fcaf6e29e09404ba838632fe790c0df45798ff7dbf09ac1"
+    "checksum": "2510d0b94d2a48a0f73c97a01805db9f6d28b20e99cb842f74ec19fb3271eea4"
   },
   "classes": [
     {
       "class_name": "ContextExtractor",
       "decorators": [],
       "methods": [
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "extract_document_date",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "text"
+            }
+          ],
+          "returns": "Optional[str]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "extract_keyphrases_semantic",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "text"
+            },
+            {
+              "annotation": "object",
+              "default": null,
+              "name": "embedding_manager"
+            },
+            {
+              "annotation": "Optional[set[str]]",
+              "default": "None",
+              "name": "stop_words"
+            },
+            {
+              "annotation": "int",
+              "default": "3",
+              "name": "max_keywords"
+            }
+          ],
+          "returns": "Optional[list[str]]"
+        },
         {
           "async": false,
           "decorators": [
@@ -90,6 +135,26 @@
               "annotation": "Optional[set[str]]",
               "default": "None",
               "name": "stop_words"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "file_date"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "category"
+            },
+            {
+              "annotation": "int",
+              "default": "1",
+              "name": "seq"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "file_path"
             }
           ],
           "returns": "str"

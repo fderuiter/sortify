@@ -1977,7 +1977,7 @@ def test_user_guide_rename_shortcut_and_tui_bindings():
 
 
 def test_admin_guide_field_descriptions_policies_and_env_vars():
-    """Verify docs/admin_guide.md documents all Settings field descriptions, 7 policy types, 6 actions, 8 post-unarchive values, and runtime env vars."""
+    """Verify docs/admin_guide.md documents all Settings field descriptions, 12 policy types, 6 actions, 8 post-unarchive values, and runtime env vars."""
     from app.config import Settings
     from app.core.policy_engine import PolicyEngine
 
@@ -1995,11 +1995,16 @@ def test_admin_guide_field_descriptions_policies_and_env_vars():
         "compliance",
         "unarchive",
         "duplicate",
+        "age",
+        "modified_date",
+        "created_date",
+        "exif_date",
+        "size",
     ):
         assert f"- **`{policy_type}`**:" in admin_content
 
-    assert (
-        "lowercase filename (`os.path.basename(file_path).lower()`) only"
+    assert "`pol_match(file_path, is_duplicate, ...)`" in admin_content or (
+        "substring or glob match against the **lowercase filename (`os.path.basename(file_path).lower()`) only**"
         in admin_content
     )
     assert "lowercase filename or full file path (`file_path.lower()`)" in admin_content

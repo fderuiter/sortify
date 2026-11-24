@@ -52,6 +52,67 @@ def _resolve_plan_folder_dict(
     return curr
 
 
+def _resolve_source_disk_path(
+    base_dir: Optional[str],
+    key_val: str,
+    folder_val: str,
+    info_dict: dict[str, Any],
+    explicit_fp: Optional[str] = None,
+) -> Optional[str]:
+    """Locate the physical source file on disk before or after moves execute."""
+    src_root = str(info_dict.get("source_root") or base_dir or "")
+    candidates: list[str] = []
+
+    info_fp = info_dict.get("filepath")
+    if isinstance(info_fp, str) and info_fp.strip():
+        candidates.append(info_fp.strip())
+
+    src_rel = info_dict.get("source_path")
+    if isinstance(src_rel, str) and src_rel.strip():
+        eff_root = src_root
+        clean_rel = src_rel.strip()
+        if "::" in clean_rel:
+            eff_root, clean_rel = clean_rel.split("::", 1)
+        candidates.append(
+            os.path.join(eff_root, clean_rel)
+            if eff_root and not os.path.isabs(clean_rel)
+            else clean_rel
+        )
+
+    rel_src = info_dict.get("relative_source")
+    if isinstance(rel_src, str) and rel_src.strip():
+        eff_root = src_root
+        clean_rs = rel_src.strip()
+        if "::" in clean_rs:
+            eff_root, clean_rs = clean_rs.split("::", 1)
+        if eff_root:
+            if folder_val:
+                candidates.append(
+                    os.path.normpath(os.path.join(eff_root, folder_val, clean_rs))
+                )
+            candidates.append(os.path.normpath(os.path.join(eff_root, clean_rs)))
+        else:
+            candidates.append(clean_rs)
+
+    if key_val:
+        eff_root = src_root
+        clean_key = key_val
+        if "::" in clean_key:
+            eff_root, clean_key = clean_key.split("::", 1)
+        if eff_root and not os.path.isabs(clean_key):
+            candidates.append(os.path.join(eff_root, clean_key))
+        else:
+            candidates.append(clean_key)
+
+    if isinstance(explicit_fp, str) and explicit_fp.strip():
+        candidates.append(explicit_fp.strip())
+
+    for cand in candidates:
+        if cand and os.path.isfile(cand):
+            return cand
+    return candidates[0] if candidates else None
+
+
 def _find_file_in_plan(
     plan: dict[str, Any],
     file_key: str,
@@ -694,31 +755,67 @@ class SelectionActionsMixin:
         try:
             from textual.widgets import Tree
 
+            from app.core.pattern_formatter import resolve_disk_file_date
+
             tree = self.query_one("#plan-tree", Tree)
             seen_ids = set()
+
+            def _resolve_fp_and_date(
+                key_val: str,
+                folder_val: str,
+                info_dict: dict[str, Any],
+                explicit_fp: Optional[str] = None,
+            ) -> tuple[Optional[str], str]:
+                fp = _resolve_source_disk_path(
+                    getattr(self, "base_dir", None),
+                    key_val,
+                    folder_val,
+                    info_dict,
+                    explicit_fp=explicit_fp,
+                )
+                f_date = str(
+                    info_dict.get("date")
+                    or info_dict.get("file_date")
+                    or resolve_disk_file_date(
+                        fp, base_dir=getattr(self, "base_dir", None)
+                    )
+                    or ""
+                )
+                return fp, f_date
 
             def _walk(node: TreeNode) -> None:
                 data = getattr(node, "data", None)
                 if data and isinstance(data, dict) and data.get("is_file"):
                     info = data.get("info", {})
+                    if not isinstance(info, dict):
+                        info = {}
                     is_checked = data.get("is_checked", True)
                     is_excluded = data.get("is_excluded", False)
                     if is_checked and not is_excluded:
                         info_id = id(info) if info else id(data)
                         if info_id not in seen_ids:
                             seen_ids.add(info_id)
+                            entry_key = (
+                                data.get("key") or info.get("target_filename") or ""
+                            )
+                            entry_folder = str(
+                                data.get("folder") or info.get("folder", "")
+                            )
+                            resolved_fp, resolved_date = _resolve_fp_and_date(
+                                str(entry_key),
+                                entry_folder,
+                                info,
+                                data.get("filepath"),
+                            )
                             entries.append(
                                 {
-                                    "key": data.get("key")
-                                    or info.get("target_filename")
-                                    or "",
+                                    "key": entry_key,
                                     "folder": data.get("folder")
                                     or info.get("folder", ""),
                                     "info": info,
-                                    "filepath": data.get("filepath")
-                                    or info.get("filepath"),
-                                    "date": info.get("date")
-                                    or info.get("file_date", ""),
+                                    "filepath": resolved_fp,
+                                    "date": resolved_date,
+                                    "file_date": resolved_date,
                                     "category": data.get("folder")
                                     or info.get("folder", ""),
                                 }
@@ -736,6 +833,8 @@ class SelectionActionsMixin:
         if not hasattr(self, "plan") or not isinstance(self.plan, dict):
             return entries
 
+        from app.core.pattern_formatter import resolve_disk_file_date
+
         seen_plan_ids = set()
 
         def _walk_plan(d: dict[str, Any], current_folder: str = "") -> None:
@@ -748,13 +847,29 @@ class SelectionActionsMixin:
                             v_id = id(v)
                             if v_id not in seen_plan_ids:
                                 seen_plan_ids.add(v_id)
+                                fp = _resolve_source_disk_path(
+                                    getattr(self, "base_dir", None),
+                                    k,
+                                    str(v.get("folder") or current_folder),
+                                    v,
+                                    explicit_fp=v.get("filepath"),
+                                )
+                                resolved_date = str(
+                                    v.get("date")
+                                    or v.get("file_date")
+                                    or resolve_disk_file_date(
+                                        fp, base_dir=getattr(self, "base_dir", None)
+                                    )
+                                    or ""
+                                )
                                 entries.append(
                                     {
                                         "key": k,
                                         "folder": v.get("folder") or current_folder,
                                         "info": v,
-                                        "filepath": v.get("filepath"),
-                                        "date": v.get("date") or v.get("file_date", ""),
+                                        "filepath": fp,
+                                        "date": resolved_date,
+                                        "file_date": resolved_date,
                                         "category": v.get("folder") or current_folder,
                                     }
                                 )
@@ -911,10 +1026,17 @@ class SelectionActionsMixin:
         # Branch to batch rename when multiple files are checked
         if len(checked_keys) > 1:
             first_folder = checked_entries[0].get("folder", "")
+            default_batch_pattern = (
+                str(
+                    getattr(getattr(self, "settings", None), "RENAME_PATTERN", "") or ""
+                ).strip()
+                or "{category}_{original}"
+            )
             modal = RenameModal(
                 title=f"Batch Rename ({len(checked_entries)} files)",
-                current_name="{category}_{original}",
+                current_name=default_batch_pattern,
                 category=first_folder,
+                file_date=str(checked_entries[0].get("date") or ""),
                 is_folder=False,
                 plan=self.plan,
                 base_dir=self.base_dir,
@@ -1077,18 +1199,32 @@ class SelectionActionsMixin:
         old_name = data.get("key")
 
         if is_file:
+            from app.core.pattern_formatter import resolve_disk_file_date
+
             stem, ext = os.path.splitext(old_name)
             folder_cat = data.get("folder", "")
-            filepath = data.get("filepath") or (
-                data.get("info", {}).get("filepath")
-                if isinstance(data.get("info"), dict)
-                else None
+            info_dict = data.get("info") if isinstance(data.get("info"), dict) else {}
+            filepath = _resolve_source_disk_path(
+                getattr(self, "base_dir", None),
+                str(old_name or ""),
+                str(folder_cat or ""),
+                info_dict,
+                explicit_fp=data.get("filepath"),
+            )
+            resolved_file_date = str(
+                data.get("file_date")
+                or data.get("date")
+                or info_dict.get("file_date")
+                or info_dict.get("date")
+                or resolve_disk_file_date(filepath, base_dir=self.base_dir)
+                or ""
             )
             modal = RenameModal(
                 title=f"Rename File: {old_name}",
                 current_name=stem,
                 extension=ext,
                 category=folder_cat,
+                file_date=resolved_file_date,
                 is_folder=False,
                 plan=self.plan,
                 base_dir=self.base_dir,
