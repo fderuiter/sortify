@@ -3,6 +3,7 @@
 import contextlib
 import json
 import os
+import threading
 from typing import Any
 
 from app.config import get_app_dir
@@ -48,6 +49,7 @@ class AppSession:
 
         self.lifecycle_state = PipelineLifecycleState.CREATED
         self.pipeline = None
+        self._lifecycle_lock = threading.RLock()
 
         # Every session reads and writes the one app store (ADR 0008).
         self._service_lease = acquire_services(store)
@@ -215,27 +217,39 @@ class AppSession:
             IllegalStateTransitionError,
         )
 
-        current_state = getattr(self, "lifecycle_state", None)
-        if target_state == current_state:
-            return
+        lock = getattr(self, "_lifecycle_lock", None) or contextlib.nullcontext()
+        with lock:
+            current_state = getattr(self, "lifecycle_state", None)
+            if target_state == current_state:
+                return
 
-        allowed = _ALLOWED_TRANSITIONS.get(current_state, set())
-        if target_state not in allowed:
-            state_val = getattr(current_state, "value", str(current_state))
-            target_val = getattr(target_state, "value", str(target_state))
-            raise IllegalStateTransitionError(
-                f"Illegal state transition from '{state_val}' to '{target_val}'."
-            )
-        self.lifecycle_state = target_state
+            allowed = _ALLOWED_TRANSITIONS.get(current_state, set())
+            if target_state not in allowed:
+                state_val = getattr(current_state, "value", str(current_state))
+                target_val = getattr(target_state, "value", str(target_state))
+                raise IllegalStateTransitionError(
+                    f"Illegal state transition from '{state_val}' to '{target_val}'."
+                )
+            self.lifecycle_state = target_state
 
     def partial_fit(self, chunk):
         """Incrementally train the analyzer."""
-        if hasattr(self, "lifecycle_state"):
-            from app.core.pipeline import (
-                IllegalStateTransitionError,
-                PipelineLifecycleState,
-            )
+        from app.core.pipeline import (
+            _ACTIVE_PIPELINE,
+            IllegalStateTransitionError,
+            PipelineLifecycleState,
+        )
 
+        active_pipeline = _ACTIVE_PIPELINE.get()
+        if active_pipeline is not None:
+            if active_pipeline.state in (
+                PipelineLifecycleState.EXECUTING,
+                PipelineLifecycleState.ROLLING_BACK,
+            ):
+                raise IllegalStateTransitionError(
+                    f"Cannot fit analyzer while execution is in progress (current state: '{active_pipeline.state.value}')."
+                )
+        elif hasattr(self, "lifecycle_state"):
             if self.lifecycle_state in (
                 PipelineLifecycleState.EXECUTING,
                 PipelineLifecycleState.ROLLING_BACK,
@@ -261,12 +275,22 @@ class AppSession:
         dest_dir: str | None = None,
     ):
         """Generate sorting plan from analyzer."""
-        if hasattr(self, "lifecycle_state"):
-            from app.core.pipeline import (
-                IllegalStateTransitionError,
-                PipelineLifecycleState,
-            )
+        from app.core.pipeline import (
+            _ACTIVE_PIPELINE,
+            IllegalStateTransitionError,
+            PipelineLifecycleState,
+        )
 
+        active_pipeline = _ACTIVE_PIPELINE.get()
+        if active_pipeline is not None:
+            if active_pipeline.state in (
+                PipelineLifecycleState.EXECUTING,
+                PipelineLifecycleState.ROLLING_BACK,
+            ):
+                raise IllegalStateTransitionError(
+                    f"Cannot generate plan while execution is in progress (current state: '{active_pipeline.state.value}')."
+                )
+        elif hasattr(self, "lifecycle_state"):
             if self.lifecycle_state in (
                 PipelineLifecycleState.EXECUTING,
                 PipelineLifecycleState.ROLLING_BACK,
@@ -301,7 +325,8 @@ class AppSession:
             dest_dir=dest_dir,
         )
         if (
-            hasattr(self, "lifecycle_state")
+            active_pipeline is None
+            and hasattr(self, "lifecycle_state")
             and self.lifecycle_state != PipelineLifecycleState.EXECUTING
         ):
             self.transition_to(PipelineLifecycleState.PLANNED)
@@ -343,18 +368,42 @@ class AppSession:
             return {}
 
         effective_pipeline = pipeline or getattr(self, "pipeline", None)
-        if (
-            effective_pipeline
-            and getattr(self, "pipeline", None) is not effective_pipeline
-        ):
-            self.pipeline = effective_pipeline
+        if pipeline is not None and getattr(self, "pipeline", None) is not pipeline:
+            self.pipeline = pipeline
 
-        if hasattr(self, "lifecycle_state"):
-            from app.core.pipeline import (
-                IllegalStateTransitionError,
-                PipelineLifecycleState,
-            )
+        from app.core.pipeline import (
+            IllegalStateTransitionError,
+            PipelineLifecycleState,
+        )
 
+        def _transition_exec_state(target_state: PipelineLifecycleState) -> None:
+            if effective_pipeline is not None and hasattr(
+                effective_pipeline, "transition_to"
+            ):
+                effective_pipeline.transition_to(target_state)
+            elif hasattr(self, "lifecycle_state"):
+                self.transition_to(target_state)
+
+        if effective_pipeline is not None and hasattr(effective_pipeline, "state"):
+            check_state = effective_pipeline.state
+            if (
+                check_state
+                not in (
+                    PipelineLifecycleState.PLANNED,
+                    PipelineLifecycleState.EXECUTING,
+                )
+                and not resume
+                and not kwargs.get("force")
+                and plan
+            ):
+                raise IllegalStateTransitionError(
+                    f"Cannot execute moves from state '{check_state.value}'; session must be in 'planned' state."
+                )
+            if check_state == PipelineLifecycleState.PLANNED or (
+                check_state != PipelineLifecycleState.EXECUTING and plan
+            ):
+                _transition_exec_state(PipelineLifecycleState.EXECUTING)
+        elif hasattr(self, "lifecycle_state"):
             if (
                 self.lifecycle_state
                 not in (
@@ -371,7 +420,7 @@ class AppSession:
             if self.lifecycle_state == PipelineLifecycleState.PLANNED or (
                 self.lifecycle_state != PipelineLifecycleState.EXECUTING and plan
             ):
-                self.transition_to(PipelineLifecycleState.EXECUTING)
+                _transition_exec_state(PipelineLifecycleState.EXECUTING)
 
         plan_path = self.session_dir / "plan.json"
         serializable_plan = _make_json_serializable(plan)
@@ -401,24 +450,22 @@ class AppSession:
                     pipeline=effective_pipeline,
                     **move_kwargs,
                 )
-                if hasattr(self, "lifecycle_state"):
-                    from app.core.pipeline import PipelineLifecycleState
-
+                if pipeline is None and (
+                    effective_pipeline is not None or hasattr(self, "lifecycle_state")
+                ):
                     if summary.get("cancelled"):
-                        self.transition_to(PipelineLifecycleState.CANCELLED)
+                        _transition_exec_state(PipelineLifecycleState.CANCELLED)
                     elif summary.get("error"):
-                        self.transition_to(PipelineLifecycleState.FAILED)
+                        _transition_exec_state(PipelineLifecycleState.FAILED)
                     else:
-                        self.transition_to(PipelineLifecycleState.COMPLETED)
+                        _transition_exec_state(PipelineLifecycleState.COMPLETED)
                 return summary
             except Exception:
-                if hasattr(self, "lifecycle_state"):
-                    from app.core.pipeline import PipelineLifecycleState
-
-                    try:
-                        self.transition_to(PipelineLifecycleState.FAILED)
-                    except Exception:
-                        pass
+                if pipeline is None and (
+                    effective_pipeline is not None or hasattr(self, "lifecycle_state")
+                ):
+                    with contextlib.suppress(Exception):
+                        _transition_exec_state(PipelineLifecycleState.FAILED)
                 raise
 
     def retry_failed_moves(self, failed_items, progress_callback=None, **kwargs):
@@ -498,6 +545,11 @@ def split_plan_phases(plan: dict[str, Any]) -> tuple[dict[str, Any], dict[str, A
         "extension",
         "jev_classifier",
         "preset",
+        "compliance",
+        "action",
+        "unarchive",
+        "pattern",
+        "regex",
     }
 
     def process_node(
@@ -512,7 +564,7 @@ def split_plan_phases(plan: dict[str, Any]) -> tuple[dict[str, Any], dict[str, A
                 and val["__type__"] == "file"
             ):
                 routed_by = val.get("routed_by")
-                if routed_by in FAST_ROUTES:
+                if routed_by in FAST_ROUTES or bool(val.get("policy_action")):
                     fast_target[key] = val
                 else:
                     slow_target[key] = val

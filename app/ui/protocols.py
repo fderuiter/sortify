@@ -49,6 +49,8 @@ class TUIHostProtocol(Protocol):
     _pending_flush_trash: bool
     initial_dest_dir: Optional[str]
     _last_drop_session_id: Optional[str]
+    _manual_plan_edits: dict[str, dict[str, Any]]
+    _manual_empty_folders: set[str]
 
     @overload
     def query_one(self, selector: str) -> Widget: ...
@@ -150,6 +152,14 @@ class TUIHostProtocol(Protocol):
 
     def _is_text_control_focused(self, allow_tree_search: bool = False) -> bool:
         """Return True if an Input or Select control holds active focus."""
+        ...
+
+    def _clear_manual_plan_edits(self) -> None:
+        """Clear cached manual plan edits and manually created folders."""
+        ...
+
+    def _reapply_manual_plan_edits(self) -> None:
+        """Reapply cached manual edits onto the active sorting plan after a rescan."""
         ...
 
     def action_select_dir(self) -> None:

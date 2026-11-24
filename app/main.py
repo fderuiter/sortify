@@ -1566,7 +1566,7 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         subparser.add_argument(
             "--conflict-policy",
             type=str,
-            choices=["skip", "rename"],
+            choices=["skip", "rename", "overwrite"],
             default=None,
             help="Conflict resolution policy",
         )

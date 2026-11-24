@@ -218,3 +218,122 @@ def test_safe_relpath(monkeypatch):
     monkeypatch.setattr(os.path, "relpath", mock_relpath)
     fallback = safe_relpath("D:\\data\\file.txt", "C:\\Users")
     assert fallback == os.path.abspath("D:\\data\\file.txt")
+
+
+def test_policy_collisions_non_blocking_across_rename_skip_overwrite_while_structural_blocks(
+    tmp_path,
+):
+    """target_collision and duplicate_target stay non-blocking across rename/skip/overwrite while structural collisions and escaping paths block."""
+    src1 = tmp_path / "alpha.txt"
+    src2 = tmp_path / "beta.txt"
+    src1.write_text("alpha")
+    src2.write_text("beta")
+
+    finance_dir = tmp_path / "Finance"
+    finance_dir.mkdir()
+    existing = finance_dir / "report.txt"
+    existing.write_text("on disk")
+
+    collision_plan = {
+        "Finance": {
+            "alpha.txt": {
+                "__type__": "file",
+                "source_path": "alpha.txt",
+                "target_filename": "report.txt",
+                "confirmed": True,
+            },
+            "beta.txt": {
+                "__type__": "file",
+                "source_path": "beta.txt",
+                "target_filename": "report.txt",
+                "confirmed": True,
+            },
+        }
+    }
+
+    for policy in ("rename", "skip", "overwrite"):
+        res = VerificationEngine.verify_plan_integrity(
+            str(tmp_path), collision_plan, conflict_policy=policy
+        )
+        assert res["has_critical_errors"] is False
+        assert VerificationEngine.is_critical_error(res) is False
+        rec_types = {c["type"] for c in res["recoverable_collisions"]}
+        assert "target_collision" in rec_types
+        assert "duplicate_target" in rec_types
+
+    # Structural parent_directory_collision blocks under all policies
+    blocker_file = tmp_path / "FileNotDir"
+    blocker_file.write_text("blocking file")
+    parent_col_plan = {
+        "FileNotDir": {
+            "Sub": {
+                "alpha.txt": {
+                    "__type__": "file",
+                    "source_path": "alpha.txt",
+                    "target_filename": "alpha.txt",
+                    "confirmed": True,
+                }
+            }
+        }
+    }
+    for policy in ("rename", "skip", "overwrite"):
+        res_parent = VerificationEngine.verify_plan_integrity(
+            str(tmp_path), parent_col_plan, conflict_policy=policy
+        )
+        assert res_parent["has_critical_errors"] is True
+        assert VerificationEngine.is_critical_error(res_parent) is True
+
+    # Escaping path is also marked critical
+    assert (
+        VerificationEngine.is_critical_error(
+            {"escaping_paths": [{"path": "/outside/alpha.txt", "message": "escaped"}]}
+        )
+        is True
+    )
+
+
+def test_apply_deduplication_selections_resolves_source_path_first_on_nested_plan(
+    tmp_path,
+):
+    """apply_deduplication_selections resolves source_path/filepath first even when relative_source is stale or absent."""
+    nested_src = tmp_path / "inbox" / "inv_a.pdf"
+    nested_src.parent.mkdir()
+    nested_src.write_text("invoice a")
+    other_src = tmp_path / "inv_b.pdf"
+    other_src.write_text("invoice b")
+
+    plan = {
+        "Finance": {
+            "2024": {
+                "Invoices": {
+                    "inv_a.pdf": {
+                        "__type__": "file",
+                        "source_path": "inbox/inv_a.pdf",
+                        "relative_source": "../stale_wrong_location.pdf",
+                        "target_filename": "merged.pdf",
+                        "confirmed": True,
+                    },
+                    "inv_b.pdf": {
+                        "__type__": "file",
+                        "filepath": str(other_src),
+                        "target_filename": "merged.pdf",
+                        "confirmed": True,
+                    },
+                }
+            }
+        }
+    }
+
+    groups = VerificationEngine.get_collision_groups(str(tmp_path), plan)
+    assert len(groups) == 1
+    gid = groups[0]["group_id"]
+
+    VerificationEngine.apply_deduplication_selections(
+        str(tmp_path), plan, {gid: "overwrite"}, groups=groups
+    )
+    leaf_a = plan["Finance"]["2024"]["Invoices"]["inv_a.pdf"]
+    leaf_b = plan["Finance"]["2024"]["Invoices"]["inv_b.pdf"]
+    assert leaf_a["overwrite"] is True
+    assert leaf_a["allow_overwrite"] is True
+    assert leaf_b["overwrite"] is True
+    assert leaf_b["allow_overwrite"] is True

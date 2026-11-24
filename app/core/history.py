@@ -1073,7 +1073,11 @@ class HistoryManager:
         suffixed name, so nothing is overwritten. Returns the number of files
         moved back.
         """
-        from app.core.mover import _prune_emptied_dirs
+        from app.core.mover import (
+            _prune_emptied_dirs,
+            is_subpath_or_equal,
+            overwrite_backup_dir,
+        )
         from app.core.resilient_file_ops import (
             resilient_move,
             resilient_remove,
@@ -1133,6 +1137,18 @@ class HistoryManager:
         except DB_ERRORS:
             pass
 
+        effective_roots = candidate_roots or ([base_dir] if base_dir else [])
+        session_backup_roots = [
+            overwrite_backup_dir(r, session_id) for r in effective_roots if r
+        ]
+
+        def _is_in_session_backup(path_str: Optional[str]) -> bool:
+            if not path_str:
+                return False
+            return any(
+                is_subpath_or_equal(path_str, b_root) for b_root in session_backup_roots
+            )
+
         def _best_root_for(path_str: str) -> Optional[str]:
             if not path_str:
                 return base_dir
@@ -1170,42 +1186,68 @@ class HistoryManager:
                 if moved:
                     claimed.add(moved)
                     dirs_to_prune.add(os.path.dirname(moved))
-                    src_root = _best_root_for(move.src)
-                    if src_root:
-                        _move_aside_blocking_parents(move.src, src_root, docs_conn)
-                    os.makedirs(os.path.dirname(move.src), exist_ok=True)
-                    restored_to = move.src
-                    if os.path.lexists(move.src) and same_file_content(move.src, moved):
-                        # An identical copy is already back in place.
+                    is_synthetic_src = _is_in_session_backup(move.src)
+                    if is_synthetic_src:
                         resilient_remove(moved)
-                    else:
-                        restored_to = resilient_move(moved, move.src)
-                        if not _is_same_restored_path(restored_to, move.src):
-                            logging.warning(
-                                f"Undo conflict: {move.src} is occupied by a different file; "
-                                f"restored {moved} to {restored_to} instead."
-                            )
-                    restored += 1
-                    doc_root = _best_root_for(restored_to) or _best_root_for(moved)
-                    if db and doc_root:
-                        try:
-                            old_rel = safe_relpath(moved, doc_root).replace("\\", "/")
-                            new_rel = safe_relpath(restored_to, doc_root).replace(
-                                "\\", "/"
-                            )
+                        restored += 1
+                        doc_root = _best_root_for(moved)
+                        if doc_root:
                             try:
-                                db.update_document_path(
-                                    doc_root,
-                                    old_rel,
-                                    new_rel,
-                                    clear_verified_target=True,
+                                rel_moved = safe_relpath(moved, doc_root).replace(
+                                    "\\", "/"
                                 )
-                            except TypeError:
-                                db.update_document_path(doc_root, old_rel, new_rel)
-                        except Exception as err:
-                            logging.warning(
-                                f"Could not update the document path for {restored_to}: {err}"
-                            )
+                                with docs_conn:
+                                    docs_conn.execute(
+                                        "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                        (doc_root, rel_moved, rel_moved),
+                                    )
+                            except Exception as err:
+                                logging.warning(
+                                    f"Could not delete synthetic document row for {moved}: {err}"
+                                )
+                    else:
+                        src_root = _best_root_for(move.src)
+                        if src_root:
+                            _move_aside_blocking_parents(move.src, src_root, docs_conn)
+                        os.makedirs(os.path.dirname(move.src), exist_ok=True)
+                        restored_to = move.src
+                        if os.path.lexists(move.src) and same_file_content(
+                            move.src, moved
+                        ):
+                            # An identical copy is already back in place.
+                            resilient_remove(moved)
+                        else:
+                            restored_to = resilient_move(moved, move.src)
+                            if not _is_same_restored_path(restored_to, move.src):
+                                logging.warning(
+                                    f"Undo conflict: {move.src} is occupied by a different file; "
+                                    f"restored {moved} to {restored_to} instead."
+                                )
+                        if _is_in_session_backup(move.dst):
+                            dirs_to_prune.add(os.path.dirname(move.dst))
+                        restored += 1
+                        doc_root = _best_root_for(restored_to) or _best_root_for(moved)
+                        if db and doc_root:
+                            try:
+                                old_rel = safe_relpath(moved, doc_root).replace(
+                                    "\\", "/"
+                                )
+                                new_rel = safe_relpath(restored_to, doc_root).replace(
+                                    "\\", "/"
+                                )
+                                try:
+                                    db.update_document_path(
+                                        doc_root,
+                                        old_rel,
+                                        new_rel,
+                                        clear_verified_target=True,
+                                    )
+                                except TypeError:
+                                    db.update_document_path(doc_root, old_rel, new_rel)
+                            except Exception as err:
+                                logging.warning(
+                                    f"Could not update the document path for {restored_to}: {err}"
+                                )
                 if move.displaced and os.path.lexists(move.displaced):
                     dirs_to_prune.add(os.path.dirname(move.displaced))
                     put_back = resilient_move(move.displaced, move.dst)
@@ -1218,7 +1260,7 @@ class HistoryManager:
                 logging.error(f"Failed to undo move {session_id}#{move.seq}: {err}")
                 failures.append(err)
 
-        for root_dir in candidate_roots or ([base_dir] if base_dir else []):
+        for root_dir in effective_roots:
             if not root_dir:
                 continue
             if not is_partial:
@@ -1228,6 +1270,8 @@ class HistoryManager:
             if os.path.exists(root_dir):
                 _remove_staging_leftovers(root_dir)
                 _prune_emptied_dirs(dirs_to_prune, root_dir)
+                if not failures and not conflicts and not is_partial:
+                    _purge_overwrite_backups(root_dir, session_id)
 
         if failures:
             try:

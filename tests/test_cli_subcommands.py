@@ -970,3 +970,70 @@ def test_drop_subcommand_blocks_bundle_and_quarantine_and_sorts_multi_folder_in_
     assert json.loads(u_out)["status"] == "success"
     assert sketch_a.exists()
     assert fig_b.exists()
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_sort_conflict_policy_overwrite_displaces_existing_file_and_undo_restores(
+    tmp_path,
+):
+    """sort --conflict-policy overwrite replaces an existing destination file via .sortify_overwritten backup and undo --latest restores both files."""
+    from app.core.mover import OVERWRITE_BACKUP_DIR
+
+    env = {"AUTOSORTER_APP_DIR": str(tmp_path / "app_overwrite_cli")}
+    ws = tmp_path / "workspace"
+    ws.mkdir()
+
+    # Source file in workspace root that routes via keyword rule to Finance/invoice.txt
+    src_invoice = ws / "invoice.txt"
+    src_invoice.write_text("NEW_INVOICE_FROM_ROOT quarterly invoice payment billing")
+
+    # Pre-existing stationary file at Finance/invoice.txt
+    finance_dir = ws / "Finance"
+    finance_dir.mkdir()
+    existing_dest = finance_dir / "invoice.txt"
+    existing_dest.write_text("ORIGINAL_EXISTING_DESTINATION_BYTES")
+
+    # Configure deterministic keyword rule routing 'invoice' -> 'Finance'
+    code_cfg, _, stderr_cfg = run_cli(
+        ["config", "--set", "KEYWORD_RULES", '{"invoice": "Finance"}'],
+        env=env,
+    )
+    assert code_cfg == 0, stderr_cfg
+
+    code_sort, stdout_sort, stderr_sort = run_cli(
+        [
+            "sort",
+            str(ws),
+            "--conflict-policy",
+            "overwrite",
+            "--no-contextual-renaming",
+            "--json",
+        ],
+        env=env,
+    )
+    assert code_sort == 0, f"Overwrite sort failed: {stderr_sort}"
+    sort_data = json.loads(stdout_sort)
+    assert sort_data["status"] == "success"
+
+    assert not src_invoice.exists()
+    assert existing_dest.exists()
+    assert (
+        existing_dest.read_text()
+        == "NEW_INVOICE_FROM_ROOT quarterly invoice payment billing"
+    )
+    assert not (finance_dir / "invoice_1.txt").exists()
+    assert (ws / OVERWRITE_BACKUP_DIR).is_dir()
+
+    # Undo restores both the displaced original file and the moved source file
+    code_undo, stdout_undo, stderr_undo = run_cli(
+        ["undo", "--latest", "--json"],
+        env=env,
+    )
+    assert code_undo == 0, f"Undo failed: {stderr_undo}"
+    undo_data = json.loads(stdout_undo)
+    assert undo_data["status"] == "success"
+    assert existing_dest.read_text() == "ORIGINAL_EXISTING_DESTINATION_BYTES"
+    assert (
+        src_invoice.read_text()
+        == "NEW_INVOICE_FROM_ROOT quarterly invoice payment billing"
+    )
