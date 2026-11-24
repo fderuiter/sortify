@@ -5,6 +5,7 @@ and safe merging utilities that preserve custom user rules.
 """
 
 import configparser
+import copy
 import json
 import logging
 import os
@@ -287,7 +288,9 @@ def export_active_rules(
 
     # Non-destructive: extract rules without mutating settings
     keyword_rules = dict(getattr(settings, "KEYWORD_RULES", {}) or {})
-    policies = [dict(p) for p in (getattr(settings, "POLICIES", []) or [])]
+    policies = [
+        copy.deepcopy(dict(p)) for p in (getattr(settings, "POLICIES", []) or [])
+    ]
 
     fmt_clean = str(target_format).strip().lower().replace(" ", "_").replace(".", "")
 
@@ -304,6 +307,67 @@ def export_active_rules(
         return dest_path
 
     elif "hazel" in fmt_clean or fmt_clean in ("hazelrules",):
+        hazel_field_map = {
+            "name": "Name",
+            "extension": "Extension",
+            "content": "Contents",
+            "path": "Full Path",
+            "any_text": "Any",
+        }
+        hazel_op_map = {
+            "contains": "contains",
+            "equals": "is",
+            "starts_with": "starts with",
+            "ends_with": "ends with",
+            "glob": "matches",
+            "regex": "matches regex",
+        }
+
+        def _serialize_hazel_node(
+            node: dict[str, Any], default_case: bool = False
+        ) -> dict[str, Any]:
+            if isinstance(node.get("conditions"), list):
+                grp_mode = str(node.get("match_mode", "all") or "all").lower()
+                grp_dict: dict[str, Any] = {
+                    "NSRuleConditionMode": grp_mode,
+                    "ConditionMode": grp_mode,
+                    "NSRuleConditions": [
+                        _serialize_hazel_node(c, default_case)
+                        for c in node["conditions"]
+                        if isinstance(c, dict)
+                    ],
+                }
+                if node.get("negate"):
+                    grp_dict["negated"] = True
+                    grp_dict["NSRuleConditionNegated"] = True
+                return grp_dict
+
+            fld = str(node.get("field", "name")).lower()
+            op = str(node.get("operator", "contains")).lower()
+            val = str(node.get("value", ""))
+            hz_target = hazel_field_map.get(fld, "Name")
+            hz_op = hazel_op_map.get(op, "contains")
+            cond_entry: dict[str, Any] = {
+                "target": hz_target,
+                "operator": hz_op,
+                "value": val,
+                "NSRuleConditionTarget": hz_target,
+                "NSRuleConditionOperator": hz_op,
+                "NSRuleConditionValue": val,
+            }
+            if node.get("negate"):
+                cond_entry["negated"] = True
+                cond_entry["NSRuleConditionNegated"] = True
+            if op == "regex":
+                cond_entry["regex"] = True
+                cond_entry["NSRuleConditionRegex"] = True
+            if node.get("case_sensitive") or (
+                default_case and "case_sensitive" not in node
+            ):
+                cond_entry["caseSensitive"] = True
+                cond_entry["NSRuleConditionCaseSensitive"] = True
+            return cond_entry
+
         rules_list: list[dict[str, Any]] = []
         for kw, target_dir in keyword_rules.items():
             kw_clean = str(kw).strip()
@@ -337,11 +401,60 @@ def export_active_rules(
             p_expr = str(pol.get("expression", "")).strip()
             p_target = str(pol.get("target_path", "")).strip()
             p_rename = str(pol.get("rename_pattern", "") or "").strip()
-            if not p_expr:
+            raw_conds = pol.get("conditions")
+            has_conds = isinstance(raw_conds, list) and len(raw_conds) > 0
+            if not p_expr and not has_conds:
+                continue
+
+            if p_action == "trash":
+                hazel_act_type = "NSRuleActionTrash"
+            elif p_action == "unarchive" or p_type == "unarchive":
+                hazel_act_type = "NSRuleActionUnarchive"
+            else:
+                hazel_act_type = "NSRuleActionMove"
+
+            rule_actions: list[dict[str, Any]] = [
+                {
+                    "NSRuleActionType": hazel_act_type,
+                    "DestinationPath": p_target,
+                }
+            ]
+            if p_rename and p_action != "trash":
+                rule_actions.append(
+                    {
+                        "NSRuleActionType": "NSRuleActionRename",
+                        "RenamePattern": p_rename,
+                    }
+                )
+
+            p_case = bool(pol.get("case_sensitive", False))
+            p_regex = bool(pol.get("regex", False))
+            p_negate = bool(pol.get("negate", False))
+            p_mode = str(pol.get("match_mode", "all") or "all").strip().lower()
+
+            if has_conds and isinstance(raw_conds, list):
+                hz_conds = [
+                    _serialize_hazel_node(c, default_case=p_case)
+                    for c in raw_conds
+                    if isinstance(c, dict)
+                ]
+                rule_entry: dict[str, Any] = {
+                    "NSRuleName": f"Policy {idx + 1}: {p_expr}",
+                    "NSRuleIsEnabled": bool(pol.get("enabled", True)),
+                    "NSRuleConditionMode": p_mode,
+                    "NSRuleConditions": hz_conds,
+                    "NSRuleActions": rule_actions,
+                }
+                if p_negate:
+                    rule_entry["NSRuleNegated"] = True
+                rules_list.append(rule_entry)
                 continue
 
             cond_val = p_expr
-            if p_type == "pattern":
+            if p_regex:
+                cond_target = "Name"
+                cond_op = "matches regex"
+            elif p_type == "pattern":
                 cond_target = (
                     "Extension" if ("." in p_expr and "*" not in p_expr) else "Name"
                 )
@@ -384,44 +497,32 @@ def export_active_rules(
                 cond_target = "Name"
                 cond_op = "contains"
 
-            if p_action == "trash":
-                hazel_act_type = "NSRuleActionTrash"
-            elif p_action == "unarchive" or p_type == "unarchive":
-                hazel_act_type = "NSRuleActionUnarchive"
-            else:
-                hazel_act_type = "NSRuleActionMove"
+            single_cond: dict[str, Any] = {
+                "target": cond_target,
+                "operator": cond_op,
+                "value": cond_val,
+                "NSRuleConditionTarget": cond_target,
+                "NSRuleConditionOperator": cond_op,
+                "NSRuleConditionValue": cond_val,
+            }
+            if p_regex:
+                single_cond["regex"] = True
+                single_cond["NSRuleConditionRegex"] = True
+            if p_case:
+                single_cond["caseSensitive"] = True
+                single_cond["NSRuleConditionCaseSensitive"] = True
 
-            rule_actions: list[dict[str, Any]] = [
-                {
-                    "NSRuleActionType": hazel_act_type,
-                    "DestinationPath": p_target,
-                }
-            ]
-            if p_rename and p_action != "trash":
-                rule_actions.append(
-                    {
-                        "NSRuleActionType": "NSRuleActionRename",
-                        "RenamePattern": p_rename,
-                    }
+            rule_entry = {
+                "NSRuleName": f"Policy {idx + 1}: {p_expr}",
+                "NSRuleIsEnabled": bool(pol.get("enabled", True)),
+                "NSRuleConditions": [single_cond],
+                "NSRuleActions": rule_actions,
+            }
+            if p_mode in ("all", "any", "none") and ("match_mode" in pol or p_negate):
+                rule_entry["NSRuleConditionMode"] = (
+                    "none" if (p_negate and p_mode != "none") else p_mode
                 )
-
-            rules_list.append(
-                {
-                    "NSRuleName": f"Policy {idx + 1}: {p_expr}",
-                    "NSRuleIsEnabled": bool(pol.get("enabled", True)),
-                    "NSRuleConditions": [
-                        {
-                            "target": cond_target,
-                            "operator": cond_op,
-                            "value": cond_val,
-                            "NSRuleConditionTarget": cond_target,
-                            "NSRuleConditionOperator": cond_op,
-                            "NSRuleConditionValue": cond_val,
-                        }
-                    ],
-                    "NSRuleActions": rule_actions,
-                }
-            )
+            rules_list.append(rule_entry)
 
         hazel_data = {"Rules": rules_list}
         with open(dest_path, "wb") as f:
@@ -430,7 +531,7 @@ def export_active_rules(
 
     elif "dropit" in fmt_clean or fmt_clean in ("ini", "dropit_ini"):
         config = configparser.ConfigParser(interpolation=None)
-        config.optionxform = lambda optionstr: optionstr
+        config.optionxform = lambda optionstr: optionstr  # type: ignore[method-assign]
         config["DropIt"] = {
             "Profile": "Sortify Exported Rules",
             "Version": "8.5",
@@ -451,20 +552,125 @@ def export_active_rules(
             p_action = str(pol.get("action", "") or "").strip().lower()
             p_expr = str(pol.get("expression", "")).strip()
             p_target = str(pol.get("target_path", "")).strip()
-            if not p_expr:
+            raw_conds = pol.get("conditions")
+            has_conds = isinstance(raw_conds, list) and len(raw_conds) > 0
+            if not p_expr and not has_conds:
                 continue
-            dropit_act = (
-                "Extract"
-                if (p_action == "unarchive" or p_type == "unarchive")
-                else "Move"
-            )
+
+            if p_action == "trash":
+                dropit_act = "Delete"
+            elif p_action == "unarchive" or p_type == "unarchive":
+                dropit_act = "Extract"
+            else:
+                dropit_act = "Move"
+
+            p_mode = str(pol.get("match_mode", "all") or "all").strip().lower()
+            p_negate = bool(pol.get("negate", False))
+            p_regex = bool(pol.get("regex", False))
+            p_case = bool(pol.get("case_sensitive", False))
+
+            rules_val = p_expr
+            needs_structured_meta = False
+
+            if has_conds and isinstance(raw_conds, list):
+                pos_masks: list[str] = []
+                exc_masks: list[str] = []
+                can_express_as_dropit_slash = p_mode == "all" and not p_negate
+
+                for c in raw_conds:
+                    if not isinstance(c, dict):
+                        continue
+                    if isinstance(c.get("conditions"), list):
+                        if (
+                            c.get("match_mode") == "any"
+                            and not c.get("negate")
+                            and not pos_masks
+                        ):
+                            for sc in c["conditions"]:
+                                if (
+                                    isinstance(sc, dict)
+                                    and sc.get("field") in ("name", "extension")
+                                    and sc.get("operator")
+                                    in ("glob", "equals", "contains")
+                                    and not sc.get("negate")
+                                    and not sc.get("case_sensitive")
+                                ):
+                                    sv = str(sc.get("value", ""))
+                                    if sc.get("field") == "extension":
+                                        sv = f"*.{sv.lstrip('.')}"
+                                    elif (
+                                        sc.get("operator") == "contains"
+                                        and "*" not in sv
+                                    ):
+                                        sv = f"*{sv}*"
+                                    pos_masks.append(sv)
+                                else:
+                                    can_express_as_dropit_slash = False
+                        else:
+                            can_express_as_dropit_slash = False
+                        continue
+
+                    c_fld = str(c.get("field", "name")).lower()
+                    c_op = str(c.get("operator", "contains")).lower()
+                    c_val = str(c.get("value", ""))
+                    if (
+                        c_fld in ("name", "extension")
+                        and c_op in ("glob", "equals", "contains")
+                        and not c.get("case_sensitive")
+                        and "/" not in c_val
+                        and ";" not in c_val
+                    ):
+                        mask_repr = c_val
+                        if c_fld == "extension":
+                            mask_repr = f"*.{c_val.lstrip('.')}"
+                        elif c_op == "contains" and "*" not in c_val:
+                            mask_repr = f"*{c_val}*"
+                        elif c_op == "equals" and c_fld == "name":
+                            can_express_as_dropit_slash = False
+                        if c.get("negate"):
+                            exc_masks.append(mask_repr)
+                        else:
+                            pos_masks.append(mask_repr)
+                    else:
+                        can_express_as_dropit_slash = False
+
+                if (
+                    can_express_as_dropit_slash
+                    and pos_masks
+                    and exc_masks
+                    and len(pos_masks) == 1
+                ):
+                    rules_val = f"{pos_masks[0]}/{';'.join(exc_masks)}"
+                elif can_express_as_dropit_slash and len(pos_masks) > 1 and exc_masks:
+                    rules_val = f"{';'.join(pos_masks)}/{';'.join(exc_masks)}"
+                else:
+                    needs_structured_meta = True
+                    if pos_masks and exc_masks:
+                        rules_val = f"{';'.join(pos_masks)}/{';'.join(exc_masks)}"
+                    elif pos_masks:
+                        rules_val = ";".join(pos_masks)
+
             sec_name = f"Association_{assoc_idx}"
-            config[sec_name] = {
+            sec_dict: dict[str, str] = {
                 "Name": p_expr,
-                "Rules": p_expr,
+                "Rules": rules_val,
                 "Action": dropit_act,
                 "Destination": p_target,
             }
+            if p_regex:
+                sec_dict["Regex"] = "true"
+            if p_case:
+                sec_dict["CaseSensitive"] = "true"
+            if p_negate or (not has_conds and p_mode == "none"):
+                sec_dict["Negate"] = "true"
+            if has_conds and (
+                needs_structured_meta or p_mode != "all" or p_negate or p_case
+            ):
+                sec_dict["MatchMode"] = p_mode
+                sec_dict["SortifyConditions"] = json.dumps(
+                    raw_conds, ensure_ascii=False
+                )
+            config[sec_name] = sec_dict
             assoc_idx += 1
 
         with open(dest_path, "w", encoding="utf-8") as f:

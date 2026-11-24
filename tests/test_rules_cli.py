@@ -66,9 +66,16 @@ def test_rules_import_dry_run_default_disabled_and_enable_flag(tmp_path):
                 "NSRuleName": "Invoices Absolute",
                 "NSRuleConditions": [
                     {"target": "Name", "operator": "contains", "value": "invoice"},
-                    {"target": "Size", "operator": "greater than", "value": "5MB"},
                 ],
                 "NSRuleActions": [{"DestinationPath": "/Users/alice/Finance/Invoices"}],
+            },
+            {
+                "NSRuleName": "Oversized Skip",
+                "NSRuleConditions": [
+                    {"target": "Name", "operator": "contains", "value": "huge"},
+                    {"target": "Size", "operator": "greater than", "value": "5MB"},
+                ],
+                "NSRuleActions": [{"DestinationPath": "Finance/Oversized"}],
             },
             {
                 "NSRuleName": "Receipts New",

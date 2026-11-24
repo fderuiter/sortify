@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "6bcacd4329b91048ae1f3fbbc0ac30cf62ef6f295eded28baa7feaddfe5b9379"
+    "checksum": "13481c8f749e71824419c2a4d877f9d5ab1ec1a18d1699a4d0aac47375143aff"
   },
   "classes": [
     {
@@ -158,6 +158,20 @@
           "returns": "bool"
         }
       ]
+    },
+    {
+      "class_name": "PolicyCondition",
+      "decorators": [
+        "@with_config(ConfigDict(extra='allow'))"
+      ],
+      "methods": []
+    },
+    {
+      "class_name": "PolicyConditionGroup",
+      "decorators": [
+        "@with_config(ConfigDict(extra='allow'))"
+      ],
+      "methods": []
     },
     {
       "class_name": "PolicyRule",
