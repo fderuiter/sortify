@@ -750,6 +750,135 @@ def _record_move_intent(moves, session_id, source_path, dest_path, src_sha256):
     )
 
 
+def _record_move_intents_batch(
+    moves: Any,
+    session_id: str | None,
+    intents: list[tuple[str, str, str | None, int | None]],
+) -> list[int | None]:
+    """Commit a chunk's pre-move ``intent`` rows in one batch before any file moves."""
+    if not intents:
+        return []
+    if not (moves and session_id):
+        return [None] * len(intents)
+    if hasattr(moves, "record_intents"):
+        seqs = moves.record_intents(session_id, intents)
+        return [int(s) for s in seqs]
+    return [
+        moves.record_intent(session_id, src, dst, src_sha256=sha or None, size=sz)
+        for src, dst, sha, sz in intents
+    ]
+
+
+def _flush_chunk_completions_and_db(
+    db: Any,
+    moves: Any,
+    session_id: str | None,
+    completions: list[dict[str, Any]],
+    db_updates: list[dict[str, Any]],
+) -> bool:
+    """Commit chunk move state completions and document updates, coalescing into one transaction when shared."""
+    has_moves = bool(moves and session_id and completions)
+    has_db_updates = bool(db_updates and db and hasattr(db, "execute_batch_updates"))
+    if not has_moves and not has_db_updates:
+        return False
+
+    can_coalesce = (
+        has_moves
+        and db is not None
+        and hasattr(db, "execute_batch_updates")
+        and "execute_batch_updates" not in getattr(db, "__dict__", {})
+        and hasattr(db, "db_path")
+        and hasattr(moves, "db_path")
+        and hasattr(moves, "_apply_completions_on_conn")
+        and os.path.abspath(str(db.db_path)) == os.path.abspath(str(moves.db_path))
+        and "mark_done" not in getattr(moves, "__dict__", {})
+        and "mark_verified" not in getattr(moves, "__dict__", {})
+        and "mark_failed" not in getattr(moves, "__dict__", {})
+    )
+    if can_coalesce:
+        db.execute_batch_updates(
+            db_updates,
+            extra_conn_ops=lambda conn: moves._apply_completions_on_conn(
+                conn, session_id, completions
+            ),
+        )
+        return True
+
+    if has_moves:
+        if hasattr(moves, "complete_moves"):
+            moves.complete_moves(session_id, completions)
+        else:
+            for comp in completions:
+                seq = comp["seq"]
+                st = comp["state"]
+                req = bool(comp.get("required", True))
+                if st == MoveOpState.VERIFIED.value:
+                    _record_move_state(
+                        moves,
+                        session_id,
+                        seq,
+                        MoveOpState.DONE,
+                        required=req,
+                        dst=comp.get("dst"),
+                        displaced=comp.get("displaced"),
+                    )
+                    _record_move_state(
+                        moves,
+                        session_id,
+                        seq,
+                        MoveOpState.VERIFIED,
+                        required=False,
+                    )
+                elif st == MoveOpState.DONE.value:
+                    _record_move_state(
+                        moves,
+                        session_id,
+                        seq,
+                        MoveOpState.DONE,
+                        required=req,
+                        dst=comp.get("dst"),
+                        displaced=comp.get("displaced"),
+                    )
+                elif st == MoveOpState.FAILED.value:
+                    _record_move_state(
+                        moves,
+                        session_id,
+                        seq,
+                        MoveOpState.FAILED,
+                        required=False,
+                        error=comp.get("error"),
+                    )
+
+    if has_db_updates:
+        db.execute_batch_updates(db_updates)
+        return True
+
+    return has_moves
+
+
+def _get_safe_path_with_reservations(
+    dest_dir: str,
+    filename: str,
+    source_path: str | None,
+    reserved_dests: set[str],
+) -> str:
+    """Resolve a collision-free destination path accounting for both disk and in-chunk reservations."""
+    candidate = get_safe_path(dest_dir, filename, source_path)
+    norm_cand = os.path.normcase(os.path.abspath(candidate))
+    if norm_cand not in reserved_dests:
+        return candidate
+    if source_path and _is_same_path(candidate, source_path):
+        return candidate
+    base, extension = os.path.splitext(filename)
+    counter = 1
+    while True:
+        cand = os.path.join(dest_dir, f"{base}_{counter}{extension}")
+        norm_c = os.path.normcase(os.path.abspath(cand))
+        if norm_c not in reserved_dests and not os.path.lexists(cand):
+            return cand
+        counter += 1
+
+
 def _record_move_state(
     moves, session_id, seq, state: MoveOpState | str, required: bool = True, **fields
 ) -> None:
@@ -1304,13 +1433,6 @@ def _collect_move_items(
             ):
                 continue
 
-            if (
-                _get_val(content, "is_excluded")
-                or _get_val(content, "excluded")
-                or _get_val(content, "is_checked") is False
-            ):
-                continue
-
             if _get_val(content, "status") == "Already Sorted":
                 pass
 
@@ -1422,25 +1544,235 @@ def _process_move_group(
     """Execute a bucket of move items targeting the same destination sequentially in plan order."""
     results: list[bool] = []
     for item in group_items:
-        results.append(
-            _process_move_item(
-                base_dir,
-                item,
-                db,
-                path_map,
-                runtime_settings,
-                session_id,
-                history_manager,
-                db_lock,
-                db_updates_batch,
-                audit_records,
-                pending_links,
-                chunk_hash_map,
-                target_locks=target_locks,
-                unarchived_children_out=unarchived_children_out,
+        if _process_move_item is _DEFAULT_PROCESS_MOVE_ITEM:
+            results.append(
+                _process_move_item(
+                    base_dir,
+                    item,
+                    db,
+                    path_map,
+                    runtime_settings,
+                    session_id,
+                    history_manager,
+                    db_lock,
+                    db_updates_batch,
+                    audit_records,
+                    pending_links,
+                    chunk_hash_map,
+                    target_locks=target_locks,
+                    unarchived_children_out=unarchived_children_out,
+                )
+            )
+        else:
+            results.append(
+                _process_move_item(
+                    base_dir,
+                    item,
+                    db,
+                    path_map,
+                    runtime_settings,
+                    session_id,
+                    history_manager,
+                    db_lock,
+                    db_updates_batch,
+                    audit_records,
+                    pending_links,
+                    chunk_hash_map,
+                )
+            )
+    return results
+
+
+def _resolve_prepared_destination(
+    *,
+    base_dir: str,
+    prepared: dict[str, Any],
+    db: Any,
+    path_map: dict,
+    db_lock: threading.Lock,
+    db_updates_batch: list,
+    pending_links: list | None,
+    reserved_dests: set[str] | None = None,
+) -> str:
+    """Resolve collision policy, boundary safety, quarantine staging, and link tracking for a prepared item.
+
+    Returns ``"skipped"`` when the source vanished or ``conflict_policy == "skip"``
+    bypassed a collision, ``"noop"`` when source and destination resolve to the
+    same path without multi-step policy transforms, ``"special_policy"`` when
+    ``unarchive`` or ``redact`` handling should run, or ``"ready"`` when standard
+    physical relocation should proceed.
+    """
+    source_path = prepared["source_path"]
+    if not os.path.lexists(source_path):
+        return "skipped"
+
+    dest_dir = prepared["dest_dir"]
+    filename = prepared["filename"]
+    conflict_policy = prepared["conflict_policy"]
+
+    if not os.path.exists(dest_dir):
+        os.makedirs(dest_dir, exist_ok=True)
+
+    target_path = os.path.normpath(os.path.join(dest_dir, filename))
+    norm_target = os.path.normcase(os.path.abspath(target_path))
+    collision = False
+    if os.path.lexists(target_path):
+        is_same = False
+        if os.path.lexists(source_path):
+            try:
+                is_same = os.path.samefile(target_path, source_path)
+            except OSError:
+                is_same = _is_same_path(target_path, source_path)
+        if not is_same:
+            collision = True
+    elif (
+        reserved_dests is not None
+        and norm_target in reserved_dests
+        and not _is_same_path(target_path, source_path)
+    ):
+        collision = True
+
+    if collision and conflict_policy == "skip":
+        logging.info(
+            f"Collision detected for {target_path}. Policy is 'skip', bypassing move."
+        )
+        return "skipped"
+
+    if collision and conflict_policy == "overwrite":
+        dest_path = target_path
+    elif reserved_dests is not None:
+        dest_path = os.path.normpath(
+            _get_safe_path_with_reservations(
+                dest_dir, filename, source_path, reserved_dests
             )
         )
-    return results
+    else:
+        dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
+    dest_path = unicodedata.normalize("NFC", dest_path)
+
+    if not is_subpath_or_equal(dest_path, base_dir):
+        msg = f"Runtime boundary violation: Destination path '{dest_path}' attempts to escape target base directory '{base_dir}'."
+        logging.error(msg)
+        raise ValueError(msg)
+
+    if reserved_dests is not None:
+        reserved_dests.add(os.path.normcase(os.path.abspath(dest_path)))
+    _update_path_map_entry(path_map, source_path, dest_path, lock=db_lock)
+
+    rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
+    abs_dest_path = os.path.abspath(dest_path)
+    prepared["dest_path"] = dest_path
+    prepared["collision"] = collision
+
+    if prepared["is_sensitivity_hold"] and db:
+        with db_lock:
+            try:
+                import time
+
+                job_id = f"qjob_mover_{uuid.uuid4().hex[:12]}"
+                if hasattr(db, "stage_quarantine_record"):
+                    db.stage_quarantine_record(
+                        job_id=job_id,
+                        base_dir=prepared["abs_base_dir"] or base_dir,
+                        original_filepath=prepared["source_rel_path"],
+                        staged_filepath=abs_dest_path,
+                        file_hash=prepared["candidate_sha256"],
+                        policy_action="sensitivity_hold",
+                    )
+                if hasattr(db, "update_quarantine_status"):
+                    db.update_quarantine_status(
+                        job_id=job_id,
+                        status="IN_INSPECTION",
+                        audit_entry={
+                            "timestamp": time.time(),
+                            "status": "IN_INSPECTION",
+                            "details": "Downstream AsyncMoveEngine compliance inspection",
+                        },
+                    )
+                    db.update_quarantine_status(
+                        job_id=job_id,
+                        status="QUARANTINED",
+                        policy_action="sensitivity_hold",
+                        audit_entry={
+                            "timestamp": time.time(),
+                            "status": "QUARANTINED",
+                            "policy_action": "sensitivity_hold",
+                            "details": (
+                                f"Downstream AsyncMoveEngine barrier intercepted {prepared['sens_rating_str']} sensitivity file; "
+                                f"redirected to {prepared['quarantine_dir_name']}"
+                            ),
+                            "sensitivity_rating": prepared["sens_rating_str"],
+                            "sensitivity_score": prepared["sens_score"],
+                            "source_path": prepared["source_rel_path"],
+                            "destination_path": rel_dest,
+                        },
+                    )
+            except Exception as audit_err:
+                logging.warning(
+                    f"Failed to record mover compliance audit entry: {audit_err}"
+                )
+
+    if prepared["link_info"] and pending_links is not None:
+        link_entry = {
+            "source_path": source_path,
+            "dest_path": dest_path,
+            "link_info": prepared["link_info"],
+        }
+        prepared["link_entry"] = link_entry
+        with db_lock:
+            pending_links.append(link_entry)
+
+    policy_action = prepared.get("policy_action") or ""
+    if policy_action in ("unarchive", "redact") and not prepared["is_sensitivity_hold"]:
+        return "special_policy"
+
+    if dest_path == source_path:
+        if (
+            policy_action in ("quarantine", "archive", "retain")
+            and not prepared["is_sensitivity_hold"]
+        ):
+            status_for_action = (
+                "QUARANTINED"
+                if policy_action == "quarantine"
+                else ("ARCHIVED" if policy_action == "archive" else "RELEASED")
+            )
+            _record_policy_quarantine_audit(
+                db,
+                db_lock,
+                base_dir=base_dir,
+                original_filepath=prepared["source_rel_path"],
+                staged_filepath=abs_dest_path,
+                file_hash=prepared["pre_hash"] or prepared["file_hash"],
+                policy_action=policy_action,
+                transitions=[
+                    (
+                        "IN_INSPECTION",
+                        {"details": f"SortPipeline {policy_action} policy inspection"},
+                    ),
+                    (
+                        status_for_action,
+                        {
+                            "policy_action": policy_action,
+                            "details": f"Policy action {policy_action} applied in place at {rel_dest}",
+                        },
+                    ),
+                ],
+            )
+        if prepared["file_hash"] and not prepared["is_quarantine_dest"]:
+            with db_lock:
+                db_updates_batch.append(
+                    {
+                        "type": "verified_target",
+                        "args": (
+                            base_dir,
+                            prepared["file_hash"],
+                            prepared["current_dest"].replace("\\", "/"),
+                        ),
+                    }
+                )
+        return "noop"
+
+    return "ready"
 
 
 def _process_move_item(
@@ -1460,9 +1792,113 @@ def _process_move_item(
     unarchived_children_out: list[str] | None = None,
 ) -> bool:
     """Execute a single physical move and SHA-256 hash calculation off-thread."""
+    prepared = _prepare_chunk_move_item(
+        base_dir, item, db, runtime_settings, db_lock, chunk_hash_map
+    )
+    if prepared is None:
+        return False
+
+    target_path = os.path.normpath(
+        os.path.join(prepared["dest_dir"], prepared["filename"])
+    )
+    with _get_target_lock(target_locks, db_lock, target_path):
+        resolution = _resolve_prepared_destination(
+            base_dir=base_dir,
+            prepared=prepared,
+            db=db,
+            path_map=path_map,
+            db_lock=db_lock,
+            db_updates_batch=db_updates_batch,
+            pending_links=pending_links,
+            reserved_dests=None,
+        )
+        if resolution == "skipped":
+            return False
+        if resolution == "noop":
+            return True
+        if resolution == "special_policy":
+            return _execute_special_policy_move(
+                base_dir=base_dir,
+                prepared=prepared,
+                target_path=target_path,
+                db=db,
+                path_map=path_map,
+                session_id=session_id,
+                history_manager=history_manager,
+                db_lock=db_lock,
+                db_updates_batch=db_updates_batch,
+                audit_records=audit_records,
+                unarchived_children_out=unarchived_children_out,
+            )
+
+        moves = getattr(history_manager, "moves", None) if history_manager else None
+        prepared["move_seq"] = _record_move_intent(
+            moves,
+            session_id,
+            prepared["source_path"],
+            prepared["dest_path"],
+            prepared["pre_hash"],
+        )
+        try:
+            _execute_prepared_move_group(
+                base_dir,
+                [prepared],
+                path_map,
+                session_id,
+                moves,
+                db_lock,
+                db=db,
+            )
+        except Exception as err:
+            _record_move_state(
+                moves,
+                session_id,
+                prepared["move_seq"],
+                MoveOpState.FAILED,
+                required=False,
+                error=str(err),
+            )
+            raise
+
+        outcome = prepared["outcome"]
+        _record_move_state(
+            moves,
+            session_id,
+            prepared["move_seq"],
+            MoveOpState.DONE,
+            dst=outcome["dst"],
+            displaced=outcome["displaced"],
+        )
+        if outcome["state"] == MoveOpState.VERIFIED.value:
+            _record_move_state(
+                moves,
+                session_id,
+                prepared["move_seq"],
+                MoveOpState.VERIFIED,
+                required=False,
+            )
+        with db_lock:
+            db_updates_batch.extend(outcome["db_updates"])
+            if audit_records is not None:
+                audit_records.append(outcome["audit_record"])
+        return True
+
+
+_DEFAULT_PROCESS_MOVE_ITEM = _process_move_item
+
+
+def _prepare_chunk_move_item(
+    base_dir: str,
+    item: dict,
+    db: Any,
+    runtime_settings: Any,
+    db_lock: threading.Lock,
+    chunk_hash_map: dict[str, str] | None = None,
+) -> dict[str, Any] | None:
+    """Pre-compute source metadata, sensitivity routing, and pre-move SHA-256 off-thread without DB writes."""
     source_path = item["source_path"]
     if not os.path.lexists(source_path):
-        return False
+        return None
 
     if runtime_settings is not None:
         from app.core.scanner import ScanFilter
@@ -1475,7 +1911,7 @@ def _process_move_item(
             or item_filter.is_app_bundle(source_path)
             or item_filter.has_ignored_extension(source_path)
         ):
-            return False
+            return None
 
     content = item["content"]
     filename = item["filename"]
@@ -1547,90 +1983,6 @@ def _process_move_item(
     dest_dir = os.path.normpath(os.path.join(base_dir, active_dest))
     dest_dir = unicodedata.normalize("NFC", dest_dir)
 
-    if not os.path.exists(dest_dir):
-        os.makedirs(dest_dir, exist_ok=True)
-
-    target_path = os.path.normpath(os.path.join(dest_dir, filename))
-    target_ctx = _get_target_lock(target_locks, db_lock, target_path)
-    with target_ctx:
-        return _execute_locked_target_move(
-            base_dir=base_dir,
-            source_path=source_path,
-            content=content,
-            filename=filename,
-            current_dest=current_dest,
-            active_dest=active_dest,
-            quarantine_dir_name=quarantine_dir_name,
-            candidate_sha256=candidate_sha256,
-            dest_dir=dest_dir,
-            target_path=target_path,
-            is_sensitivity_hold=is_sensitivity_hold,
-            sens_rating_str=sens_rating_str,
-            sens_score=sens_score,
-            abs_base_dir=abs_base_dir,
-            db=db,
-            path_map=path_map,
-            runtime_settings=runtime_settings,
-            session_id=session_id,
-            history_manager=history_manager,
-            db_lock=db_lock,
-            db_updates_batch=db_updates_batch,
-            audit_records=audit_records,
-            pending_links=pending_links,
-            chunk_hash_map=chunk_hash_map,
-            policy_action=policy_action,
-            post_unarchive_action=post_unarchive_action,
-            post_unarchive_target=post_unarchive_target,
-            unarchived_children_out=unarchived_children_out,
-        )
-
-
-def _execute_locked_target_move(
-    *,
-    base_dir: str,
-    source_path: str,
-    content: Any,
-    filename: str,
-    current_dest: str,
-    active_dest: str,
-    quarantine_dir_name: str,
-    candidate_sha256: str | None,
-    dest_dir: str,
-    target_path: str,
-    is_sensitivity_hold: bool,
-    sens_rating_str: str,
-    sens_score: float,
-    abs_base_dir: str,
-    db,
-    path_map: dict,
-    runtime_settings,
-    session_id: str,
-    history_manager,
-    db_lock: threading.Lock,
-    db_updates_batch: list,
-    audit_records: list | None,
-    pending_links: list | None,
-    chunk_hash_map: dict | None,
-    policy_action: str = "",
-    post_unarchive_action: str = "delete",
-    post_unarchive_target: Any = None,
-    unarchived_children_out: list[str] | None = None,
-) -> bool:
-    """Perform collision evaluation, optional overwrite displacement, physical move, and verification under target lock."""
-    if not os.path.lexists(source_path):
-        return False
-
-    collision = False
-    if os.path.lexists(target_path):
-        is_same = False
-        if os.path.lexists(source_path):
-            try:
-                is_same = os.path.samefile(target_path, source_path)
-            except OSError:
-                is_same = _is_same_path(target_path, source_path)
-        if not is_same:
-            collision = True
-
     node_overwrite = bool(
         _get_val(content, "overwrite") or _get_val(content, "allow_overwrite")
     )
@@ -1648,75 +2000,7 @@ def _execute_locked_target_move(
     else:
         conflict_policy = "rename"
 
-    if collision and conflict_policy == "skip":
-        logging.info(
-            f"Collision detected for {target_path}. Policy is 'skip', bypassing move."
-        )
-        return False
-
-    if collision and conflict_policy == "overwrite":
-        dest_path = target_path
-    else:
-        dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
-    dest_path = unicodedata.normalize("NFC", dest_path)
-    _update_path_map_entry(path_map, source_path, dest_path, lock=db_lock)
-
-    if not is_subpath_or_equal(dest_path, base_dir):
-        msg = f"Runtime boundary violation: Destination path '{dest_path}' attempts to escape target base directory '{base_dir}'."
-        logging.error(msg)
-        raise ValueError(msg)
-
     source_rel_path = safe_relpath(source_path, base_dir).replace("\\", "/")
-    rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
-    abs_dest_path = os.path.abspath(dest_path)
-
-    if is_sensitivity_hold and db:
-        with db_lock:
-            try:
-                job_id = f"qjob_mover_{uuid.uuid4().hex[:12]}"
-                if hasattr(db, "stage_quarantine_record"):
-                    db.stage_quarantine_record(
-                        job_id=job_id,
-                        base_dir=abs_base_dir or base_dir,
-                        original_filepath=source_rel_path,
-                        staged_filepath=abs_dest_path,
-                        file_hash=candidate_sha256,
-                        policy_action="sensitivity_hold",
-                    )
-                if hasattr(db, "update_quarantine_status"):
-                    import time
-
-                    db.update_quarantine_status(
-                        job_id=job_id,
-                        status="IN_INSPECTION",
-                        audit_entry={
-                            "timestamp": time.time(),
-                            "status": "IN_INSPECTION",
-                            "details": "Downstream AsyncMoveEngine compliance inspection",
-                        },
-                    )
-                    db.update_quarantine_status(
-                        job_id=job_id,
-                        status="QUARANTINED",
-                        policy_action="sensitivity_hold",
-                        audit_entry={
-                            "timestamp": time.time(),
-                            "status": "QUARANTINED",
-                            "policy_action": "sensitivity_hold",
-                            "details": (
-                                f"Downstream AsyncMoveEngine barrier intercepted {sens_rating_str} sensitivity file; "
-                                f"redirected to {quarantine_dir_name}"
-                            ),
-                            "sensitivity_rating": sens_rating_str,
-                            "sensitivity_score": sens_score,
-                            "source_path": source_rel_path,
-                            "destination_path": rel_dest,
-                        },
-                    )
-            except Exception as audit_err:
-                logging.warning(
-                    f"Failed to record mover compliance audit entry: {audit_err}"
-                )
 
     if chunk_hash_map is not None:
         file_hash = chunk_hash_map.get(source_rel_path) or ""
@@ -1725,14 +2009,13 @@ def _execute_locked_target_move(
         if db and hasattr(db, "get_document"):
             with db_lock:
                 doc = db.get_document(base_dir, source_rel_path)
-
         file_hash = doc.get("file_hash") if (doc and isinstance(doc, dict)) else ""
-    # Hash the bytes being moved with the same function as the post-move check.
-    # The DB hash can be an MD5 of extracted text, or stale (#844).
+
     pre_hash = ""
     src_dev = None
     src_ino = None
     src_size = None
+    intent_size = None
     if os.path.exists(source_path):
         try:
             st = os.stat(source_path)
@@ -1740,6 +2023,11 @@ def _execute_locked_target_move(
             src_ino = st.st_ino
             src_size = st.st_size
         except Exception:
+            pass
+        try:
+            if os.path.isfile(source_path) and not os.path.islink(source_path):
+                intent_size = os.lstat(source_path).st_size
+        except OSError:
             pass
         try:
             from app.core.extractor import get_file_hash
@@ -1767,18 +2055,6 @@ def _execute_locked_target_move(
             except OSError:
                 pass
 
-    moved_as_link = False
-
-    if link_info and pending_links is not None:
-        with db_lock:
-            pending_links.append(
-                {
-                    "source_path": source_path,
-                    "dest_path": dest_path,
-                    "link_info": link_info,
-                }
-            )
-
     qdir_top = quarantine_dir_name.replace("\\", "/").strip("/").split("/")[0]
     active_dest_top = active_dest.replace("\\", "/").strip("/").split("/")[0]
     is_quarantine_dest = active_dest_top in (
@@ -1787,9 +2063,74 @@ def _execute_locked_target_move(
         qdir_top,
     )
 
+    return {
+        "source_path": source_path,
+        "content": content,
+        "filename": filename,
+        "current_dest": current_dest,
+        "active_dest": active_dest,
+        "dest_dir": dest_dir,
+        "conflict_policy": conflict_policy,
+        "source_rel_path": source_rel_path,
+        "abs_base_dir": abs_base_dir,
+        "is_sensitivity_hold": is_sensitivity_hold,
+        "sens_rating_str": sens_rating_str,
+        "sens_score": sens_score,
+        "quarantine_dir_name": quarantine_dir_name,
+        "candidate_sha256": candidate_sha256,
+        "file_hash": file_hash,
+        "pre_hash": pre_hash,
+        "src_dev": src_dev,
+        "src_ino": src_ino,
+        "src_size": src_size,
+        "intent_size": intent_size,
+        "link_info": link_info,
+        "is_quarantine_dest": is_quarantine_dest,
+        "policy_action": policy_action,
+        "post_unarchive_action": post_unarchive_action,
+        "post_unarchive_target": post_unarchive_target,
+        "dest_path": None,
+        "collision": False,
+        "move_seq": None,
+        "link_entry": None,
+        "outcome": None,
+    }
+
+
+def _execute_special_policy_move(
+    *,
+    base_dir: str,
+    prepared: dict[str, Any],
+    target_path: str,
+    db: Any,
+    path_map: dict,
+    session_id: str,
+    history_manager: Any,
+    db_lock: threading.Lock,
+    db_updates_batch: list,
+    audit_records: list | None,
+    unarchived_children_out: list[str] | None,
+) -> bool:
+    """Execute multi-step MoveLedger policy transforms (``unarchive`` or ``redact``)."""
+    source_path = prepared["source_path"]
+    if not os.path.lexists(source_path):
+        return False
+
+    content = prepared.get("content")
+    filename = prepared["filename"]
+    dest_dir = prepared["dest_dir"]
+    conflict_policy = prepared["conflict_policy"]
+    collision = bool(prepared.get("collision", False))
+    source_rel_path = prepared["source_rel_path"]
+    quarantine_dir_name = prepared["quarantine_dir_name"]
+    file_hash = prepared["file_hash"]
+    pre_hash = prepared["pre_hash"]
+    policy_action = prepared.get("policy_action") or ""
+    post_unarchive_action = prepared.get("post_unarchive_action") or "delete"
+    post_unarchive_target = prepared.get("post_unarchive_target")
     moves = getattr(history_manager, "moves", None) if history_manager else None
 
-    if policy_action == "unarchive" and not is_sensitivity_hold:
+    if policy_action == "unarchive":
         import tarfile
         import zipfile
 
@@ -1901,12 +2242,16 @@ def _execute_locked_target_move(
 
                     db_path = getattr(db, "db_path", None)
                     if db_path:
-                        db.worker.execute_write(
-                            lambda: get_db_connection(db_path).execute(
-                                "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                (base_dir, source_rel_path, source_rel_path),
-                            )
-                        )
+
+                        def _delete_archive_doc() -> None:
+                            conn = get_db_connection(db_path)
+                            with conn:
+                                conn.execute(
+                                    "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                    (base_dir, source_rel_path, source_rel_path),
+                                )
+
+                        db.worker.execute_write(_delete_archive_doc)
                 except Exception:
                     pass
 
@@ -1991,7 +2336,7 @@ def _execute_locked_target_move(
                 )
         return True
 
-    if policy_action == "redact" and not is_sensitivity_hold:
+    if policy_action == "redact":
         from app.core.extractor import get_file_hash
         from app.core.quarantine_interceptor import _redact_document_to_path
         from app.core.resilient_file_ops import resilient_remove
@@ -2124,12 +2469,16 @@ def _execute_locked_target_move(
                         from app.core.db import get_db_connection
 
                         db_p = db.db_path
-                        db.worker.execute_write(
-                            lambda: get_db_connection(db_p).execute(
-                                "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                (base_dir, source_rel_path, source_rel_path),
-                            )
-                        )
+
+                        def _delete_orig_doc() -> None:
+                            conn = get_db_connection(db_p)
+                            with conn:
+                                conn.execute(
+                                    "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                    (base_dir, source_rel_path, source_rel_path),
+                                )
+
+                        db.worker.execute_write(_delete_orig_doc)
                     if hasattr(db, "upsert_document"):
                         db.upsert_document(
                             base_dir,
@@ -2183,10 +2532,134 @@ def _execute_locked_target_move(
                 )
         return True
 
-    if dest_path == source_path:
+    return False
+
+
+def _execute_prepared_move_group(
+    base_dir: str,
+    group: list[dict[str, Any]],
+    path_map: dict,
+    session_id: str,
+    moves_ledger: Any,
+    db_lock: threading.Lock,
+    db: Any = None,
+) -> None:
+    """Execute physical file moves and post-move SHA-256 verification off-thread.
+
+    Commits ``record_displacement`` synchronously before moving bytes when an
+    overwrite displaces an existing target file; buffers ``done``/``verified``/
+    ``failed`` outcomes and DB updates for the chunk completion commit.
+    """
+    from app.core.resilient_file_ops import resilient_move
+
+    for p in group:
+        source_path = p["source_path"]
+        dest_path = p["dest_path"]
+        move_seq = p["move_seq"]
+        conflict_policy = p["conflict_policy"]
+        pre_hash = p["pre_hash"]
+        file_hash = p["file_hash"]
+        link_info = p["link_info"]
+
+        displaced_path = None
+        overwritten_path = None
+        try:
+            if (
+                conflict_policy == "overwrite"
+                and os.path.lexists(dest_path)
+                and not _is_same_path(source_path, dest_path)
+            ):
+                overwritten_path = dest_path
+                displaced_path = _displace_for_overwrite(
+                    dest_path,
+                    base_dir,
+                    session_id,
+                    journal=lambda path, seq=move_seq: _record_move_state(
+                        moves_ledger,
+                        session_id,
+                        seq,
+                        MoveOpState.DISPLACEMENT,
+                        displaced=path,
+                    ),
+                )
+
+            try:
+                actual_dest = resilient_move(source_path, dest_path)
+                if actual_dest != dest_path:
+                    dest_path = actual_dest
+                    _update_path_map_entry(
+                        path_map, source_path, dest_path, lock=db_lock
+                    )
+                    if p.get("link_entry") is not None:
+                        with db_lock:
+                            p["link_entry"]["dest_path"] = dest_path
+                rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
+            except Exception as err:
+                logging.error(
+                    f"Failed to move file {source_path} to {dest_path}: {err}"
+                )
+                if displaced_path and overwritten_path:
+                    _restore_displaced(displaced_path, overwritten_path)
+                raise
+        except Exception as err:
+            p["outcome"] = {
+                "state": MoveOpState.FAILED.value,
+                "error": str(err),
+                "required": False,
+            }
+            raise
+
+        item_type = link_info["type"] if link_info else "file"
+        step_hash = None
+        if item_type == "file" and os.path.exists(dest_path):
+            try:
+                from app.core.extractor import get_file_hash
+
+                dest_stat = None
+                try:
+                    dest_stat = os.stat(dest_path)
+                except Exception:
+                    pass
+
+                if (
+                    dest_stat
+                    and p["src_ino"]
+                    and dest_stat.st_ino
+                    and p["src_dev"] is not None
+                    and dest_stat.st_dev == p["src_dev"]
+                    and dest_stat.st_ino == p["src_ino"]
+                    and p["src_size"] is not None
+                    and dest_stat.st_size == p["src_size"]
+                    and pre_hash
+                ):
+                    step_hash = pre_hash
+                else:
+                    step_hash = get_file_hash(dest_path)
+            except Exception:
+                pass
+
+        if step_hash and step_hash == pre_hash:
+            final_state = MoveOpState.VERIFIED.value
+        else:
+            final_state = MoveOpState.DONE.value
+            if move_seq is not None and pre_hash:
+                logging.warning(
+                    f"Moved {source_path} to {dest_path}, but its hash no longer matches the source."
+                )
+
+        post_hash = step_hash
+        if post_hash is None and os.path.exists(dest_path):
+            try:
+                from app.core.extractor import get_file_hash
+
+                post_hash = get_file_hash(dest_path)
+            except Exception:
+                post_hash = None
+
+        policy_action = p.get("policy_action") or ""
         if (
             policy_action in ("quarantine", "archive", "retain")
-            and not is_sensitivity_hold
+            and not p["is_sensitivity_hold"]
         ):
             status_for_action = (
                 "QUARANTINED"
@@ -2197,9 +2670,9 @@ def _execute_locked_target_move(
                 db,
                 db_lock,
                 base_dir=base_dir,
-                original_filepath=source_rel_path,
+                original_filepath=p["source_rel_path"],
                 staged_filepath=os.path.abspath(dest_path),
-                file_hash=pre_hash or file_hash,
+                file_hash=post_hash or pre_hash or file_hash,
                 policy_action=policy_action,
                 transitions=[
                     (
@@ -2210,216 +2683,61 @@ def _execute_locked_target_move(
                         status_for_action,
                         {
                             "policy_action": policy_action,
-                            "details": f"Policy action {policy_action} applied in place at {rel_dest}",
+                            "details": f"Policy action {policy_action} relocated document to {rel_dest}",
                         },
                     ),
                 ],
             )
-        with db_lock:
-            if file_hash and not is_quarantine_dest:
-                db_updates_batch.append(
-                    {
-                        "type": "verified_target",
-                        "args": (
-                            base_dir,
-                            file_hash,
-                            current_dest.replace("\\", "/"),
-                        ),
-                    }
-                )
-        return True
 
-    # The intent row is committed before anything on disk changes (ADR 0006).
-    move_seq = _record_move_intent(moves, session_id, source_path, dest_path, pre_hash)
-
-    displaced_path = overwritten_path = None
-    if not moved_as_link:
-        try:
-            if (
-                collision
-                and conflict_policy == "overwrite"
-                and os.path.lexists(dest_path)
-                and not _is_same_path(source_path, dest_path)
-            ):
-                overwritten_path = dest_path
-                displaced_path = _displace_for_overwrite(
-                    dest_path,
-                    base_dir,
-                    session_id,
-                    journal=lambda path: _record_move_state(
-                        moves,
-                        session_id,
-                        move_seq,
-                        MoveOpState.DISPLACEMENT,
-                        displaced=path,
-                    ),
-                )
-
-            try:
-                from app.core.resilient_file_ops import resilient_move
-
-                dest_path = resilient_move(source_path, dest_path)
-                rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
-            except Exception as err:
-                logging.error(
-                    f"Failed to move file {source_path} to {dest_path}: {err}"
-                )
-                if displaced_path and overwritten_path:
-                    _restore_displaced(displaced_path, overwritten_path)
-                raise
-        except Exception as err:
-            _record_move_state(
-                moves,
-                session_id,
-                move_seq,
-                MoveOpState.FAILED,
-                required=False,
-                error=str(err),
-            )
-            raise
-
-    _record_move_state(
-        moves,
-        session_id,
-        move_seq,
-        MoveOpState.DONE,
-        dst=dest_path,
-        displaced=displaced_path,
-    )
-
-    item_type = link_info["type"] if link_info else "file"
-    step_hash = None
-    if item_type == "file" and os.path.exists(dest_path):
-        try:
-            from app.core.extractor import get_file_hash
-
-            dest_stat = None
-            try:
-                dest_stat = os.stat(dest_path)
-            except Exception:
-                pass
-
-            if (
-                dest_stat
-                and src_ino
-                and dest_stat.st_ino
-                and src_dev is not None
-                and dest_stat.st_dev == src_dev
-                and dest_stat.st_ino == src_ino
-                and src_size is not None
-                and dest_stat.st_size == src_size
-                and pre_hash
-            ):
-                step_hash = pre_hash
-            else:
-                step_hash = get_file_hash(dest_path)
-        except Exception:
-            pass
-    if step_hash and step_hash == pre_hash:
-        _record_move_state(
-            moves, session_id, move_seq, MoveOpState.VERIFIED, required=False
-        )
-    elif move_seq is not None and pre_hash:
-        logging.warning(
-            f"Moved {source_path} to {dest_path}, but its hash no longer matches the source."
-        )
-    dest_file_hash = step_hash
-    if not step_hash and file_hash:
-        step_hash = file_hash
-
-    with db_lock:
-        if file_hash and not is_quarantine_dest:
-            db_updates_batch.append(
+        item_db_updates: list[dict[str, Any]] = []
+        if file_hash and not p["is_quarantine_dest"]:
+            item_db_updates.append(
                 {
                     "type": "verified_target",
                     "args": (
                         base_dir,
                         file_hash,
-                        current_dest.replace("\\", "/"),
+                        p["current_dest"].replace("\\", "/"),
                     ),
                 }
             )
-
-        db_updates_batch.append(
+        item_db_updates.append(
             {
                 "type": "document_path",
-                "args": (base_dir, source_rel_path, rel_dest),
+                "args": (base_dir, p["source_rel_path"], rel_dest),
             }
         )
 
-    if policy_action in ("quarantine", "archive", "retain") and not is_sensitivity_hold:
-        status_for_action = (
-            "QUARANTINED"
-            if policy_action == "quarantine"
-            else ("ARCHIVED" if policy_action == "archive" else "RELEASED")
-        )
-        _record_policy_quarantine_audit(
-            db,
-            db_lock,
-            base_dir=base_dir,
-            original_filepath=source_rel_path,
-            staged_filepath=os.path.abspath(dest_path),
-            file_hash=dest_file_hash or pre_hash or file_hash,
-            policy_action=policy_action,
-            transitions=[
-                (
-                    "IN_INSPECTION",
-                    {"details": f"SortPipeline {policy_action} policy inspection"},
-                ),
-                (
-                    status_for_action,
-                    {
-                        "policy_action": policy_action,
-                        "details": f"Policy action {policy_action} relocated document to {rel_dest}",
-                    },
-                ),
-            ],
-        )
-
-    if audit_records is not None:
-        post_hash = dest_file_hash
-        if post_hash is None and os.path.exists(dest_path):
-            try:
-                from app.core.extractor import get_file_hash
-
-                post_hash = get_file_hash(dest_path)
-            except Exception:
-                post_hash = None
-        with db_lock:
-            audit_records.append(
-                {
-                    "source_path": source_path,
-                    "destination_path": dest_path,
-                    "pre_hash": pre_hash,
-                    "post_hash": post_hash,
-                }
-            )
-
-    return True
+        p["outcome"] = {
+            "state": final_state,
+            "dst": dest_path,
+            "displaced": displaced_path,
+            "required": True,
+            "db_updates": item_db_updates,
+            "audit_record": {
+                "source_path": source_path,
+                "destination_path": dest_path,
+                "pre_hash": pre_hash,
+                "post_hash": post_hash,
+            },
+        }
 
 
-def _stage_disposal_item(
+def _prepare_disposal_item(
     base_dir: str,
     item: dict,
-    db,
     path_map: dict,
     session_id: str,
-    history_manager,
-    db_lock: threading.Lock,
-    db_updates_batch: list,
-    audit_records: list | None = None,
+    moves: Any,
+    *,
+    moves_by_src: dict[str, list[Any]] | None = None,
+    reserved_dests: set[str] | None = None,
 ) -> dict[str, Any] | None:
-    """Stage a redundant duplicate or policy-trashed file into ``.sortify_duplicates/<session_id>/``.
-
-    Enforces ADR 0005 (surviving primary must be ``verified`` in ``MoveLedger`` or
-    verified byte-identical on disk if stationary) and ADR 0006 (every staging
-    relocation is recorded in ``MoveLedger`` so ``SortPipeline.undo`` replays it).
-    """
+    """Validate ADR 0005 primary survival and prepare staging target/hash off-lock."""
     from app.core.extractor import get_file_hash
     from app.core.moves import VERIFIED
     from app.core.resilient_file_ops import (
         duplicate_staging_relpath,
-        resilient_move,
         same_file_content,
     )
     from app.core.scanner import parse_item_identifier
@@ -2433,7 +2751,6 @@ def _stage_disposal_item(
     pol_action = _get_val(content, "policy_action")
     is_dup = bool(_get_val(content, "is_duplicate"))
     dup_of = _get_val(content, "duplicate_of")
-    moves = getattr(history_manager, "moves", None) if history_manager else None
 
     # ADR 0005: Never displace or trash a duplicate until the surviving primary is verified
     if is_dup or dup_of:
@@ -2457,12 +2774,15 @@ def _stage_disposal_item(
         verified_primary_path: str | None = None
         primary_moved_in_ledger = False
         if moves is not None and session_id:
-            session_moves = moves.list_moves(session_id)
-            matching_rows = [
-                m
-                for m in session_moves
-                if os.path.normcase(os.path.abspath(m.src)) == norm_primary_orig
-            ]
+            if moves_by_src is not None:
+                matching_rows = moves_by_src.get(norm_primary_orig, [])
+            else:
+                session_moves = moves.list_moves(session_id)
+                matching_rows = [
+                    m
+                    for m in session_moves
+                    if os.path.normcase(os.path.abspath(m.src)) == norm_primary_orig
+                ]
             if matching_rows:
                 primary_moved_in_ledger = True
                 latest = matching_rows[-1]
@@ -2480,7 +2800,6 @@ def _stage_disposal_item(
         else:
             cand_dst = path_map.get(norm_primary_orig) or primary_orig_abs
             if moves is not None and not _is_same_path(cand_dst, primary_orig_abs):
-                # Primary was expected to move to cand_dst, but has no MoveLedger row!
                 if not os.path.isfile(cand_dst):
                     logging.warning(
                         "ADR 0005 guard: refusing to stage duplicate %s because primary destination %s is missing.",
@@ -2525,76 +2844,280 @@ def _stage_disposal_item(
     planned_stage_target = os.path.normpath(os.path.join(stage_base, stage_rel))
     stage_dir = os.path.dirname(planned_stage_target)
     os.makedirs(stage_dir, exist_ok=True)
-    dest_path = os.path.normpath(
-        get_safe_path(stage_dir, os.path.basename(planned_stage_target), source_path)
-    )
+    if reserved_dests is not None:
+        dest_path = os.path.normpath(
+            _get_safe_path_with_reservations(
+                stage_dir,
+                os.path.basename(planned_stage_target),
+                source_path,
+                reserved_dests,
+            )
+        )
+        reserved_dests.add(os.path.normcase(os.path.abspath(dest_path)))
+    else:
+        dest_path = os.path.normpath(
+            get_safe_path(
+                stage_dir, os.path.basename(planned_stage_target), source_path
+            )
+        )
 
     pre_hash = ""
+    intent_size = None
+    try:
+        if os.path.isfile(source_path) and not os.path.islink(source_path):
+            intent_size = os.lstat(source_path).st_size
+    except OSError:
+        pass
     try:
         pre_hash = get_file_hash(source_path)
     except (OSError, ValueError, TypeError):
         pre_hash = ""
 
-    move_seq = _record_move_intent(moves, session_id, source_path, dest_path, pre_hash)
-    try:
-        final_dest = resilient_move(source_path, dest_path)
-    except Exception as err:
-        _record_move_state(
-            moves,
-            session_id,
-            move_seq,
-            MoveOpState.FAILED,
-            required=False,
-            error=str(err),
-        )
-        raise
+    return {
+        "source_path": source_path,
+        "dest_path": dest_path,
+        "pre_hash": pre_hash,
+        "intent_size": intent_size,
+        "is_trash_target": is_trash_target,
+        "source_rel_path": safe_relpath(source_path, base_dir).replace("\\", "/"),
+    }
 
-    _record_move_state(
-        moves,
-        session_id,
-        move_seq,
-        MoveOpState.DONE,
-        dst=final_dest,
-        displaced=None,
-    )
-    post_hash = ""
-    if os.path.isfile(final_dest):
+
+def _stage_disposal_chunk(
+    base_dir: str,
+    items: list[dict],
+    db: Any,
+    path_map: dict,
+    session_id: str,
+    history_manager: Any,
+    db_lock: threading.Lock,
+    db_updates_batch: list,
+    audit_records: list | None = None,
+    *,
+    moves_by_src: dict[str, list[Any]] | None = None,
+    flush_db: bool = True,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Stage a chunk of duplicate or policy-trashed items with batched MoveLedger commits."""
+    from app.core.extractor import get_file_hash
+    from app.core.moves import STATUS_ABORTED, format_move_failure
+    from app.core.resilient_file_ops import resilient_move
+
+    moves_ledger = getattr(history_manager, "moves", None) if history_manager else None
+    reserved_stage_dests: set[str] = set()
+    prepared_disposals: list[dict[str, Any]] = []
+    for disp_item in items:
+        prep_d = _prepare_disposal_item(
+            base_dir=base_dir,
+            item=disp_item,
+            path_map=path_map,
+            session_id=session_id,
+            moves=moves_ledger,
+            moves_by_src=moves_by_src,
+            reserved_dests=reserved_stage_dests,
+        )
+        if prep_d is not None:
+            prepared_disposals.append(prep_d)
+    if not prepared_disposals:
+        return [], False
+
+    disp_intents = [
+        (
+            pd["source_path"],
+            pd["dest_path"],
+            pd["pre_hash"],
+            pd["intent_size"],
+        )
+        for pd in prepared_disposals
+    ]
+    disp_seqs = _record_move_intents_batch(moves_ledger, session_id, disp_intents)
+    disp_completions: list[dict[str, Any]] = []
+    disp_db_updates: list[dict[str, Any]] = []
+    staged_entries: list[dict[str, Any]] = []
+    disp_exc: BaseException | None = None
+
+    for idx_d, (pd, d_seq) in enumerate(zip(prepared_disposals, disp_seqs)):
         try:
-            post_hash = get_file_hash(final_dest)
-        except (OSError, ValueError, TypeError):
-            post_hash = ""
-    if pre_hash and post_hash == pre_hash:
-        _record_move_state(
-            moves, session_id, move_seq, MoveOpState.VERIFIED, required=False
+            final_dest = resilient_move(pd["source_path"], pd["dest_path"])
+        except Exception as err:
+            if d_seq is not None:
+                disp_completions.append(
+                    {
+                        "seq": d_seq,
+                        "state": MoveOpState.FAILED.value,
+                        "error": str(err),
+                        "required": False,
+                    }
+                )
+            for rem_seq in disp_seqs[idx_d + 1 :]:
+                if rem_seq is not None:
+                    disp_completions.append(
+                        {
+                            "seq": rem_seq,
+                            "state": MoveOpState.FAILED.value,
+                            "error": format_move_failure(STATUS_ABORTED),
+                            "required": False,
+                        }
+                    )
+            disp_exc = err
+            break
+
+        post_hash = get_file_hash(final_dest) if os.path.isfile(final_dest) else ""
+        d_state = (
+            MoveOpState.VERIFIED.value
+            if (pd["pre_hash"] and post_hash == pd["pre_hash"])
+            else MoveOpState.DONE.value
         )
-
-    _update_path_map_entry(path_map, source_path, final_dest, lock=db_lock)
-
-    source_rel_path = safe_relpath(source_path, base_dir).replace("\\", "/")
-    rel_dest = safe_relpath(final_dest, base_dir).replace("\\", "/")
-    with db_lock:
-        db_updates_batch.append(
+        if d_seq is not None:
+            disp_completions.append(
+                {
+                    "seq": d_seq,
+                    "state": d_state,
+                    "dst": final_dest,
+                    "displaced": None,
+                    "required": True,
+                }
+            )
+        _update_path_map_entry(path_map, pd["source_path"], final_dest, lock=db_lock)
+        rel_dest = safe_relpath(final_dest, base_dir).replace("\\", "/")
+        disp_db_updates.append(
             {
                 "type": "document_path",
-                "args": (base_dir, source_rel_path, rel_dest),
+                "args": (base_dir, pd["source_rel_path"], rel_dest),
             }
         )
         if audit_records is not None:
-            audit_records.append(
-                {
-                    "source_path": source_path,
-                    "destination_path": final_dest,
-                    "pre_hash": pre_hash,
-                    "post_hash": post_hash or pre_hash,
-                }
-            )
+            with db_lock:
+                audit_records.append(
+                    {
+                        "source_path": pd["source_path"],
+                        "destination_path": final_dest,
+                        "pre_hash": pd["pre_hash"],
+                        "post_hash": post_hash or pd["pre_hash"],
+                    }
+                )
+        staged_entries.append(
+            {
+                "source_path": pd["source_path"],
+                "staged_path": final_dest,
+                "action": "trash" if pd["is_trash_target"] else "stage",
+                "sha256": pd["pre_hash"],
+            }
+        )
 
-    return {
-        "source_path": source_path,
-        "staged_path": final_dest,
-        "action": "trash" if is_trash_target else "stage",
-        "sha256": pre_hash,
-    }
+    flushed = False
+    if flush_db:
+        with db_lock:
+            if db_updates_batch:
+                disp_db_updates = list(db_updates_batch) + disp_db_updates
+                db_updates_batch.clear()
+        flushed = _flush_chunk_completions_and_db(
+            db,
+            moves_ledger,
+            session_id,
+            disp_completions,
+            disp_db_updates,
+        )
+    else:
+        _flush_chunk_completions_and_db(
+            None, moves_ledger, session_id, disp_completions, []
+        )
+        if disp_db_updates:
+            with db_lock:
+                db_updates_batch.extend(disp_db_updates)
+
+    if disp_exc is not None:
+        raise disp_exc
+    return staged_entries, flushed
+
+
+def _stage_disposal_item(
+    base_dir: str,
+    item: dict,
+    db,
+    path_map: dict,
+    session_id: str,
+    history_manager,
+    db_lock: threading.Lock,
+    db_updates_batch: list,
+    audit_records: list | None = None,
+) -> dict[str, Any] | None:
+    """Stage a redundant duplicate or policy-trashed file into ``.sortify_duplicates/<session_id>/``.
+
+    Enforces ADR 0005 (surviving primary must be ``verified`` in ``MoveLedger`` or
+    verified byte-identical on disk if stationary) and ADR 0006 (every staging
+    relocation is recorded in ``MoveLedger`` so ``SortPipeline.undo`` replays it).
+    """
+    entries, _ = _stage_disposal_chunk(
+        base_dir=base_dir,
+        items=[item],
+        db=db,
+        path_map=path_map,
+        session_id=session_id,
+        history_manager=history_manager,
+        db_lock=db_lock,
+        db_updates_batch=db_updates_batch,
+        audit_records=audit_records,
+        flush_db=False,
+    )
+    return entries[0] if entries else None
+
+
+def _submit_bounded_to_pool(
+    pool: Any,
+    max_concurrency: int,
+    fn: Any,
+    task_args: list[tuple[Any, ...]],
+) -> tuple[list[Any], BaseException | None]:
+    """Submit tasks to ``SharedWorkerPool`` bounded by ``max_concurrency`` and stop on first error."""
+    limit = max(1, int(max_concurrency))
+    if limit == 1:
+        results: list[Any] = []
+        for args in task_args:
+            fut = pool.submit(fn, *args)
+            exc = fut.exception()
+            if exc is not None:
+                return results, exc
+            results.append(fut.result())
+        return results, None
+
+    it = iter(enumerate(task_args))
+    in_flight: dict[concurrent.futures.Future[Any], int] = {}
+    ordered_results: dict[int, Any] = {}
+    first_exc: BaseException | None = None
+
+    for idx, args in it:
+        in_flight[pool.submit(fn, *args)] = idx
+        if len(in_flight) >= limit:
+            break
+
+    while in_flight:
+        done, _ = concurrent.futures.wait(
+            in_flight.keys(),
+            return_when=concurrent.futures.FIRST_COMPLETED,
+        )
+        for fut in done:
+            idx = in_flight.pop(fut)
+            if not fut.cancelled():
+                exc = fut.exception()
+                if exc is not None and first_exc is None:
+                    first_exc = exc
+                elif exc is None:
+                    ordered_results[idx] = fut.result()
+        if first_exc is not None:
+            for pending_fut in list(in_flight.keys()):
+                pending_fut.cancel()
+            if in_flight:
+                concurrent.futures.wait(in_flight.keys())
+            in_flight.clear()
+            break
+        while len(in_flight) < limit:
+            try:
+                next_idx, next_args = next(it)
+            except StopIteration:
+                break
+            in_flight[pool.submit(fn, *next_args)] = next_idx
+
+    return [ordered_results[i] for i in sorted(ordered_results)], first_exc
 
 
 class AsyncMoveEngine(LifecycleTelemetryMixin):
@@ -2989,58 +3512,226 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                 elif db is None:
                     chunk_hash_map = dict.fromkeys(chunk_rel_paths, "")
 
-                target_buckets: dict[str, list[dict]] = {}
-                for item in chunk:
-                    cand_target = os.path.normcase(
-                        os.path.abspath(
-                            os.path.join(
-                                base_dir,
-                                item.get("current_dest", ""),
-                                item.get("filename", ""),
+                if _process_move_item is not _DEFAULT_PROCESS_MOVE_ITEM:
+                    target_buckets: dict[str, list[dict]] = {}
+                    for item in chunk:
+                        cand_target = os.path.normcase(
+                            os.path.abspath(
+                                os.path.join(
+                                    base_dir,
+                                    item.get("current_dest", ""),
+                                    item.get("filename", ""),
+                                )
                             )
                         )
-                    )
-                    target_buckets.setdefault(cand_target, []).append(item)
+                        target_buckets.setdefault(cand_target, []).append(item)
 
-                futures = [
-                    pool.submit(
+                    _, group_exc = _submit_bounded_to_pool(
+                        pool,
+                        effective_max_workers,
                         _process_move_group,
-                        base_dir,
-                        bucket_items,
-                        db,
-                        path_map,
-                        runtime_settings,
-                        session_id,
-                        history_manager,
-                        db_lock,
-                        db_updates_batch,
-                        audit_records,
-                        pending_links,
-                        chunk_hash_map,
-                        target_locks,
-                        unarchived_children_out,
+                        [
+                            (
+                                base_dir,
+                                bucket_items,
+                                db,
+                                path_map,
+                                runtime_settings,
+                                session_id,
+                                history_manager,
+                                db_lock,
+                                db_updates_batch,
+                                audit_records,
+                                pending_links,
+                                chunk_hash_map,
+                                target_locks,
+                                unarchived_children_out,
+                            )
+                            for bucket_items in target_buckets.values()
+                        ],
                     )
-                    for bucket_items in target_buckets.values()
-                ]
+                    if group_exc is not None:
+                        raise group_exc
+                    with db_lock:
+                        if len(db_updates_batch) >= batch_size and hasattr(
+                            db, "execute_batch_updates"
+                        ):
+                            db.execute_batch_updates(list(db_updates_batch))
+                            db_updates_batch.clear()
+                            has_flushed_db = True
+                else:
+                    prep_results, prep_exc = _submit_bounded_to_pool(
+                        pool,
+                        effective_max_workers,
+                        _prepare_chunk_move_item,
+                        [
+                            (
+                                base_dir,
+                                item,
+                                db,
+                                runtime_settings,
+                                db_lock,
+                                chunk_hash_map,
+                            )
+                            for item in chunk
+                        ],
+                    )
+                    if prep_exc is not None:
+                        raise prep_exc
+                    prepared_items = [
+                        prep_res for prep_res in prep_results if prep_res is not None
+                    ]
 
-                # Never leave moves in flight: on the first failure, cancel
-                # what hasn't started and wait for the rest before any rollback.
-                _done, not_done = concurrent.futures.wait(
-                    futures, return_when=concurrent.futures.FIRST_EXCEPTION
-                )
-                if not_done:
-                    for fut in not_done:
-                        fut.cancel()
-                    concurrent.futures.wait(not_done)
-                for fut in futures:
-                    if not fut.cancelled() and fut.exception() is not None:
-                        raise fut.exception()
+                    reserved_dests: set[str] = set()
+                    active_prepared: list[dict[str, Any]] = []
+                    special_policy_prepared: list[dict[str, Any]] = []
+                    for p in prepared_items:
+                        resolution = _resolve_prepared_destination(
+                            base_dir=base_dir,
+                            prepared=p,
+                            db=db,
+                            path_map=path_map,
+                            db_lock=db_lock,
+                            db_updates_batch=db_updates_batch,
+                            pending_links=pending_links,
+                            reserved_dests=reserved_dests,
+                        )
+                        if resolution == "ready":
+                            active_prepared.append(p)
+                        elif resolution == "special_policy":
+                            special_policy_prepared.append(p)
 
-                with db_lock:
-                    if db_updates_batch and hasattr(db, "execute_batch_updates"):
-                        db.execute_batch_updates(list(db_updates_batch))
-                        db_updates_batch.clear()
-                        has_flushed_db = True
+                    for sp in special_policy_prepared:
+                        sp_target_path = os.path.normpath(
+                            os.path.join(sp["dest_dir"], sp["filename"])
+                        )
+                        with _get_target_lock(target_locks, db_lock, sp_target_path):
+                            _execute_special_policy_move(
+                                base_dir=base_dir,
+                                prepared=sp,
+                                target_path=sp_target_path,
+                                db=db,
+                                path_map=path_map,
+                                session_id=str(session_id or ""),
+                                history_manager=history_manager,
+                                db_lock=db_lock,
+                                db_updates_batch=db_updates_batch,
+                                audit_records=audit_records,
+                                unarchived_children_out=unarchived_children_out,
+                            )
+
+                    moves_ledger = (
+                        getattr(history_manager, "moves", None)
+                        if history_manager
+                        else None
+                    )
+                    if active_prepared:
+                        # Commit all pre-move intents in one batch before moving any bytes (ADR 0006).
+                        intents_payload = [
+                            (
+                                p["source_path"],
+                                p["dest_path"],
+                                p["pre_hash"],
+                                p["intent_size"],
+                            )
+                            for p in active_prepared
+                        ]
+                        assigned_seqs = _record_move_intents_batch(
+                            moves_ledger, session_id, intents_payload
+                        )
+                        for p, seq in zip(active_prepared, assigned_seqs):
+                            p["move_seq"] = seq
+
+                        # Group items sharing a destination path (e.g. multiple overwrites) so
+                        # distinct destinations move concurrently while identical targets serialize.
+                        dest_groups: dict[str, list[dict[str, Any]]] = {}
+                        for p in active_prepared:
+                            norm_dst = os.path.normcase(os.path.abspath(p["dest_path"]))
+                            dest_groups.setdefault(norm_dst, []).append(p)
+
+                        # Never leave moves in flight: on the first failure, cancel
+                        # what hasn't started and wait for the rest before any rollback.
+                        _, first_exc = _submit_bounded_to_pool(
+                            pool,
+                            effective_max_workers,
+                            _execute_prepared_move_group,
+                            [
+                                (
+                                    base_dir,
+                                    group,
+                                    path_map,
+                                    session_id,
+                                    moves_ledger,
+                                    db_lock,
+                                    db,
+                                )
+                                for group in dest_groups.values()
+                            ],
+                        )
+
+                        from app.core.moves import STATUS_ABORTED, format_move_failure
+
+                        chunk_completions: list[dict[str, Any]] = []
+                        for p in active_prepared:
+                            outcome: dict[str, Any] = p.get("outcome") or {
+                                "state": MoveOpState.FAILED.value,
+                                "error": format_move_failure(STATUS_ABORTED),
+                                "required": False,
+                            }
+                            if p["move_seq"] is not None:
+                                chunk_completions.append(
+                                    {
+                                        "seq": p["move_seq"],
+                                        "state": outcome["state"],
+                                        "dst": outcome.get("dst"),
+                                        "displaced": outcome.get("displaced"),
+                                        "error": outcome.get("error"),
+                                        "required": outcome.get("required", True),
+                                    }
+                                )
+                            outcome_updates = outcome.get("db_updates")
+                            if isinstance(outcome_updates, list) and outcome_updates:
+                                with db_lock:
+                                    db_updates_batch.extend(outcome_updates)
+                            outcome_audit = outcome.get("audit_record")
+                            if (
+                                isinstance(outcome_audit, dict)
+                                and audit_records is not None
+                            ):
+                                with db_lock:
+                                    audit_records.append(outcome_audit)
+
+                        with db_lock:
+                            updates_to_flush = list(db_updates_batch)
+                            db_updates_batch.clear()
+
+                        try:
+                            if _flush_chunk_completions_and_db(
+                                db,
+                                moves_ledger,
+                                session_id,
+                                chunk_completions,
+                                updates_to_flush,
+                            ):
+                                has_flushed_db = True
+                        except Exception:
+                            if first_exc is None:
+                                raise
+                            logging.warning(
+                                "Failed to flush post-error chunk completions before rollback",
+                                exc_info=True,
+                            )
+
+                        if first_exc is not None:
+                            raise first_exc
+                    else:
+                        with db_lock:
+                            if db_updates_batch and hasattr(
+                                db, "execute_batch_updates"
+                            ):
+                                db.execute_batch_updates(list(db_updates_batch))
+                                db_updates_batch.clear()
+                                has_flushed_db = True
 
                 processed_count = min(
                     (chunk_idx + 1) * effective_chunk_size, total_items
@@ -3078,13 +3769,33 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                     and isinstance(session_id, str)
                     and not _is_cancelled(cancel_token)
                 ):
-                    for disp_item in disposal_items:
+                    moves_ledger = (
+                        getattr(history_manager, "moves", None)
+                        if history_manager
+                        else None
+                    )
+                    moves_by_src: dict[str, list[Any]] | None = None
+                    if (
+                        moves_ledger is not None
+                        and session_id
+                        and hasattr(moves_ledger, "list_moves")
+                    ):
+                        moves_by_src = {}
+                        for m in moves_ledger.list_moves(session_id):
+                            norm_m_src = os.path.normcase(os.path.abspath(m.src))
+                            moves_by_src.setdefault(norm_m_src, []).append(m)
+
+                    disposal_chunks = [
+                        disposal_items[i : i + effective_chunk_size]
+                        for i in range(0, len(disposal_items), effective_chunk_size)
+                    ]
+                    for disp_chunk in disposal_chunks:
                         if _is_cancelled(cancel_token):
                             summary.cancelled = True
                             break
-                        staged_entry = _stage_disposal_item(
+                        chunk_staged, chunk_flushed = _stage_disposal_chunk(
                             base_dir=base_dir,
-                            item=disp_item,
+                            items=disp_chunk,
                             db=db,
                             path_map=path_map,
                             session_id=session_id,
@@ -3092,9 +3803,13 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                             db_lock=db_lock,
                             db_updates_batch=db_updates_batch,
                             audit_records=audit_records,
+                            moves_by_src=moves_by_src,
+                            flush_db=True,
                         )
-                        if staged_entry is not None:
-                            staged_duplicates.append(staged_entry)
+                        staged_duplicates.extend(chunk_staged)
+                        if chunk_flushed:
+                            has_flushed_db = True
+
                     if staged_duplicates:
                         emit_progress(
                             effective_progress_cb,

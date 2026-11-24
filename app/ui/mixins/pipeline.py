@@ -18,6 +18,47 @@ logger = logging.getLogger(__name__)
 EXECUTE_NEEDS_SCAN_TOOLTIP = "Execution disabled: Scan a folder first [Ctrl+S]"
 
 
+@work(name="run_validation_worker", group="validation", exclusive=True, thread=True)
+def _start_validation_worker(host: TUIHostProtocol, epoch: int) -> None:
+    """Verify plan integrity on a background thread for validation ``epoch``."""
+    try:
+        if int(getattr(host, "_validation_epoch", 0)) != epoch:
+            return
+        from app.core.verifier import VerificationEngine
+
+        exec_plan = host._get_executable_plan()
+        if not host.plan or not host._has_file_nodes(exec_plan):
+            if int(getattr(host, "_validation_epoch", 0)) == epoch:
+                host.call_from_thread(_apply_worker_validation_state, host, {}, epoch)
+            return
+
+        base_dir: str = (
+            (host.app_session.base_dir if host.app_session else None)
+            or host.base_dir
+            or "."
+        )
+        conflict_policy = str(
+            getattr(host.settings, "CONFLICT_POLICY", "rename")
+        ).lower()
+        normalized_plan = host._normalize_plan_for_verification(exec_plan, base_dir)
+        result = VerificationEngine.verify_plan_integrity(
+            base_dir, normalized_plan, conflict_policy=conflict_policy
+        )
+        if int(getattr(host, "_validation_epoch", 0)) == epoch:
+            host.call_from_thread(_apply_worker_validation_state, host, result, epoch)
+    except Exception as e:
+        logger.error(f"Error running validation worker: {e}")
+
+
+def _apply_worker_validation_state(
+    host: TUIHostProtocol, result: dict[str, Any], epoch: int
+) -> None:
+    """Apply background worker validation result only if ``epoch`` is still current."""
+    if int(getattr(host, "_validation_epoch", 0)) != epoch:
+        return
+    host._update_validation_state(result)
+
+
 class SortPipelineMixin:
     """Run the scan, plan validation and move execution workers for the TUI."""
 
@@ -574,35 +615,16 @@ class SortPipelineMixin:
 
         _prune_empty_auto_folders(plan_dict)
 
-    @work(group="validation", exclusive=True, thread=True)
-    def run_validation_worker(self: TUIHostProtocol) -> None:
+    def run_validation_worker(self: TUIHostProtocol) -> Any:
         """Asynchronously verify plan integrity in background worker thread."""
-        try:
-            from app.core.verifier import VerificationEngine
-
-            exec_plan = self._get_executable_plan()
-            if not self.plan or not self._has_file_nodes(exec_plan):
-                self.call_from_thread(self._update_validation_state, {})
-                return
-
-            base_dir: str = (
-                (self.app_session.base_dir if self.app_session else None)
-                or self.base_dir
-                or "."
-            )
-            conflict_policy = str(
-                getattr(self.settings, "CONFLICT_POLICY", "rename")
-            ).lower()
-            normalized_plan = self._normalize_plan_for_verification(exec_plan, base_dir)
-            result = VerificationEngine.verify_plan_integrity(
-                base_dir, normalized_plan, conflict_policy=conflict_policy
-            )
-            self.call_from_thread(self._update_validation_state, result)
-        except Exception as e:
-            logger.error(f"Error running validation worker: {e}")
+        epoch = int(getattr(self, "_validation_epoch", 0)) + 1
+        setattr(self, "_validation_epoch", epoch)
+        return _start_validation_worker(self, epoch)
 
     def _update_validation_state(self: TUIHostProtocol, result: dict[str, Any]) -> None:
         """Update UI controls, alert banner, and tree highlights based on validation result."""
+        epoch = int(getattr(self, "_validation_epoch", 0)) + 1
+        setattr(self, "_validation_epoch", epoch)
         self.verification_result = result or {}
 
         collisions = result.get("collisions", [])

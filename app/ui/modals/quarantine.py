@@ -403,8 +403,11 @@ class QuarantineVaultModal(ResponsiveModalScreen[None]):
             )
             if chk.value != all_selected:
                 self._updating_select_all = True
-                chk.value = all_selected
-                self._updating_select_all = False
+                try:
+                    with chk.prevent(Checkbox.Changed):
+                        chk.value = all_selected
+                finally:
+                    self._updating_select_all = False
         except Exception:
             pass
 
