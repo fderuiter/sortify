@@ -68,13 +68,16 @@ Press `[Ctrl+K]` for the command palette, `[Ctrl+G]` for the Model Manager, `[?]
 ### From the command line
 ```bash
 smart-autosorter scan ~/Downloads            # print the proposed folder tree, move nothing
+smart-autosorter scan ~/Downloads --dest-dir ~/Sorted
 smart-autosorter scan ~/Downloads --json     # the same plan as JSON, for scripts
 smart-autosorter sort ~/Downloads --dry-run  # verify the plan without moving
 smart-autosorter sort ~/Downloads            # sort in place
 smart-autosorter sort ~/Downloads --dest-dir ~/Sorted
+smart-autosorter sort ~/Downloads --dest-dir ~/Sorted --tui
 ```
 
 Useful options for `sort` and `scan`:
+- `--dest-dir DIR`: route sorted files into a separate destination root (`DIR`) while keeping the scanned inbox (`~/Downloads`) as the session source root for empty-folder cleanup and `undo`.
 - `--max-folders N`: maximum folders per level (default 12, up to 50).
 - `--strategy`: `default` (keyword clustering), `generative` (local LLM folder names, needs the `ml` extra), or the clinical `clinical_tmf` / `clinical_isf` strategies.
 - `--conflict-policy skip|rename`: what to do when a destination file already exists.
@@ -156,6 +159,14 @@ smart-autosorter config --set AI_CONSENT_GRANTED true
 smart-autosorter config --set AI_CONSENT_GRANTED null
 ```
 
+### Dual-root destination and allowlisted external folders
+You can set a default destination root (`DEST_DIR`) for dual-root sessions, and explicitly allowlist external destination roots (`ALLOWED_EXTERNAL_ROOTS`) so keyword rules, policies, rule imports, and interactive reassignments can route files outside the inbox safely (with `~` home expansion and protected system path checks):
+```bash
+smart-autosorter config --set DEST_DIR "~/Sorted"
+smart-autosorter config --set ALLOWED_EXTERNAL_ROOTS '["~/Pictures/Screenshots", "/Volumes/Archive"]'
+```
+In the TUI settings dialog (`[Ctrl+O]`), configure **Default Destination Root (optional)** (`#input-dest-dir`) and **Allowed External Roots (comma-separated)** (`#input-external-roots`) under the **General Settings** tab.
+
 ## Rule Migration and Export
 <a id="rule-migration-and-export"></a>
 
@@ -191,7 +202,7 @@ The active rule manager displays all configured rules in the interactive **Rules
 
 Use the following shortcuts and button controls:
 - **Toggle Rule Status** (`[Space]` or `#btn-toggle-rule`): Toggles the selected rule between *Active* and *Disabled*. Toggling a keyword rule moves it between `KEYWORD_RULES` and `DISABLED_KEYWORD_RULES` without deleting its destination path, preserving row cursor focus on the table.
-- **Add Rule** (`#btn-add-rule`): Opens the rule editor modal (`RuleEditModal`) to define a new keyword rule. Enter a matching pattern and target folder. Target paths are validated to ensure they are relative paths and do not contain directory traversal (`..`) or invalid characters.
+- **Add Rule** (`#btn-add-rule`): Opens the rule editor modal (`RuleEditModal`) to define a new keyword rule. Enter a matching pattern and target folder. Target paths expand `~` home shortcuts automatically and are validated to ensure they are either safe relative paths or subfolders inside `ALLOWED_EXTERNAL_ROOTS`, while rejecting directory traversal (`..`), protected system paths (`PROTECTED_PATHS`), and invalid characters.
 - **Edit Rule** (`[Enter]` or `#btn-edit-rule`): Opens the rule editor modal for the highlighted rule, allowing you to update its pattern expression or target folder.
 - **Delete Rule** (`[Delete]` or `#btn-delete-rule`): Prompts a confirmation dialog (`DeleteRuleConfirmModal`) before permanently deleting the selected rule or policy from settings.
 - **Import Rules** (`[Ctrl+I]` / `[I]` or `#btn-import-rules`): Opens the external rule import dialog (`RuleImportModal`) to import rules from Hazel, DropIt, or TagSpaces. Completing the import workflow updates the rules table immediately without closing the active rule manager.
@@ -212,16 +223,16 @@ The **Import External Rules** modal lets you import rules from third-party tools
 #### Import Workflow
 1. Select **Browse...** (`#btn-browse-rule-file`) to choose a rule file via your OS file dialog, or type the path in `#input-rule-file-path` (supports `.hazelrules`, `.plist`, `.ini`, `.xml`, `.json`, and `.dropit`).
 2. Select **Parse File** (`#btn-parse-rule-file`) or press `[Enter]` (selecting a file via **Browse...** parses it automatically).
-3. Keep **Import new rules disabled for review** (`#chk-import-disabled`) checked (the default) to stage newly imported keyword rules in `DISABLED_KEYWORD_RULES` and new policies with `enabled: false` until you inspect and enable them, or uncheck it to activate new rules immediately.
+3. Keep **Import new rules disabled for review** (`#chk-import-disabled`) checked (the default) to stage newly imported keyword rules in `DISABLED_KEYWORD_RULES` and new policies with `enabled: false` until you inspect and enable them, or uncheck it to activate new rules immediately. Optionally check **Preserve external targets** (`#chk-preserve-external-targets`) to keep external destinations that resolve inside `ALLOWED_EXTERNAL_ROOTS` instead of converting them into relative inbox subfolders.
 4. Inspect the parsed preview:
-   - **Imported Keywords**: Displays extracted keyword mappings and normalized relative destination folders.
+   - **Imported Keywords**: Displays extracted keyword mappings and normalized relative (or allowlisted external) destination folders.
    - **Imported Policies**: Displays rule types (including `[unarchive]` extraction badges), wildcard/extension expressions, target paths, and rule priorities.
-   - **Warnings Banner**: Displays converted destination paths (`'original' -> 'relative'`), skipped unsafe paths, and omitted unsupported clauses.
+   - **Warnings Banner**: Displays converted destination paths (`'original' -> 'relative'`), skipped unallowlisted or unsafe paths, and omitted unsupported clauses.
 5. Resolve any detected conflicts (see [Conflict Resolution](#conflict-resolution) below).
 6. Select **Merge Rules into Settings** (`#btn-merge-imported-rules`) to commit the imported rules.
 
 #### Path Normalization, Unarchive Mapping, and Clause Filtering
-- **Destination Path Normalization**: Exported absolute destination paths (POSIX `/Users/...`, Windows `C:\...`, UNC shares `\\server\share\...`, `~/...`, `%ENV%\...`, and `file://` URIs) are converted into safe relative folder paths and listed with a preview warning. Rules whose destination cannot become a safe relative folder (such as `/`, `C:\`, traversal segments `..`, illegal characters, or OS-reserved names) are skipped before merge with a warning.
+- **Destination Path Normalization**: By default, exported absolute destination paths (POSIX `/Users/...`, Windows `C:\...`, UNC shares `\\server\share\...`, `~/...`, `%ENV%\...`, and `file://` URIs) are converted into safe relative folder paths and listed with a preview warning. When external target preservation is enabled (`#chk-preserve-external-targets` in the TUI or `--preserve-external-targets` on the CLI), destinations resolving inside `ALLOWED_EXTERNAL_ROOTS` (and outside `PROTECTED_PATHS`) are preserved directly, whereas unallowlisted external paths are rejected and skipped with an explicit warning. Rules whose destination cannot become a safe folder (such as `/`, `C:\`, traversal segments `..`, illegal characters, protected system paths, or OS-reserved names) are skipped before merge with a warning.
 - **Archive Extraction Mapping**: External extraction rules (`Unarchive`, `NSRuleActionUnarchive`, `Extract`, `Unpack`, `Decompress`) map to Sortify's built-in `unarchive` policy action when destination folders are valid.
 - **Unsupported Clause Filtering and Unmapped Operators**: Negated operators/masks (`does not contain`, `!mask`, `-mask`, `#exclude`), numeric size or date filters, script executions, `Copy` actions, and unmapped or unrecognized condition operators are flagged as non-blocking warnings and skipped rather than creating unintended keyword move rules.
 - **Syntax Errors and Malformed Files**: If a file cannot be parsed or contains syntax errors, the importer surfaces non-blocking warnings without corrupting existing settings.
@@ -236,8 +247,8 @@ smart-autosorter rules import ~/Exports/profile.ini --dry-run
 # Import new rules disabled for review (default) with conflict resolution overrides
 smart-autosorter rules import ~/Exports/rules.hazelrules --conflict-strategy keep_existing --resolve invoice=overwrite
 
-# Import new rules enabled immediately and emit structured JSON output
-smart-autosorter rules import ~/Exports/rules.hazelrules --enable --json
+# Import new rules enabled immediately while preserving allowlisted external roots
+smart-autosorter rules import ~/Exports/rules.hazelrules --preserve-external-targets --enable --json
 
 # Export active rules to Sortify JSON, Hazel (.hazelrules), or DropIt (.ini)
 smart-autosorter rules export ./backup_rules.json
@@ -283,6 +294,7 @@ Destination paths are validated before writing:
 The daemon watches a folder and sorts new files as they arrive:
 ```bash
 smart-autosorter daemon start ~/Downloads
+smart-autosorter daemon start ~/Downloads --dest-dir ~/Sorted
 smart-autosorter daemon status
 smart-autosorter daemon stop
 ```

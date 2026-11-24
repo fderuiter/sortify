@@ -22,7 +22,15 @@ from app.core.domain_contracts import _get_val
 from app.core.exceptions import SortifyBaseError
 from app.core.lifecycle import LifecycleTelemetryMixin
 from app.core.link_manager import LinkManager
-from app.core.path_utils import is_junction_path, safe_relpath
+from app.core.path_utils import (
+    _is_absolute_path,
+    expand_target_path,
+    is_allowed_external_target,
+    is_external_subpath,
+    is_junction_path,
+    is_protected_target_path,
+    safe_relpath,
+)
 from app.core.pipeline import PipelineLifecycleState
 from app.core.progress import emit_progress
 from app.core.verifier import VerificationEngine
@@ -700,12 +708,22 @@ def _displace_for_overwrite(
     ``journal(path)`` is called with the backup path before the file moves, and
     again if the move had to pick another name, so undo can always find it.
     """
+    import hashlib
+
     from app.core.resilient_file_ops import resilient_move
 
-    planned = os.path.join(
-        overwrite_backup_dir(base_dir, session_id or f"nosession_{uuid.uuid4().hex}"),
-        safe_relpath(dest_path, base_dir),
+    backup_root = overwrite_backup_dir(
+        base_dir, session_id or f"nosession_{uuid.uuid4().hex}"
     )
+    if is_subpath_or_equal(dest_path, base_dir):
+        rel_backup = safe_relpath(dest_path, base_dir)
+    else:
+        abs_dest = os.path.abspath(dest_path)
+        digest = hashlib.sha256(abs_dest.encode("utf-8", errors="replace")).hexdigest()[
+            :12
+        ]
+        rel_backup = os.path.join("_external", digest, os.path.basename(abs_dest))
+    planned = os.path.join(backup_root, rel_backup)
     if journal:
         journal(planned)
     backup_path = resilient_move(dest_path, planned)
@@ -804,20 +822,34 @@ def _remove_empty_dirs(path: str, protected_paths: list[str] | None = None):
 
 
 def _prune_emptied_dirs(
-    dirs: set, base_dir: str, protected_paths: list[str] | None = None
+    dirs: set,
+    base_dir: str | list[str] | tuple[str, ...] | set[str],
+    protected_paths: list[str] | None = None,
 ) -> None:
     """Remove the given directories, and then their parents, while they are empty.
 
-    Stops at ``base_dir``, at hidden directories and at protected paths.
+    Stops at ``base_dir`` (or any root in ``base_dir``), at hidden directories and at protected paths.
     """
     from app.core.resilient_file_ops import resilient_remove
 
-    base_norm = os.path.normcase(os.path.abspath(base_dir))
+    if isinstance(base_dir, (str, os.PathLike)):
+        raw_roots = [os.fspath(base_dir)] if base_dir else []
+    else:
+        raw_roots = [os.fspath(r) for r in base_dir if r]
+    valid_roots = [os.path.abspath(r) for r in raw_roots if r]
+    if not valid_roots:
+        return
+    root_norms = {os.path.normcase(r) for r in valid_roots}
+
     for start in sorted(dirs, key=len, reverse=True):
+        if not start:
+            continue
         current = os.path.abspath(start)
         while True:
             cur_norm = os.path.normcase(current)
-            if cur_norm == base_norm or not is_subpath_or_equal(current, base_dir):
+            if cur_norm in root_norms or not any(
+                is_subpath_or_equal(current, r) for r in valid_roots
+            ):
                 break
             if _is_foreign_hidden_dir(current) or current.lower().endswith(".app"):
                 break
@@ -962,7 +994,12 @@ def _get_node_mtime(
             else getattr(content, "plan", {}).items()
         )
         min_mtime = float("inf")
-        sub_parent = os.path.join(active_parent_path, key)
+        exp_key = expand_target_path(str(key)) if isinstance(key, str) else str(key)
+        sub_parent = (
+            active_parent_path
+            if (depth == 0 and _is_absolute_path(exp_key))
+            else os.path.join(active_parent_path, exp_key)
+        )
         for sub_key, sub_content in items:
             m = _get_node_mtime(base_dir, sub_key, sub_content, sub_parent, depth + 1)
             if m < min_mtime:
@@ -1027,7 +1064,12 @@ def _get_node_priority_key(
             else getattr(content, "plan", {}).items()
         )
         child_keys = []
-        sub_parent = os.path.join(active_parent_path, key)
+        exp_key = expand_target_path(str(key)) if isinstance(key, str) else str(key)
+        sub_parent = (
+            active_parent_path
+            if (depth == 0 and _is_absolute_path(exp_key))
+            else os.path.join(active_parent_path, exp_key)
+        )
         for sub_key, sub_content in items:
             k = _get_node_priority_key(
                 base_dir, sub_key, sub_content, sub_parent, depth + 1
@@ -1181,24 +1223,39 @@ def _collect_move_items(
                 _, rel_key = parse_item_identifier(str(key), base_dir)
                 filename = os.path.basename(rel_key)
 
+            leaf_dest = current_dest
+            if not leaf_dest:
+                dest_ovr = _get_val(content, "destination_override")
+                if isinstance(dest_ovr, str) and dest_ovr.strip():
+                    leaf_dest = expand_target_path(dest_ovr.strip())
+
             items.append(
                 {
                     "key": key,
                     "content": content,
                     "source_path": source_path,
                     "filename": filename,
-                    "current_dest": current_dest,
+                    "current_dest": leaf_dest,
                     "active_parent_path": active_parent_path,
                     "depth": depth,
                 }
             )
         else:
+            exp_key = expand_target_path(str(key)) if isinstance(key, str) else str(key)
+            if depth == 0 and _is_absolute_path(exp_key):
+                next_dest = exp_key
+                next_parent = active_parent_path
+            else:
+                next_dest = (
+                    os.path.join(current_dest, exp_key) if current_dest else exp_key
+                )
+                next_parent = os.path.join(active_parent_path, exp_key)
             items.extend(
                 _collect_move_items(
                     base_dir,
                     content,
-                    os.path.join(current_dest, key),
-                    os.path.join(active_parent_path, key),
+                    next_dest,
+                    next_parent,
                     depth + 1,
                     priority=priority,
                 )
@@ -1239,6 +1296,59 @@ def _get_target_lock(
     return t_lock
 
 
+def _validate_runtime_destination(
+    dest_path: str,
+    *,
+    base_dir: str,
+    eff_dest_dir: str | None = None,
+    source_dirs: list[str] | None = None,
+    runtime_settings: Any = None,
+) -> None:
+    """Raise ValueError if dest_path targets a protected path or escapes approved roots."""
+    prot_paths = (
+        getattr(runtime_settings, "PROTECTED_PATHS", None)
+        if runtime_settings is not None
+        else None
+    )
+    abs_dest = (
+        dest_path
+        if (_is_absolute_path(dest_path) and not os.path.isabs(dest_path))
+        else os.path.abspath(dest_path)
+    )
+    if is_protected_target_path(abs_dest, prot_paths):
+        msg = f"Runtime boundary violation: Destination path '{dest_path}' targets a protected system or configured path."
+        logging.error(msg)
+        raise ValueError(msg)
+
+    trusted_roots = [r for r in [base_dir, eff_dest_dir, *(source_dirs or [])] if r]
+    dest_parent = os.path.dirname(abs_dest) or abs_dest
+    for root in trusted_roots:
+        abs_root = (
+            root
+            if (_is_absolute_path(root) and not os.path.isabs(root))
+            else os.path.abspath(root)
+        )
+        if is_subpath_or_equal(abs_dest, abs_root) and is_external_subpath(
+            dest_parent, abs_root
+        ):
+            return
+
+    allowed_ext_roots = (
+        getattr(runtime_settings, "ALLOWED_EXTERNAL_ROOTS", None)
+        if runtime_settings is not None
+        else None
+    )
+    if is_allowed_external_target(abs_dest, allowed_ext_roots):
+        return
+
+    msg = (
+        f"Runtime boundary violation: Destination path '{dest_path}' attempts to escape "
+        f"target base directory '{eff_dest_dir or base_dir}'."
+    )
+    logging.error(msg)
+    raise ValueError(msg)
+
+
 def _process_move_group(
     base_dir: str,
     group_items: list[dict],
@@ -1253,6 +1363,8 @@ def _process_move_group(
     pending_links: list | None = None,
     chunk_hash_map: dict | None = None,
     target_locks: dict[str, threading.Lock] | None = None,
+    eff_dest_dir: str | None = None,
+    source_dirs: list[str] | None = None,
 ) -> list[bool]:
     """Execute a bucket of move items targeting the same destination sequentially in plan order."""
     results: list[bool] = []
@@ -1272,6 +1384,8 @@ def _process_move_group(
                 pending_links,
                 chunk_hash_map,
                 target_locks=target_locks,
+                eff_dest_dir=eff_dest_dir,
+                source_dirs=source_dirs,
             )
         )
     return results
@@ -1291,17 +1405,29 @@ def _process_move_item(
     pending_links: list | None = None,
     chunk_hash_map: dict | None = None,
     target_locks: dict[str, threading.Lock] | None = None,
+    eff_dest_dir: str | None = None,
+    source_dirs: list[str] | None = None,
 ) -> bool:
     """Execute a single physical move and SHA-256 hash calculation off-thread."""
     source_path = item["source_path"]
     if not os.path.lexists(source_path):
         return False
 
+    doc_base_dir = base_dir
+    if source_dirs and not is_subpath_or_equal(source_path, base_dir):
+        for cand_src in source_dirs:
+            if cand_src and is_subpath_or_equal(source_path, cand_src):
+                doc_base_dir = cand_src
+                break
+
     if runtime_settings is not None:
         from app.core.scanner import ScanFilter
 
         item_filter = ScanFilter.from_settings(
-            settings=runtime_settings, base_dir=base_dir, max_depth=None
+            settings=runtime_settings,
+            base_dir=doc_base_dir,
+            max_depth=None,
+            dest_dir=eff_dest_dir,
         )
         if (
             item_filter.is_protected(source_path)
@@ -1332,7 +1458,7 @@ def _process_move_item(
         or "_Compliance_Quarantine"
     )
 
-    abs_base_dir = os.path.abspath(base_dir) if base_dir else ""
+    abs_base_dir = os.path.abspath(doc_base_dir) if doc_base_dir else ""
     candidate_sha256: str | None = None
     is_approved_release = False
     if sens_rating_str in auto_ratings:
@@ -1360,18 +1486,39 @@ def _process_move_item(
                 f"Blocking move to '{current_dest}' and redirecting to '{quarantine_dir_name}'."
             )
         active_dest = quarantine_dir_name
-
-    dest_dir = os.path.normpath(os.path.join(base_dir, active_dest))
+        dest_dir = os.path.normpath(os.path.join(doc_base_dir, active_dest))
+    else:
+        exp_dest = expand_target_path(active_dest) if active_dest else ""
+        if exp_dest and _is_absolute_path(exp_dest):
+            dest_dir = os.path.normpath(exp_dest)
+        else:
+            target_root = eff_dest_dir or base_dir
+            dest_dir = (
+                os.path.normpath(os.path.join(target_root, exp_dest))
+                if exp_dest
+                else os.path.normpath(target_root)
+            )
     dest_dir = unicodedata.normalize("NFC", dest_dir)
+    target_path = os.path.normpath(os.path.join(dest_dir, filename))
+
+    _validate_runtime_destination(
+        target_path,
+        base_dir=base_dir,
+        eff_dest_dir=eff_dest_dir,
+        source_dirs=source_dirs,
+        runtime_settings=runtime_settings,
+    )
 
     if not os.path.exists(dest_dir):
         os.makedirs(dest_dir, exist_ok=True)
 
-    target_path = os.path.normpath(os.path.join(dest_dir, filename))
     target_ctx = _get_target_lock(target_locks, db_lock, target_path)
     with target_ctx:
         return _execute_locked_target_move(
             base_dir=base_dir,
+            doc_base_dir=doc_base_dir,
+            eff_dest_dir=eff_dest_dir,
+            source_dirs=source_dirs,
             source_path=source_path,
             content=content,
             filename=filename,
@@ -1401,6 +1548,9 @@ def _process_move_item(
 def _execute_locked_target_move(
     *,
     base_dir: str,
+    doc_base_dir: str | None = None,
+    eff_dest_dir: str | None = None,
+    source_dirs: list[str] | None = None,
     source_path: str,
     content: Any,
     filename: str,
@@ -1428,6 +1578,7 @@ def _execute_locked_target_move(
     """Perform collision evaluation, optional overwrite displacement, physical move, and verification under target lock."""
     if not os.path.lexists(source_path):
         return False
+    effective_doc_base = doc_base_dir or base_dir
 
     collision = False
     if os.path.lexists(target_path):
@@ -1470,13 +1621,24 @@ def _execute_locked_target_move(
     dest_path = unicodedata.normalize("NFC", dest_path)
     _update_path_map_entry(path_map, source_path, dest_path, lock=db_lock)
 
-    if not is_subpath_or_equal(dest_path, base_dir):
-        msg = f"Runtime boundary violation: Destination path '{dest_path}' attempts to escape target base directory '{base_dir}'."
-        logging.error(msg)
-        raise ValueError(msg)
+    _validate_runtime_destination(
+        dest_path,
+        base_dir=base_dir,
+        eff_dest_dir=eff_dest_dir,
+        source_dirs=source_dirs,
+        runtime_settings=runtime_settings,
+    )
 
-    source_rel_path = safe_relpath(source_path, base_dir).replace("\\", "/")
-    rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
+    source_rel_path = (
+        safe_relpath(source_path, effective_doc_base).replace("\\", "/")
+        if is_subpath_or_equal(source_path, effective_doc_base)
+        else os.path.abspath(source_path).replace("\\", "/")
+    )
+    rel_dest = (
+        safe_relpath(dest_path, effective_doc_base).replace("\\", "/")
+        if is_subpath_or_equal(dest_path, effective_doc_base)
+        else os.path.abspath(dest_path).replace("\\", "/")
+    )
     abs_dest_path = os.path.abspath(dest_path)
 
     if is_sensitivity_hold and db:
@@ -1527,13 +1689,17 @@ def _execute_locked_target_move(
                     f"Failed to record mover compliance audit entry: {audit_err}"
                 )
 
-    if chunk_hash_map is not None:
+    if (
+        chunk_hash_map is not None
+        and effective_doc_base == base_dir
+        and source_rel_path in chunk_hash_map
+    ):
         file_hash = chunk_hash_map.get(source_rel_path) or ""
     else:
         doc = None
         if db and hasattr(db, "get_document"):
             with db_lock:
-                doc = db.get_document(base_dir, source_rel_path)
+                doc = db.get_document(effective_doc_base, source_rel_path)
 
         file_hash = doc.get("file_hash") if (doc and isinstance(doc, dict)) else ""
     # Hash the bytes being moved with the same function as the post-move check.
@@ -1596,16 +1762,30 @@ def _execute_locked_target_move(
         qdir_top,
     )
 
+    def _compute_verified_folder(final_dest_path: str) -> str | None:
+        if is_quarantine_dest:
+            return None
+        if is_subpath_or_equal(final_dest_path, effective_doc_base):
+            rel_parent = safe_relpath(
+                os.path.dirname(final_dest_path), effective_doc_base
+            ).replace("\\", "/")
+            return "" if rel_parent in ("", ".") else rel_parent
+        exp_cur = expand_target_path(current_dest) if current_dest else ""
+        if exp_cur and _is_absolute_path(exp_cur):
+            return os.path.abspath(os.path.dirname(final_dest_path)).replace("\\", "/")
+        return exp_cur.replace("\\", "/").strip("/")
+
     if dest_path == source_path:
+        verified_folder = _compute_verified_folder(dest_path)
         with db_lock:
-            if file_hash and not is_quarantine_dest:
+            if file_hash and verified_folder is not None:
                 db_updates_batch.append(
                     {
                         "type": "verified_target",
                         "args": (
-                            base_dir,
+                            effective_doc_base,
                             file_hash,
-                            current_dest.replace("\\", "/"),
+                            verified_folder,
                         ),
                     }
                 )
@@ -1642,7 +1822,11 @@ def _execute_locked_target_move(
                 from app.core.resilient_file_ops import resilient_move
 
                 dest_path = resilient_move(source_path, dest_path)
-                rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
+                rel_dest = (
+                    safe_relpath(dest_path, effective_doc_base).replace("\\", "/")
+                    if is_subpath_or_equal(dest_path, effective_doc_base)
+                    else os.path.abspath(dest_path).replace("\\", "/")
+                )
             except Exception as err:
                 logging.error(
                     f"Failed to move file {source_path} to {dest_path}: {err}"
@@ -1710,25 +1894,30 @@ def _execute_locked_target_move(
     if not step_hash and file_hash:
         step_hash = file_hash
 
+    verified_folder = _compute_verified_folder(dest_path)
     with db_lock:
-        if file_hash and not is_quarantine_dest:
+        db_updates_batch.append(
+            {
+                "type": "document_path",
+                "args": (
+                    effective_doc_base,
+                    source_rel_path,
+                    rel_dest,
+                    verified_folder,
+                ),
+            }
+        )
+        if file_hash and verified_folder is not None:
             db_updates_batch.append(
                 {
                     "type": "verified_target",
                     "args": (
-                        base_dir,
+                        effective_doc_base,
                         file_hash,
-                        current_dest.replace("\\", "/"),
+                        verified_folder,
                     ),
                 }
             )
-
-        db_updates_batch.append(
-            {
-                "type": "document_path",
-                "args": (base_dir, source_rel_path, rel_dest),
-            }
-        )
 
     if audit_records is not None:
         post_hash = dest_file_hash
@@ -2018,6 +2207,8 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
         priority: str | None = None,
         progress_callback=None,
         pipeline: Any = None,
+        dest_dir: str | None = None,
+        source_dirs: list[str] | None = None,
         **kwargs: Any,
     ) -> MoveResult:
         """Partition relocation plan into bounded worker chunks and execute file moves off-thread.
@@ -2062,8 +2253,26 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
             effective_progress_cb = progress_callback or getattr(
                 runtime_settings, "progress_callback", None
             )
+            raw_dest = (
+                dest_dir
+                if dest_dir is not None
+                else getattr(runtime_settings, "DEST_DIR", "")
+            )
+            eff_dest_dir = (
+                os.path.normpath(
+                    os.path.abspath(os.path.expanduser(str(raw_dest).strip()))
+                )
+                if isinstance(raw_dest, str) and str(raw_dest).strip()
+                else None
+            )
+            target_root = eff_dest_dir or base_dir
 
-            integrity_result = VerificationEngine.verify_plan_integrity(base_dir, plan)
+            integrity_result = VerificationEngine.verify_plan_integrity(
+                base_dir,
+                plan,
+                dest_dir=eff_dest_dir,
+                settings=runtime_settings,
+            )
             if (
                 integrity_result.get("invalid_renames")
                 or integrity_result.get("unconfirmed_renames")
@@ -2080,7 +2289,9 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
             # store (ADR 0008), so a sort-long write lock would stall every move
             # committed from a worker thread. Each chunk's updates commit on their own,
             # and unwind_session replays moves backwards if the sort fails.
-            moves_list = VerificationEngine.get_moves(base_dir, plan)
+            moves_list = VerificationEngine.get_moves(
+                base_dir, plan, dest_dir=eff_dest_dir
+            )
             path_map = {
                 os.path.normcase(os.path.abspath(src)): os.path.abspath(dst)
                 for rel_src, src, dst in moves_list
@@ -2105,7 +2316,10 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
             from app.core.scanner import ScanFilter
 
             scan_filter = ScanFilter.from_settings(
-                settings=runtime_settings, base_dir=base_dir, max_depth=None
+                settings=runtime_settings,
+                base_dir=base_dir,
+                max_depth=None,
+                dest_dir=eff_dest_dir,
             )
             raw_move_items = _collect_move_items(
                 base_dir, plan, priority=effective_priority
@@ -2148,13 +2362,22 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                 or "_Compliance_Quarantine"
             )
 
+            def _resolve_bucket_target(item: dict) -> str:
+                cur_dest = item.get("current_dest", "") or ""
+                exp_dest = expand_target_path(cur_dest) if cur_dest else ""
+                if exp_dest and _is_absolute_path(exp_dest):
+                    d_folder = exp_dest
+                else:
+                    d_folder = (
+                        os.path.join(target_root, exp_dest) if exp_dest else target_root
+                    )
+                return os.path.normcase(
+                    os.path.abspath(os.path.join(d_folder, item.get("filename", "")))
+                )
+
             def _item_may_move(item: dict) -> bool:
                 src_abs = os.path.normcase(os.path.abspath(item["source_path"]))
-                dst_abs = os.path.normcase(
-                    os.path.abspath(
-                        os.path.join(base_dir, item["current_dest"], item["filename"])
-                    )
-                )
+                dst_abs = _resolve_bucket_target(item)
                 if src_abs != dst_abs:
                     return True
                 content = item.get("content")
@@ -2296,6 +2519,7 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                     safe_relpath(item["source_path"], base_dir).replace("\\", "/")
                     for item in chunk
                     if "source_path" in item
+                    and is_subpath_or_equal(item["source_path"], base_dir)
                 ]
                 chunk_hash_map = None
                 if db and hasattr(db, "get_document_hashes"):
@@ -2321,15 +2545,7 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
 
                 target_buckets: dict[str, list[dict]] = {}
                 for item in chunk:
-                    cand_target = os.path.normcase(
-                        os.path.abspath(
-                            os.path.join(
-                                base_dir,
-                                item.get("current_dest", ""),
-                                item.get("filename", ""),
-                            )
-                        )
-                    )
+                    cand_target = _resolve_bucket_target(item)
                     target_buckets.setdefault(cand_target, []).append(item)
 
                 futures = [
@@ -2348,6 +2564,8 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                         pending_links,
                         chunk_hash_map,
                         target_locks,
+                        eff_dest_dir,
+                        source_dirs,
                     )
                     for bucket_items in target_buckets.values()
                 ]
@@ -2519,9 +2737,14 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                         moved_sources = [
                             src for src in path_map if not os.path.lexists(src)
                         ]
+                    prune_source_roots = [
+                        r for r in [base_dir, *(source_dirs or [])] if r
+                    ]
+                    if eff_dest_dir and eff_dest_dir not in protected_paths:
+                        protected_paths.append(eff_dest_dir)
                     _prune_emptied_dirs(
                         {os.path.dirname(src) for src in moved_sources},
-                        base_dir,
+                        prune_source_roots,
                         protected_paths,
                     )
                 else:
@@ -2559,7 +2782,27 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                     and hasattr(history_manager, "complete_session")
                 ):
                     try:
-                        history_manager.complete_session(session_id)
+                        from app.core.folder_lock import collect_plan_external_roots
+
+                        active_ext_roots = collect_plan_external_roots(
+                            plan, settings=runtime_settings
+                        )
+                        session_meta: dict[str, Any] = {}
+                        if eff_dest_dir:
+                            session_meta["dest_dir"] = eff_dest_dir
+                        if active_ext_roots:
+                            session_meta["external_roots"] = active_ext_roots
+                        if source_dirs:
+                            session_meta["source_dirs"] = list(source_dirs)
+                        if session_meta:
+                            try:
+                                history_manager.complete_session(
+                                    session_id, metadata=session_meta
+                                )
+                            except TypeError:
+                                history_manager.complete_session(session_id)
+                        else:
+                            history_manager.complete_session(session_id)
                     except Exception as complete_err:
                         logging.warning(
                             f"Failed to mark session {session_id} completed: {complete_err}"
@@ -2707,6 +2950,7 @@ def execute_moves(
     priority: str | None = None,
     progress_callback=None,
     source_dirs: list[str] | None = None,
+    dest_dir: str | None = None,
     pipeline: Any = None,
     **kwargs: Any,
 ) -> MoveResult:
@@ -2728,6 +2972,7 @@ def execute_moves(
         priority: Priority level identifier.
         progress_callback: Optional progress emission callback function.
         source_dirs: Optional list of individual source directories being sorted.
+        dest_dir: Optional separate destination root directory for dual-root sessions.
         pipeline: Optional pipeline instance for lifecycle state coordination.
         **kwargs: Additional keyword arguments for future extensibility.
 
@@ -2749,6 +2994,8 @@ def execute_moves(
         cancellation_token=cancellation_token,
         priority=priority,
         progress_callback=progress_callback,
+        source_dirs=source_dirs,
+        dest_dir=dest_dir,
         pipeline=pipeline,
         **kwargs,
     )
@@ -2769,29 +3016,10 @@ async def execute_moves_async(
     cancellation_token=None,
     priority: str | None = None,
     progress_callback=None,
+    source_dirs: list[str] | None = None,
+    dest_dir: str | None = None,
 ) -> dict:
-    """Asynchronously execute move operations off the main event loop thread.
-
-    Args:
-        base_dir: Target base directory path.
-        plan: Move operations plan dictionary.
-        db: Database connection instance.
-        history_manager: History tracking manager.
-        runtime_settings: Optional application runtime configuration.
-        resume: Flag indicating whether to resume an existing session.
-        batch_size: Database transaction batch size.
-        chunk_size: Number of files per worker execution chunk.
-        max_workers: Maximum concurrency level for worker tasks.
-        cancel_check: Optional function returning True if cancellation requested.
-        cancel_event: Optional thread event indicating cancellation.
-        cancellation_token: Optional cancellation token object.
-        priority: Priority level identifier.
-        progress_callback: Optional progress emission callback function.
-
-    Returns
-    -------
-        dict: Execution summary and status details.
-    """
+    """Asynchronously execute move operations off the main event loop thread."""
     return await asyncio.to_thread(
         execute_moves,
         base_dir,
@@ -2808,6 +3036,8 @@ async def execute_moves_async(
         cancellation_token=cancellation_token,
         priority=priority,
         progress_callback=progress_callback,
+        source_dirs=source_dirs,
+        dest_dir=dest_dir,
     )
 
 

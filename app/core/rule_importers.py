@@ -10,6 +10,7 @@ import json
 import logging
 import plistlib
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -18,7 +19,14 @@ from xml.parsers.expat import ExpatError
 import defusedxml.ElementTree as ET
 from defusedxml.common import DefusedXmlException
 
-from app.core.path_utils import validate_target_path
+from app.core.path_utils import (
+    _is_absolute_path,
+    _join_absolute_parts,
+    _split_absolute_path,
+    expand_target_path,
+    is_protected_target_path,
+    validate_target_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -351,20 +359,58 @@ def _percent_decode_uri_path(value: str) -> str:
     )
 
 
-def normalize_imported_target_path(raw_path: str) -> tuple[str, bool, str | None]:
-    """Convert an exported destination path into a validated relative folder path.
+def _extract_settings_path_lists(
+    settings: Any,
+    allowed_external_roots: Sequence[str] | None = None,
+    protected_paths: Sequence[str] | None = None,
+) -> tuple[list[str], list[str]]:
+    """Extract effective allowed_external_roots and protected_paths lists from kwargs or settings."""
+    eff_roots: list[str] = []
+    if allowed_external_roots is not None:
+        eff_roots = [str(r) for r in allowed_external_roots if r]
+    elif settings is not None:
+        raw_roots = getattr(settings, "ALLOWED_EXTERNAL_ROOTS", None)
+        if isinstance(raw_roots, (list, tuple, set)):
+            eff_roots = [str(r) for r in raw_roots if r]
+
+    eff_prot: list[str] = []
+    if protected_paths is not None:
+        eff_prot = [str(p) for p in protected_paths if p]
+    elif settings is not None:
+        raw_prot = getattr(settings, "PROTECTED_PATHS", None)
+        if isinstance(raw_prot, (list, tuple, set)):
+            eff_prot = [str(p) for p in raw_prot if p]
+
+    return eff_roots, eff_prot
+
+
+def normalize_imported_target_path(
+    raw_path: str,
+    *,
+    preserve_external_targets: bool = False,
+    allowed_external_roots: Sequence[str] | None = None,
+    protected_paths: Sequence[str] | None = None,
+) -> tuple[str, bool, str | None]:
+    """Convert an exported destination path into a validated relative or allowlisted external folder path.
 
     Parameters
     ----------
     raw_path : str
         Raw destination path string from an external rule package.
+    preserve_external_targets : bool, optional
+        When True, preserve valid external destination paths under ``allowed_external_roots``
+        instead of stripping external roots into relative inbox subfolders.
+    allowed_external_roots : Sequence[str] | None, optional
+        Approved external root directories permitted when ``preserve_external_targets`` is True.
+    protected_paths : Sequence[str] | None, optional
+        Protected absolute paths that must always be rejected.
 
     Returns
     -------
     tuple[str, bool, str | None]
         ``(normalized_path, was_converted, error_reason)``. When ``raw_path`` is empty
         or whitespace-only, returns ``("", False, None)``. When ``raw_path`` cannot
-        become a safe relative folder, returns ``("", False, error_reason)``.
+        become a safe destination folder, returns ``("", False, error_reason)``.
     """
     if not raw_path or not isinstance(raw_path, str):
         return "", False, None
@@ -418,6 +464,75 @@ def normalize_imported_target_path(raw_path: str) -> tuple[str, bool, str | None
     elif re.match(r"^//[?.]/", clean):
         clean = re.sub(r"^//[?.]/+", "", clean)
         was_converted = True
+
+    # Reject paths targeting protected user or system directories even before relative stripping
+    decoded_for_check = expand_target_path(clean)
+    if _is_absolute_path(decoded_for_check):
+        d_root, _, d_parts, _, d_unc = _split_absolute_path(decoded_for_check)
+        has_subpath = len(d_parts) > 0 or (d_unc and d_root != "\\\\")
+        if has_subpath and is_protected_target_path(decoded_for_check, protected_paths):
+            return (
+                "",
+                False,
+                f"Destination path '{raw_path}' targets a protected system or configured path.",
+            )
+
+    if preserve_external_targets:
+        ext_candidate = clean
+        env_match_ext = re.match(r"^%([^%/]+)%/?(.*)$", ext_candidate)
+        if (
+            env_match_ext
+            and env_match_ext.group(1).strip().lower() in _SHELL_HOME_ENV_VARS
+        ):
+            env_rest = env_match_ext.group(2).lstrip("/")
+            ext_candidate = f"~/{env_rest}" if env_rest else "~"
+        expanded_ext = expand_target_path(ext_candidate)
+        if expanded_ext.startswith("~"):
+            return (
+                "",
+                False,
+                f"Destination path '{raw_path}' contains an unexpanded home shortcut.",
+            )
+        if _is_absolute_path(expanded_ext):
+            root_p, sep_p, parts_p, had_trav, is_unc_p = _split_absolute_path(
+                expanded_ext
+            )
+            if had_trav:
+                return (
+                    "",
+                    False,
+                    f"Destination path '{raw_path}' contains invalid dot or traversal segments.",
+                )
+            if is_unc_p and root_p == "\\\\":
+                return (
+                    "",
+                    False,
+                    f"Destination path '{raw_path}' points to an incomplete UNC network share.",
+                )
+            canonical_ext = _join_absolute_parts(root_p, sep_p, parts_p)
+            try:
+                validate_target_path(
+                    canonical_ext,
+                    allowed_external_roots=allowed_external_roots,
+                    protected_paths=protected_paths,
+                )
+            except ValueError as err:
+                return "", False, str(err)
+            return canonical_ext, False, None
+
+        segments_rel = [seg for seg in expanded_ext.split("/") if seg and seg != "."]
+        cand_rel = "/".join(segments_rel)
+        if not cand_rel:
+            return (
+                "",
+                False,
+                f"Destination path '{raw_path}' cannot be converted into a safe relative folder.",
+            )
+        try:
+            validate_target_path(cand_rel, protected_paths=protected_paths)
+        except ValueError as err:
+            return "", False, str(err)
+        return cand_rel, was_converted, None
 
     # Strip UNC share root (//server/share/subpath)
     if clean.startswith("//"):
@@ -496,7 +611,7 @@ def normalize_imported_target_path(raw_path: str) -> tuple[str, bool, str | None
         )
 
     try:
-        validate_target_path(candidate)
+        validate_target_path(candidate, protected_paths=protected_paths)
     except ValueError as err:
         return "", False, str(err)
 
@@ -634,6 +749,9 @@ class ImportResult:
     warnings: list[str] = field(default_factory=list)
     unsupported: list[dict[str, Any]] = field(default_factory=list)
     source_format: str = "Unknown"
+    preserve_external_targets: bool = False
+    _allowed_external_roots: list[str] = field(default_factory=list, repr=False)
+    _protected_paths: list[str] = field(default_factory=list, repr=False)
 
     def merge_into_settings(
         self,
@@ -641,6 +759,8 @@ class ImportResult:
         resolutions: dict[str, str] | None = None,
         default_strategy: str = "keep_existing",
         import_disabled: bool = False,
+        *,
+        preserve_external_targets: bool | None = None,
     ) -> tuple[dict[str, str], list[dict[str, Any]]]:
         """Safely merge extracted rules into settings according to resolution choices.
 
@@ -656,6 +776,9 @@ class ImportResult:
         import_disabled : bool, optional
             When True, stage newly added keyword rules in ``DISABLED_KEYWORD_RULES``
             and newly added policies with ``enabled=False`` until reviewed.
+        preserve_external_targets : bool | None, optional
+            Optional override controlling whether allowlisted external target
+            paths are preserved during merge instead of stripped to basenames.
 
         Returns
         -------
@@ -681,6 +804,12 @@ class ImportResult:
 
         existing_kw_lower = {k.lower(): k for k in existing_keywords.keys()}
         existing_dis_lower = {k.lower(): k for k in existing_disabled.keys()}
+        eff_preserve = (
+            self.preserve_external_targets
+            if preserve_external_targets is None
+            else bool(preserve_external_targets)
+        )
+        ext_roots, prot_paths = _extract_settings_path_lists(settings)
 
         for kw, target_path in self.keyword_rules.items():
             kw_clean = str(kw).strip()
@@ -688,7 +817,10 @@ class ImportResult:
                 continue
 
             norm_target, was_conv, err = normalize_imported_target_path(
-                str(target_path)
+                str(target_path),
+                preserve_external_targets=eff_preserve,
+                allowed_external_roots=ext_roots,
+                protected_paths=prot_paths,
             )
             if err is not None or not norm_target:
                 reason = err or "Empty destination folder"
@@ -754,7 +886,12 @@ class ImportResult:
             if not raw_target.strip() and allows_empty_target:
                 norm_target, was_conv, err = "", False, None
             else:
-                norm_target, was_conv, err = normalize_imported_target_path(raw_target)
+                norm_target, was_conv, err = normalize_imported_target_path(
+                    raw_target,
+                    preserve_external_targets=eff_preserve,
+                    allowed_external_roots=ext_roots,
+                    protected_paths=prot_paths,
+                )
             if err is not None or (not norm_target and not allows_empty_target):
                 reason = err or "Empty destination folder"
                 self.warnings.append(
@@ -844,8 +981,36 @@ class BaseRuleImporter(abc.ABC):
     """Abstract base class for rule strategy importers."""
 
     @abc.abstractmethod
-    def parse_file(self, file_path: str | Path) -> ImportResult:
+    def parse_file(
+        self,
+        file_path: str | Path,
+        *,
+        preserve_external_targets: bool = False,
+        allowed_external_roots: Sequence[str] | None = None,
+        protected_paths: Sequence[str] | None = None,
+        settings: Any = None,
+    ) -> ImportResult:
         """Parse rule package file and return extracted ImportResult."""
+
+    @staticmethod
+    def _configure_import_result(
+        result: ImportResult,
+        *,
+        preserve_external_targets: bool = False,
+        allowed_external_roots: Sequence[str] | None = None,
+        protected_paths: Sequence[str] | None = None,
+        settings: Any = None,
+    ) -> ImportResult:
+        """Attach external destination preservation and boundary context onto ImportResult."""
+        eff_roots, eff_prot = _extract_settings_path_lists(
+            settings,
+            allowed_external_roots=allowed_external_roots,
+            protected_paths=protected_paths,
+        )
+        result.preserve_external_targets = bool(preserve_external_targets)
+        result._allowed_external_roots = eff_roots
+        result._protected_paths = eff_prot
+        return result
 
     @abc.abstractmethod
     def can_import(self, file_path: str | Path) -> bool:
@@ -875,7 +1040,12 @@ class BaseRuleImporter(abc.ABC):
         if not raw_path or not str(raw_path).strip():
             return ""
         raw_str = str(raw_path)
-        normalized, was_converted, err = normalize_imported_target_path(raw_str)
+        normalized, was_converted, err = normalize_imported_target_path(
+            raw_str,
+            preserve_external_targets=result.preserve_external_targets,
+            allowed_external_roots=result._allowed_external_roots,
+            protected_paths=result._protected_paths,
+        )
         if err is not None:
             result.warnings.append(
                 f"{source_label} '{rule_name}' skipped: unsafe destination path '{raw_str.strip()}' ({err})"
@@ -1000,9 +1170,23 @@ class HazelRuleImporter(BaseRuleImporter):
         except OSError:
             return False
 
-    def parse_file(self, file_path: str | Path) -> ImportResult:
+    def parse_file(
+        self,
+        file_path: str | Path,
+        *,
+        preserve_external_targets: bool = False,
+        allowed_external_roots: Sequence[str] | None = None,
+        protected_paths: Sequence[str] | None = None,
+        settings: Any = None,
+    ) -> ImportResult:
         """Parse Hazel .hazelrules plist file into Sortify rules."""
-        result = ImportResult(source_format="Hazel (.hazelrules)")
+        result = self._configure_import_result(
+            ImportResult(source_format="Hazel (.hazelrules)"),
+            preserve_external_targets=preserve_external_targets,
+            allowed_external_roots=allowed_external_roots,
+            protected_paths=protected_paths,
+            settings=settings,
+        )
         p = Path(file_path)
 
         if not p.exists():
@@ -1620,9 +1804,23 @@ class DropItRuleImporter(BaseRuleImporter):
             return True
         return False
 
-    def parse_file(self, file_path: str | Path) -> ImportResult:
+    def parse_file(
+        self,
+        file_path: str | Path,
+        *,
+        preserve_external_targets: bool = False,
+        allowed_external_roots: Sequence[str] | None = None,
+        protected_paths: Sequence[str] | None = None,
+        settings: Any = None,
+    ) -> ImportResult:
         """Parse DropIt XML, JSON, or INI profile export file into Sortify rules."""
-        result = ImportResult(source_format="DropIt Export")
+        result = self._configure_import_result(
+            ImportResult(source_format="DropIt Export"),
+            preserve_external_targets=preserve_external_targets,
+            allowed_external_roots=allowed_external_roots,
+            protected_paths=protected_paths,
+            settings=settings,
+        )
         p = Path(file_path)
 
         if not p.exists():
@@ -2259,9 +2457,23 @@ class TagSpacesRuleImporter(BaseRuleImporter):
 
         return False
 
-    def parse_file(self, file_path: str | Path) -> ImportResult:
+    def parse_file(
+        self,
+        file_path: str | Path,
+        *,
+        preserve_external_targets: bool = False,
+        allowed_external_roots: Sequence[str] | None = None,
+        protected_paths: Sequence[str] | None = None,
+        settings: Any = None,
+    ) -> ImportResult:
         """Parse TagSpaces taggroup.json or smart rule JSON file into Sortify rules."""
-        result = ImportResult(source_format="TagSpaces (taggroup.json)")
+        result = self._configure_import_result(
+            ImportResult(source_format="TagSpaces (taggroup.json)"),
+            preserve_external_targets=preserve_external_targets,
+            allowed_external_roots=allowed_external_roots,
+            protected_paths=protected_paths,
+            settings=settings,
+        )
         p = Path(file_path)
 
         if not p.exists():
@@ -2822,9 +3034,23 @@ class SortifyRuleImporter(BaseRuleImporter):
             return False
         return False
 
-    def parse_file(self, file_path: str | Path) -> ImportResult:
+    def parse_file(
+        self,
+        file_path: str | Path,
+        *,
+        preserve_external_targets: bool = False,
+        allowed_external_roots: Sequence[str] | None = None,
+        protected_paths: Sequence[str] | None = None,
+        settings: Any = None,
+    ) -> ImportResult:
         """Parse Sortify JSON backup file into Sortify rules."""
-        result = ImportResult(source_format="Sortify JSON")
+        result = self._configure_import_result(
+            ImportResult(source_format="Sortify JSON"),
+            preserve_external_targets=preserve_external_targets,
+            allowed_external_roots=allowed_external_roots,
+            protected_paths=protected_paths,
+            settings=settings,
+        )
         p = Path(file_path)
 
         if not p.exists():

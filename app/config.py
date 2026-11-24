@@ -315,23 +315,24 @@ class Settings(BaseSettings):
     KEYWORD_RULES: dict = Field(
         default_factory=dict,
         description=(
-            "Mapping of lowercase keyword strings to relative target folder paths. "
-            "Target paths are validated to forbid absolute paths, '..' traversal segments, "
+            "Mapping of lowercase keyword strings to relative target folder paths or "
+            "external destination paths under ALLOWED_EXTERNAL_ROOTS (with '~' expanded). "
+            "Target paths forbid '..' traversal segments, protected paths, "
             'OS-reserved device names, illegal characters (<, >, :, ", |, ?, *), and trailing spaces or periods.'
         ),
     )
     DISABLED_KEYWORD_RULES: dict = Field(
         default_factory=dict,
         description=(
-            "Mapping of temporarily disabled keyword strings to relative target folder paths, "
-            "preserving path mappings while inactive and enforcing the same relative target path validation as KEYWORD_RULES."
+            "Mapping of temporarily disabled keyword strings to relative or allowlisted external target folder paths, "
+            "preserving path mappings while inactive and enforcing the same target path validation as KEYWORD_RULES."
         ),
     )
     LEARNED_RULES: dict = Field(
         default_factory=dict,
         description=(
-            "Mapping of user-corrected keyword patterns to relative target folder paths "
-            "learned from interactive reassignments, validated with the same relative path rules as KEYWORD_RULES."
+            "Mapping of user-corrected keyword patterns to relative or allowlisted external target folder paths "
+            "learned from interactive reassignments, validated with the same path rules as KEYWORD_RULES."
         ),
     )
     EXTENSION_CATEGORIES: dict = Field(
@@ -412,8 +413,24 @@ class Settings(BaseSettings):
     PROTECTED_PATHS: list[str] = Field(
         default_factory=list,
         description=(
-            "List of absolute literal directory paths protected from scanning, moving, "
+            "List of absolute literal directory paths (expanding leading '~') protected from scanning, moving, "
             "or modification. Relative paths and wildcard or glob characters ('*', '?', '[', ']') are rejected."
+        ),
+    )
+    ALLOWED_EXTERNAL_ROOTS: list[str] = Field(
+        default_factory=list,
+        description=(
+            "List of user-approved external directory roots (POSIX, Windows drive, UNC share, or '~' home paths) "
+            "into which rules, policies, imports, and interactive reassignments may route files. "
+            "Traversal segments ('..'), wildcards, and protected paths are rejected."
+        ),
+    )
+    DEST_DIR: str = Field(
+        default="",
+        description=(
+            "Optional default destination root directory (absolute or '~' home path) where sorted relative "
+            "category folders are placed when no CLI --dest-dir override is provided. Empty string keeps "
+            "destinations inside the scanned source directory."
         ),
     )
     AUTO_QUARANTINE_RATINGS: list[str] = Field(
@@ -785,6 +802,73 @@ class Settings(BaseSettings):
             )
         return self
 
+    @model_validator(mode="after")
+    def validate_external_targets_and_roots(self) -> "Settings":
+        """Enforce ALLOWED_EXTERNAL_ROOTS and PROTECTED_PATHS across rules, policies, roots, and DEST_DIR."""
+        from app.core.path_utils import (
+            is_protected_target_path,
+            validate_target_path,
+        )
+
+        prot = list(self.PROTECTED_PATHS or [])
+        ext_roots = list(self.ALLOWED_EXTERNAL_ROOTS or [])
+
+        for root_entry in ext_roots:
+            if is_protected_target_path(root_entry, prot):
+                raise ValueError(
+                    f"Allowed external root '{root_entry}' conflicts with PROTECTED_PATHS."
+                )
+
+        if self.DEST_DIR and is_protected_target_path(self.DEST_DIR, prot):
+            raise ValueError(
+                f"DEST_DIR '{self.DEST_DIR}' conflicts with PROTECTED_PATHS."
+            )
+
+        for rule_map in (
+            self.KEYWORD_RULES,
+            self.LEARNED_RULES,
+            self.DISABLED_KEYWORD_RULES,
+        ):
+            for kw, tpath in (rule_map or {}).items():
+                validate_target_path(
+                    tpath,
+                    keyword=kw,
+                    allowed_external_roots=ext_roots,
+                    protected_paths=prot,
+                )
+
+        for pol in self.POLICIES or []:
+            pol_type = (
+                pol.get("type") if isinstance(pol, dict) else getattr(pol, "type", None)
+            )
+            pol_action = (
+                pol.get("action")
+                if isinstance(pol, dict)
+                else getattr(pol, "action", None)
+            )
+            pol_expr = (
+                pol.get("expression")
+                if isinstance(pol, dict)
+                else getattr(pol, "expression", None)
+            )
+            pol_target = (
+                pol.get("target_path")
+                if isinstance(pol, dict)
+                else getattr(pol, "target_path", None)
+            )
+            allows_empty = (
+                isinstance(pol_action, str) and pol_action.lower() == "trash"
+            ) or pol_type == "duplicate"
+            if isinstance(pol_target, str) and (pol_target != "" or not allows_empty):
+                validate_target_path(
+                    pol_target,
+                    keyword=pol_expr,
+                    allowed_external_roots=ext_roots,
+                    protected_paths=prot,
+                )
+
+        return self
+
     @field_validator("CONFLICT_POLICY")
     @classmethod
     def validate_conflict_policy(cls, v: str) -> str:
@@ -872,27 +956,111 @@ class Settings(BaseSettings):
     @field_validator("PROTECTED_PATHS")
     @classmethod
     def validate_protected_paths(cls, v: list[str]) -> list[str]:
-        """Validate that each path is an absolute literal directory path."""
+        """Validate that each path is an absolute literal directory path (expanding leading '~')."""
+        import re
+
+        from app.core.path_utils import _is_absolute_path, expand_target_path
+
+        validated: list[str] = []
         for path in v:
             if not isinstance(path, str):
                 raise ValueError("Each protected path must be a string.")
-            if not os.path.isabs(path):
-                raise ValueError(f"Protected path must be an absolute path: '{path}'")
             if any(char in path for char in ("*", "?", "[", "]")):
                 raise ValueError(
                     f"Wildcard patterns or glob characters are not allowed in protected path: '{path}'"
                 )
-        return v
+            expanded = expand_target_path(path)
+            if expanded.startswith("~") or not _is_absolute_path(expanded):
+                raise ValueError(f"Protected path must be an absolute path: '{path}'")
+            raw_parts = [s for s in re.split(r"[/\\]+", expanded) if s]
+            if ".." in raw_parts:
+                raise ValueError(
+                    f"Protected path cannot contain directory traversal segments: '{path}'"
+                )
+            validated.append(expanded)
+        return validated
+
+    @field_validator("ALLOWED_EXTERNAL_ROOTS")
+    @classmethod
+    def validate_allowed_external_roots(cls, v: list[str]) -> list[str]:
+        """Validate and expand approved external destination root paths."""
+        from app.core.path_utils import (
+            _is_absolute_path,
+            expand_target_path,
+            validate_target_path,
+        )
+
+        if not isinstance(v, list):
+            raise ValueError("ALLOWED_EXTERNAL_ROOTS must be a list.")
+        validated: list[str] = []
+        for root_entry in v:
+            if not isinstance(root_entry, str):
+                raise ValueError("Each allowed external root must be a string.")
+            stripped = root_entry.strip()
+            if not stripped:
+                raise ValueError("Allowed external root cannot be empty.")
+            if any(char in stripped for char in ("*", "?", "[", "]")):
+                raise ValueError(
+                    f"Wildcard patterns or glob characters are not allowed in external root: '{root_entry}'"
+                )
+            expanded = expand_target_path(stripped)
+            if expanded.startswith("~") or not _is_absolute_path(expanded):
+                raise ValueError(
+                    f"Allowed external root must be an absolute or '~' home path: '{root_entry}'"
+                )
+            validate_target_path(
+                expanded,
+                keyword="ALLOWED_EXTERNAL_ROOTS",
+                allow_unlisted_external=True,
+            )
+            if expanded not in validated:
+                validated.append(expanded)
+        return validated
+
+    @field_validator("DEST_DIR")
+    @classmethod
+    def validate_dest_dir(cls, v: str) -> str:
+        """Validate and expand optional default destination directory root."""
+        from app.core.path_utils import (
+            _is_absolute_path,
+            expand_target_path,
+            validate_target_path,
+        )
+
+        if not isinstance(v, str):
+            raise ValueError("DEST_DIR must be a string.")
+        stripped = v.strip()
+        if not stripped:
+            return ""
+        if any(char in stripped for char in ("*", "?", "[", "]")):
+            raise ValueError(
+                f"Wildcard patterns or glob characters are not allowed in DEST_DIR: '{v}'"
+            )
+        expanded = expand_target_path(stripped)
+        if expanded.startswith("~") or not _is_absolute_path(expanded):
+            raise ValueError(
+                f"DEST_DIR must be an absolute or '~' home path when set: '{v}'"
+            )
+        validate_target_path(
+            expanded,
+            keyword="DEST_DIR",
+            allow_unlisted_external=True,
+        )
+        return expanded
 
     @field_validator("KEYWORD_RULES", "LEARNED_RULES", "DISABLED_KEYWORD_RULES")
     @classmethod
     def validate_keyword_rules(cls, v: dict) -> dict:
-        """Validate that keyword routing rules and learned rules have valid target paths."""
-        from app.core.path_utils import validate_target_path
+        """Validate and expand home shortcuts in keyword and learned rule target paths."""
+        from app.core.path_utils import expand_target_path, validate_target_path
 
+        normalized: dict = {}
         for keyword, target_path in v.items():
-            validate_target_path(target_path, keyword=keyword)
-        return v
+            validate_target_path(
+                target_path, keyword=keyword, allow_unlisted_external=True
+            )
+            normalized[keyword] = expand_target_path(target_path)
+        return normalized
 
     @field_validator("POLICIES", mode="before")
     @classmethod
@@ -943,8 +1111,18 @@ class Settings(BaseSettings):
                 defaulted_target = True
             if target_path is None or not isinstance(target_path, str):
                 raise ValueError("Policy target_path must be a string.")
+            expanded_target = target_path
             if target_path != "" or not allows_empty_target:
-                validate_target_path(target_path, keyword=expression)
+                from app.core.path_utils import expand_target_path
+
+                validate_target_path(
+                    target_path,
+                    keyword=expression,
+                    allow_unlisted_external=True,
+                )
+                expanded_target = expand_target_path(target_path)
+            target_expanded = expanded_target != target_path
+            target_path = expanded_target
 
             if (
                 "priority" not in rule
@@ -1002,6 +1180,7 @@ class Settings(BaseSettings):
             needs_copy = (
                 defaulted_expression
                 or defaulted_target
+                or target_expanded
                 or ("action" in rule and rule["action"] is None)
                 or (isinstance(action, str) and action != action.lower())
                 or (
@@ -1022,7 +1201,7 @@ class Settings(BaseSettings):
                 updated_rule = dict(rule)
                 if defaulted_expression:
                     updated_rule["expression"] = expression
-                if defaulted_target:
+                if defaulted_target or target_expanded:
                     updated_rule["target_path"] = target_path
                 if "action" in updated_rule:
                     if updated_rule["action"] is None:
@@ -1159,6 +1338,22 @@ class Settings(BaseSettings):
         validate_assignment=True,
     )
 
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Validate assignment atomically without mutating fields on failure."""
+        if name.startswith("_"):
+            super().__setattr__(name, value)
+            return
+        snapshot = dict(self.__dict__)
+        fields_set_snapshot = set(self.__pydantic_fields_set__)
+        try:
+            super().__setattr__(name, value)
+        except Exception:
+            self.__dict__.clear()
+            self.__dict__.update(snapshot)
+            self.__pydantic_fields_set__.clear()
+            self.__pydantic_fields_set__.update(fields_set_snapshot)
+            raise
+
 
 def app_env_file() -> Path:
     """Return the optional `.env` file that may hold SORTIFY_ settings."""
@@ -1288,6 +1483,10 @@ class AppSettings:
             if "MAX_DEBOUNCE_DELAY" in data_keys and "DEBOUNCE_DELAY" in data_keys:
                 data_keys.remove("MAX_DEBOUNCE_DELAY")
                 data_keys.insert(0, "MAX_DEBOUNCE_DELAY")
+            for prerequisite_key in ("ALLOWED_EXTERNAL_ROOTS", "PROTECTED_PATHS"):
+                if prerequisite_key in data_keys:
+                    data_keys.remove(prerequisite_key)
+                    data_keys.insert(0, prerequisite_key)
 
             for key in data_keys:
                 value = data[key]

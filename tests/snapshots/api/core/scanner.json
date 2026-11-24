@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "2bdc97818b05a1eceed50ff3798f3758ed7d405e09c51375da97d3e6a627c87f"
+    "checksum": "34fc059b6b8ecaeacd21abf33fcbfdf7ca6f8b9be5ac19f9374336648c6cac61"
   },
   "classes": [
     {
@@ -46,6 +46,11 @@
               "annotation": "Optional[str]",
               "default": "None",
               "name": "base_dir"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "dest_dir"
             }
           ],
           "returns": "None"
@@ -170,6 +175,11 @@
               "annotation": "Optional[int]",
               "default": "None",
               "name": "max_depth"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "dest_dir"
             }
           ],
           "returns": "'ScanFilter'"
@@ -360,6 +370,11 @@
           "annotation": "Optional[ScanFilter]",
           "default": "None",
           "name": "scan_filter"
+        },
+        {
+          "annotation": "Optional[str]",
+          "default": "None",
+          "name": "dest_dir"
         }
       ],
       "returns": "list[str]"
@@ -398,6 +413,11 @@
           "annotation": "Optional[ScanFilter]",
           "default": "None",
           "name": "scan_filter"
+        },
+        {
+          "annotation": "Optional[str]",
+          "default": "None",
+          "name": "dest_dir"
         }
       ],
       "returns": "list"

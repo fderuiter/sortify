@@ -27,6 +27,7 @@ class TUIHostProtocol(Protocol):
     settings: Any
     db: Optional[Any]
     base_dir: str
+    dest_dir: Optional[str]
     source_dirs: list[str]
     plan: dict[str, Any]
     locked_files: dict[str, str]

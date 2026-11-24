@@ -366,6 +366,37 @@ class SettingsModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
                     )
                     yield inp_scan_depth
 
+                    yield Label(
+                        "Default Destination Root (optional):",
+                        classes="field-label",
+                    )
+                    dest_val = str(getattr(self.settings, "DEST_DIR", "") or "")
+                    inp_dest_dir = Input(
+                        value=dest_val,
+                        placeholder="/path/to/destination (leave blank to sort in-place)",
+                        id="input-dest-dir",
+                    )
+                    inp_dest_dir.tooltip = "Optional separate destination root directory for organized files"
+                    yield inp_dest_dir
+
+                    yield Label(
+                        "Allowed External Roots (comma-separated):",
+                        classes="field-label",
+                    )
+                    ext_roots = getattr(self.settings, "ALLOWED_EXTERNAL_ROOTS", [])
+                    ext_roots_str = (
+                        ", ".join(ext_roots)
+                        if isinstance(ext_roots, (list, tuple, set))
+                        else str(ext_roots or "")
+                    )
+                    inp_ext_roots = Input(
+                        value=ext_roots_str,
+                        placeholder="/mnt/nas, ~/Archive",
+                        id="input-external-roots",
+                    )
+                    inp_ext_roots.tooltip = "Comma-separated external root directories approved as explicit rule or reassignment targets"
+                    yield inp_ext_roots
+
                 with TabPane(
                     "AI & Privacy Settings",
                     id="tab-ai-privacy",
@@ -951,6 +982,134 @@ class SettingsModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
             self.announce(f"Settings error: {err_text}", help_url=help_url)
             return
 
+        try:
+            dest_dir_raw = self.query_one("#input-dest-dir", Input).value.strip()
+        except Exception:
+            dest_dir_raw = str(getattr(self.settings, "DEST_DIR", "") or "").strip()
+
+        from app.core.path_utils import (
+            _is_absolute_path,
+            expand_target_path,
+            is_protected_target_path,
+            validate_target_path,
+        )
+        from app.core.pipeline import validate_drop_destination
+
+        resolved_dest_for_save = ""
+        if dest_dir_raw:
+            if any(ch in dest_dir_raw for ch in ("*", "?", "[", "]")):
+                self._show_help_button(help_url)
+                from app.ui.notifications import notify
+
+                err_text = (
+                    "Wildcard characters are not allowed in Default Destination Root."
+                )
+                notify(f"Settings error: {err_text}", type="error", help_url=help_url)
+                self.announce(f"Settings error: {err_text}", help_url=help_url)
+                return
+            exp_dest_dir = expand_target_path(dest_dir_raw)
+            if is_protected_target_path(exp_dest_dir, p_list):
+                self._show_help_button(help_url)
+                from app.ui.notifications import notify
+
+                err_text = f"Destination path '{dest_dir_raw}' is protected."
+                notify(f"Settings error: {err_text}", type="error", help_url=help_url)
+                self.announce(f"Settings error: {err_text}", help_url=help_url)
+                return
+            try:
+                validate_target_path(
+                    exp_dest_dir,
+                    keyword="DEST_DIR",
+                    protected_paths=p_list,
+                    allow_unlisted_external=True,
+                )
+            except ValueError as exc:
+                self._show_help_button(help_url)
+                from app.ui.notifications import notify
+
+                err_text = str(exc)
+                notify(f"Settings error: {err_text}", type="error", help_url=help_url)
+                self.announce(f"Settings error: {err_text}", help_url=help_url)
+                return
+            _resolved_dest, dest_err = validate_drop_destination(
+                exp_dest_dir, settings=self.settings
+            )
+            if dest_err in ("protected", "not_directory"):
+                self._show_help_button(help_url)
+                from app.ui.notifications import notify
+
+                err_text = (
+                    f"Destination path '{dest_dir_raw}' is protected."
+                    if dest_err == "protected"
+                    else f"Destination path '{dest_dir_raw}' is not a directory."
+                )
+                notify(f"Settings error: {err_text}", type="error", help_url=help_url)
+                self.announce(f"Settings error: {err_text}", help_url=help_url)
+                return
+            resolved_dest_for_save = _resolved_dest or exp_dest_dir
+
+        try:
+            ext_roots_raw = self.query_one("#input-external-roots", Input).value.strip()
+        except Exception:
+            existing_ext = getattr(self.settings, "ALLOWED_EXTERNAL_ROOTS", []) or []
+            ext_roots_raw = (
+                ", ".join(existing_ext)
+                if isinstance(existing_ext, (list, tuple, set))
+                else str(existing_ext)
+            )
+        ext_roots_list: list[str] = []
+        for raw_ext in ext_roots_raw.split(","):
+            cand_ext = raw_ext.strip()
+            if not cand_ext:
+                continue
+            if any(ch in cand_ext for ch in ("*", "?", "[", "]")):
+                self._show_help_button(help_url)
+                from app.ui.notifications import notify
+
+                err_text = f"Wildcard characters are not allowed in external root '{cand_ext}'."
+                notify(f"Settings error: {err_text}", type="error", help_url=help_url)
+                self.announce(f"Settings error: {err_text}", help_url=help_url)
+                return
+            exp_ext = expand_target_path(cand_ext)
+            if not _is_absolute_path(exp_ext):
+                self._show_help_button(help_url)
+                from app.ui.notifications import notify
+
+                err_text = f"Allowed external root '{cand_ext}' must be an absolute or '~' path."
+                notify(f"Settings error: {err_text}", type="error", help_url=help_url)
+                self.announce(f"Settings error: {err_text}", help_url=help_url)
+                return
+            if is_protected_target_path(exp_ext, p_list):
+                self._show_help_button(help_url)
+                from app.ui.notifications import notify
+
+                err_text = f"Allowed external root '{cand_ext}' cannot target a protected path."
+                notify(f"Settings error: {err_text}", type="error", help_url=help_url)
+                self.announce(f"Settings error: {err_text}", help_url=help_url)
+                return
+            try:
+                validate_target_path(
+                    exp_ext,
+                    keyword="ALLOWED_EXTERNAL_ROOTS",
+                    protected_paths=p_list,
+                    allow_unlisted_external=True,
+                )
+            except ValueError as exc:
+                self._show_help_button(help_url)
+                from app.ui.notifications import notify
+
+                err_text = str(exc)
+                notify(f"Settings error: {err_text}", type="error", help_url=help_url)
+                self.announce(f"Settings error: {err_text}", help_url=help_url)
+                return
+            norm_ext = (
+                exp_ext
+                if (_is_absolute_path(exp_ext) and not os.path.isabs(exp_ext))
+                else os.path.normpath(exp_ext)
+            )
+            if norm_ext not in ext_roots_list:
+                ext_roots_list.append(norm_ext)
+
         res = {
             "PROTECTED_PATHS": p_list,
             "IGNORED_EXTENSIONS": i_list,
@@ -970,6 +1129,8 @@ class SettingsModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
             "SCAN_MAX_DEPTH": scan_max_depth,
             "AUTO_QUARANTINE_RATINGS": auto_quarantine_ratings,
             "QUARANTINE_DIR_NAME": q_dir_str,
+            "DEST_DIR": resolved_dest_for_save,
+            "ALLOWED_EXTERNAL_ROOTS": ext_roots_list,
         }
         self.announce("Saved application settings.")
         self.dismiss(res)

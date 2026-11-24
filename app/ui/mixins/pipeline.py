@@ -244,6 +244,29 @@ class SortPipelineMixin:
             self.announce("No checked files in sorting plan to execute.")
             return
 
+        base_dir: str = (
+            (self.app_session.base_dir if self.app_session else None)
+            or self.base_dir
+            or "."
+        )
+        dest_dir: str | None = (
+            getattr(self.app_session, "dest_dir", None) if self.app_session else None
+        ) or getattr(self, "dest_dir", None)
+        from app.core.verifier import VerificationEngine
+
+        conflict_policy = str(
+            getattr(self.settings, "CONFLICT_POLICY", "rename")
+        ).lower()
+        normalized_plan = self._normalize_plan_for_verification(exec_plan, base_dir)
+        sync_result = VerificationEngine.verify_plan_integrity(
+            base_dir,
+            normalized_plan,
+            conflict_policy=conflict_policy,
+            dest_dir=dest_dir,
+            settings=getattr(self, "settings", None),
+        )
+        self._update_validation_state(sync_result)
+
         if getattr(self, "has_critical_errors", False):
             v_res = getattr(self, "verification_result", None) or {}
             collisions_list = v_res.get("collisions") or []
@@ -265,13 +288,7 @@ class SortPipelineMixin:
                 )
                 return
 
-        base_dir: str = (
-            (self.app_session.base_dir if self.app_session else None)
-            or self.base_dir
-            or "."
-        )
         self._pending_flush_trash = False
-        from app.core.verifier import VerificationEngine
 
         detect_original_by = str(
             getattr(self.settings, "DETECT_ORIGINAL_BY", "first_seen") or "first_seen"
@@ -283,7 +300,7 @@ class SortPipelineMixin:
                 self.announce("No remaining checked files to execute after review.")
                 return
             collision_groups = VerificationEngine.get_collision_groups(
-                base_dir, refreshed_exec
+                base_dir, refreshed_exec, dest_dir=dest_dir
             )
             if collision_groups:
 
@@ -321,6 +338,7 @@ class SortPipelineMixin:
             base_dir,
             exec_plan,
             detect_original_by=detect_original_by,
+            dest_dir=dest_dir,
         )
         if duplicate_groups:
 
@@ -393,12 +411,21 @@ class SortPipelineMixin:
                 or self.base_dir
                 or "."
             )
+            dest_dir: str | None = (
+                getattr(self.app_session, "dest_dir", None)
+                if self.app_session
+                else None
+            ) or getattr(self, "dest_dir", None)
             conflict_policy = str(
                 getattr(self.settings, "CONFLICT_POLICY", "rename")
             ).lower()
             normalized_plan = self._normalize_plan_for_verification(exec_plan, base_dir)
             result = VerificationEngine.verify_plan_integrity(
-                base_dir, normalized_plan, conflict_policy=conflict_policy
+                base_dir,
+                normalized_plan,
+                conflict_policy=conflict_policy,
+                dest_dir=dest_dir,
+                settings=getattr(self, "settings", None),
             )
             self.call_from_thread(self._update_validation_state, result)
         except Exception as e:
@@ -421,6 +448,7 @@ class SortPipelineMixin:
         circular = result.get("circular_renames", [])
         invalid = result.get("invalid_renames", [])
         long_paths = result.get("long_paths", [])
+        escaping = result.get("escaping_paths", [])
 
         broken_links = result.get("broken_links", [])
         unconfirmed = result.get("unconfirmed_renames", [])
@@ -428,7 +456,7 @@ class SortPipelineMixin:
         has_critical = bool(
             result.get("has_critical_errors")
             if "has_critical_errors" in result
-            else (critical_collisions or circular or invalid or long_paths)
+            else (critical_collisions or circular or invalid or long_paths or escaping)
         )
         has_warnings = bool(recoverable_collisions or broken_links or unconfirmed)
 
@@ -458,6 +486,11 @@ class SortPipelineMixin:
                 crit_paths.add(os.path.normpath(lp["path"]))
             if lp.get("source"):
                 crit_paths.add(os.path.normpath(lp["source"]))
+        for ep in escaping:
+            if ep.get("path"):
+                crit_paths.add(os.path.normpath(ep["path"]))
+            if ep.get("source"):
+                crit_paths.add(os.path.normpath(ep["source"]))
 
         warn_paths = set()
         for rc in recoverable_collisions:
@@ -541,6 +574,12 @@ class SortPipelineMixin:
                     msgs.append("⛔ EXCEEDS PATH LENGTH LIMIT:")
                     for lp in long_paths:
                         msgs.append(f"  • {lp.get('message')}")
+                if escaping:
+                    msgs.append(
+                        "⛔ UNAPPROVED EXTERNAL OR PROTECTED DESTINATION(S) DETECTED:"
+                    )
+                    for ep in escaping:
+                        msgs.append(f"  • {ep.get('message')}")
 
                 alert_str = "\n".join(msgs)
                 alert_banner.update(alert_str)

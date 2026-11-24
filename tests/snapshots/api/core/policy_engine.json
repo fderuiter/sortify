@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "7538b148298b37c2dd70dbe17f20ca207606741db1590c9be68619622f52f1ac"
+    "checksum": "80ed9693a794c7cee2d89ca544c49a49be9289d1758bc2ce455de40b6c320d09"
   },
   "classes": [
     {
@@ -138,6 +138,21 @@
               "annotation": "str | None",
               "default": "None",
               "name": "file_path"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "allowed_external_roots"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "protected_paths"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "settings"
             }
           ],
           "returns": "None"
@@ -158,6 +173,21 @@
               "annotation": "str | None",
               "default": "None",
               "name": "file_path"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "allowed_external_roots"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "protected_paths"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "settings"
             }
           ],
           "returns": "tuple[bool, str | None]"

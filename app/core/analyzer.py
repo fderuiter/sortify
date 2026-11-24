@@ -1156,26 +1156,31 @@ class IncrementalAnalyzer:
         invalid_locks: dict[str, str] = {}
         valid_locked_files: dict[str, str] = {}
         if locked_files:
+            from app.core.path_utils import expand_target_path
             from app.core.policy_engine import PolicyEngine
 
             for f, lock_path in locked_files.items():
                 if lock_path:
                     is_valid, err_msg = PolicyEngine.validate_lock_path_safe(
-                        lock_path, file_path=f
+                        lock_path, file_path=f, settings=runtime_settings
                     )
                     if is_valid:
-                        valid_locked_files[f] = lock_path
+                        valid_locked_files[f] = expand_target_path(lock_path)
                     else:
                         invalid_locks[f] = err_msg or "Invalid lock path"
             locked_files = valid_locked_files
 
         norm_target_paths = None
         if target_paths is not None:
+            from app.core.mover import is_subpath_or_equal
+
             norm_target_paths = set()
             for p in target_paths:
                 if not p:
                     continue
-                if os.path.isabs(p) and base_dir and p.startswith(base_dir):
+                if "::" in p:
+                    rel = p.replace("\\", "/")
+                elif os.path.isabs(p) and base_dir and is_subpath_or_equal(p, base_dir):
                     rel = safe_relpath(p, base_dir).replace("\\", "/")
                 else:
                     rel = p.replace("\\", "/")
@@ -1373,16 +1378,23 @@ class IncrementalAnalyzer:
                     return False
                 return cand_norm in rej_set or cand_norm.split("/")[0] in rej_set
 
+            from app.core.path_utils import _is_absolute_path, expand_target_path
+
             def _clean_verified_folder(val: Optional[str]) -> Optional[str]:
                 if val is None:
                     return None
-                s = str(val).strip().replace("\\", "/")
+                raw_str = str(val).strip()
+                if raw_str.startswith("!"):
+                    expanded_neg = expand_target_path(raw_str[1:].strip())
+                    return f"!{expanded_neg}" if expanded_neg else None
+                expanded = expand_target_path(raw_str)
+                s = expanded.replace("\\", "/")
                 if not s or s in (".", "./"):
                     return None
                 stripped = s.strip("/")
                 if not stripped or stripped == ".":
                     return None
-                return str(val).strip()
+                return expanded
 
             if locked_files:
                 locked_files = {
@@ -1468,12 +1480,20 @@ class IncrementalAnalyzer:
                 )
 
                 if matched_policy:
+                    raw_pol_target = (
+                        matched_policy.target_path
+                        if hasattr(matched_policy, "target_path")
+                        else matched_policy["target_path"]
+                    )
+                    exp_pol_target = (
+                        expand_target_path(raw_pol_target)
+                        if isinstance(raw_pol_target, str) and raw_pol_target
+                        else raw_pol_target
+                    )
                     policy_plan_files.append(
                         (
                             f,
-                            matched_policy.target_path
-                            if hasattr(matched_policy, "target_path")
-                            else matched_policy["target_path"],
+                            exp_pol_target,
                             matched_policy.expression
                             if hasattr(matched_policy, "expression")
                             else matched_policy["expression"],
@@ -1608,7 +1628,13 @@ class IncrementalAnalyzer:
                         )
                         if keyword.lower() in text_to_search:
                             keyword_plan_files.append(
-                                (f, target_folder, keyword, "keyword", status_match)
+                                (
+                                    f,
+                                    expand_target_path(target_folder),
+                                    keyword,
+                                    "keyword",
+                                    status_match,
+                                )
                             )
                             matched = True
                             break
@@ -1629,7 +1655,13 @@ class IncrementalAnalyzer:
                             len(norm_kw) >= 3 and norm_kw in norm_search
                         ):
                             keyword_plan_files.append(
-                                (f, target_folder, keyword, "pattern", status_match)
+                                (
+                                    f,
+                                    expand_target_path(target_folder),
+                                    keyword,
+                                    "pattern",
+                                    status_match,
+                                )
                             )
                             matched = True
                             break
@@ -2362,6 +2394,43 @@ class IncrementalAnalyzer:
             else:
                 plan = {}
 
+            def _inject_fast_path_node(
+                plan_dict: dict[str, Any],
+                raw_target_folder: str,
+                file_key: str,
+                leaf_payload: Any,
+            ) -> None:
+                exp_folder = (
+                    expand_target_path(raw_target_folder)
+                    if raw_target_folder
+                    else raw_target_folder
+                )
+                if not exp_folder:
+                    plan_dict[file_key] = leaf_payload
+                    return
+                if _is_absolute_path(exp_folder):
+                    if exp_folder not in plan_dict or not isinstance(
+                        plan_dict[exp_folder], dict
+                    ):
+                        plan_dict[exp_folder] = (
+                            {"_original": plan_dict[exp_folder]}
+                            if exp_folder in plan_dict
+                            else {}
+                        )
+                    plan_dict[exp_folder][file_key] = leaf_payload
+                    return
+                parts = exp_folder.replace("\\", "/").split("/")
+                current = plan_dict
+                for i, part in enumerate(parts):
+                    if part not in current:
+                        current[part] = {}
+                    if not isinstance(current[part], dict):
+                        current[part] = {"_original": current[part]}
+                    if i == len(parts) - 1:
+                        current[part][file_key] = leaf_payload
+                    else:
+                        current = current[part]
+
             # Inject policy routed files back into the plan
             for (
                 f,
@@ -2372,80 +2441,65 @@ class IncrementalAnalyzer:
             ) in policy_plan_files:
                 if cancel_check and cancel_check():
                     return SortingPlan()
-                parts = target_folder.replace("\\", "/").split("/")
-                current = plan
-                for i, part in enumerate(parts):
-                    if part not in current:
-                        current[part] = {}
-                    if not isinstance(current[part], dict):
-                        current[part] = {"_original": current[part]}
-                    if i == len(parts) - 1:
-                        current[part][f] = {
-                            "__type__": "file",
-                            "routed_by": rule_type,
-                            "keyword": expression,
-                            "extraction_status": ext_status,
-                        }
-                    else:
-                        current = current[part]
+                _inject_fast_path_node(
+                    plan,
+                    target_folder,
+                    f,
+                    {
+                        "__type__": "file",
+                        "routed_by": rule_type,
+                        "keyword": expression,
+                        "extraction_status": ext_status,
+                    },
+                )
 
             # Inject keyword routed files back into the plan
             for f, target_folder, keyword, routed_by, ext_status in keyword_plan_files:
                 if cancel_check and cancel_check():
                     return SortingPlan()
-                parts = target_folder.replace("\\", "/").split("/")
-                current = plan
-                for i, part in enumerate(parts):
-                    if part not in current:
-                        current[part] = {}
-                    if not isinstance(current[part], dict):
-                        current[part] = {"_original": current[part]}
-                    if i == len(parts) - 1:
-                        current[part][f] = {
-                            "__type__": "file",
-                            "routed_by": routed_by,
-                            "keyword": keyword,
-                            "extraction_status": ext_status,
-                        }
-                    else:
-                        current = current[part]
+                _inject_fast_path_node(
+                    plan,
+                    target_folder,
+                    f,
+                    {
+                        "__type__": "file",
+                        "routed_by": routed_by,
+                        "keyword": keyword,
+                        "extraction_status": ext_status,
+                    },
+                )
 
             # Inject Jev routed files back into the plan
             for f, target_folder, jev_res, ext_status in jev_plan_files:
                 if cancel_check and cancel_check():
                     return SortingPlan()
-                parts = target_folder.replace("\\", "/").split("/")
-                current = plan
-                for i, part in enumerate(parts):
-                    if part not in current:
-                        current[part] = {}
-                    if not isinstance(current[part], dict):
-                        current[part] = {"_original": current[part]}
-                    if i == len(parts) - 1:
-                        cat_val = jev_res.category
-                        sens_val = jev_res.sensitivity_rating
-                        sens_score = jev_res.sensitivity_score
-                        arch_prio = jev_res.archival_priority
-                        arch_score = jev_res.archival_priority_score
-                        conf_val = jev_res.confidence
+                cat_val = jev_res.category
+                sens_val = jev_res.sensitivity_rating
+                sens_score = jev_res.sensitivity_score
+                arch_prio = jev_res.archival_priority
+                arch_score = jev_res.archival_priority_score
+                conf_val = jev_res.confidence
 
-                        node_data = {
-                            "__type__": "file",
-                            "routed_by": "jev_classifier",
-                            "extraction_status": ext_status,
-                            "category": cat_val,
-                            "sensitivity_rating": sens_val,
-                            "sensitivity_score": sens_score,
-                            "archival_priority": arch_prio,
-                            "archival_priority_score": arch_score,
-                            "confidence": conf_val,
-                        }
-                        node_model = SortingPlanNodeModel.model_validate(
-                            {k: v for k, v in node_data.items() if v is not None}
-                        )
-                        current[part][f] = SortingPlanNode.model_validate(node_model)
-                    else:
-                        current = current[part]
+                node_data = {
+                    "__type__": "file",
+                    "routed_by": "jev_classifier",
+                    "extraction_status": ext_status,
+                    "category": cat_val,
+                    "sensitivity_rating": sens_val,
+                    "sensitivity_score": sens_score,
+                    "archival_priority": arch_prio,
+                    "archival_priority_score": arch_score,
+                    "confidence": conf_val,
+                }
+                node_model = SortingPlanNodeModel.model_validate(
+                    {k: v for k, v in node_data.items() if v is not None}
+                )
+                _inject_fast_path_node(
+                    plan,
+                    target_folder,
+                    f,
+                    SortingPlanNode.model_validate(node_model),
+                )
 
             if unsupported_files:
                 if "Miscellaneous" not in plan:
@@ -2679,7 +2733,6 @@ class IncrementalAnalyzer:
                         }
 
             clean_plan = {}
-            import ntpath
 
             for target_folder, files in plan.items():
                 if cancel_check and cancel_check():
@@ -2692,7 +2745,8 @@ class IncrementalAnalyzer:
                         clean_plan[f] = info
                     continue
 
-                if os.path.isabs(target_folder) or ntpath.isabs(target_folder):
+                target_folder = expand_target_path(target_folder)
+                if _is_absolute_path(target_folder):
                     if target_folder not in clean_plan:
                         clean_plan[target_folder] = {}
                     for f, info in files.items():
@@ -2728,18 +2782,34 @@ class IncrementalAnalyzer:
             # Post-process: ensure every file node in the plan has source_path and relative_source,
             # and prune no-op leaves where source already equals destination (unless slated for
             # trash/duplicate staging or active duplicate review).
-            eff_dest_root = dest_dir or base_dir
+            raw_dest_dir = dest_dir or (
+                getattr(runtime_settings, "DEST_DIR", None)
+                if runtime_settings
+                else None
+            )
+            eff_dest_root = (
+                expand_target_path(str(raw_dest_dir).strip())
+                if raw_dest_dir and str(raw_dest_dir).strip()
+                else base_dir
+            )
 
             def _is_noop_destination(
                 s_root: str, src_rel: str, dst_folder: str, raw_key: str
             ) -> bool:
                 src_abs = os.path.normcase(
-                    os.path.normpath(os.path.abspath(os.path.join(s_root, src_rel)))
+                    os.path.normpath(
+                        os.path.abspath(
+                            src_rel
+                            if os.path.isabs(str(src_rel))
+                            else os.path.join(s_root, src_rel)
+                        )
+                    )
                 )
-                if os.path.isabs(dst_folder) or ntpath.isabs(dst_folder):
-                    dst_dir_abs = dst_folder
-                elif dst_folder:
-                    dst_dir_abs = os.path.join(eff_dest_root, dst_folder)
+                exp_dst_folder = expand_target_path(dst_folder) if dst_folder else ""
+                if exp_dst_folder and _is_absolute_path(exp_dst_folder):
+                    dst_dir_abs = exp_dst_folder
+                elif exp_dst_folder:
+                    dst_dir_abs = os.path.join(eff_dest_root, exp_dst_folder)
                 else:
                     dst_dir_abs = eff_dest_root
                 dst_fn = os.path.basename(raw_key.replace("\\", "/"))
@@ -2747,6 +2817,29 @@ class IncrementalAnalyzer:
                     os.path.normpath(os.path.abspath(os.path.join(dst_dir_abs, dst_fn)))
                 )
                 return src_abs == dst_abs
+
+            def _calc_relative_source(
+                s_root: str, src_rel: str, current_path: str
+            ) -> str:
+                src_joined = (
+                    str(src_rel)
+                    if os.path.isabs(str(src_rel))
+                    else os.path.join(s_root, str(src_rel))
+                )
+                if (
+                    current_path
+                    and _is_absolute_path(current_path)
+                    and not os.path.isabs(current_path)
+                ):
+                    return str(src_rel).replace("\\", "/")
+                ref_dir = (
+                    current_path
+                    if (current_path and os.path.isabs(current_path))
+                    else (
+                        os.path.join(s_root, current_path) if current_path else s_root
+                    )
+                )
+                return safe_relpath(src_joined, ref_dir).replace("\\", "/")
 
             def _ensure_relative_source(node, current_path=""):
                 for k, v in list(node.items()):
@@ -2767,12 +2860,7 @@ class IncrementalAnalyzer:
                         ):
                             del node[k]
                             continue
-                        rel_src = safe_relpath(
-                            os.path.join(src_root, raw_k),
-                            os.path.join(src_root, current_path)
-                            if current_path
-                            else src_root,
-                        ).replace("\\", "/")
+                        rel_src = _calc_relative_source(src_root, raw_k, current_path)
                         node[k] = {
                             "__type__": "file",
                             "source_path": raw_k,
@@ -2819,18 +2907,18 @@ class IncrementalAnalyzer:
                             ):
                                 del node[k]
                                 continue
-                            rel_src = safe_relpath(
-                                os.path.join(s_root, src_rel_for_calc),
-                                os.path.join(s_root, current_path)
-                                if current_path
-                                else s_root,
-                            ).replace("\\", "/")
+                            rel_src = _calc_relative_source(
+                                s_root, str(src_rel_for_calc), current_path
+                            )
                             v["relative_source"] = rel_src
                         else:
                             # It's a directory, recurse
-                            _ensure_relative_source(
-                                v, os.path.join(current_path, k) if current_path else k
+                            next_cur = (
+                                k
+                                if (not current_path or _is_absolute_path(k))
+                                else os.path.join(current_path, k)
                             )
+                            _ensure_relative_source(v, next_cur)
                             if not v:
                                 del node[k]
 

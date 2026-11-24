@@ -814,13 +814,27 @@ class TreeViewMixin:
 
                 target_filename = file_info.get("target_filename") or file_key
                 target_path = None
-                from app.core.path_utils import _is_absolute_path
+                from app.core.path_utils import _is_absolute_path, expand_target_path
 
                 override_dir = file_info.get("destination_override")
-                eff_folder = override_dir if override_dir else current_folder
+                eff_folder_raw = override_dir if override_dir else current_folder
+                eff_folder = (
+                    expand_target_path(str(eff_folder_raw)) if eff_folder_raw else ""
+                )
+                eff_dest_root = (
+                    (
+                        getattr(self.app_session, "dest_dir", None)
+                        if getattr(self, "app_session", None)
+                        else None
+                    )
+                    or getattr(self, "dest_dir", None)
+                    or self.base_dir
+                )
 
                 if eff_folder and _is_absolute_path(eff_folder):
-                    if re.match(r"^[a-zA-Z]:[/\\]", eff_folder):
+                    if re.match(r"^[a-zA-Z]:[/\\]", eff_folder) or (
+                        eff_folder.startswith(("\\\\", "//")) and os.name != "nt"
+                    ):
                         sep = "\\" if "\\" in eff_folder else "/"
                         target_path = (
                             f"{eff_folder.rstrip('/\\')}{sep}{target_filename}"
@@ -829,9 +843,9 @@ class TreeViewMixin:
                         target_path = os.path.normpath(
                             os.path.join(eff_folder, target_filename)
                         )
-                elif self.base_dir:
+                elif eff_dest_root:
                     target_path = os.path.normpath(
-                        os.path.join(self.base_dir, eff_folder, target_filename)
+                        os.path.join(eff_dest_root, eff_folder, target_filename)
                     )
                 elif eff_folder:
                     target_path = os.path.normpath(
@@ -1049,13 +1063,29 @@ class TreeViewMixin:
             rating = data.get("rating") or "None"
             info = data.get("info") if isinstance(data.get("info"), dict) else {}
 
+            from app.core.path_utils import _is_absolute_path, expand_target_path
+
             src_filepath = data.get("filepath") or info.get("filepath") or key
             target_fn = info.get("target_filename") or key
-            target_folder = folder if folder != "(Root)" else ""
-            if self.base_dir and target_folder:
-                target_filepath = os.path.join(self.base_dir, target_folder, target_fn)
-            elif self.base_dir:
-                target_filepath = os.path.join(self.base_dir, target_fn)
+            raw_target_folder = folder if folder != "(Root)" else ""
+            target_folder = (
+                expand_target_path(str(raw_target_folder)) if raw_target_folder else ""
+            )
+            eff_dest_root = (
+                (
+                    getattr(self.app_session, "dest_dir", None)
+                    if getattr(self, "app_session", None)
+                    else None
+                )
+                or getattr(self, "dest_dir", None)
+                or self.base_dir
+            )
+            if target_folder and _is_absolute_path(target_folder):
+                target_filepath = os.path.join(target_folder, target_fn)
+            elif eff_dest_root and target_folder:
+                target_filepath = os.path.join(eff_dest_root, target_folder, target_fn)
+            elif eff_dest_root:
+                target_filepath = os.path.join(eff_dest_root, target_fn)
             else:
                 target_filepath = (
                     os.path.join(target_folder, target_fn)

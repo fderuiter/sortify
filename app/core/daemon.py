@@ -73,6 +73,7 @@ def _run_sorting_process_entry(
     base_dir: str,
     config_filepath: Optional[str] = None,
     cancel_event: Optional[Any] = None,
+    dest_dir: Optional[str] = None,
 ):
     """Entry point for the process-isolated background sorting worker subprocess."""
     lower_process_priority()
@@ -83,7 +84,11 @@ def _run_sorting_process_entry(
             AppSettings(filepath=config_filepath) if config_filepath else AppSettings()
         )
         settings.load()
-        daemon = ContinuousWatchdogDaemon(settings, base_dir)
+        daemon = (
+            ContinuousWatchdogDaemon(settings, base_dir, dest_dir=dest_dir)
+            if dest_dir is not None
+            else ContinuousWatchdogDaemon(settings, base_dir)
+        )
         daemon._is_running = True
         event_to_pass = cancel_event if cancel_event is not None else threading.Event()
         daemon._run_sorting_sync(event_to_pass)
@@ -209,9 +214,19 @@ _VALID_TRANSITIONS: dict[DaemonState, set[DaemonState]] = {
 class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
     """Daemon that continuously monitors a folder using an async queue pipeline."""
 
-    def __init__(self, settings: AppSettings, base_dir: str):
+    def __init__(
+        self,
+        settings: AppSettings,
+        base_dir: str,
+        dest_dir: Optional[str] = None,
+    ):
         self.settings = settings
         self.base_dir = os.path.abspath(base_dir)
+        self._explicit_dest_dir: Optional[str] = (
+            os.path.abspath(os.path.expanduser(dest_dir.strip()))
+            if isinstance(dest_dir, str) and dest_dir.strip()
+            else None
+        )
         self.observer = None
 
         self._state: DaemonState = DaemonState.STOPPED
@@ -261,6 +276,16 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         self._sorting_process: Optional[multiprocessing.process.BaseProcess] = None
         self._proc_cancel_event: Optional[Any] = None
         self._rerun_pending: bool = False
+
+    @property
+    def dest_dir(self) -> Optional[str]:
+        """Effective destination directory when sorting into a separate root."""
+        if self._explicit_dest_dir:
+            return self._explicit_dest_dir
+        cfg_dest = getattr(self.settings, "DEST_DIR", "")
+        if isinstance(cfg_dest, str) and cfg_dest.strip():
+            return os.path.abspath(os.path.expanduser(cfg_dest.strip()))
+        return None
 
     @property
     def state(self) -> DaemonState:
@@ -496,17 +521,24 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         if not isinstance(plan, dict):
             return paths
 
+        from app.core.path_utils import _is_absolute_path, expand_target_path
+
         base = self.base_dir or ""
+        target_root = self.dest_dir or base
 
         for key, content in plan.items():
+            exp_key = expand_target_path(str(key)) if isinstance(key, str) else str(key)
             if isinstance(content, str):
+                exp_content = expand_target_path(content)
                 src_path = (
-                    os.path.join(base, key) if base and not os.path.isabs(key) else key
+                    os.path.join(base, exp_key)
+                    if base and not _is_absolute_path(exp_key)
+                    else exp_key
                 )
                 dst_path = (
-                    os.path.join(base, content)
-                    if base and not os.path.isabs(content)
-                    else content
+                    os.path.join(target_root, exp_content)
+                    if target_root and not _is_absolute_path(exp_content)
+                    else exp_content
                 )
 
                 norm_src = os.path.normcase(os.path.abspath(src_path))
@@ -520,16 +552,23 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
                 if content.get("__type__") == "file":
                     rel_src = content.get("relative_source") or key
                     filename = content.get("target_filename") or os.path.basename(key)
-                    rel_dst = os.path.join(current_dest, filename)
+                    exp_cur_dest = (
+                        expand_target_path(current_dest) if current_dest else ""
+                    )
+                    rel_dst = (
+                        os.path.join(exp_cur_dest, filename)
+                        if exp_cur_dest
+                        else filename
+                    )
 
                     src_path = (
                         os.path.join(base, rel_src)
-                        if base and not os.path.isabs(rel_src)
-                        else rel_src
+                        if base and not _is_absolute_path(str(rel_src))
+                        else str(rel_src)
                     )
                     dst_path = (
-                        os.path.join(base, rel_dst)
-                        if base and not os.path.isabs(rel_dst)
+                        os.path.join(target_root, rel_dst)
+                        if target_root and not _is_absolute_path(rel_dst)
                         else rel_dst
                     )
 
@@ -543,8 +582,13 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
                 elif content.get("__type__") == "directory":
                     continue
                 else:
+                    next_dest = (
+                        exp_key
+                        if (not current_dest and _is_absolute_path(exp_key))
+                        else os.path.join(current_dest, exp_key)
+                    )
                     sub_paths = self._extract_plan_paths(
-                        content, current_dest=os.path.join(current_dest, key)
+                        content, current_dest=next_dest
                     )
                     paths.update(sub_paths)
 
@@ -564,7 +608,9 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             try:
                 from app.core.verifier import VerificationEngine
 
-                moves = VerificationEngine.get_moves(self.base_dir, plan)
+                moves = VerificationEngine.get_moves(
+                    self.base_dir, plan, dest_dir=self.dest_dir
+                )
                 for rel_src, src, dst in moves:
                     if src:
                         norm_s = os.path.normcase(os.path.abspath(src))
@@ -643,6 +689,7 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         scan_filter = ScanFilter.from_settings(
             self.settings,
             base_dir=self.base_dir,
+            dest_dir=self.dest_dir,
         )
         if (
             scan_filter.check_path(
@@ -760,8 +807,14 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         with self._lock:
             session = getattr(self, "_app_session", None)
             if session is None:
-                session = AppSession(self.settings, self.base_dir)
+                session = (
+                    AppSession(self.settings, self.base_dir, dest_dir=self.dest_dir)
+                    if self.dest_dir is not None
+                    else AppSession(self.settings, self.base_dir)
+                )
                 self._app_session = session
+            elif hasattr(session, "dest_dir"):
+                session.dest_dir = self.dest_dir
             return session
 
     def _start_pipeline_event_loop(self):
@@ -926,7 +979,10 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
     def _build_pipeline(self, app_session: Any) -> SortPipeline:
         """Build a SortPipeline bound to daemon settings, base_dir, and telemetry."""
         pipeline = SortPipeline(
-            app_session, base_dir=self.base_dir, settings=self.settings
+            app_session,
+            base_dir=self.base_dir,
+            dest_dir=self.dest_dir,
+            settings=self.settings,
         )
         pipeline.add_state_change_hook(
             lambda old_s, new_s, _ctx=None: self.emit_telemetry(
@@ -1232,7 +1288,11 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         def _scan():
             from app.core.scanner import ScanFilter, active_scan_filter
 
-            sf = ScanFilter.from_settings(self.settings, base_dir=self.base_dir)
+            sf = ScanFilter.from_settings(
+                self.settings,
+                base_dir=self.base_dir,
+                dest_dir=self.dest_dir,
+            )
             with active_scan_filter(sf):
                 files = get_files_recursively(self.base_dir)
             return [f for f in files if not self.should_ignore_path(f)]
@@ -1276,7 +1336,7 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         errors: list[str] | None = None,
     ) -> dict[str, Any]:
         """Run SortPipeline over pre-validated drop target paths."""
-        _ = dest_dir
+        eff_drop_dest = dest_dir or self.dest_dir
         processed_items = []
         error_list = list(errors) if errors is not None else []
 
@@ -1285,9 +1345,15 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
                 if not (os.path.isdir(abs_path) or os.path.isfile(abs_path)):
                     continue
                 base_dir, files = drop_scope(abs_path)
-                session = AppSession(self.settings, base_dir=base_dir)
+                session = (
+                    AppSession(self.settings, base_dir=base_dir, dest_dir=eff_drop_dest)
+                    if eff_drop_dest is not None
+                    else AppSession(self.settings, base_dir=base_dir)
+                )
                 try:
-                    plan, outcome = SortPipeline(session).run(files, dry_run=dry_run)
+                    plan, outcome = SortPipeline(session, dest_dir=eff_drop_dest).run(
+                        files, dry_run=dry_run
+                    )
                     if outcome is None:
                         summary = {
                             "status": "dry_run",
@@ -1564,9 +1630,15 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             mp_cancel_event = ctx.Event()
             self._proc_cancel_event = mp_cancel_event
 
+            proc_kwargs = (
+                {"dest_dir": self._explicit_dest_dir}
+                if self._explicit_dest_dir is not None
+                else {}
+            )
             proc = ctx.Process(
                 target=_run_sorting_process_entry,
                 args=(self.base_dir, config_filepath, mp_cancel_event),
+                kwargs=proc_kwargs,
                 daemon=False,
             )
             self._sorting_process = proc
@@ -1630,13 +1702,19 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
 
         app_session = None
         try:
-            app_session = AppSession(self.settings, self.base_dir)
+            app_session = (
+                AppSession(self.settings, self.base_dir, dest_dir=self.dest_dir)
+                if self.dest_dir is not None
+                else AppSession(self.settings, self.base_dir)
+            )
             pipeline = self._build_pipeline(app_session)
 
             from app.core.scanner import ScanFilter, active_scan_filter
 
             daemon_scan_filter = ScanFilter.from_settings(
-                self.settings, base_dir=self.base_dir
+                self.settings,
+                base_dir=self.base_dir,
+                dest_dir=self.dest_dir,
             )
 
             # PHASE 1: Fast-Path (Deterministic Rules)
@@ -1716,12 +1794,20 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
                 app_session.close()
 
 
-def start_daemon(settings: AppSettings, base_dir: str | None = None):
+def start_daemon(
+    settings: AppSettings,
+    base_dir: str | None = None,
+    dest_dir: str | None = None,
+):
     """Start the persistent directory-watching daemon service."""
     if not base_dir:
         base_dir = os.getcwd()
 
-    daemon = ContinuousWatchdogDaemon(settings, base_dir)
+    daemon = (
+        ContinuousWatchdogDaemon(settings, base_dir, dest_dir=dest_dir)
+        if dest_dir is not None
+        else ContinuousWatchdogDaemon(settings, base_dir)
+    )
     daemon.start()
 
     # Keep the main thread alive while monitoring

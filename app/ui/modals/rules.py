@@ -475,9 +475,16 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Optional[Any]])
         width: auto;
         min-width: 12;
     }
-    #chk-import-disabled {
+    #row-import-options {
+        height: auto;
         margin-top: 0;
         margin-bottom: 0;
+    }
+    #chk-import-disabled, #chk-preserve-external-targets {
+        width: auto;
+        margin-top: 0;
+        margin-bottom: 0;
+        margin-right: 1;
     }
     #select-bulk-conflict-strategy {
         width: 1fr;
@@ -531,6 +538,7 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Optional[Any]])
         self.conflicts: list[Any] = []
         self.conflict_resolutions: dict[str, str] = {}
         self.import_disabled: bool = True
+        self.preserve_external_targets: bool = False
 
     def compose(self) -> ComposeResult:
         """Compose rule import modal children."""
@@ -562,15 +570,24 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Optional[Any]])
                     btn_parse.tooltip = "Parse selected rule file and display preview"
                     yield btn_parse
 
-                chk_disabled = Checkbox(
-                    "Import new rules disabled for review",
-                    value=True,
-                    id="chk-import-disabled",
-                )
-                chk_disabled.tooltip = (
-                    "Stage newly imported rules disabled until reviewed and enabled"
-                )
-                yield chk_disabled
+                with Horizontal(classes="input-row", id="row-import-options"):
+                    chk_disabled = Checkbox(
+                        "Import new rules disabled for review",
+                        value=True,
+                        id="chk-import-disabled",
+                    )
+                    chk_disabled.tooltip = (
+                        "Stage newly imported rules disabled until reviewed and enabled"
+                    )
+                    yield chk_disabled
+
+                    chk_external = Checkbox(
+                        "Preserve external targets",
+                        value=False,
+                        id="chk-preserve-external-targets",
+                    )
+                    chk_external.tooltip = "Preserve exported external destinations under ALLOWED_EXTERNAL_ROOTS instead of converting to relative folders"
+                    yield chk_external
 
                 yield Label(
                     "Browse or enter a file path and click 'Parse File' to preview extracted rules.",
@@ -673,6 +690,23 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Optional[Any]])
         )
         self.announce(f"New imported rules will be staged {mode_text}.")
 
+    @on(Checkbox.Changed, "#chk-preserve-external-targets")
+    def _on_preserve_external_changed(self, event: Checkbox.Changed) -> None:
+        """Toggle whether allowlisted external rule destinations are preserved on import."""
+        self.preserve_external_targets = bool(event.value)
+        mode_text = (
+            "preserve allowlisted external destinations"
+            if self.preserve_external_targets
+            else "convert external destinations to relative folders"
+        )
+        self.announce(f"Rule import will {mode_text}.")
+        try:
+            raw_val = self.query_one("#input-rule-file-path", Input).value.strip()
+            if raw_val and Path(raw_val).expanduser().exists():
+                self.action_parse_file()
+        except Exception:
+            pass
+
     @on(Button.Pressed, "#btn-browse-rule-file")
     def action_browse_file(self) -> None:
         """Open native OS file picker to select an external rule package."""
@@ -754,17 +788,30 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Optional[Any]])
             self.announce("Please enter a valid rule file path.")
             return
 
-        p = Path(path_str)
+        p = Path(path_str).expanduser()
         if not p.exists():
             lbl_status.update(f"File not found: '{path_str}'")
             self.announce(f"File not found: '{path_str}'")
             return
 
+        preserve_ext = self.preserve_external_targets
+        try:
+            preserve_ext = bool(
+                self.query_one("#chk-preserve-external-targets", Checkbox).value
+            )
+            self.preserve_external_targets = preserve_ext
+        except Exception:
+            pass
+
         try:
             from app.core.rule_importers import RuleConflictAnalyzer, get_rule_importer
 
             importer = get_rule_importer(p)
-            self.current_result = importer.parse_file(p)
+            self.current_result = importer.parse_file(
+                p,
+                preserve_external_targets=preserve_ext,
+                settings=self.settings,
+            )
             self.conflicts = RuleConflictAnalyzer.analyze(
                 self.current_result, self.settings
             )
@@ -960,12 +1007,22 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Optional[Any]])
         except Exception:
             pass
 
+        preserve_ext = self.preserve_external_targets
+        try:
+            preserve_ext = bool(
+                self.query_one("#chk-preserve-external-targets", Checkbox).value
+            )
+            self.preserve_external_targets = preserve_ext
+        except Exception:
+            pass
+
         try:
             new_kw, new_pol = self.current_result.merge_into_settings(
                 self.settings,
                 resolutions=self.conflict_resolutions,
                 default_strategy=bulk_strategy,
                 import_disabled=stage_disabled,
+                preserve_external_targets=preserve_ext,
             )
         except Exception as exc:
             err_msg = f"Failed to save imported rules: {exc}"
@@ -1056,11 +1113,13 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
         title: str = "Add Keyword Rule",
         pattern: str = "",
         target_folder: str = "",
+        settings: Any = None,
     ):
         super().__init__()
         self.title_text = title
         self.initial_pattern = pattern
         self.initial_target = target_folder
+        self.settings = settings
 
     def compose(self) -> ComposeResult:
         """Compose rule editor inputs and action buttons."""
@@ -1078,7 +1137,7 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
                 yield Label("Target Folder:", classes="field-label")
                 yield Input(
                     value=self.initial_target,
-                    placeholder="e.g. Finances/Invoices",
+                    placeholder="e.g. Finances/Invoices or ~/Pictures/Screenshots",
                     id="input-rule-target",
                 )
                 yield Label("", classes="error-label", id="lbl-rule-error")
@@ -1100,7 +1159,7 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
     @on(Button.Pressed, "#btn-save-rule")
     def action_save(self) -> None:
         """Validate inputs and dismiss modal with rule definition."""
-        from app.core.path_utils import validate_target_path
+        from app.core.path_utils import expand_target_path, validate_target_path
 
         pattern = self.query_one("#input-rule-pattern", Input).value.strip()
         target = self.query_one("#input-rule-target", Input).value.strip()
@@ -1118,8 +1177,26 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
             self.announce("Target folder cannot be empty.", priority="assertive")
             return
 
+        eff_settings = self.settings or getattr(self.app, "settings", None)
+        ext_roots = (
+            list(getattr(eff_settings, "ALLOWED_EXTERNAL_ROOTS", []) or [])
+            if eff_settings is not None
+            else None
+        )
+        prot_paths = (
+            list(getattr(eff_settings, "PROTECTED_PATHS", []) or [])
+            if eff_settings is not None
+            else None
+        )
+
         try:
-            validate_target_path(target, keyword=pattern)
+            validate_target_path(
+                target,
+                keyword=pattern,
+                allowed_external_roots=ext_roots,
+                protected_paths=prot_paths,
+            )
+            expanded_target = expand_target_path(target)
         except (ValueError, Exception) as exc:
             err_lbl.update(f"Invalid path: {exc}")
             err_lbl.add_class("visible")
@@ -1128,7 +1205,7 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
                 self.app.notify(str(exc), severity="error")
             return
 
-        self.dismiss({"pattern": pattern, "target": target})
+        self.dismiss({"pattern": pattern, "target": expanded_target})
 
     @on(Button.Pressed, "#btn-cancel-edit-rule")
     def action_cancel_button(self) -> None:
@@ -1548,7 +1625,10 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
             if hasattr(self.app, "notify"):
                 self.app.notify(msg)
 
-        self.app.push_screen(RuleEditModal(title="Add Keyword Rule"), on_rule_added)
+        self.app.push_screen(
+            RuleEditModal(title="Add Keyword Rule", settings=self.settings),
+            on_rule_added,
+        )
 
     @on(Button.Pressed, "#btn-edit-rule")
     def action_edit_rule(self) -> None:
@@ -1613,6 +1693,7 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
                 title=f"Edit Rule: {rule['pattern']}",
                 pattern=rule["pattern"],
                 target_folder=rule["target_folder"],
+                settings=self.settings,
             ),
             on_rule_edited,
         )

@@ -146,6 +146,8 @@ class RenameModal(
         base_dir: Optional[str] = None,
         source_path: Optional[str] = None,
         files: Optional[list[Any]] = None,
+        dest_dir: Optional[str] = None,
+        settings: Any = None,
     ):
         super().__init__()
         self.modal_title = title
@@ -159,6 +161,8 @@ class RenameModal(
         self.is_folder = is_folder
         self.plan = plan
         self.base_dir = base_dir
+        self.dest_dir = dest_dir
+        self.settings = settings
         self.source_path = source_path
         self._last_collision_state: Optional[str] = None
 
@@ -428,30 +432,82 @@ class RenameModal(
                     )
                     return True, msg
 
-        if dest_val:
-            s_check = re.sub(r"^[a-zA-Z]:", "", dest_val)
-            if any(c in s_check for c in '<>"|?*\x00'):
-                msg = "Destination path contains illegal characters."
+        from app.core.path_utils import (
+            expand_target_path,
+            is_allowed_external_target,
+            is_external_subpath,
+            validate_target_path,
+        )
+
+        effective_root = self.dest_dir or self.base_dir
+        prot_paths = (
+            getattr(self.settings, "PROTECTED_PATHS", None) or []
+            if self.settings is not None
+            else []
+        )
+        allowed_roots = (
+            getattr(self.settings, "ALLOWED_EXTERNAL_ROOTS", None) or []
+            if self.settings is not None
+            else []
+        )
+
+        unapproved_ext_warn: Optional[str] = None
+        candidate_dest_to_validate = dest_val
+        if not candidate_dest_to_validate and self.is_folder and formatted_name:
+            candidate_dest_to_validate = formatted_name
+
+        if candidate_dest_to_validate:
+            exp_dest = expand_target_path(candidate_dest_to_validate)
+            try:
+                validate_target_path(
+                    exp_dest,
+                    protected_paths=prot_paths,
+                    allow_unlisted_external=True,
+                )
+            except ValueError as e:
+                msg = str(e)
                 self._set_collision_warning(f"⚠️ Validation Error: {msg}", is_error=True)
                 return True, msg
+
+            if _is_absolute_path(exp_dest):
+                in_local = bool(
+                    (self.base_dir and is_external_subpath(exp_dest, self.base_dir))
+                    or (self.dest_dir and is_external_subpath(exp_dest, self.dest_dir))
+                )
+                if not in_local and not is_allowed_external_target(
+                    exp_dest, allowed_roots
+                ):
+                    unapproved_ext_warn = (
+                        f"Unapproved external root '{exp_dest}' — preview allowed, "
+                        "but execution [Ctrl+E] will be blocked until added to ALLOWED_EXTERNAL_ROOTS."
+                    )
+            dest_val = expand_target_path(dest_val) if dest_val else dest_val
 
         collision_msg: Optional[str] = None
 
         if self.is_folder:
-            target_folder = dest_val if dest_val else formatted_name
+            target_folder = (
+                dest_val
+                if dest_val
+                else (
+                    expand_target_path(formatted_name)
+                    if formatted_name.startswith("~")
+                    else formatted_name
+                )
+            )
             if target_folder and target_folder != self.current_name:
                 if self.plan and target_folder in self.plan:
                     collision_msg = (
                         f"Folder '{target_folder}' already exists in plan. "
                         "Confirming will merge folder contents safely."
                     )
-                elif self.base_dir:
+                elif effective_root or _is_absolute_path(target_folder):
                     disk_path = (
                         target_folder
                         if _is_absolute_path(target_folder)
-                        else os.path.join(self.base_dir, target_folder)
+                        else os.path.join(effective_root or "", target_folder)
                     )
-                    if os.path.isdir(disk_path):
+                    if disk_path and os.path.isdir(disk_path):
                         collision_msg = (
                             f"Target folder '{target_folder}' exists on disk. "
                             "Contents will merge safely."
@@ -500,16 +556,16 @@ class RenameModal(
                             )
 
                 if not collision_msg and (
-                    self.base_dir
+                    effective_root
                     or (target_folder and _is_absolute_path(target_folder))
                 ):
                     if target_folder and _is_absolute_path(target_folder):
                         dest_file_path = os.path.normpath(
                             os.path.join(target_folder, formatted_name)
                         )
-                    elif self.base_dir:
+                    elif effective_root:
                         dest_file_path = os.path.normpath(
-                            os.path.join(self.base_dir, target_folder, formatted_name)
+                            os.path.join(effective_root, target_folder, formatted_name)
                         )
                     else:
                         dest_file_path = None
@@ -531,13 +587,14 @@ class RenameModal(
                                 "Overwrite will be blocked (names disambiguated)."
                             )
 
-        if collision_msg:
-            full_warn = f"⚠️ {collision_msg}"
+        combined_warn = collision_msg or unapproved_ext_warn
+        if combined_warn:
+            full_warn = f"⚠️ {combined_warn}"
             self._set_collision_warning(full_warn, is_error=False)
             if self._last_collision_state != full_warn:
                 self.announce(full_warn)
                 self._last_collision_state = full_warn
-            return False, collision_msg
+            return False, combined_warn
         else:
             self._set_collision_warning("", is_error=False)
             self._last_collision_state = None
@@ -567,8 +624,11 @@ class RenameModal(
             self.announce(f"Cannot confirm rename: {err}")
             return
 
+        from app.core.path_utils import expand_target_path
+
         val = self.query_one("#input-name", Input).value.strip()
-        dest_val = self.query_one("#input-destination", Input).value.strip()
+        raw_dest_val = self.query_one("#input-destination", Input).value.strip()
+        dest_val = expand_target_path(raw_dest_val) if raw_dest_val else ""
 
         if self.files:
             if not val and not dest_val:
@@ -612,6 +672,8 @@ class RenameModal(
             return
 
         formatted = self._evaluate_preview(val) if val else ""
+        if self.is_folder and formatted.startswith("~"):
+            formatted = expand_target_path(formatted)
 
         if formatted:
             result = RenameResult(
@@ -686,8 +748,16 @@ class NewFolderModal(_SubmittableModalMixin, ResponsiveModalScreen[Optional[str]
     @on(Button.Pressed, "#btn-confirm")
     def action_confirm(self) -> None:
         """Confirm folder creation action."""
-        val = self.query_one("#input-folder-name", Input).value.strip()
+        from app.core.path_utils import expand_target_path, validate_target_path
+
+        raw_val = self.query_one("#input-folder-name", Input).value.strip()
+        val = expand_target_path(raw_val) if raw_val else ""
         if val:
+            try:
+                validate_target_path(val, allow_unlisted_external=True)
+            except ValueError as e:
+                self.announce(f"Cannot create folder: {e}")
+                return
             self.announce(f"Confirmed folder creation for '{val}'.")
         else:
             self.announce("Cancelled folder creation.")
@@ -844,11 +914,52 @@ class ReassignModal(
                 self._last_collision_state = msg
             return True, msg
 
-        s_check = re.sub(r"^[a-zA-Z]:", "", target)
-        if any(c in s_check for c in '<>"|?*\x00'):
-            msg = "Destination path contains illegal characters."
+        from app.core.path_utils import (
+            expand_target_path,
+            is_allowed_external_target,
+            is_external_subpath,
+            validate_target_path,
+        )
+
+        target = expand_target_path(target)
+        prot_paths = (
+            getattr(self.settings, "PROTECTED_PATHS", None) or []
+            if self.settings is not None
+            else []
+        )
+        allowed_roots = (
+            getattr(self.settings, "ALLOWED_EXTERNAL_ROOTS", None) or []
+            if self.settings is not None
+            else []
+        )
+
+        try:
+            validate_target_path(
+                target,
+                protected_paths=prot_paths,
+                allow_unlisted_external=True,
+            )
+        except ValueError as e:
+            msg = str(e)
             self._set_collision_warning(f"⚠️ Validation Error: {msg}", is_error=True)
+            if self._last_collision_state != msg:
+                self.announce(f"⚠️ Validation Error: {msg}")
+                self._last_collision_state = msg
             return True, msg
+
+        unapproved_ext_warn: Optional[str] = None
+        if _is_absolute_path(target):
+            in_local = bool(
+                (self.base_dir and is_external_subpath(target, self.base_dir))
+                or (self.dest_dir and is_external_subpath(target, self.dest_dir))
+            )
+            if not in_local and not is_allowed_external_target(target, allowed_roots):
+                unapproved_ext_warn = (
+                    f"Unapproved external root '{target}' — preview allowed, "
+                    "but execution [Ctrl+E] will be blocked until added to ALLOWED_EXTERNAL_ROOTS."
+                )
+
+        effective_root = self.dest_dir or self.base_dir
 
         # Check collision across staging plan and filesystem
         collisions = []
@@ -872,11 +983,13 @@ class ReassignModal(
                     and existing_item.get("filepath") != src_fp
                 ):
                     collisions.append(fn)
-            elif self.base_dir or _is_absolute_path(target):
+            elif effective_root or _is_absolute_path(target):
                 if _is_absolute_path(target):
                     dst_disk = os.path.normpath(os.path.join(target, fn))
-                elif self.base_dir:
-                    dst_disk = os.path.normpath(os.path.join(self.base_dir, target, fn))
+                elif effective_root:
+                    dst_disk = os.path.normpath(
+                        os.path.join(effective_root, target, fn)
+                    )
                 else:
                     dst_disk = None
 
@@ -905,6 +1018,13 @@ class ReassignModal(
                 self.announce(full_warn)
                 self._last_collision_state = full_warn
             return False, warn_msg
+        elif unapproved_ext_warn:
+            full_warn = f"⚠️ {unapproved_ext_warn}"
+            self._set_collision_warning(full_warn, is_error=False)
+            if self._last_collision_state != full_warn:
+                self.announce(full_warn)
+                self._last_collision_state = full_warn
+            return False, unapproved_ext_warn
         else:
             self._set_collision_warning("", is_error=False)
             self._last_collision_state = None
@@ -928,6 +1048,8 @@ class ReassignModal(
             self.announce(f"Cannot confirm reassignment: {err}")
             return
 
+        from app.core.path_utils import expand_target_path
+
         val = self.query_one("#input-target-folder", Input).value.strip()
         if not val:
             try:
@@ -937,6 +1059,7 @@ class ReassignModal(
             except Exception:
                 pass
         if val:
+            val = expand_target_path(val)
             self.announce(f"Reassigning to target folder '{val}'.")
         else:
             self.announce("Cancelled bulk reassign.")

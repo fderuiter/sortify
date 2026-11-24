@@ -264,7 +264,12 @@ class PolicyEngine:
 
     @staticmethod
     def validate_lock_path_safe(
-        lock_path: Any, file_path: str | None = None
+        lock_path: Any,
+        file_path: str | None = None,
+        *,
+        allowed_external_roots: Any = None,
+        protected_paths: Any = None,
+        settings: Any = None,
     ) -> tuple[bool, str | None]:
         """Validate a folder lock path safely without raising exceptions.
 
@@ -275,22 +280,46 @@ class PolicyEngine:
         """
         if not isinstance(lock_path, str):
             return False, f"Lock path must be a string. Got {type(lock_path)}"
+        eff_roots = allowed_external_roots
+        if eff_roots is None and settings is not None:
+            raw_roots = getattr(settings, "ALLOWED_EXTERNAL_ROOTS", None)
+            if isinstance(raw_roots, (list, tuple, set)):
+                eff_roots = list(raw_roots)
+        eff_protected = protected_paths
+        if eff_protected is None and settings is not None:
+            raw_prot = getattr(settings, "PROTECTED_PATHS", None)
+            if isinstance(raw_prot, (list, tuple, set)):
+                eff_protected = list(raw_prot)
         try:
             validate_target_path(
-                lock_path, keyword=os.path.basename(file_path) if file_path else None
+                lock_path,
+                keyword=os.path.basename(file_path) if file_path else None,
+                allowed_external_roots=eff_roots,
+                protected_paths=eff_protected,
             )
             return True, None
         except ValueError as err:
             return False, str(err)
 
     @staticmethod
-    def validate_lock_path(lock_path: str, file_path: str | None = None) -> None:
+    def validate_lock_path(
+        lock_path: str,
+        file_path: str | None = None,
+        *,
+        allowed_external_roots: Any = None,
+        protected_paths: Any = None,
+        settings: Any = None,
+    ) -> None:
         """Validate a folder lock path against the established policy schema (path rules).
 
         Raises ValueError if invalid.
         """
         is_valid, error_msg = PolicyEngine.validate_lock_path_safe(
-            lock_path, file_path=file_path
+            lock_path,
+            file_path=file_path,
+            allowed_external_roots=allowed_external_roots,
+            protected_paths=protected_paths,
+            settings=settings,
         )
         if not is_valid:
             raise ValueError(error_msg)

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "9df6ca195407120bb09c71a435bec487589fb3b8d12f848dc27bc7a7e58837ea"
+    "checksum": "1bdc18c4b005263a01a2ff8c7a374c0b00f8c519977a778e447b9f34f3fec014"
   },
   "classes": [
     {
@@ -26,9 +26,29 @@
               "annotation": "str",
               "default": null,
               "name": "base_dir"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "dest_dir"
             }
           ],
           "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "dest_dir",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "Optional[str]"
         },
         {
           "async": false,
@@ -448,6 +468,11 @@
           "annotation": "str | None",
           "default": "None",
           "name": "base_dir"
+        },
+        {
+          "annotation": "str | None",
+          "default": "None",
+          "name": "dest_dir"
         }
       ],
       "returns": null

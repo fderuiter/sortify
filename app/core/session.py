@@ -17,7 +17,13 @@ class AppSession:
     folder_lock_timeout = 10.0
 
     def __init__(
-        self, settings, base_dir=None, session_id=None, source_dirs=None, store=None
+        self,
+        settings,
+        base_dir=None,
+        session_id=None,
+        source_dirs=None,
+        store=None,
+        dest_dir=None,
     ):
         self.settings = settings
         if source_dirs:
@@ -36,6 +42,19 @@ class AppSession:
             self.source_dirs = []
 
         self.base_dir = self.source_dirs[0] if self.source_dirs else base_dir
+        raw_dest = (
+            dest_dir if dest_dir is not None else getattr(settings, "DEST_DIR", "")
+        )
+        if isinstance(raw_dest, str) and raw_dest.strip():
+            self.dest_dir: str | None = os.path.normpath(
+                os.path.abspath(os.path.expanduser(raw_dest.strip()))
+            )
+        elif raw_dest and isinstance(raw_dest, os.PathLike):
+            self.dest_dir = os.path.normpath(
+                os.path.abspath(os.path.expanduser(os.fspath(raw_dest)))
+            )
+        else:
+            self.dest_dir = None
 
         from app.core.path_utils import get_base_path, setup_session_directory
 
@@ -289,6 +308,7 @@ class AppSession:
             _, lk, _, _ = self.cache_manager.load_cache(s_dir)
             if lk:
                 locked.update(lk)
+        eff_dest_dir = dest_dir if dest_dir is not None else self.dest_dir
         plan = self.analyzer.generate_sorting_plan(
             effective_base_dir,
             self.settings,
@@ -298,7 +318,7 @@ class AppSession:
             jev_results=jev_results,
             source_dirs=self.source_dirs,
             existing_folders=existing_folders,
-            dest_dir=dest_dir,
+            dest_dir=eff_dest_dir,
         )
         if (
             hasattr(self, "lifecycle_state")
@@ -383,8 +403,11 @@ class AppSession:
         move_kwargs: dict[str, Any] = dict(kwargs)
         if chunk_size is not None:
             move_kwargs["chunk_size"] = chunk_size
+        eff_dest_dir = move_kwargs.pop("dest_dir", None) or self.dest_dir
+        if eff_dest_dir is not None:
+            move_kwargs["dest_dir"] = eff_dest_dir
 
-        with self._lock_folders():
+        with self._lock_folders(plan=plan, dest_dir=eff_dest_dir):
             try:
                 summary = execute_moves(
                     effective_base_dir,
@@ -428,7 +451,7 @@ class AppSession:
             return {}
         from app.core.mover import retry_failed_moves
 
-        with self._lock_folders():
+        with self._lock_folders(dest_dir=self.dest_dir):
             return retry_failed_moves(
                 effective_base_dir,
                 failed_items,
@@ -439,21 +462,24 @@ class AppSession:
                 **kwargs,
             )
 
-    def _lock_folders(self) -> contextlib.ExitStack:
-        """Hold a FolderLock on every source folder while files move."""
-        from app.core.folder_lock import FolderLock
+    def _lock_folders(
+        self, plan: Any = None, dest_dir: str | None = None
+    ) -> contextlib.ExitStack:
+        """Hold a FolderLock on every source, destination, and active external root in canonical order."""
+        from app.core.folder_lock import (
+            collect_plan_external_roots,
+            lock_multiple_folders,
+        )
 
-        stack = contextlib.ExitStack()
-        folders = self.source_dirs or ([self.base_dir] if self.base_dir else [])
-        try:
-            for folder in sorted(folders):
-                stack.enter_context(
-                    FolderLock(folder, timeout=self.folder_lock_timeout)
-                )
-        except BaseException:
-            stack.close()
-            raise
-        return stack
+        folders: list[str] = list(
+            self.source_dirs or ([self.base_dir] if self.base_dir else [])
+        )
+        eff_dest = dest_dir if dest_dir is not None else getattr(self, "dest_dir", None)
+        if eff_dest:
+            folders.append(eff_dest)
+        if plan is not None:
+            folders.extend(collect_plan_external_roots(plan, settings=self.settings))
+        return lock_multiple_folders(folders, timeout=self.folder_lock_timeout)
 
     def close(self):
         """Release session services without stopping another active consumer."""

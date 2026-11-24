@@ -81,19 +81,19 @@ Whether single-character keyboard shortcuts (such as 'R' to reassign) are active
 - **Type**: `dict`
 - **Default**: `{}`
 
-Mapping of lowercase keyword strings to relative target folder paths. Target paths are validated to forbid absolute paths, '..' traversal segments, OS-reserved device names, illegal characters (<, >, :, ", |, ?, *), and trailing spaces or periods.
+Mapping of lowercase keyword strings to relative target folder paths or external destination paths under ALLOWED_EXTERNAL_ROOTS (with '~' expanded). Target paths forbid '..' traversal segments, protected paths, OS-reserved device names, illegal characters (<, >, :, ", |, ?, *), and trailing spaces or periods.
 
 ### `DISABLED_KEYWORD_RULES`
 - **Type**: `dict`
 - **Default**: `{}`
 
-Mapping of temporarily disabled keyword strings to relative target folder paths, preserving path mappings while inactive and enforcing the same relative target path validation as KEYWORD_RULES.
+Mapping of temporarily disabled keyword strings to relative or allowlisted external target folder paths, preserving path mappings while inactive and enforcing the same target path validation as KEYWORD_RULES.
 
 ### `LEARNED_RULES`
 - **Type**: `dict`
 - **Default**: `{}`
 
-Mapping of user-corrected keyword patterns to relative target folder paths learned from interactive reassignments, validated with the same relative path rules as KEYWORD_RULES.
+Mapping of user-corrected keyword patterns to relative or allowlisted external target folder paths learned from interactive reassignments, validated with the same path rules as KEYWORD_RULES.
 
 ### `EXTENSION_CATEGORIES`
 - **Type**: `dict`
@@ -160,7 +160,19 @@ Number of days (> 0) to retain historical sorting session records and rollback s
 - **Type**: `list[str]`
 - **Default**: `[]`
 
-List of absolute literal directory paths protected from scanning, moving, or modification. Relative paths and wildcard or glob characters ('*', '?', '[', ']') are rejected.
+List of absolute literal directory paths (expanding leading '~') protected from scanning, moving, or modification. Relative paths and wildcard or glob characters ('*', '?', '[', ']') are rejected.
+
+### `ALLOWED_EXTERNAL_ROOTS`
+- **Type**: `list[str]`
+- **Default**: `[]`
+
+List of user-approved external directory roots (POSIX, Windows drive, UNC share, or '~' home paths) into which rules, policies, imports, and interactive reassignments may route files. Traversal segments ('..'), wildcards, and protected paths are rejected.
+
+### `DEST_DIR`
+- **Type**: `str`
+- **Default**: `''`
+
+Optional default destination root directory (absolute or '~' home path) where sorted relative category folders are placed when no CLI --dest-dir override is provided. Empty string keeps destinations inside the scanned source directory.
 
 ### `AUTO_QUARANTINE_RATINGS`
 - **Type**: `list[str]`
@@ -491,7 +503,8 @@ Main command-line interface for Smart AutoSorter AI Pro.
 #### Top-Level Usage
 ```text
 usage: smart-autosorter [-h] [-q] [--no-color] [--demo] [--smoke-test]
-                        [--json] [--daemon] [--tui] [--interactive]
+                        [--json] [--daemon] [--dest-dir DEST_DIR] [--tui]
+                        [--interactive]
                         [--accept-ai-consent | --decline-ai-consent]
                         [--skip-wizard] [--non-interactive]
                         {sort,scan,config,daemon,undo,drop,ledger,model,quarantine,rules}
@@ -530,6 +543,7 @@ options:
   --smoke-test          Run automated database smoke test and exit
   --json                Output in structured JSON format
   --daemon              Launch the persistent directory-watching daemon
+  --dest-dir DEST_DIR   Destination directory for sorted files
   --tui                 Launch full-screen Textual TUI interface
   --interactive         Same as --tui
   --accept-ai-consent   Pre-configure AI consent as granted and bypass
@@ -646,7 +660,7 @@ options:
 ##### `scan`
 ```text
 usage: smart-autosorter scan [-h] [--preset {demo,downloads,documents}]
-                             [--json] [-q] [--no-color]
+                             [--dest-dir DEST_DIR] [--json] [-q] [--no-color]
                              [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
                              [--conflict-policy {skip,rename}]
@@ -669,6 +683,7 @@ options:
   --preset {demo,downloads,documents}
                         Use standard workspace preset directory (demo,
                         downloads, documents)
+  --dest-dir DEST_DIR   Destination directory for sorted files
   --json                Output scan plan in structured JSON format
   -q, --quiet           Suppress informational prints and non-essential
                         progress output
@@ -761,8 +776,8 @@ options:
 
 ##### `daemon`
 ```text
-usage: smart-autosorter daemon [-h] [--watch] [-q] [--no-color]
-                               [--max-folders MAX_FOLDERS]
+usage: smart-autosorter daemon [-h] [--dest-dir DEST_DIR] [--watch] [-q]
+                               [--no-color] [--max-folders MAX_FOLDERS]
                                [--strategy {default,generative,clinical_tmf,clinical_isf}]
                                [--conflict-policy {skip,rename}]
                                [--duplicates {off,skip,stage,trash}]
@@ -783,6 +798,7 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
+  --dest-dir DEST_DIR   Destination directory for sorted files
   --watch               Continuously monitor status telemetry in real time
   -q, --quiet           Suppress informational prints and non-essential
                         progress output
@@ -1296,6 +1312,7 @@ usage: smart-autosorter rules import [-h] [--settings-file SETTINGS_FILE] [-q]
                                      [--dry-run]
                                      [--conflict-strategy {keep_existing,overwrite,skip_conflicting}]
                                      [--resolve IDENT=STRATEGY]
+                                     [--preserve-external-targets]
                                      [--disabled | --enable]
                                      [FILE]
 
@@ -1321,6 +1338,9 @@ options:
   --resolve IDENT=STRATEGY
                         Per-rule conflict override, e.g. --resolve
                         invoice=overwrite (repeatable)
+  --preserve-external-targets
+                        Preserve allowlisted external destination paths
+                        instead of converting to relative folders
   --disabled            Import new rules disabled for review (default)
   --enable, --enabled   Activate newly imported rules immediately instead of
                         staging disabled

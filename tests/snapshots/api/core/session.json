@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "a9eb6b8fd369a32bdee550166ce68f5c1a68b53afc3e7517f50774bee0c7712d"
+    "checksum": "6cbdbc23f0e336ca5ff36fa2b6484b6a56c36fd64209cdf64fae38e68dddf560"
   },
   "classes": [
     {
@@ -41,6 +41,11 @@
               "annotation": null,
               "default": "None",
               "name": "store"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "dest_dir"
             }
           ],
           "returns": null

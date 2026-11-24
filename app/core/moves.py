@@ -664,12 +664,23 @@ class MoveLedger(LifecycleTelemetryMixin):
                 else:
                     if db and base_dir:
                         try:
-                            raw_folder = (
-                                os.path.dirname(dst_rel).replace("\\", "/").strip("/")
-                            )
-                            target_folder = (
-                                raw_folder if raw_folder and raw_folder != "." else None
-                            )
+                            from app.core.mover import is_subpath_or_equal
+
+                            if is_subpath_or_equal(dst, base_dir):
+                                dst_doc_path = dst_rel
+                                raw_folder = (
+                                    os.path.dirname(dst_rel)
+                                    .replace("\\", "/")
+                                    .strip("/")
+                                )
+                                target_folder = (
+                                    raw_folder
+                                    if raw_folder and raw_folder != "."
+                                    else None
+                                )
+                            else:
+                                dst_doc_path = os.path.abspath(dst).replace("\\", "/")
+                                target_folder = os.path.dirname(dst_doc_path)
                             if expected_hash and hasattr(
                                 db, "set_user_verified_target"
                             ):
@@ -677,7 +688,7 @@ class MoveLedger(LifecycleTelemetryMixin):
                                     base_dir, expected_hash, target_folder
                                 )
                             if hasattr(db, "update_document_path"):
-                                db.update_document_path(base_dir, src_rel, dst_rel)
+                                db.update_document_path(base_dir, src_rel, dst_doc_path)
                         except Exception as exc:  # noqa: BLE001 - best-effort DB sync on crash recovery
                             logger.warning(
                                 "Reconciliation DB roll-forward failed for %s: %s",

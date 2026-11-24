@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "486f863b11ee4d0ed2228e8abaea163d1a76581df1220410362f60cf2060cb5c"
+    "checksum": "0d595c38f0d95635e9439c7728979c415d714759713acd30e3f31b39b78d3611"
   },
   "cli": [
     {
@@ -69,6 +69,18 @@
       "keywords": {
         "action": "store_true",
         "help": "Launch the persistent directory-watching daemon"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--dest-dir"
+      ],
+      "caller": "parser",
+      "keywords": {
+        "default": null,
+        "help": "Destination directory for sorted files",
+        "type": "str"
       },
       "method": "add_argument"
     },
@@ -281,6 +293,18 @@
     },
     {
       "args": [
+        "--dest-dir"
+      ],
+      "caller": "parser_scan",
+      "keywords": {
+        "default": null,
+        "help": "Destination directory for sorted files",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
         "--json"
       ],
       "caller": "parser_scan",
@@ -369,6 +393,18 @@
         "default": null,
         "help": "Directory to watch or control",
         "nargs": "?"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--dest-dir"
+      ],
+      "caller": "parser_daemon",
+      "keywords": {
+        "default": null,
+        "help": "Destination directory for sorted files",
+        "type": "str"
       },
       "method": "add_argument"
     },

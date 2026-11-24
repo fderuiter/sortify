@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "a03387dff63c5f4e86389487c5676e274720dc18a082d2d1b24ac063ddbc96f5"
+    "checksum": "84f6453ff8a6e6369c3bb3e12377491ac88e5d3a39ac17eef77a68e80403a291"
   },
   "classes": [
     {
@@ -43,6 +43,26 @@
               "annotation": "str | Path",
               "default": null,
               "name": "file_path"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "preserve_external_targets"
+            },
+            {
+              "annotation": "Sequence[str] | None",
+              "default": "None",
+              "name": "allowed_external_roots"
+            },
+            {
+              "annotation": "Sequence[str] | None",
+              "default": "None",
+              "name": "protected_paths"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "settings"
             }
           ],
           "returns": "ImportResult"
@@ -85,6 +105,26 @@
               "annotation": "str | Path",
               "default": null,
               "name": "file_path"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "preserve_external_targets"
+            },
+            {
+              "annotation": "Sequence[str] | None",
+              "default": "None",
+              "name": "allowed_external_roots"
+            },
+            {
+              "annotation": "Sequence[str] | None",
+              "default": "None",
+              "name": "protected_paths"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "settings"
             }
           ],
           "returns": "ImportResult"
@@ -127,6 +167,26 @@
               "annotation": "str | Path",
               "default": null,
               "name": "file_path"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "preserve_external_targets"
+            },
+            {
+              "annotation": "Sequence[str] | None",
+              "default": "None",
+              "name": "allowed_external_roots"
+            },
+            {
+              "annotation": "Sequence[str] | None",
+              "default": "None",
+              "name": "protected_paths"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "settings"
             }
           ],
           "returns": "ImportResult"
@@ -168,6 +228,11 @@
               "annotation": "bool",
               "default": "False",
               "name": "import_disabled"
+            },
+            {
+              "annotation": "bool | None",
+              "default": "None",
+              "name": "preserve_external_targets"
             }
           ],
           "returns": "tuple[dict[str, str], list[dict[str, Any]]]"
@@ -243,6 +308,26 @@
               "annotation": "str | Path",
               "default": null,
               "name": "file_path"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "preserve_external_targets"
+            },
+            {
+              "annotation": "Sequence[str] | None",
+              "default": "None",
+              "name": "allowed_external_roots"
+            },
+            {
+              "annotation": "Sequence[str] | None",
+              "default": "None",
+              "name": "protected_paths"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "settings"
             }
           ],
           "returns": "ImportResult"
@@ -285,6 +370,26 @@
               "annotation": "str | Path",
               "default": null,
               "name": "file_path"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "preserve_external_targets"
+            },
+            {
+              "annotation": "Sequence[str] | None",
+              "default": "None",
+              "name": "allowed_external_roots"
+            },
+            {
+              "annotation": "Sequence[str] | None",
+              "default": "None",
+              "name": "protected_paths"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "settings"
             }
           ],
           "returns": "ImportResult"
@@ -315,6 +420,21 @@
           "annotation": "str",
           "default": null,
           "name": "raw_path"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "preserve_external_targets"
+        },
+        {
+          "annotation": "Sequence[str] | None",
+          "default": "None",
+          "name": "allowed_external_roots"
+        },
+        {
+          "annotation": "Sequence[str] | None",
+          "default": "None",
+          "name": "protected_paths"
         }
       ],
       "returns": "tuple[str, bool, str | None]"

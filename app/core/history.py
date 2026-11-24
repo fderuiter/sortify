@@ -279,12 +279,10 @@ class SessionStateMachine(LifecycleTelemetryMixin):
         self, session_id: Optional[str] = None, conn=None
     ) -> list[dict[str, Any]]:
         """Retrieve historical lifecycle audit events for a session."""
-        close_conn = False
         if conn is None:
             if not self.db_path:
                 return []
             conn = get_db_connection(self.db_path)
-            close_conn = True
 
         try:
             _ensure_lifecycle_audit_schema(conn)
@@ -328,9 +326,6 @@ class SessionStateMachine(LifecycleTelemetryMixin):
         except DB_ERRORS as e:
             logging.warning("Failed to query session lifecycle audit events: %s", e)
             return []
-        finally:
-            if close_conn:
-                conn.close()
 
 
 def _robust_move(src, dst):
@@ -694,7 +689,9 @@ class HistoryManager:
 
         return self.db.worker.execute_write(_write)
 
-    def complete_session(self, session_id: str) -> None:
+    def complete_session(
+        self, session_id: str, metadata: Optional[dict[str, Any]] = None
+    ) -> None:
         """Mark ``session_id`` as ``completed`` while keeping its ``moves`` ledger intact."""
         if not session_id:
             return
@@ -702,7 +699,9 @@ class HistoryManager:
         def _write() -> None:
             conn = get_db_connection(self.db_path)
             with conn:
-                self._transition_session_status(session_id, COMPLETED, conn=conn)
+                self._transition_session_status(
+                    session_id, COMPLETED, conn=conn, metadata=metadata
+                )
 
         self.db.worker.execute_write(_write)
 
@@ -1078,6 +1077,42 @@ class HistoryManager:
             ).fetchone()
         base_dir = row[0] if row else None
 
+        session_source_dirs: list[str] = []
+        extra_prune_roots: list[str] = []
+        try:
+            for ev in self.state_machine.get_audit_events(session_id, conn=conn):
+                meta = ev.get("metadata") if isinstance(ev, dict) else None
+                if isinstance(meta, dict):
+                    meta_dest = meta.get("dest_dir")
+                    if isinstance(meta_dest, str) and meta_dest.strip():
+                        extra_prune_roots.append(meta_dest)
+                    for ext_r in meta.get("external_roots") or []:
+                        if isinstance(ext_r, str) and ext_r.strip():
+                            extra_prune_roots.append(ext_r)
+                    for src_r in meta.get("source_dirs") or []:
+                        if isinstance(src_r, str) and src_r.strip():
+                            session_source_dirs.append(src_r)
+                            extra_prune_roots.append(src_r)
+        except Exception:
+            pass
+        try:
+            from app.config import AppSettings
+
+            cfg = AppSettings()
+            if cfg.DEST_DIR and cfg.DEST_DIR.strip():
+                extra_prune_roots.append(
+                    os.path.abspath(os.path.expanduser(cfg.DEST_DIR.strip()))
+                )
+            for ext_r in cfg.ALLOWED_EXTERNAL_ROOTS or []:
+                if isinstance(ext_r, str) and ext_r.strip():
+                    extra_prune_roots.append(
+                        os.path.abspath(os.path.expanduser(ext_r.strip()))
+                    )
+        except Exception:
+            pass
+
+        from app.core.mover import is_subpath_or_equal
+
         claimed = {m.dst for m in moves if m.state not in (INTENT, FAILED)}
         docs_conn = get_db_connection(self.db.db_path)
         dirs_to_prune = set()
@@ -1104,7 +1139,7 @@ class HistoryManager:
                 if moved:
                     claimed.add(moved)
                     dirs_to_prune.add(os.path.dirname(moved))
-                    if base_dir:
+                    if base_dir and is_subpath_or_equal(move.src, base_dir):
                         _move_aside_blocking_parents(move.src, base_dir, docs_conn)
                     os.makedirs(os.path.dirname(move.src), exist_ok=True)
                     restored_to = move.src
@@ -1121,19 +1156,31 @@ class HistoryManager:
                     restored += 1
                     if db and base_dir:
                         try:
-                            old_rel = safe_relpath(moved, base_dir).replace("\\", "/")
-                            new_rel = safe_relpath(restored_to, base_dir).replace(
-                                "\\", "/"
+                            doc_base = base_dir
+                            if not is_subpath_or_equal(restored_to, base_dir):
+                                for cand_src in session_source_dirs:
+                                    if is_subpath_or_equal(restored_to, cand_src):
+                                        doc_base = cand_src
+                                        break
+                            old_rel = (
+                                safe_relpath(moved, doc_base).replace("\\", "/")
+                                if is_subpath_or_equal(moved, doc_base)
+                                else os.path.abspath(moved).replace("\\", "/")
+                            )
+                            new_rel = (
+                                safe_relpath(restored_to, doc_base).replace("\\", "/")
+                                if is_subpath_or_equal(restored_to, doc_base)
+                                else os.path.abspath(restored_to).replace("\\", "/")
                             )
                             try:
                                 db.update_document_path(
-                                    base_dir,
+                                    doc_base,
                                     old_rel,
                                     new_rel,
                                     clear_verified_target=True,
                                 )
                             except TypeError:
-                                db.update_document_path(base_dir, old_rel, new_rel)
+                                db.update_document_path(doc_base, old_rel, new_rel)
                         except Exception as err:
                             logging.warning(
                                 f"Could not update the document path for {restored_to}: {err}"
@@ -1155,9 +1202,19 @@ class HistoryManager:
                 base_dir, session_id, docs_conn, failures
             )
 
+        prune_roots: list[str] = []
         if base_dir and os.path.exists(base_dir):
             _remove_staging_leftovers(base_dir)
-            _prune_emptied_dirs(dirs_to_prune, base_dir)
+            prune_roots.append(base_dir)
+        for extra_root in extra_prune_roots:
+            if (
+                extra_root
+                and os.path.exists(extra_root)
+                and extra_root not in prune_roots
+            ):
+                prune_roots.append(extra_root)
+        if prune_roots:
+            _prune_emptied_dirs(dirs_to_prune, prune_roots)
 
         if failures:
             try:

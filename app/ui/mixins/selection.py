@@ -244,8 +244,14 @@ class SelectionActionsMixin:
             for k, v in self.plan.items()
             if isinstance(v, dict) and v.get("__type__") != "file"
         ]
+        eff_dest_dir = (
+            getattr(self.app_session, "dest_dir", None)
+            if getattr(self, "app_session", None)
+            else None
+        ) or getattr(self, "dest_dir", None)
         disk_folders = discover_existing_folders(
             getattr(self, "base_dir", None),
+            dest_dir=eff_dest_dir,
             settings=getattr(self, "settings", None),
         )
         existing_folders: list[str] = []
@@ -255,21 +261,39 @@ class SelectionActionsMixin:
                 seen_folders.add(folder.lower())
                 existing_folders.append(folder)
 
-        def on_reassigned(target_folder: Optional[str]) -> None:
-            if not target_folder:
+        def on_reassigned(raw_target_folder: Optional[str]) -> None:
+            if not raw_target_folder:
                 return
 
-            from app.core.path_utils import safe_relpath, validate_target_path
+            from app.core.path_utils import (
+                expand_target_path,
+                safe_relpath,
+                validate_target_path,
+            )
 
+            target_folder = expand_target_path(raw_target_folder)
             host: Any = self
+            settings_obj = getattr(host, "settings", None)
+            allowed_roots = (
+                getattr(settings_obj, "ALLOWED_EXTERNAL_ROOTS", None) or []
+                if settings_obj is not None
+                else []
+            )
+            prot_paths = (
+                getattr(settings_obj, "PROTECTED_PATHS", None) or []
+                if settings_obj is not None
+                else []
+            )
             can_learn_rule = False
             try:
-                validate_target_path(target_folder)
+                validate_target_path(
+                    target_folder,
+                    allowed_external_roots=allowed_roots,
+                    protected_paths=prot_paths,
+                )
                 can_learn_rule = True
             except ValueError:
                 can_learn_rule = False
-
-            settings_obj = getattr(host, "settings", None)
             learned_rules = (
                 dict(getattr(settings_obj, "LEARNED_RULES", {}) or {})
                 if settings_obj is not None
@@ -292,12 +316,33 @@ class SelectionActionsMixin:
                     if file_key:
                         break
 
-                if not file_key:
-                    file_key = fi.get("target_filename") or fi.get("key")
+                old_container = (
+                    host.plan.get(old_folder)
+                    if old_folder in host.plan
+                    and isinstance(host.plan.get(old_folder), dict)
+                    else None
+                )
+                if (
+                    not file_key
+                    or old_container is None
+                    or file_key not in old_container
+                ):
+                    found_folder, found_container, _ = _find_file_in_plan(
+                        host.plan,
+                        str(file_key or ""),
+                        target_info=fi,
+                    )
+                    if found_container is not None:
+                        old_container = found_container
+                        old_folder = found_folder
+                        for cand_k, cand_v in list(found_container.items()):
+                            if cand_v is fi:
+                                file_key = cand_k
+                                break
 
-                if file_key and old_folder in host.plan:
-                    if file_key in host.plan[old_folder]:
-                        host.plan[old_folder].pop(file_key, None)
+                if file_key and old_container is not None:
+                    if file_key in old_container:
+                        old_container.pop(file_key, None)
                     if target_folder not in host.plan:
                         host.plan[target_folder] = {}
 
@@ -336,7 +381,7 @@ class SelectionActionsMixin:
                         doc_relpath = str(raw_src).replace("\\", "/")
 
                     host.locked_files[doc_relpath] = target_folder
-                    if host.app_session:
+                    if host.app_session and can_learn_rule:
                         host.app_session.db.set_user_verified_target_path(
                             host.base_dir, doc_relpath, target_folder
                         )
@@ -368,6 +413,7 @@ class SelectionActionsMixin:
                 plan=self.plan,
                 base_dir=self.base_dir,
                 target_files=target_files,
+                dest_dir=eff_dest_dir,
                 settings=getattr(self, "settings", None),
             ),
             on_reassigned,
@@ -571,6 +617,13 @@ class SelectionActionsMixin:
 
         node = self._get_active_node()
 
+        eff_dest_dir = (
+            getattr(self.app_session, "dest_dir", None)
+            if getattr(self, "app_session", None)
+            else None
+        ) or getattr(self, "dest_dir", None)
+        settings_obj = getattr(self, "settings", None)
+
         # If a folder category node is explicitly focused, preserve folder rename workflow
         if node and node.data and not node.data.get("is_file"):
             data = node.data
@@ -582,20 +635,24 @@ class SelectionActionsMixin:
                 is_folder=True,
                 plan=self.plan,
                 base_dir=self.base_dir,
+                dest_dir=eff_dest_dir,
+                settings=settings_obj,
             )
 
             def on_folder_renamed(new_name: Optional[str | Any]) -> None:
                 if not new_name:
                     return
 
-                from app.core.path_utils import _merge_plan_dicts
+                from app.core.path_utils import _merge_plan_dicts, expand_target_path
 
                 dest_override = getattr(new_name, "destination_override", None)
                 if isinstance(new_name, tuple):
                     new_name_str = str(new_name[0])
                 else:
                     new_name_str = str(new_name)
-                eff_name = dest_override if dest_override else new_name_str
+                eff_name = expand_target_path(
+                    dest_override if dest_override else new_name_str
+                )
 
                 if not eff_name or eff_name == old_name:
                     return
@@ -647,15 +704,24 @@ class SelectionActionsMixin:
                 plan=self.plan,
                 base_dir=self.base_dir,
                 files=checked_entries,
+                dest_dir=eff_dest_dir,
+                settings=settings_obj,
             )
 
             def on_batch_renamed(result: Optional[str | RenameResult]) -> None:
                 if not result:
                     return
 
-                from app.core.path_utils import _disambiguate_key
+                from app.core.path_utils import (
+                    _disambiguate_key,
+                    expand_target_path,
+                    validate_target_path,
+                )
 
-                dest_override = getattr(result, "destination_override", None)
+                raw_dest_override = getattr(result, "destination_override", None)
+                dest_override = (
+                    expand_target_path(raw_dest_override) if raw_dest_override else None
+                )
                 batch_items = getattr(result, "batch_items", None)
 
                 if not batch_items:
@@ -752,9 +818,28 @@ class SelectionActionsMixin:
 
                     self.locked_files[new_filename] = target_folder
                     if self.app_session:
-                        self.app_session.db.set_user_verified_target_path(
-                            self.base_dir, new_filename, target_folder
-                        )
+                        try:
+                            validate_target_path(
+                                target_folder,
+                                allowed_external_roots=(
+                                    getattr(
+                                        settings_obj, "ALLOWED_EXTERNAL_ROOTS", None
+                                    )
+                                    or []
+                                )
+                                if settings_obj is not None
+                                else [],
+                                protected_paths=(
+                                    getattr(settings_obj, "PROTECTED_PATHS", None) or []
+                                )
+                                if settings_obj is not None
+                                else [],
+                            )
+                            self.app_session.db.set_user_verified_target_path(
+                                self.base_dir, new_filename, target_folder
+                            )
+                        except ValueError:
+                            pass
                     renamed_count += 1
 
                 self.rebuild_tree(run_validation=True)
@@ -789,19 +874,28 @@ class SelectionActionsMixin:
                 plan=self.plan,
                 base_dir=self.base_dir,
                 source_path=filepath,
+                dest_dir=eff_dest_dir,
+                settings=settings_obj,
             )
 
             def on_renamed(new_formatted: Optional[str | Any]) -> None:
                 if not new_formatted:
                     return
 
-                from app.core.path_utils import _disambiguate_key
+                from app.core.path_utils import (
+                    _disambiguate_key,
+                    expand_target_path,
+                    validate_target_path,
+                )
 
-                dest_override = getattr(new_formatted, "destination_override", None)
+                raw_dest_override = getattr(new_formatted, "destination_override", None)
                 if isinstance(new_formatted, tuple):
-                    new_formatted_str, dest_override = new_formatted
+                    new_formatted_str, raw_dest_override = new_formatted
                 else:
                     new_formatted_str = str(new_formatted)
+                dest_override = (
+                    expand_target_path(raw_dest_override) if raw_dest_override else None
+                )
 
                 if ext and not new_formatted_str.endswith(ext):
                     new_filename = f"{new_formatted_str}{ext}"
@@ -862,9 +956,26 @@ class SelectionActionsMixin:
                 data["is_locked"] = True
                 self.locked_files[new_filename] = target_folder
                 if self.app_session:
-                    self.app_session.db.set_user_verified_target_path(
-                        self.base_dir, new_filename, target_folder
-                    )
+                    try:
+                        validate_target_path(
+                            target_folder,
+                            allowed_external_roots=(
+                                getattr(settings_obj, "ALLOWED_EXTERNAL_ROOTS", None)
+                                or []
+                            )
+                            if settings_obj is not None
+                            else [],
+                            protected_paths=(
+                                getattr(settings_obj, "PROTECTED_PATHS", None) or []
+                            )
+                            if settings_obj is not None
+                            else [],
+                        )
+                        self.app_session.db.set_user_verified_target_path(
+                            self.base_dir, new_filename, target_folder
+                        )
+                    except ValueError:
+                        pass
                 self.rebuild_tree(run_validation=True)
                 self.announce(f"Renamed target file to '{new_filename}' [Locked]")
 

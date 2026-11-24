@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "5be84db7ed89106228bfceab8bc100b89da0618fa24f3e90b9dd0e0615a6a169"
+    "checksum": "2d0d7f4ac8e0d5111caae8ef799b273bb525240b6e807a07c67c2376c6a7347a"
   },
   "classes": [
     {
@@ -62,5 +62,65 @@
       ]
     }
   ],
-  "functions": []
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "canonical_folder_lock_key",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "folder"
+        }
+      ],
+      "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "collect_plan_external_roots",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "plan"
+        },
+        {
+          "annotation": "Iterable[str] | None",
+          "default": "None",
+          "name": "allowed_external_roots"
+        },
+        {
+          "annotation": "Any",
+          "default": "None",
+          "name": "settings"
+        }
+      ],
+      "returns": "list[str]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "lock_multiple_folders",
+      "parameters": [
+        {
+          "annotation": "Iterable[str | None]",
+          "default": null,
+          "name": "folders"
+        },
+        {
+          "annotation": "float",
+          "default": "0.0",
+          "name": "timeout"
+        },
+        {
+          "annotation": "Optional[Path]",
+          "default": "None",
+          "name": "lock_dir"
+        }
+      ],
+      "returns": "contextlib.ExitStack"
+    }
+  ]
 }

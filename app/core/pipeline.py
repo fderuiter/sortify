@@ -277,12 +277,15 @@ def reroot_plan(
         if hasattr(bound_plan, "plan") and isinstance(bound_plan.plan, dict)
         else bound_plan.items()
     )
+    from app.core.path_utils import _is_absolute_path, expand_target_path
+
     re_rooted_plan: dict[str, Any] = {}
     for key, value in plan_items:
         node_type = _get_val(value, "node_type") or _get_val(value, "__type__")
         is_root_file = value is None or node_type == "file"
-        if os.path.isabs(key):
-            re_rooted_plan[key] = value
+        exp_key = expand_target_path(str(key)) if isinstance(key, str) else str(key)
+        if _is_absolute_path(exp_key):
+            re_rooted_plan[exp_key] = value
         elif is_root_file:
             if isinstance(value, dict) and not value.get("destination_override"):
                 file_val = dict(value)
@@ -443,6 +446,8 @@ def apply_drop_reroot(
     if resolved_dest is not None and (re_rooted or force_reroot):
         plan = reroot_plan(plan, resolved_dest, source_dir=base_dir)
         session.base_dir = resolved_dest
+        if hasattr(session, "dest_dir"):
+            session.dest_dir = resolved_dest
     return plan, re_rooted
 
 
@@ -623,11 +628,13 @@ class SortPipeline(LifecycleTelemetryMixin):
         session: Any = None,
         *,
         base_dir: str | None = None,
+        dest_dir: str | None = None,
         settings: Any = None,
     ):
         super().__init__()
         self.session = session
         self._base_dir = base_dir
+        self._dest_dir = dest_dir
         self._settings = settings
         if hasattr(session, "pipeline"):
             session.pipeline = self
@@ -666,6 +673,21 @@ class SortPipeline(LifecycleTelemetryMixin):
         if self._base_dir is not None:
             return self._base_dir
         return getattr(self.session, "base_dir", "")
+
+    @property
+    def dest_dir(self) -> str | None:
+        """Optional separate destination root for dual-root sessions."""
+        if self._dest_dir is not None:
+            return self._dest_dir
+        sess_dest = getattr(self.session, "dest_dir", None)
+        if isinstance(sess_dest, str) and sess_dest.strip():
+            return sess_dest
+        cfg_dest = getattr(self.settings, "DEST_DIR", "")
+        if isinstance(cfg_dest, str) and cfg_dest.strip():
+            return os.path.normpath(
+                os.path.abspath(os.path.expanduser(cfg_dest.strip()))
+            )
+        return None
 
     def _validate_transition(self, target_state: PipelineLifecycleState) -> None:
         allowed = _ALLOWED_TRANSITIONS.get(self._state, set())
@@ -765,24 +787,31 @@ class SortPipeline(LifecycleTelemetryMixin):
                 if not root_parent_filter.is_quarantine(root_dir):
                     resolved_source_dirs.append(root_dir)
 
+            eff_dest_dir = dest_dir if dest_dir is not None else self.dest_dir
             scan_filter = ScanFilter.from_settings(
-                settings=self.settings, base_dir=self.base_dir
+                settings=self.settings,
+                base_dir=self.base_dir,
+                dest_dir=eff_dest_dir,
             )
             if items is None:
                 if len(resolved_source_dirs) > 1:
                     items = get_files_from_sources(
                         resolved_source_dirs,
                         settings=self.settings,
+                        dest_dir=eff_dest_dir,
                     )
                 elif len(resolved_source_dirs) == 1:
                     single_root = resolved_source_dirs[0]
                     single_filter = ScanFilter.from_settings(
-                        settings=self.settings, base_dir=single_root
+                        settings=self.settings,
+                        base_dir=single_root,
+                        dest_dir=eff_dest_dir,
                     )
                     items = get_files_recursively(
                         single_root,
                         settings=self.settings,
                         scan_filter=single_filter,
+                        dest_dir=eff_dest_dir,
                     )
                 else:
                     items = []
@@ -901,7 +930,7 @@ class SortPipeline(LifecycleTelemetryMixin):
                 list(existing_folders)
                 if existing_folders is not None
                 else discover_existing_folders(
-                    self.base_dir, dest_dir=dest_dir, settings=self.settings
+                    self.base_dir, dest_dir=eff_dest_dir, settings=self.settings
                 )
             )
             effective_target_paths = items if target_paths is None else target_paths
@@ -921,15 +950,15 @@ class SortPipeline(LifecycleTelemetryMixin):
                     has_var_kw or "existing_folders" in gen_sig.parameters
                 ):
                     plan_kwargs["existing_folders"] = resolved_existing
-                if dest_dir and (has_var_kw or "dest_dir" in gen_sig.parameters):
-                    plan_kwargs["dest_dir"] = dest_dir
+                if eff_dest_dir and (has_var_kw or "dest_dir" in gen_sig.parameters):
+                    plan_kwargs["dest_dir"] = eff_dest_dir
             except (ValueError, TypeError):
                 if target_paths is None and effective_target_paths is not None:
                     plan_kwargs["target_paths"] = effective_target_paths
                 if resolved_existing:
                     plan_kwargs["existing_folders"] = resolved_existing
-                if dest_dir:
-                    plan_kwargs["dest_dir"] = dest_dir
+                if eff_dest_dir:
+                    plan_kwargs["dest_dir"] = eff_dest_dir
 
             plan = self.session.generate_sorting_plan(**plan_kwargs)
             self.transition_to(PipelineLifecycleState.PLANNED)
@@ -969,12 +998,19 @@ class SortPipeline(LifecycleTelemetryMixin):
                 or self.session.execute_moves
             )
             sig = inspect.signature(fn)
+            has_var_kw = any(
+                p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+            )
             accepts_pipeline = "pipeline" in sig.parameters
+            accepts_dest = has_var_kw or "dest_dir" in sig.parameters
         except (ValueError, TypeError):
             accepts_pipeline = True
+            accepts_dest = True
 
         if accepts_pipeline:
             call_kwargs["pipeline"] = self
+        if accepts_dest and "dest_dir" not in call_kwargs and self.dest_dir:
+            call_kwargs["dest_dir"] = self.dest_dir
 
         try:
             ctx = move_context(plan) if move_context is not None else nullcontext()
@@ -1096,16 +1132,56 @@ class SortPipeline(LifecycleTelemetryMixin):
                 sel_set = {str(x) for x in selected_step_ids}
                 moves = [m for m in moves if str(m.seq) in sel_set]
 
+            from app.core.folder_lock import lock_multiple_folders
+            from app.core.mover import is_subpath_or_equal
+
+            undo_lock_roots: list[str] = [base_dir]
+            if self.dest_dir:
+                undo_lock_roots.append(self.dest_dir)
+            state_machine = getattr(history, "state_machine", None)
+            if state_machine is not None and hasattr(state_machine, "get_audit_events"):
+                try:
+                    for ev in state_machine.get_audit_events(session_id):
+                        meta = ev.get("metadata") if isinstance(ev, dict) else None
+                        if isinstance(meta, dict):
+                            meta_dest = meta.get("dest_dir")
+                            if isinstance(meta_dest, str) and meta_dest.strip():
+                                undo_lock_roots.append(meta_dest)
+                            for r in meta.get("external_roots") or []:
+                                if isinstance(r, str) and r.strip():
+                                    undo_lock_roots.append(r)
+                            for r in meta.get("source_dirs") or []:
+                                if isinstance(r, str) and r.strip():
+                                    undo_lock_roots.append(r)
+                except (
+                    OSError,
+                    ValueError,
+                    TypeError,
+                    KeyError,
+                    AttributeError,
+                ) as exc:
+                    logger.debug(
+                        "Skipping session audit metadata lookup during undo: %s", exc
+                    )
+            cfg_ext_roots = getattr(self.settings, "ALLOWED_EXTERNAL_ROOTS", None) or []
+            for ext_r in cfg_ext_roots:
+                if isinstance(ext_r, str) and ext_r.strip():
+                    exp_r = os.path.abspath(os.path.expanduser(ext_r.strip()))
+                    if any(is_subpath_or_equal(m.dst, exp_r) for m in moves):
+                        undo_lock_roots.append(exp_r)
+
             result = SortResult(
                 session_id=session_id, state=PipelineLifecycleState.ROLLING_BACK
             )
             reason = "Not moved back"
             rollback_succeeded = False
+            lock_timeout = getattr(self.session, "folder_lock_timeout", 10.0)
             try:
                 kwargs = {"ignore_missing": ignore_missing}
                 if selected_step_ids is not None:
                     kwargs["selected_step_ids"] = selected_step_ids
-                result.summary["restored"] = history.rollback(session_id, **kwargs)
+                with lock_multiple_folders(undo_lock_roots, timeout=lock_timeout):
+                    result.summary["restored"] = history.rollback(session_id, **kwargs)
                 rollback_succeeded = True
             except (OSError, ValueError) as err:
                 # Undo still moves back every file it can before it reports the rest.
@@ -1113,7 +1189,10 @@ class SortPipeline(LifecycleTelemetryMixin):
                 result.summary["error"] = reason
                 rollback_succeeded = False
             for move in moves:
-                src = safe_relpath(move.src, base_dir).replace("\\", "/")
+                if is_subpath_or_equal(move.src, base_dir):
+                    src = safe_relpath(move.src, base_dir).replace("\\", "/")
+                else:
+                    src = os.path.abspath(move.src).replace("\\", "/")
                 if os.path.lexists(move.src):
                     result.moved.append(src)
                 else:

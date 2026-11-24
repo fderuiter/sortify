@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "18dc5d18a44dfb67d0510da508caf88b18bbdd1731d22aa7af422a96d54a6630"
+    "checksum": "7bc2f474b92ae131b796a09f64722d373b0074ad54808722060adbfe1f912290"
   },
   "classes": [
     {
@@ -93,6 +93,11 @@
               "annotation": "bool",
               "default": "False",
               "name": "include_resolved"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "dest_dir"
             }
           ],
           "returns": "list[dict]"
@@ -123,6 +128,11 @@
               "annotation": "bool",
               "default": "False",
               "name": "include_resolved"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "dest_dir"
             }
           ],
           "returns": "list[dict]"
@@ -158,6 +168,11 @@
               "annotation": "int",
               "default": "0",
               "name": "depth"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "dest_dir"
             }
           ],
           "returns": "list[dict[str, Any]]"
@@ -193,6 +208,11 @@
               "annotation": "int",
               "default": "0",
               "name": "depth"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "dest_dir"
             }
           ],
           "returns": "list"
@@ -248,6 +268,26 @@
               "annotation": "str",
               "default": "'skip'",
               "name": "conflict_policy"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "dest_dir"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "allowed_external_roots"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "protected_paths"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "settings"
             }
           ],
           "returns": "dict"
@@ -364,6 +404,21 @@
               "annotation": "str",
               "default": null,
               "name": "base_dir"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "dest_dir"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "allowed_external_roots"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "protected_paths"
             }
           ],
           "returns": "list"
@@ -469,6 +524,21 @@
               "annotation": "str",
               "default": "'skip'",
               "name": "conflict_policy"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "dest_dir"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "allowed_external_roots"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "protected_paths"
             }
           ],
           "returns": "dict"

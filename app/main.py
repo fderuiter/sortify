@@ -619,6 +619,36 @@ def _print_plan_for_humans(
 _reroot_plan = reroot_plan
 
 
+def _resolve_and_validate_cli_dest_dir(
+    args: argparse.Namespace, settings: AppSettings
+) -> str | None:
+    """Resolve and validate ``--dest-dir`` (or ``settings.DEST_DIR``) for CLI/TUI runs."""
+    raw_dest = getattr(args, "dest_dir", None)
+    if raw_dest is None or not str(raw_dest).strip():
+        cfg_dest = getattr(settings, "DEST_DIR", "")
+        raw_dest = cfg_dest if isinstance(cfg_dest, str) and cfg_dest.strip() else None
+    if not raw_dest:
+        return None
+
+    from app.core.pipeline import validate_drop_destination
+
+    is_json = bool(getattr(args, "json", False))
+    resolved_dest, dest_err = validate_drop_destination(raw_dest, settings=settings)
+    if dest_err == "protected":
+        emit_cli_error(
+            f"Error: Destination path '{raw_dest}' is protected.",
+            json_mode=is_json,
+            exit_code=1,
+        )
+    if dest_err == "not_directory":
+        emit_cli_error(
+            f"Error: Destination path '{raw_dest}' is not a directory.",
+            json_mode=is_json,
+            exit_code=1,
+        )
+    return resolved_dest
+
+
 def _maybe_launch_tui(
     args: argparse.Namespace,
     settings: AppSettings,
@@ -637,6 +667,9 @@ def _maybe_launch_tui(
         }
         if open_dropzone:
             tui_kwargs["open_dropzone"] = True
+        resolved_dest = _resolve_and_validate_cli_dest_dir(args, settings)
+        if resolved_dest is not None:
+            tui_kwargs["dest_dir"] = resolved_dest
         if initial_drop_paths is not None:
             tui_kwargs["initial_drop_paths"] = initial_drop_paths
         run_tui(
@@ -729,41 +762,42 @@ def _maybe_export_simulation_report(
 def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
     """Execute document batch sorting or launch interactive TUI."""
     import json
-    from pathlib import Path
 
     target_path = _prepare_cli_target_directory(
         args, settings, warn_if_ml_unavailable=True
     )
+    resolved_dest = _resolve_and_validate_cli_dest_dir(args, settings)
 
     session = None
     try:
-        from app.core.pipeline import SortPipeline, reroot_plan
+        from app.core.pipeline import SortPipeline
         from app.core.session import AppSession
 
-        dest_dir = getattr(args, "dest_dir", None)
-        dest_abs = str(Path(dest_dir).resolve()) if dest_dir else None
         dry_run = getattr(args, "dry_run", False)
         json_output = getattr(args, "json", False)
 
-        session = AppSession(settings, base_dir=str(target_path))
-        pipeline = SortPipeline(session)
-        plan = pipeline.plan(dest_dir=dest_abs)
-
-        if dest_dir and dest_abs:
-            plan = reroot_plan(plan, dest_dir, source_dir=str(target_path))
-            session.base_dir = dest_abs
+        session = (
+            AppSession(settings, base_dir=str(target_path), dest_dir=resolved_dest)
+            if resolved_dest is not None
+            else AppSession(settings, base_dir=str(target_path))
+        )
+        pipeline = (
+            SortPipeline(session, dest_dir=resolved_dest)
+            if resolved_dest is not None
+            else SortPipeline(session)
+        )
+        plan = pipeline.plan(dest_dir=resolved_dest)
 
         serializable_plan = _make_json_serializable(plan)
         _maybe_export_simulation_report(args, plan, base_dir=str(target_path))
+        dest_display = resolved_dest or str(target_path)
 
         if dry_run:
             result = {
                 "status": "success",
                 "dry_run": True,
                 "target_directory": str(target_path),
-                "destination_directory": (
-                    str(Path(dest_dir).resolve()) if dest_dir else str(target_path)
-                ),
+                "destination_directory": dest_display,
                 "plan": serializable_plan,
             }
         else:
@@ -773,9 +807,7 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
                 "status": "success",
                 "dry_run": False,
                 "target_directory": str(target_path),
-                "destination_directory": (
-                    str(Path(dest_dir).resolve()) if dest_dir else str(target_path)
-                ),
+                "destination_directory": dest_display,
                 "plan": serializable_plan,
                 "summary": outcome.summary,
             }
@@ -788,7 +820,7 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
             if dry_run:
                 _print_plan_for_humans(
                     serializable_plan,
-                    target_path,
+                    Path(dest_display),
                     "Would move",
                     quiet=quiet,
                 )
@@ -812,7 +844,7 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
                     if lines:
                         if not quiet:
                             print(
-                                f"Moved {moved_count} file(s) into {n_folders} folder(s) in '{target_path}':",
+                                f"Moved {moved_count} file(s) into {n_folders} folder(s) in '{dest_display}':",
                                 file=sys.stderr,
                             )
                         print("\n".join(lines))
@@ -848,6 +880,7 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
     import json
 
     target_path = _prepare_cli_target_directory(args, settings)
+    resolved_dest = _resolve_and_validate_cli_dest_dir(args, settings)
 
     session = None
     try:
@@ -855,9 +888,28 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
         from app.core.scanner import get_files_recursively
         from app.core.session import AppSession
 
-        session = AppSession(settings, base_dir=str(target_path))
-        files = get_files_recursively(str(target_path), settings=settings)
-        plan = SortPipeline(session).plan(files)
+        session = (
+            AppSession(settings, base_dir=str(target_path), dest_dir=resolved_dest)
+            if resolved_dest is not None
+            else AppSession(settings, base_dir=str(target_path))
+        )
+        files = (
+            get_files_recursively(
+                str(target_path), settings=settings, dest_dir=resolved_dest
+            )
+            if resolved_dest is not None
+            else get_files_recursively(str(target_path), settings=settings)
+        )
+        pipeline = (
+            SortPipeline(session, dest_dir=resolved_dest)
+            if resolved_dest is not None
+            else SortPipeline(session)
+        )
+        plan = (
+            pipeline.plan(files, dest_dir=resolved_dest)
+            if resolved_dest is not None
+            else pipeline.plan(files)
+        )
         serializable_plan = _make_json_serializable(plan)
 
         _maybe_export_simulation_report(args, plan, base_dir=str(target_path))
@@ -868,6 +920,8 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
             "files_scanned": len(files),
             "plan": serializable_plan,
         }
+        if resolved_dest is not None:
+            result["destination_directory"] = resolved_dest
 
         quiet = getattr(args, "quiet", False)
         if getattr(args, "json", False):
@@ -1038,7 +1092,11 @@ def handle_daemon_command(args: argparse.Namespace, settings: AppSettings):
                 json_mode=getattr(args, "json", False),
                 exit_code=1,
             )
-        start_daemon(settings, str(target_path))
+        resolved_dest = _resolve_and_validate_cli_dest_dir(args, settings)
+        if resolved_dest is not None:
+            start_daemon(settings, str(target_path), dest_dir=resolved_dest)
+        else:
+            start_daemon(settings, str(target_path))
     else:
         client = DaemonIPCClient(str(target_path))
         is_watch = getattr(args, "watch", False)
@@ -1272,10 +1330,7 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
 
     from app.core.pipeline import (
         SortPipeline,
-        apply_drop_reroot,
         expand_drop_scope_files,
-        restore_rerooted_source_dir,
-        validate_drop_destination,
         validate_drop_paths,
     )
     from app.core.session import AppSession
@@ -1303,20 +1358,7 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
             exit_code=1,
         )
 
-    dest_dir = getattr(args, "dest_dir", None)
-    resolved_dest, dest_err = validate_drop_destination(dest_dir, settings=settings)
-    if dest_err == "protected":
-        emit_cli_error(
-            f"Error: Destination path '{dest_dir}' is protected.",
-            json_mode=json_output,
-            exit_code=1,
-        )
-    if dest_err == "not_directory":
-        emit_cli_error(
-            f"Error: Destination path '{dest_dir}' is not a directory.",
-            json_mode=json_output,
-            exit_code=1,
-        )
+    resolved_dest = _resolve_and_validate_cli_dest_dir(args, settings)
 
     dry_run = getattr(args, "dry_run", False)
     quiet = getattr(args, "quiet", False)
@@ -1327,28 +1369,23 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
 
         session = None
         try:
-            session = AppSession(settings, base_dir=base_dir)
-            pipeline = SortPipeline(session)
-            plan = pipeline.plan(norm_files, dest_dir=resolved_dest)
-            plan, re_rooted = apply_drop_reroot(
-                session,
-                plan,
-                base_dir,
-                resolved_dest,
-                force_reroot=True,
+            session = (
+                AppSession(settings, base_dir=base_dir, dest_dir=resolved_dest)
+                if resolved_dest is not None
+                else AppSession(settings, base_dir=base_dir)
             )
+            pipeline = (
+                SortPipeline(session, dest_dir=resolved_dest)
+                if resolved_dest is not None
+                else SortPipeline(session)
+            )
+            plan = pipeline.plan(norm_files, dest_dir=resolved_dest)
 
             serializable_plan = _make_json_serializable(plan)
             if dry_run:
                 summary = {"status": "dry_run", "plan": serializable_plan}
             else:
-                src_was_dir = os.path.isdir(base_dir)
                 summary = pipeline.execute(plan).summary
-                restore_rerooted_source_dir(
-                    base_dir,
-                    was_dir=src_was_dir,
-                    re_rooted=re_rooted,
-                )
 
             processed_results.append(
                 {
@@ -1506,6 +1543,12 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         "--daemon",
         action="store_true",
         help="Launch the persistent directory-watching daemon",
+    )
+    parser.add_argument(
+        "--dest-dir",
+        type=str,
+        default=None,
+        help="Destination directory for sorted files",
     )
     parser.add_argument(
         "--debug-layout",
@@ -1725,6 +1768,12 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         help="Use standard workspace preset directory (demo, downloads, documents)",
     )
     parser_scan.add_argument(
+        "--dest-dir",
+        type=str,
+        default=None,
+        help="Destination directory for sorted files",
+    )
+    parser_scan.add_argument(
         "--json",
         action="store_true",
         help="Output scan plan in structured JSON format",
@@ -1769,6 +1818,12 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         nargs="?",
         default=None,
         help="Directory to watch or control",
+    )
+    parser_daemon.add_argument(
+        "--dest-dir",
+        type=str,
+        default=None,
+        help="Destination directory for sorted files",
     )
     parser_daemon.add_argument(
         "--watch",
@@ -1880,9 +1935,16 @@ def _main_impl():
     # top-level option is a flag, so the first non-flag argument is either a
     # subcommand or that directory, wherever it appears among the flags.
     legacy_directory = None
+    skip_next = False
     for index, arg in enumerate(sys.argv[1:], start=1):
+        if skip_next:
+            skip_next = False
+            continue
         if arg == "--":
             break
+        if arg in ("--dest-dir",):
+            skip_next = True
+            continue
         if arg.startswith("-"):
             continue
         if arg not in known_subcommands:
@@ -2110,7 +2172,11 @@ def _run_configured_main(args: Any, parser: Any, settings: AppSettings) -> None:
     if getattr(args, "daemon", False) is True:
         from app.core.daemon import start_daemon
 
-        start_daemon(settings, args.directory)
+        resolved_dest = _resolve_and_validate_cli_dest_dir(args, settings)
+        if resolved_dest is not None:
+            start_daemon(settings, args.directory, dest_dir=resolved_dest)
+        else:
+            start_daemon(settings, args.directory)
     elif args.demo:
         from app.demo import run_demo
 
@@ -2118,11 +2184,16 @@ def _run_configured_main(args: Any, parser: Any, settings: AppSettings) -> None:
     else:
         from app.ui.tui import run_tui
 
+        resolved_dest = _resolve_and_validate_cli_dest_dir(args, settings)
+        tui_extra: dict[str, Any] = {}
+        if resolved_dest is not None:
+            tui_extra["dest_dir"] = resolved_dest
         run_tui(
             settings,
             args.directory,
             skip_wizard=_extract_bool_arg(args, "skip_wizard"),
             non_interactive=_extract_bool_arg(args, "non_interactive"),
+            **tui_extra,
         )
 
 

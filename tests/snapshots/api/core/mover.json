@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "3c99f3a90abbfc85159aacf796fc32c638013ab06620e32e1a6f76c4bbd8a5ba"
+    "checksum": "f552187f579f24dc8a0305ca2c1472b2aec1c0dedc6bcca6c2886887121d6423"
   },
   "classes": [
     {
@@ -104,6 +104,16 @@
               "annotation": "Any",
               "default": "None",
               "name": "pipeline"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "dest_dir"
+            },
+            {
+              "annotation": "list[str] | None",
+              "default": "None",
+              "name": "source_dirs"
             },
             {
               "annotation": "Any",
@@ -619,6 +629,11 @@
           "name": "source_dirs"
         },
         {
+          "annotation": "str | None",
+          "default": "None",
+          "name": "dest_dir"
+        },
+        {
           "annotation": "Any",
           "default": "None",
           "name": "pipeline"
@@ -705,6 +720,16 @@
           "annotation": null,
           "default": "None",
           "name": "progress_callback"
+        },
+        {
+          "annotation": "list[str] | None",
+          "default": "None",
+          "name": "source_dirs"
+        },
+        {
+          "annotation": "str | None",
+          "default": "None",
+          "name": "dest_dir"
         }
       ],
       "returns": "dict"

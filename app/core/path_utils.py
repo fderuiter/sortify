@@ -8,6 +8,7 @@ import os
 import re
 import sys
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Optional
 
@@ -374,43 +375,296 @@ def resolve_db_crypto(db_path: Path | str):
     return _resolve_cached_session_crypto(key_path, db_path_obj)
 
 
-def validate_target_path(target_path: str, keyword: str | None = None) -> None:
-    """Validate a target folder path for cross-platform safety and correct structure.
+BUILTIN_PROTECTED_SYSTEM_PATHS: tuple[str, ...] = (
+    "/bin",
+    "/sbin",
+    "/etc",
+    "/proc",
+    "/sys",
+    "/dev",
+    "/boot",
+    "/System",
+    r"C:\Windows",
+    r"C:\System32",
+)
+
+
+def expand_target_path(target_path: str) -> str:
+    r"""Expand leading home shortcuts ('~', '~/...', '~\\...') without altering relative paths."""
+    if not isinstance(target_path, str) or not target_path.startswith("~"):
+        return target_path
+    if target_path == "~":
+        return os.path.expanduser("~")
+    if target_path.startswith(("~/", "~\\")):
+        home = os.path.expanduser("~")
+        if home and not home.startswith("~"):
+            home_clean = home.rstrip("/\\")
+            sep = (
+                "\\" if ("\\" in home_clean and not home_clean.startswith("/")) else "/"
+            )
+            rest = target_path[2:]
+            return f"{home_clean}{sep}{rest}" if home_clean else f"{sep}{rest}"
+        return target_path
+    return os.path.expanduser(target_path)
+
+
+def _lexical_abs_subpath(
+    candidate_str: str, root_str: str, *, allow_equal: bool = True
+) -> bool:
+    """Check lexically whether absolute path candidate_str is inside (or equal to) root_str."""
+    c_raw_segments = [s for s in re.split(r"[/\\]+", candidate_str) if s]
+    r_raw_segments = [s for s in re.split(r"[/\\]+", root_str) if s]
+    if ".." in c_raw_segments or ".." in r_raw_segments:
+        return False
+    if "." in c_raw_segments or "." in r_raw_segments:
+        return False
+
+    c_root, c_sep, c_parts, c_trav, c_unc = _split_absolute_path(candidate_str)
+    r_root, r_sep, r_parts, r_trav, r_unc = _split_absolute_path(root_str)
+    if c_trav or r_trav or c_unc != r_unc:
+        return False
+    if c_unc and (c_root == "\\\\" or r_root == "\\\\"):
+        return False
+
+    case_fold = (c_sep == "\\") or (r_sep == "\\") or (os.name == "nt")
+    c_root_cmp = c_root.lower() if case_fold else c_root
+    r_root_cmp = r_root.lower() if case_fold else r_root
+    if c_root_cmp != r_root_cmp:
+        return False
+
+    if allow_equal:
+        if len(c_parts) < len(r_parts):
+            return False
+    else:
+        if len(c_parts) <= len(r_parts):
+            return False
+
+    c_head = [p.lower() if case_fold else p for p in c_parts[: len(r_parts)]]
+    r_head = [p.lower() if case_fold else p for p in r_parts]
+    return c_head == r_head
+
+
+def is_external_subpath(candidate: str, root: str, *, allow_equal: bool = True) -> bool:
+    """Return True if candidate is safely within (or equal to) root across POSIX, Windows, and UNC paths."""
+    if not isinstance(candidate, str) or not isinstance(root, str):
+        return False
+    cand_exp = expand_target_path(candidate)
+    root_exp = expand_target_path(root)
+    if not _is_absolute_path(cand_exp) or not _is_absolute_path(root_exp):
+        return False
+
+    c_raw_segments = [s for s in re.split(r"[/\\]+", cand_exp) if s]
+    r_raw_segments = [s for s in re.split(r"[/\\]+", root_exp) if s]
+    if ".." in c_raw_segments or ".." in r_raw_segments:
+        return False
+
+    lex_ok = _lexical_abs_subpath(cand_exp, root_exp, allow_equal=allow_equal)
+
+    _, c_sep, _, _, c_unc = _split_absolute_path(cand_exp)
+    _, r_sep, _, _, r_unc = _split_absolute_path(root_exp)
+    is_native_local = (
+        not c_unc
+        and not r_unc
+        and (c_sep == "/") == (os.sep == "/")
+        and (r_sep == "/") == (os.sep == "/")
+    )
+    if is_native_local:
+        with contextlib.suppress(OSError, ValueError):
+            real_cand = os.path.realpath(cand_exp)
+            real_root = os.path.realpath(root_exp)
+            real_ok = _lexical_abs_subpath(
+                real_cand, real_root, allow_equal=allow_equal
+            )
+            if lex_ok and not real_ok:
+                return False
+            if real_ok and "." not in c_raw_segments and "." not in r_raw_segments:
+                return True
+    return lex_ok
+
+
+def is_allowed_external_target(
+    target_path: str, allowed_external_roots: Sequence[str] | None
+) -> bool:
+    """Return True when target_path (after '~' expansion) resides under at least one allowlisted external root."""
+    if not allowed_external_roots:
+        return False
+    expanded = expand_target_path(target_path)
+    if not _is_absolute_path(expanded):
+        return False
+    for raw_root in allowed_external_roots:
+        if not isinstance(raw_root, str) or not raw_root.strip():
+            continue
+        if is_external_subpath(expanded, raw_root.strip(), allow_equal=True):
+            return True
+    return False
+
+
+def is_system_protected_path(target_path: str) -> bool:
+    """Return True when target_path resolves to a bare filesystem root or protected OS system directory."""
+    if not isinstance(target_path, str) or not target_path:
+        return False
+    expanded = expand_target_path(target_path)
+    if not _is_absolute_path(expanded):
+        return False
+    root, _, clean_parts, _, is_unc = _split_absolute_path(expanded)
+    if not is_unc and len(clean_parts) == 0:
+        return True
+    if is_unc and root == "\\\\":
+        return True
+    for sys_root in BUILTIN_PROTECTED_SYSTEM_PATHS:
+        if is_external_subpath(expanded, sys_root, allow_equal=True):
+            return True
+    return False
+
+
+def is_protected_target_path(
+    target_path: str,
+    protected_paths: Sequence[str] | None = None,
+    *,
+    base_dir: str | None = None,
+) -> bool:
+    """Return True when target_path hits built-in OS system paths or configured PROTECTED_PATHS."""
+    if not isinstance(target_path, str) or not target_path:
+        return False
+    expanded = expand_target_path(target_path)
+    cand_abs = expanded
+    if not _is_absolute_path(expanded) and base_dir:
+        base_exp = expand_target_path(base_dir)
+        if _is_absolute_path(base_exp):
+            cand_abs = os.path.join(base_exp, expanded)
+
+    if _is_absolute_path(cand_abs) and is_system_protected_path(cand_abs):
+        return True
+
+    for raw_prot in protected_paths or ():
+        if not isinstance(raw_prot, str) or not raw_prot.strip():
+            continue
+        prot_exp = expand_target_path(raw_prot.strip())
+        if _is_absolute_path(cand_abs) and _is_absolute_path(prot_exp):
+            if is_external_subpath(cand_abs, prot_exp, allow_equal=True):
+                return True
+    return False
+
+
+def validate_target_path(
+    target_path: str,
+    keyword: str | None = None,
+    *,
+    allowed_external_roots: Sequence[str] | None = None,
+    protected_paths: Sequence[str] | None = None,
+    allow_unlisted_external: bool = False,
+) -> None:
+    """Validate a target folder path for cross-platform safety, tilde expansion, and allowlist rules.
 
     Args:
-        target_path: Candidate relative directory path string to validate.
+        target_path: Candidate relative or allowlisted external directory path string to validate.
         keyword: Optional keyword context label for error reporting.
+        allowed_external_roots: Optional sequence of approved external root directories.
+        protected_paths: Optional sequence of protected absolute directory paths to reject.
+        allow_unlisted_external: When True, validate structural & protected-path safety for
+            external paths without requiring membership in allowed_external_roots.
 
     Raises
     ------
-        ValueError: If target_path is not a string, contains absolute path roots, Windows drive prefixes,
-            illegal OS characters, directory traversal segments ('..'), reserved names, or trailing dots/spaces.
+        ValueError: If target_path is not a string, contains unapproved absolute roots,
+            unexpanded tilde shortcuts, illegal OS characters, directory traversal segments ('..'),
+            reserved names, trailing dots/spaces, or protected system/user paths.
     """
     if not isinstance(target_path, str):
         suffix = f" for keyword '{keyword}'" if keyword else ""
         raise ValueError(f"Target path{suffix} must be a string.")
 
-    # Check for absolute path roots (/ or \), platform-specific drive roots, or Windows drive prefixes
-    if (
-        target_path.startswith(("/", "\\"))
-        or os.path.isabs(target_path)
-        or Path(target_path).is_absolute()
-        or bool(re.match(r"^[a-zA-Z]:", target_path))
-    ):
-        raise ValueError(f"Target path '{target_path}' cannot be an absolute path.")
+    if "\x00" in target_path or any(ord(c) < 32 or ord(c) == 127 for c in target_path):
+        raise ValueError(
+            f"Target path '{target_path}' contains illegal control characters."
+        )
 
-    # Check for illegal OS characters
-    if any(char in ILLEGAL_PATH_CHARS_SET for char in target_path):
-        raise ValueError(f"Target path '{target_path}' contains illegal characters.")
+    expanded = expand_target_path(target_path)
+    if expanded.startswith("~"):
+        raise ValueError(
+            f"Target path '{target_path}' contains an unexpanded home shortcut."
+        )
 
-    # Check for directory traversal segments (..)
-    segments = target_path.replace("\\", "/").split("/")
-    if ".." in segments:
+    raw_segments = [s for s in re.split(r"[/\\]+", expanded) if s]
+    if ".." in raw_segments:
         raise ValueError(
             f"Target path '{target_path}' cannot contain directory traversal segments."
         )
+    if "~" in raw_segments:
+        raise ValueError(
+            f"Target path '{target_path}' cannot contain literal tilde segments."
+        )
 
-    # Validate each individual segment against platform naming rules
+    is_abs = (
+        expanded.startswith(("/", "\\"))
+        or os.path.isabs(expanded)
+        or Path(expanded).is_absolute()
+        or bool(re.match(r"^[a-zA-Z]:", expanded))
+    )
+
+    if is_abs:
+        drive_match = re.match(r"^([a-zA-Z]:)([/\\].*|$)", expanded)
+        if re.match(r"^[a-zA-Z]:", expanded) and (
+            not drive_match or not drive_match.group(2)
+        ):
+            raise ValueError(
+                f"Target path '{target_path}' cannot be a bare or drive-relative Windows drive prefix."
+            )
+        body_to_check = drive_match.group(2) if drive_match else expanded
+        if any(char in ILLEGAL_PATH_CHARS_SET for char in body_to_check):
+            raise ValueError(
+                f"Target path '{target_path}' contains illegal characters."
+            )
+
+        if "." in raw_segments:
+            raise ValueError(
+                f"Target path '{target_path}' cannot contain '.' dot segments."
+            )
+
+        _, _, clean_parts, _, is_unc = _split_absolute_path(expanded)
+        if is_unc:
+            unc_parts = [p for p in re.split(r"[/\\]+", expanded) if p]
+            if len(unc_parts) < 2:
+                raise ValueError(
+                    f"Target path '{target_path}' is an incomplete UNC network path."
+                )
+            segments_to_validate = unc_parts
+        else:
+            if len(clean_parts) == 0:
+                raise ValueError(
+                    f"Target path '{target_path}' cannot target a bare filesystem root."
+                )
+            segments_to_validate = clean_parts
+
+        for segment in segments_to_validate:
+            if segment.endswith((" ", ".")):
+                raise ValueError(
+                    f"Target path '{target_path}' contains segment '{segment}' with trailing space or period."
+                )
+            base_name = segment.upper().split(".")[0]
+            if base_name in RESERVED_NAMES:
+                raise ValueError(
+                    f"Target path '{target_path}' contains reserved device name '{segment}'."
+                )
+
+        if is_protected_target_path(expanded, protected_paths):
+            raise ValueError(
+                f"Target path '{target_path}' targets a protected system or configured path."
+            )
+
+        if not allow_unlisted_external and not is_allowed_external_target(
+            expanded, allowed_external_roots
+        ):
+            raise ValueError(
+                f"Target path '{target_path}' cannot be an absolute path unless under ALLOWED_EXTERNAL_ROOTS."
+            )
+        return
+
+    # Check for illegal OS characters on relative path
+    if any(char in ILLEGAL_PATH_CHARS_SET for char in expanded):
+        raise ValueError(f"Target path '{target_path}' contains illegal characters.")
+
+    segments = expanded.replace("\\", "/").split("/")
     for segment in segments:
         if not segment:
             continue
@@ -524,7 +778,9 @@ def _join_absolute_parts(root: str, sep: str, parts: list[str]) -> str:
 
 
 def _sanitize_folder_key_with_base(
-    key: str, base_dir: str | None = None
+    key: str,
+    base_dir: str | None = None,
+    trusted_roots: Sequence[str] | None = None,
 ) -> tuple[str, bool]:
     """Sanitize a folder hierarchy key while preserving trusted absolute base_dir or existing directory prefixes."""
     if not isinstance(key, str) or not key:
@@ -535,11 +791,15 @@ def _sanitize_folder_key_with_base(
     from app.core.text_utils import sanitize_secret_patterns
 
     orig_key = key
+    if orig_key.startswith("~"):
+        expanded_key = expand_target_path(orig_key)
+        if not expanded_key.startswith("~"):
+            key = expanded_key
 
     # If key represents an absolute destination path, preserve its root/drive and any
-    # validated base_dir or existing directory prefix while sanitizing trailing segments.
-    if _is_absolute_path(orig_key):
-        s_raw = unicodedata.normalize("NFC", orig_key)
+    # validated base_dir, trusted_roots, or existing directory prefix while sanitizing trailing segments.
+    if _is_absolute_path(key):
+        s_raw = unicodedata.normalize("NFC", key)
         s_raw = s_raw.replace("\x00", "")
         s_raw = re.sub(r"[\x00-\x1f\x7f]", "_", s_raw)
 
@@ -547,24 +807,33 @@ def _sanitize_folder_key_with_base(
         protected_count = 0
 
         if not had_traversal:
-            if isinstance(base_dir, str) and _is_absolute_path(base_dir):
-                b_raw = unicodedata.normalize("NFC", base_dir).replace("\x00", "")
-                b_root, _, b_parts, b_trav, _ = _split_absolute_path(b_raw)
-                case_fold = sep == "\\" or os.name == "nt"
-                b_root_cmp = b_root.lower() if case_fold else b_root
-                root_cmp = root.lower() if case_fold else root
-                if (
-                    not b_trav
-                    and b_root_cmp == root_cmp
-                    and len(clean_parts) >= len(b_parts)
-                ):
-                    head_cmp = [
-                        p.lower() if case_fold else p
-                        for p in clean_parts[: len(b_parts)]
-                    ]
-                    base_cmp = [p.lower() if case_fold else p for p in b_parts]
-                    if head_cmp == base_cmp:
-                        protected_count = max(protected_count, len(b_parts))
+            candidate_bases: list[str] = []
+            if isinstance(base_dir, str) and base_dir:
+                candidate_bases.append(base_dir)
+            if trusted_roots:
+                for tr in trusted_roots:
+                    if isinstance(tr, str) and tr:
+                        candidate_bases.append(expand_target_path(tr))
+
+            for cand_base in candidate_bases:
+                if _is_absolute_path(cand_base):
+                    b_raw = unicodedata.normalize("NFC", cand_base).replace("\x00", "")
+                    b_root, _, b_parts, b_trav, _ = _split_absolute_path(b_raw)
+                    case_fold = sep == "\\" or os.name == "nt"
+                    b_root_cmp = b_root.lower() if case_fold else b_root
+                    root_cmp = root.lower() if case_fold else root
+                    if (
+                        not b_trav
+                        and b_root_cmp == root_cmp
+                        and len(clean_parts) >= len(b_parts)
+                    ):
+                        head_cmp = [
+                            p.lower() if case_fold else p
+                            for p in clean_parts[: len(b_parts)]
+                        ]
+                        base_cmp = [p.lower() if case_fold else p for p in b_parts]
+                        if head_cmp == base_cmp:
+                            protected_count = max(protected_count, len(b_parts))
 
             if not is_unc and (sep == "/") == (os.sep == "/"):
                 for k in range(len(clean_parts), protected_count, -1):
@@ -747,7 +1016,10 @@ def sanitize_filename(name: str) -> tuple[str, bool]:
 
 
 def _sanitize_plan_key(
-    key: str, is_file: bool = False, base_dir: str | None = None
+    key: str,
+    is_file: bool = False,
+    base_dir: str | None = None,
+    trusted_roots: Sequence[str] | None = None,
 ) -> tuple[str, bool]:
     """Sanitize a plan dictionary key, handling file targets and folder keys safely."""
     if not isinstance(key, str) or not key:
@@ -756,11 +1028,15 @@ def _sanitize_plan_key(
     if is_file:
         return sanitize_filename(key)
     else:
-        return _sanitize_folder_key_with_base(key, base_dir=base_dir)
+        return _sanitize_folder_key_with_base(
+            key, base_dir=base_dir, trusted_roots=trusted_roots
+        )
 
 
 def _sanitize_plan_with_base(
-    plan: Any, base_dir: str | None = None
+    plan: Any,
+    base_dir: str | None = None,
+    trusted_roots: Sequence[str] | None = None,
 ) -> tuple[dict, list[str]]:
     """Recursively sanitize plan keys while preserving trusted absolute base_dir prefixes."""
     if hasattr(plan, "plan") and isinstance(plan.plan, dict):
@@ -896,11 +1172,23 @@ def _sanitize_plan_with_base(
                     file_content["target_filename"] = safe_file_key
                     file_content["confirmed"] = True
 
+            if isinstance(file_content, dict) and isinstance(
+                file_content.get("destination_override"), str
+            ):
+                raw_do = file_content["destination_override"]
+                if raw_do.startswith("~"):
+                    exp_do = expand_target_path(raw_do)
+                    if not exp_do.startswith("~"):
+                        file_content["destination_override"] = exp_do
+
             sanitized_plan[safe_file_key] = file_content
 
         elif _is_dir_node(content):
             safe_key, transformed = _sanitize_plan_key(
-                key, is_file=False, base_dir=base_dir
+                key,
+                is_file=False,
+                base_dir=base_dir,
+                trusted_roots=trusted_roots,
             )
             if transformed:
                 warnings.append(f"Sanitized folder key '{key}' to '{safe_key}'")
@@ -911,7 +1199,9 @@ def _sanitize_plan_with_base(
                 else {}
             )
             sub_sanitized, sub_warns = _sanitize_plan_with_base(
-                children, base_dir=base_dir
+                children,
+                base_dir=base_dir,
+                trusted_roots=trusted_roots,
             )
             warnings.extend(sub_warns)
 
@@ -926,13 +1216,18 @@ def _sanitize_plan_with_base(
 
         elif isinstance(content, (dict, BaseModel)):
             safe_key, transformed = _sanitize_plan_key(
-                key, is_file=False, base_dir=base_dir
+                key,
+                is_file=False,
+                base_dir=base_dir,
+                trusted_roots=trusted_roots,
             )
             if transformed:
                 warnings.append(f"Sanitized folder key '{key}' to '{safe_key}'")
 
             sub_sanitized, sub_warns = _sanitize_plan_with_base(
-                content, base_dir=base_dir
+                content,
+                base_dir=base_dir,
+                trusted_roots=trusted_roots,
             )
             warnings.extend(sub_warns)
 

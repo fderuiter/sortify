@@ -178,19 +178,19 @@
     },
     "KEYWORD_RULES": {
       "additionalProperties": true,
-      "description": "Mapping of lowercase keyword strings to relative target folder paths. Target paths are validated to forbid absolute paths, '..' traversal segments, OS-reserved device names, illegal characters (<, >, :, \", |, ?, *), and trailing spaces or periods.",
+      "description": "Mapping of lowercase keyword strings to relative target folder paths or external destination paths under ALLOWED_EXTERNAL_ROOTS (with '~' expanded). Target paths forbid '..' traversal segments, protected paths, OS-reserved device names, illegal characters (<, >, :, \", |, ?, *), and trailing spaces or periods.",
       "title": "Keyword Rules",
       "type": "object"
     },
     "DISABLED_KEYWORD_RULES": {
       "additionalProperties": true,
-      "description": "Mapping of temporarily disabled keyword strings to relative target folder paths, preserving path mappings while inactive and enforcing the same relative target path validation as KEYWORD_RULES.",
+      "description": "Mapping of temporarily disabled keyword strings to relative or allowlisted external target folder paths, preserving path mappings while inactive and enforcing the same target path validation as KEYWORD_RULES.",
       "title": "Disabled Keyword Rules",
       "type": "object"
     },
     "LEARNED_RULES": {
       "additionalProperties": true,
-      "description": "Mapping of user-corrected keyword patterns to relative target folder paths learned from interactive reassignments, validated with the same relative path rules as KEYWORD_RULES.",
+      "description": "Mapping of user-corrected keyword patterns to relative or allowlisted external target folder paths learned from interactive reassignments, validated with the same path rules as KEYWORD_RULES.",
       "title": "Learned Rules",
       "type": "object"
     },
@@ -260,12 +260,26 @@
       "type": "integer"
     },
     "PROTECTED_PATHS": {
-      "description": "List of absolute literal directory paths protected from scanning, moving, or modification. Relative paths and wildcard or glob characters ('*', '?', '[', ']') are rejected.",
+      "description": "List of absolute literal directory paths (expanding leading '~') protected from scanning, moving, or modification. Relative paths and wildcard or glob characters ('*', '?', '[', ']') are rejected.",
       "items": {
         "type": "string"
       },
       "title": "Protected Paths",
       "type": "array"
+    },
+    "ALLOWED_EXTERNAL_ROOTS": {
+      "description": "List of user-approved external directory roots (POSIX, Windows drive, UNC share, or '~' home paths) into which rules, policies, imports, and interactive reassignments may route files. Traversal segments ('..'), wildcards, and protected paths are rejected.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Allowed External Roots",
+      "type": "array"
+    },
+    "DEST_DIR": {
+      "default": "",
+      "description": "Optional default destination root directory (absolute or '~' home path) where sorted relative category folders are placed when no CLI --dest-dir override is provided. Empty string keeps destinations inside the scanned source directory.",
+      "title": "Dest Dir",
+      "type": "string"
     },
     "AUTO_QUARANTINE_RATINGS": {
       "description": "Opt-in sensitivity severity ratings (such as 'CRITICAL' and 'HIGH') that automatically route detected files into compliance quarantine staging. Defaults to an empty list so automatic sensitivity quarantine is disabled until enabled.",

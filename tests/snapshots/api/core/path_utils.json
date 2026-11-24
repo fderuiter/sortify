@@ -1,9 +1,22 @@
 {
   "_metadata": {
-    "checksum": "95e133eb1ba5303fc1842515da85e55e2818b2fce8b2a47b0da11ed32a4e3933"
+    "checksum": "4b3ebf310f1cb3808196fc8f76ac0ee5ee533bad5aa708ed06da1b71971df305"
   },
   "classes": [],
   "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "expand_target_path",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "target_path"
+        }
+      ],
+      "returns": "str"
+    },
     {
       "async": false,
       "decorators": [],
@@ -37,6 +50,47 @@
       "name": "get_session_base_dir",
       "parameters": [],
       "returns": "Path"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "is_allowed_external_target",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "target_path"
+        },
+        {
+          "annotation": "Sequence[str] | None",
+          "default": null,
+          "name": "allowed_external_roots"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "is_external_subpath",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "candidate"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "root"
+        },
+        {
+          "annotation": "bool",
+          "default": "True",
+          "name": "allow_equal"
+        }
+      ],
+      "returns": "bool"
     },
     {
       "async": false,
@@ -85,6 +139,42 @@
           "annotation": "int",
           "default": "260",
           "name": "limit"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "is_protected_target_path",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "target_path"
+        },
+        {
+          "annotation": "Sequence[str] | None",
+          "default": "None",
+          "name": "protected_paths"
+        },
+        {
+          "annotation": "str | None",
+          "default": "None",
+          "name": "base_dir"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "is_system_protected_path",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "target_path"
         }
       ],
       "returns": "bool"
@@ -266,6 +356,21 @@
           "annotation": "str | None",
           "default": "None",
           "name": "keyword"
+        },
+        {
+          "annotation": "Sequence[str] | None",
+          "default": "None",
+          "name": "allowed_external_roots"
+        },
+        {
+          "annotation": "Sequence[str] | None",
+          "default": "None",
+          "name": "protected_paths"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "allow_unlisted_external"
         }
       ],
       "returns": "None"

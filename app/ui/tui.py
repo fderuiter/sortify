@@ -360,6 +360,7 @@ class AutoSorterTUI(
         db: Optional[Any] = None,
         open_dropzone: bool = False,
         initial_drop_paths: Optional[list[str]] = None,
+        dest_dir: Optional[str] = None,
     ):
         super().__init__()
         self.settings = settings
@@ -380,6 +381,16 @@ class AutoSorterTUI(
         else:
             self.base_dir = ""
             self.source_dirs = []
+        raw_dest = (
+            dest_dir if dest_dir is not None else getattr(settings, "DEST_DIR", "")
+        )
+        if isinstance(raw_dest, str) and raw_dest.strip():
+            exp_dest = os.path.expanduser(raw_dest.strip())
+            self.dest_dir: Optional[str] = (
+                exp_dest if exp_dest.startswith("/") else os.path.abspath(exp_dest)
+            )
+        else:
+            self.dest_dir = None
         self.skip_wizard = skip_wizard
         self.non_interactive = non_interactive
         self.open_dropzone = bool(open_dropzone)
@@ -1372,6 +1383,28 @@ class AutoSorterTUI(
                         self.settings.QUARANTINE_DIR_NAME = res["QUARANTINE_DIR_NAME"]
                     except Exception:
                         pass
+                if "ALLOWED_EXTERNAL_ROOTS" in res:
+                    try:
+                        self.settings.ALLOWED_EXTERNAL_ROOTS = res[
+                            "ALLOWED_EXTERNAL_ROOTS"
+                        ]
+                    except Exception:
+                        pass
+                if "DEST_DIR" in res:
+                    try:
+                        self.settings.DEST_DIR = res["DEST_DIR"]
+                        new_dest = str(res["DEST_DIR"] or "").strip()
+                        self.dest_dir = (
+                            os.path.abspath(os.path.expanduser(new_dest))
+                            if new_dest
+                            else None
+                        )
+                        if self.app_session is not None and hasattr(
+                            self.app_session, "dest_dir"
+                        ):
+                            self.app_session.dest_dir = self.dest_dir
+                    except Exception:
+                        pass
                 if hasattr(self.settings, "_save"):
                     self.settings._save()
                 self.update_status()
@@ -1963,6 +1996,7 @@ def run_tui(
     non_interactive: bool = False,
     open_dropzone: bool = False,
     initial_drop_paths: Optional[list[str]] = None,
+    dest_dir: Optional[str] = None,
 ) -> None:
     """Run the Textual full-screen terminal interface."""
     import shutil
@@ -2010,6 +2044,7 @@ def run_tui(
         non_interactive=non_interactive,
         open_dropzone=open_dropzone,
         initial_drop_paths=initial_drop_paths,
+        dest_dir=dest_dir,
     )
     app.run()
 

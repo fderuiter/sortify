@@ -562,7 +562,7 @@ def test_normalize_and_sanitize_path_helpers():
     assert normalize_rule_path(' "C:\\Path\\To\\Folder\\" ') == "C:/Path/To/Folder/"
 
     class TestImporter(BaseRuleImporter):
-        def parse_file(self, file_path):
+        def parse_file(self, file_path, **kwargs):
             pass
 
         def can_import(self, file_path):
@@ -1088,7 +1088,7 @@ def test_rule_importers_coverage_gaps(tmp_path):
 
     # 1. BaseRuleImporter abstract methods
     class DummyImporter(BaseRuleImporter):
-        def parse_file(self, file_path):
+        def parse_file(self, file_path, **kwargs):
             return super().parse_file(file_path)
 
         def can_import(self, file_path):

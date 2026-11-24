@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "34a157aa4b2d7873c54f63b70e333fcf17cdc55b5242bd0dcaf53430469f9055"
+    "checksum": "e6918044ac26437b4f60d508e21a8df7aba2ba969ec4ce6ac61870e5b1e5a3d9"
   },
   "classes": [
     {
@@ -274,6 +274,27 @@
         {
           "async": false,
           "decorators": [
+            "@field_validator('ALLOWED_EXTERNAL_ROOTS')",
+            "@classmethod"
+          ],
+          "name": "validate_allowed_external_roots",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "list[str]",
+              "default": null,
+              "name": "v"
+            }
+          ],
+          "returns": "list[str]"
+        },
+        {
+          "async": false,
+          "decorators": [
             "@field_validator('CONFLICT_POLICY')",
             "@classmethod"
           ],
@@ -306,6 +327,27 @@
             }
           ],
           "returns": "'Settings'"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@field_validator('DEST_DIR')",
+            "@classmethod"
+          ],
+          "name": "validate_dest_dir",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "v"
+            }
+          ],
+          "returns": "str"
         },
         {
           "async": false,
@@ -348,6 +390,21 @@
             }
           ],
           "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@model_validator(mode='after')"
+          ],
+          "name": "validate_external_targets_and_roots",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "'Settings'"
         },
         {
           "async": false,

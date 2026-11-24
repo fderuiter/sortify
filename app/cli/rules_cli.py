@@ -108,6 +108,11 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
         metavar="IDENT=STRATEGY",
         help="Per-rule conflict override, e.g. --resolve invoice=overwrite (repeatable)",
     )
+    p_import.add_argument(
+        "--preserve-external-targets",
+        action="store_true",
+        help="Preserve allowlisted external destination paths instead of converting to relative folders",
+    )
     state_group = p_import.add_mutually_exclusive_group()
     state_group.add_argument(
         "--disabled",
@@ -344,10 +349,17 @@ def handle_rules_command(args: argparse.Namespace, settings: AppSettings) -> boo
         raw_resolves = list(getattr(args, "resolve", None) or [])
         overrides = _parse_resolution_overrides(raw_resolves, json_mode=is_json)
         import_disabled = not bool(getattr(args, "force_enabled", False))
+        preserve_external_targets = bool(
+            getattr(args, "preserve_external_targets", False)
+        )
 
         try:
             importer = get_rule_importer(rule_path)
-            import_res = importer.parse_file(rule_path)
+            import_res = importer.parse_file(
+                rule_path,
+                preserve_external_targets=preserve_external_targets,
+                settings=target_settings,
+            )
         except (ValueError, OSError) as exc:
             emit_cli_error(
                 f"Error: {exc}",
@@ -393,6 +405,7 @@ def handle_rules_command(args: argparse.Namespace, settings: AppSettings) -> boo
                     resolutions=effective_resolutions,
                     default_strategy=default_strategy,
                     import_disabled=import_disabled,
+                    preserve_external_targets=preserve_external_targets,
                 )
             except (OSError, ValueError) as exc:
                 emit_cli_error(
@@ -423,6 +436,7 @@ def handle_rules_command(args: argparse.Namespace, settings: AppSettings) -> boo
             "status": "preview" if dry_run else "merged",
             "dry_run": dry_run,
             "import_disabled": import_disabled,
+            "preserve_external_targets": preserve_external_targets,
             "source_format": import_res.source_format,
             "keyword_rules": import_res.keyword_rules,
             "policies": import_res.policies,

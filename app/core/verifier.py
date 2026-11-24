@@ -242,6 +242,7 @@ class VerificationEngine:
             or result.get("circular_renames")
             or result.get("invalid_renames")
             or result.get("long_paths")
+            or result.get("escaping_paths")
         )
 
     @staticmethod
@@ -253,14 +254,41 @@ class VerificationEngine:
 
     @staticmethod
     def verify_plan_integrity(
-        base_dir: str, plan: Any, conflict_policy: str = "skip"
+        base_dir: str,
+        plan: Any,
+        conflict_policy: str = "skip",
+        dest_dir: str | None = None,
+        allowed_external_roots: Any = None,
+        protected_paths: Any = None,
+        settings: Any = None,
     ) -> dict:
         """Run complete virtual filesystem simulation and integrity check."""
         try:
-            from app.core.path_utils import _sanitize_plan_with_base
+            from app.core.path_utils import _sanitize_plan_with_base, expand_target_path
+
+            if settings is not None:
+                if allowed_external_roots is None:
+                    allowed_external_roots = (
+                        getattr(settings, "ALLOWED_EXTERNAL_ROOTS", None) or []
+                    )
+                if protected_paths is None:
+                    protected_paths = getattr(settings, "PROTECTED_PATHS", None) or []
+                if dest_dir is None:
+                    cfg_dest = getattr(settings, "DEST_DIR", "") or ""
+                    if cfg_dest:
+                        dest_dir = expand_target_path(str(cfg_dest))
+
+            eff_dest_dir = expand_target_path(dest_dir) if dest_dir else None
+            trusted_roots: list[str] = []
+            if eff_dest_dir:
+                trusted_roots.append(eff_dest_dir)
+            if allowed_external_roots:
+                trusted_roots.extend(str(r) for r in allowed_external_roots if r)
 
             sanitized_plan, sanitization_warnings = _sanitize_plan_with_base(
-                plan, base_dir=base_dir
+                plan,
+                base_dir=base_dir,
+                trusted_roots=trusted_roots or None,
             )
             import logging
 
@@ -279,7 +307,12 @@ class VerificationEngine:
 
             tracker = VirtualFilesystemTracker()
             result = tracker.verify_integrity(
-                base_dir, plan_dict, conflict_policy=conflict_policy
+                base_dir,
+                plan_dict,
+                conflict_policy=conflict_policy,
+                dest_dir=eff_dest_dir,
+                allowed_external_roots=allowed_external_roots,
+                protected_paths=protected_paths,
             )
 
             all_warnings = sanitization_warnings + result.get("warnings", [])
@@ -289,10 +322,12 @@ class VerificationEngine:
         except ValueError as e:
             return {
                 "success": False,
+                "has_critical_errors": True,
                 "collisions": [],
                 "circular_renames": [],
                 "broken_links": [],
                 "long_paths": [],
+                "escaping_paths": [],
                 "warnings": [str(e)],
             }
 
@@ -303,9 +338,15 @@ class VerificationEngine:
         current_dest: str = "",
         active_parent_path: str = "",
         depth: int = 0,
+        dest_dir: str | None = None,
     ) -> list:
         """Get a flat list of moves from the plan."""
+        from app.core.path_utils import _is_absolute_path, expand_target_path
+
         base_dir = os.path.normpath(base_dir)
+        effective_dest_root = (
+            os.path.normpath(expand_target_path(dest_dir)) if dest_dir else base_dir
+        )
         moves: list[Any] = []
         if hasattr(plan, "plan") and isinstance(plan.plan, dict):
             plan = plan.plan
@@ -431,24 +472,34 @@ class VerificationEngine:
                 else:
                     filename = re.split(r"[/\\]+", rel_key)[-1]
 
-                from app.core.path_utils import _is_absolute_path
-
-                dest_override = _get_val(content, "destination_override")
+                raw_override = _get_val(content, "destination_override")
+                dest_override = (
+                    expand_target_path(str(raw_override)) if raw_override else None
+                )
+                exp_current_dest = (
+                    expand_target_path(current_dest) if current_dest else ""
+                )
                 if dest_override and _is_absolute_path(dest_override):
-                    dest_dir = dest_override
+                    resolved_dest_dir = dest_override
                 elif dest_override:
-                    dest_dir = os.path.join(base_dir, dest_override)
-                elif _is_absolute_path(current_dest):
-                    dest_dir = current_dest
+                    resolved_dest_dir = os.path.join(effective_dest_root, dest_override)
+                elif _is_absolute_path(exp_current_dest):
+                    resolved_dest_dir = exp_current_dest
                 else:
-                    dest_dir = os.path.join(base_dir, current_dest)
+                    resolved_dest_dir = os.path.join(
+                        effective_dest_root, exp_current_dest
+                    )
 
-                if re.match(r"^[a-zA-Z]:[/\\]", dest_dir):
-                    sep = "\\" if "\\" in dest_dir else "/"
-                    planned_dest_path = f"{dest_dir.rstrip('/\\')}{sep}{filename}"
+                if re.match(r"^[a-zA-Z]:[/\\]", resolved_dest_dir) or (
+                    resolved_dest_dir.startswith(("\\\\", "//")) and os.name != "nt"
+                ):
+                    sep = "\\" if "\\" in resolved_dest_dir else "/"
+                    planned_dest_path = (
+                        f"{resolved_dest_dir.rstrip('/\\')}{sep}{filename}"
+                    )
                 else:
                     planned_dest_path = os.path.normpath(
-                        os.path.join(dest_dir, filename)
+                        os.path.join(resolved_dest_dir, filename)
                     )
 
                 dup_action = _get_val(content, "duplicate_action")
@@ -468,17 +519,20 @@ class VerificationEngine:
                     dest_path = planned_dest_path
                 moves.append((key, source_path, dest_path))
             else:
-                from app.core.path_utils import _is_absolute_path
-
-                if depth == 0 and _is_absolute_path(key):
-                    next_dest = key
+                exp_key = (
+                    expand_target_path(str(key))
+                    if str(key).startswith("~")
+                    else str(key)
+                )
+                if depth == 0 and _is_absolute_path(exp_key):
+                    next_dest = exp_key
                     next_active_parent = active_parent_path
                 else:
-                    next_dest = os.path.join(current_dest, key)
+                    next_dest = os.path.join(current_dest, exp_key)
                     next_active_parent = (
                         active_parent_path
-                        if _is_absolute_path(key)
-                        else os.path.join(active_parent_path, key)
+                        if _is_absolute_path(exp_key)
+                        else os.path.join(active_parent_path, exp_key)
                     )
 
                 moves.extend(
@@ -488,6 +542,7 @@ class VerificationEngine:
                         next_dest,
                         next_active_parent,
                         depth + 1,
+                        dest_dir=dest_dir,
                     )
                 )
         return moves
@@ -499,16 +554,21 @@ class VerificationEngine:
         current_dest: str = "",
         active_parent_path: str = "",
         depth: int = 0,
+        dest_dir: str | None = None,
     ) -> list[dict[str, Any]]:
         """Collect rich metadata dictionaries for every active file node in ``plan``."""
+        from app.core.path_utils import _is_absolute_path, expand_target_path
+
         base_dir = os.path.normpath(base_dir)
+        effective_dest_root = (
+            os.path.normpath(expand_target_path(dest_dir)) if dest_dir else base_dir
+        )
         entries: list[dict[str, Any]] = []
         if hasattr(plan, "plan") and isinstance(plan.plan, dict):
             plan = plan.plan
         if not isinstance(plan, dict):
             return entries
 
-        from app.core.path_utils import _is_absolute_path
         from app.core.scanner import parse_item_identifier
 
         for key, content in plan.items():
@@ -535,6 +595,7 @@ class VerificationEngine:
                     current_dest=current_dest,
                     active_parent_path=active_parent_path,
                     depth=depth,
+                    dest_dir=dest_dir,
                 )
                 if not single_moves:
                     continue
@@ -550,21 +611,33 @@ class VerificationEngine:
                     filename = re.split(r"[/\\]+", clean_tf)[-1]
                 else:
                     filename = re.split(r"[/\\]+", rel_key)[-1]
-                dest_override = _get_val(content, "destination_override")
+                raw_override = _get_val(content, "destination_override")
+                dest_override = (
+                    expand_target_path(str(raw_override)) if raw_override else None
+                )
+                exp_current_dest = (
+                    expand_target_path(current_dest) if current_dest else ""
+                )
                 if dest_override and _is_absolute_path(dest_override):
-                    dest_dir = dest_override
+                    resolved_dest_dir = dest_override
                 elif dest_override:
-                    dest_dir = os.path.join(base_dir, dest_override)
-                elif _is_absolute_path(current_dest):
-                    dest_dir = current_dest
+                    resolved_dest_dir = os.path.join(effective_dest_root, dest_override)
+                elif _is_absolute_path(exp_current_dest):
+                    resolved_dest_dir = exp_current_dest
                 else:
-                    dest_dir = os.path.join(base_dir, current_dest)
+                    resolved_dest_dir = os.path.join(
+                        effective_dest_root, exp_current_dest
+                    )
 
-                if re.match(r"^[a-zA-Z]:[/\\]", dest_dir):
-                    sep = "\\" if "\\" in dest_dir else "/"
-                    planned_dest = f"{dest_dir.rstrip('/\\')}{sep}{filename}"
+                if re.match(r"^[a-zA-Z]:[/\\]", resolved_dest_dir) or (
+                    resolved_dest_dir.startswith(("\\\\", "//")) and os.name != "nt"
+                ):
+                    sep = "\\" if "\\" in resolved_dest_dir else "/"
+                    planned_dest = f"{resolved_dest_dir.rstrip('/\\')}{sep}{filename}"
                 else:
-                    planned_dest = os.path.normpath(os.path.join(dest_dir, filename))
+                    planned_dest = os.path.normpath(
+                        os.path.join(resolved_dest_dir, filename)
+                    )
 
                 entries.append(
                     {
@@ -581,15 +654,20 @@ class VerificationEngine:
                     }
                 )
             else:
-                if depth == 0 and _is_absolute_path(key):
-                    next_dest = key
+                exp_key = (
+                    expand_target_path(str(key))
+                    if str(key).startswith("~")
+                    else str(key)
+                )
+                if depth == 0 and _is_absolute_path(exp_key):
+                    next_dest = exp_key
                     next_active_parent = active_parent_path
                 else:
-                    next_dest = os.path.join(current_dest, key)
+                    next_dest = os.path.join(current_dest, exp_key)
                     next_active_parent = (
                         active_parent_path
-                        if _is_absolute_path(key)
-                        else os.path.join(active_parent_path, key)
+                        if _is_absolute_path(exp_key)
+                        else os.path.join(active_parent_path, exp_key)
                     )
                 entries.extend(
                     VerificationEngine.get_move_entries(
@@ -598,6 +676,7 @@ class VerificationEngine:
                         next_dest,
                         next_active_parent,
                         depth + 1,
+                        dest_dir=dest_dir,
                     )
                 )
         return entries
@@ -608,6 +687,7 @@ class VerificationEngine:
         plan: Any,
         detect_original_by: str = "first_seen",
         include_resolved: bool = False,
+        dest_dir: str | None = None,
     ) -> list[dict]:
         """Detect byte-identical duplicate file clusters across active plan items."""
         from app.core.resilient_file_ops import (
@@ -615,7 +695,7 @@ class VerificationEngine:
             same_file_content,
         )
 
-        entries = VerificationEngine.get_move_entries(base_dir, plan)
+        entries = VerificationEngine.get_move_entries(base_dir, plan, dest_dir=dest_dir)
         if not entries:
             return []
 
@@ -751,12 +831,16 @@ class VerificationEngine:
 
     @staticmethod
     def get_collision_groups(
-        base_dir: str, plan: Any, *, include_resolved: bool = False
+        base_dir: str,
+        plan: Any,
+        *,
+        include_resolved: bool = False,
+        dest_dir: str | None = None,
     ) -> list[dict]:
         """Detect destination target collisions among distinct files."""
         from app.core.resilient_file_ops import same_file_content
 
-        entries = VerificationEngine.get_move_entries(base_dir, plan)
+        entries = VerificationEngine.get_move_entries(base_dir, plan, dest_dir=dest_dir)
         if not entries:
             return []
 
@@ -1464,13 +1548,40 @@ class VirtualFilesystemTracker:
         return broken_links
 
     def verify_integrity(
-        self, base_dir: str, plan: dict, conflict_policy: str = "skip"
+        self,
+        base_dir: str,
+        plan: dict,
+        conflict_policy: str = "skip",
+        dest_dir: str | None = None,
+        allowed_external_roots: Any = None,
+        protected_paths: Any = None,
     ) -> dict:
         """Run complete virtual filesystem simulation and integrity check."""
-        moves_list = VerificationEngine.get_moves(base_dir, plan)
+        moves_list = VerificationEngine.get_moves(base_dir, plan, dest_dir=dest_dir)
 
         # Populate initial VFS state
         self.populate_from_disk(base_dir)
+        if dest_dir and os.path.isdir(dest_dir):
+            self.populate_from_disk(dest_dir)
+        for _, _, dst in moves_list:
+            is_foreign = os.name != "nt" and (
+                bool(re.match(r"^[a-zA-Z]:[/\\]", str(dst)))
+                or str(dst).startswith(("\\\\", "//"))
+            )
+            if not is_foreign:
+                abs_dst = os.path.abspath(dst)
+                if abs_dst not in self.nodes and os.path.lexists(abs_dst):
+                    try:
+                        st = os.lstat(abs_dst)
+                        self.nodes[abs_dst] = VirtualNode(
+                            abs_dst,
+                            is_dir=os.path.isdir(abs_dst)
+                            and not os.path.islink(abs_dst),
+                            inode=st.st_ino or self._get_next_inode(),
+                            size=st.st_size,
+                        )
+                    except OSError:
+                        pass
         self.populate_from_moves(moves_list)
 
         # Trace and analyze issues
@@ -1525,7 +1636,13 @@ class VirtualFilesystemTracker:
                 )
 
         # Check escaping target paths
-        escaping_paths = self.check_escaping_paths(moves_list, base_dir)
+        escaping_paths = self.check_escaping_paths(
+            moves_list,
+            base_dir,
+            dest_dir=dest_dir,
+            allowed_external_roots=allowed_external_roots,
+            protected_paths=protected_paths,
+        )
 
         # Check rename proposals
         invalid_renames, unconfirmed_renames = self.check_rename_proposals(
@@ -1570,6 +1687,7 @@ class VirtualFilesystemTracker:
             or len(circular_renames) > 0
             or len(invalid_renames) > 0
             or len(long_paths) > 0
+            or len(escaping_paths) > 0
         )
 
         return {
@@ -1586,20 +1704,69 @@ class VirtualFilesystemTracker:
             "warnings": unique_warnings,
         }
 
-    def check_escaping_paths(self, moves_list: list, base_dir: str) -> list:
-        """Validate that all destination target paths resolve strictly within base_dir."""
+    def check_escaping_paths(
+        self,
+        moves_list: list,
+        base_dir: str,
+        dest_dir: str | None = None,
+        allowed_external_roots: Any = None,
+        protected_paths: Any = None,
+    ) -> list:
+        """Validate that all destination target paths resolve within base_dir, dest_dir, or ALLOWED_EXTERNAL_ROOTS and never hit PROTECTED_PATHS."""
         from app.core.mover import is_subpath_or_equal
+        from app.core.path_utils import (
+            expand_target_path,
+            is_allowed_external_target,
+            is_external_subpath,
+            is_protected_target_path,
+        )
 
         escaping_paths = []
         base_dir_abs = os.path.abspath(base_dir) if base_dir else ""
+        dest_dir_abs = os.path.abspath(expand_target_path(dest_dir)) if dest_dir else ""
 
         for rel_path, src, dst in moves_list:
-            abs_dst = os.path.abspath(dst)
-            if not is_subpath_or_equal(abs_dst, base_dir_abs):
-                message = f"Destination path '{abs_dst}' attempts to escape target base directory '{base_dir_abs}'."
+            dst_str = expand_target_path(str(dst))
+            is_foreign_on_posix = os.name != "nt" and (
+                bool(re.match(r"^[a-zA-Z]:[/\\]", dst_str))
+                or dst_str.startswith(("\\\\", "//"))
+            )
+            report_dst = dst_str if is_foreign_on_posix else os.path.abspath(dst_str)
+
+            if is_protected_target_path(dst_str, protected_paths):
                 escaping_paths.append(
                     {
-                        "path": abs_dst,
+                        "path": report_dst,
+                        "source": os.path.abspath(src),
+                        "type": "protected_path",
+                        "message": f"Destination path '{report_dst}' targets a protected directory and cannot be modified.",
+                    }
+                )
+                continue
+
+            if is_foreign_on_posix:
+                in_base = bool(base_dir and is_external_subpath(dst_str, base_dir))
+                in_dest = bool(dest_dir and is_external_subpath(dst_str, dest_dir))
+            else:
+                in_base = bool(
+                    base_dir_abs and is_subpath_or_equal(report_dst, base_dir_abs)
+                )
+                in_dest = bool(
+                    dest_dir_abs and is_subpath_or_equal(report_dst, dest_dir_abs)
+                )
+
+            in_allowed_external = is_allowed_external_target(
+                dst_str, allowed_external_roots
+            )
+
+            if not (in_base or in_dest or in_allowed_external):
+                message = (
+                    f"Destination path '{report_dst}' attempts to escape target base directory "
+                    f"'{dest_dir_abs or base_dir_abs}' and is not under ALLOWED_EXTERNAL_ROOTS."
+                )
+                escaping_paths.append(
+                    {
+                        "path": report_dst,
                         "source": os.path.abspath(src),
                         "type": "escaping_path",
                         "message": message,

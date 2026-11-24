@@ -37,14 +37,16 @@ ELIGIBLE_DOCUMENT_EXTENSIONS = (
 
 
 def _normalize_verified_target_folder(folder: str | None) -> str | None:
-    """Normalize empty, dot, or root-only folder targets to None."""
+    """Normalize empty, dot, parent-traversal, or root-only folder targets to None."""
     if folder is None:
         return None
     norm = str(folder).strip().replace("\\", "/")
-    if not norm or norm in (".", "./"):
+    if not norm or norm in (".", "./", "..") or norm.startswith("../"):
         return None
     stripped = norm.strip("/")
-    if not stripped or stripped == ".":
+    if not stripped or stripped in (".", ".."):
+        return None
+    if any(seg == ".." for seg in stripped.split("/")):
         return None
     return norm
 
@@ -1103,6 +1105,8 @@ class Database:
                 pass
 
         def _write():
+            import os
+
             counts = precomputed_counts
             conn = get_db_connection(self.db_path)
             with conn:
@@ -1114,9 +1118,17 @@ class Database:
                     (new_filepath, new_dir, base_dir, old_filepath),
                 )
                 if upd_cur.rowcount == 0:
-                    conn.execute(
+                    upd_cur = conn.execute(
                         "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND REPLACE(filepath, '\\', '/') = ?",
                         (new_filepath, new_dir, base_dir, old_filepath),
+                    )
+                if upd_cur.rowcount == 0 and not os.path.isabs(old_filepath):
+                    abs_old = os.path.abspath(
+                        os.path.join(base_dir, old_filepath)
+                    ).replace("\\", "/")
+                    conn.execute(
+                        "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND REPLACE(filepath, '\\', '/') = ?",
+                        (new_filepath, new_dir, base_dir, abs_old),
                     )
                 cursor = conn.execute(
                     "SELECT 1 FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ? LIMIT 1",
@@ -1497,14 +1509,23 @@ class Database:
                         term_counts=counts,
                     )
             elif item["type"] == "document_path":
-                base_dir, old_filepath, new_filepath = item["args"]
-                old_filepath = old_filepath.replace("\\", "/")
-                new_filepath = new_filepath.replace("\\", "/")
                 import os
 
-                new_dir = _normalize_verified_target_folder(
-                    os.path.dirname(new_filepath)
-                )
+                args = item["args"]
+                if len(args) >= 4:
+                    base_dir, old_filepath, new_filepath, explicit_verified_target = (
+                        args[:4]
+                    )
+                    new_dir = _normalize_verified_target_folder(
+                        explicit_verified_target
+                    )
+                else:
+                    base_dir, old_filepath, new_filepath = args
+                    new_dir = _normalize_verified_target_folder(
+                        os.path.dirname(new_filepath.replace("\\", "/"))
+                    )
+                old_filepath = old_filepath.replace("\\", "/")
+                new_filepath = new_filepath.replace("\\", "/")
                 self._drop_stale_destination_row_conn(
                     conn, base_dir, old_filepath, new_filepath
                 )
@@ -1513,9 +1534,17 @@ class Database:
                     (new_filepath, new_dir, base_dir, old_filepath),
                 )
                 if upd_cur.rowcount == 0:
-                    conn.execute(
+                    upd_cur = conn.execute(
                         "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND REPLACE(filepath, '\\', '/') = ?",
                         (new_filepath, new_dir, base_dir, old_filepath),
+                    )
+                if upd_cur.rowcount == 0 and not os.path.isabs(old_filepath):
+                    abs_old = os.path.abspath(
+                        os.path.join(base_dir, old_filepath)
+                    ).replace("\\", "/")
+                    conn.execute(
+                        "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND REPLACE(filepath, '\\', '/') = ?",
+                        (new_filepath, new_dir, base_dir, abs_old),
                     )
                 cursor = conn.execute(
                     "SELECT 1 FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ? LIMIT 1",
@@ -1608,7 +1637,12 @@ class Database:
                     except Exception:
                         pass
             elif item["type"] == "document_path":
-                base_dir, old_filepath, new_filepath = item["args"]
+                doc_args = item["args"]
+                base_dir, old_filepath, new_filepath = (
+                    doc_args[0],
+                    doc_args[1],
+                    doc_args[2],
+                )
                 old_filepath = old_filepath.replace("\\", "/")
                 new_filepath = new_filepath.replace("\\", "/")
                 import os
