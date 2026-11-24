@@ -801,3 +801,239 @@ def test_200_file_pipeline_with_duplicate_staging_uses_chunked_commits(
         state["phase"] = "setup"
         session.close()
         db_conn.clear_connection_cache(only_current_and_inactive=False)
+
+
+def test_unified_policy_actions_coexist_with_chunked_commits_and_dbworker_undo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Policy actions (unarchive, redact, quarantine, archive, retain) run cleanly alongside chunked moves with zero non-DBWorker SQLite writes across execute and undo."""
+    import zipfile
+
+    app_dir = tmp_path / "app_data_policy"
+    work_dir = tmp_path / "workspace_policy"
+    app_dir.mkdir()
+    work_dir.mkdir()
+
+    raw_pii = "Customer SSN: 123-45-6789 and email alice@example.com\n"
+    redact_src = work_dir / "customer_pii.txt"
+    redact_src.write_text(raw_pii, encoding="utf-8")
+
+    zip_src = work_dir / "bundle.zip"
+    with zipfile.ZipFile(zip_src, "w") as zf:
+        zf.writestr("inner_note.txt", "Unpacked archive payload\n")
+    zip_bytes = zip_src.read_bytes()
+
+    quar_src = work_dir / "flag_doc.txt"
+    quar_src.write_text("Compliance review target\n", encoding="utf-8")
+
+    arch_src = work_dir / "legacy_memo.txt"
+    arch_src.write_text("Historical memo\n", encoding="utf-8")
+
+    retain_src = work_dir / "stationary_keep.txt"
+    retain_src.write_text("Keep in place\n", encoding="utf-8")
+
+    normal_files: list[Path] = []
+    for i in range(10):
+        nf = work_dir / f"regular_{i:02d}.txt"
+        nf.write_text(f"Regular invoice {i}\n", encoding="utf-8")
+        normal_files.append(nf)
+
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(app_dir))
+    state, _ = _install_sqlite_commit_tracer(monkeypatch)
+    store = open_store(app_dir, legacy_session_root=tmp_path / "none")
+
+    settings = AppSettings(filepath=str(tmp_path / "policy_settings.json"))
+    settings.AI_CONSENT_GRANTED = False
+    settings.MAX_WORKERS = 4
+    settings.KEYWORD_RULES = {"invoice": "Invoices"}
+    settings.POLICIES = [
+        {
+            "type": "keyword",
+            "expression": "customer_pii",
+            "action": "redact",
+            "target_path": "Scrubbed",
+            "priority": 100,
+        },
+        {
+            "type": "unarchive",
+            "expression": "*.zip",
+            "action": "unarchive",
+            "post_unarchive_action": "delete",
+            "target_path": "Unpacked",
+            "priority": 99,
+        },
+        {
+            "type": "keyword",
+            "expression": "flag_doc",
+            "action": "quarantine",
+            "target_path": "_Compliance_Quarantine",
+            "priority": 98,
+        },
+        {
+            "type": "keyword",
+            "expression": "legacy_memo",
+            "action": "archive",
+            "target_path": "Archive",
+            "priority": 97,
+        },
+        {
+            "type": "keyword",
+            "expression": "stationary_keep",
+            "action": "retain",
+            "target_path": "",
+            "priority": 96,
+        },
+    ]
+
+    state["phase"] = "session_init"
+    session = AppSession(settings, str(work_dir), store=store)
+    try:
+        pipeline = SortPipeline(session)
+
+        state["phase"] = "execute"
+        _plan, sort_res = pipeline.run(chunk_size=50)
+        assert sort_res is not None
+        assert sort_res.ok
+        assert sort_res.session_id is not None
+
+        scrubbed_dst = work_dir / "Scrubbed" / "customer_pii.txt"
+        assert scrubbed_dst.exists()
+        assert "123-45-6789" not in scrubbed_dst.read_text(encoding="utf-8")
+        assert not redact_src.exists()
+
+        assert not zip_src.exists()
+        assert any(
+            p.name == "inner_note.txt"
+            and p.read_text(encoding="utf-8") == "Unpacked archive payload\n"
+            for p in work_dir.rglob("inner_note.txt")
+        )
+
+        assert (work_dir / "_Compliance_Quarantine" / "flag_doc.txt").exists()
+        assert (work_dir / "Archive" / "legacy_memo.txt").exists()
+        assert (work_dir / "Retained_Documents" / "stationary_keep.txt").exists()
+        for i in range(10):
+            assert (work_dir / "Invoices" / f"regular_{i:02d}.txt").exists()
+
+        state["phase"] = "undo"
+        undo_res = pipeline.undo(sort_res.session_id)
+        assert undo_res.ok
+
+        # Original files (including unredacted PII and archive bytes) restored cleanly
+        assert redact_src.exists()
+        assert redact_src.read_text(encoding="utf-8") == raw_pii
+        assert not scrubbed_dst.exists()
+        assert (
+            session.db.get_document(str(work_dir), "Scrubbed/customer_pii.txt") is None
+        )
+
+        assert zip_src.exists()
+        assert zip_src.read_bytes() == zip_bytes
+        assert list(work_dir.rglob("inner_note.txt")) == []
+
+        assert quar_src.exists()
+        assert arch_src.exists()
+        assert retain_src.exists()
+        for nf in normal_files:
+            assert nf.exists()
+        assert not (work_dir / ".sortify_overwrite_backups").exists()
+
+        assert state["non_worker_writes"] == []
+    finally:
+        state["phase"] = "setup"
+        session.close()
+        db_conn.clear_connection_cache(only_current_and_inactive=False)
+
+
+def test_chunked_mover_intra_chunk_overwrite_and_filepath_fallback_undo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Chunked AsyncMoveEngine supports #1189 filepath-only nodes, non-blocking policy overwrite collisions, and lossless multi-overwrite undo."""
+    work_dir = tmp_path / "ow_workspace"
+    work_dir.mkdir()
+    app_dir = tmp_path / "ow_appdir"
+    app_dir.mkdir()
+
+    src_nested = work_dir / "inbox" / "inv_alpha.txt"
+    src_nested.parent.mkdir()
+    src_nested.write_text("alpha payload\n", encoding="utf-8")
+
+    src_root = work_dir / "inv_beta.txt"
+    src_root.write_text("beta payload\n", encoding="utf-8")
+
+    existing_dst = work_dir / "Finance" / "merged.txt"
+    existing_dst.parent.mkdir()
+    existing_dst.write_text("pre-existing target payload\n", encoding="utf-8")
+
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(app_dir))
+    state, _ = _install_sqlite_commit_tracer(monkeypatch)
+    store = open_store(app_dir, legacy_session_root=tmp_path / "none")
+
+    settings = AppSettings(filepath=str(tmp_path / "ow_settings.json"))
+    settings.AI_CONSENT_GRANTED = False
+    settings.CONFLICT_POLICY = "overwrite"
+
+    session = AppSession(settings, str(work_dir), store=store)
+    try:
+        plan = {
+            "Finance": {
+                "inv_alpha.txt": {
+                    "__type__": "file",
+                    "source_path": "inbox/inv_alpha.txt",
+                    "target_filename": "merged.txt",
+                    "overwrite": True,
+                    "allow_overwrite": True,
+                    "confirmed": True,
+                },
+                "inv_beta.txt": {
+                    "__type__": "file",
+                    "filepath": str(src_root),
+                    "target_filename": "merged.txt",
+                    "overwrite": True,
+                    "allow_overwrite": True,
+                    "confirmed": True,
+                },
+            }
+        }
+
+        state["phase"] = "execute"
+        mover = mover_mod.AsyncMoveEngine()
+        res = mover.execute(
+            str(work_dir),
+            plan,
+            db=session.db,
+            runtime_settings=settings,
+            history_manager=session.history_manager,
+            chunk_size=50,
+            batch_size=50,
+        )
+        assert res.ok
+        session_id = res["session_id"]
+        assert session_id
+
+        assert not src_nested.exists()
+        assert not src_root.exists()
+        assert existing_dst.exists()
+        assert existing_dst.read_text(encoding="utf-8") == "beta payload\n"
+
+        # Both displacements were journaled on MoveLedger
+        ledger_moves = session.history_manager.moves.list_moves(session_id)
+        assert len(ledger_moves) == 2
+        assert all(m.displaced for m in ledger_moves)
+
+        state["phase"] = "undo"
+        restored_count = session.history_manager.rollback(session_id)
+        assert restored_count == 2
+
+        assert src_nested.exists()
+        assert src_nested.read_text(encoding="utf-8") == "alpha payload\n"
+        assert src_root.exists()
+        assert src_root.read_text(encoding="utf-8") == "beta payload\n"
+        assert existing_dst.exists()
+        assert (
+            existing_dst.read_text(encoding="utf-8") == "pre-existing target payload\n"
+        )
+        assert state["non_worker_writes"] == []
+    finally:
+        state["phase"] = "setup"
+        session.close()
+        db_conn.clear_connection_cache(only_current_and_inactive=False)

@@ -242,6 +242,7 @@ class VerificationEngine:
             or result.get("circular_renames")
             or result.get("invalid_renames")
             or result.get("long_paths")
+            or result.get("escaping_paths")
         )
 
     @staticmethod
@@ -338,7 +339,9 @@ class VerificationEngine:
                     src_root = parsed_root
                 effective_base = src_root if src_root else base_dir
 
-                src_p = _get_val(content, "source_path")
+                src_p = _get_val(content, "source_path") or _get_val(
+                    content, "filepath"
+                )
                 if src_p and "::" in str(src_p):
                     parsed_r, parsed_p = parse_item_identifier(
                         str(src_p), effective_base
@@ -361,13 +364,12 @@ class VerificationEngine:
                     else:
                         cand_src_p = None
 
-                    if rel_src_val is None:
-                        source_path = cand_src_p  # type: ignore[assignment]
+                    if rel_src_val is None and cand_src_p is not None:
+                        source_path = cand_src_p
                     else:
+                        rel_str = str(rel_src_val or "")
                         relative_source = (
-                            rel_src_val.split("::", 1)[1]
-                            if "::" in str(rel_src_val)
-                            else rel_src_val
+                            rel_str.split("::", 1)[1] if "::" in rel_str else rel_str
                         )
                         rel_src_norm = relative_source.replace("\\", "/")
                         parent_norm = active_parent_path.replace("\\", "/")
@@ -402,7 +404,7 @@ class VerificationEngine:
                             "/" in str(raw_key) or "\\" in str(raw_key)
                         ) and os.path.lexists(key_cand):
                             source_path = key_cand
-                        elif cand_src_p and not rel_src_norm.startswith(".."):
+                        elif cand_src_p:
                             source_path = cand_src_p
                         else:
                             source_path = primary_cand
@@ -941,12 +943,19 @@ class VerificationEngine:
             )
 
             for idx, item_obj in enumerate(items):
-                src_p = item_obj.get("source_path")
+                src_p = item_obj.get("source_path") or item_obj.get("filepath")
                 n_key = item_obj.get("node_key")
+                resolved_src_key = None
+                if src_p:
+                    resolved_src_key = os.path.normpath(
+                        os.path.abspath(
+                            src_p
+                            if os.path.isabs(str(src_p))
+                            else os.path.join(base_dir, str(src_p))
+                        )
+                    )
                 entry = (
-                    entry_by_src.get(os.path.normpath(os.path.abspath(src_p)))
-                    if src_p
-                    else None
+                    entry_by_src.get(resolved_src_key) if resolved_src_key else None
                 ) or (entry_by_key.get(n_key) if n_key else None)
                 if not entry:
                     continue
@@ -955,6 +964,7 @@ class VerificationEngine:
                 if content is None and isinstance(entry.get("parent_dict"), dict):
                     content = {
                         "__type__": "file",
+                        "source_path": entry["source_path"],
                         "relative_source": item_obj.get("relative_source") or n_key,
                     }
                     entry["parent_dict"][n_key] = content
@@ -1570,6 +1580,7 @@ class VirtualFilesystemTracker:
             or len(circular_renames) > 0
             or len(invalid_renames) > 0
             or len(long_paths) > 0
+            or len(escaping_paths) > 0
         )
 
         return {
@@ -1653,8 +1664,15 @@ class VirtualFilesystemTracker:
                         src_root = parsed_root
                     effective_base = src_root if src_root else base_dir
 
+                    raw_src_p = _get_val(content, "source_path") or _get_val(
+                        content, "filepath"
+                    )
                     raw_rel_src = _get_val(content, "relative_source")
-                    if raw_rel_src is not None:
+                    if raw_src_p is not None:
+                        _, rel_src = parse_item_identifier(
+                            str(raw_src_p), effective_base
+                        )
+                    elif raw_rel_src is not None:
                         _, rel_src = parse_item_identifier(
                             str(raw_rel_src), effective_base
                         )

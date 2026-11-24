@@ -128,7 +128,13 @@ class AutoSorterTUI(
         Binding("minus", "rate_negative", "Rating (-)", show=False),
         Binding("ctrl+o", "open_settings", "Settings", show=False),
         Binding("ctrl+g", "open_model_manager", "Model Manager", show=False),
-        Binding("ctrl+k", "open_command_palette", "Command Palette", show=False),
+        Binding(
+            "ctrl+k",
+            "open_command_palette",
+            "Command Palette",
+            show=False,
+            priority=True,
+        ),
         Binding("ctrl+w", "open_wizard", "Wizard", show=False),
         Binding("ctrl+d", "open_dropzone", "DropZone", show=False),
         Binding("ctrl+t", "toggle_daemon(False)", "Toggle Daemon", show=False),
@@ -403,6 +409,8 @@ class AutoSorterTUI(
         self._daemon_state: str = "idle"
         self._daemon_is_moving: bool = False
         self._pending_flush_trash: bool = False
+        self._manual_plan_edits: dict[str, dict[str, Any]] = {}
+        self._manual_empty_folders: set[str] = set()
 
     def compose(self) -> ComposeResult:
         """Compose main dual-pane TUI layout."""
@@ -1075,14 +1083,18 @@ class AutoSorterTUI(
             pass
         return None
 
+    def _clear_manual_plan_edits(self) -> None:
+        """Clear cached manual plan edits across workspace switches, sorts, and rollbacks."""
+        self._manual_plan_edits.clear()
+        self._manual_empty_folders.clear()
+
     def _is_text_control_focused(self, allow_tree_search: bool = False) -> bool:
         """Check if a text input or selection control currently holds focus."""
+        _ = allow_tree_search
         focused = self.focused
         if focused is None or not isinstance(focused, (Input, Select)):
             return False
         if getattr(focused, "id", None) == "palette-input":
-            return False
-        if allow_tree_search and getattr(focused, "id", None) == "tree-search-input":
             return False
         return True
 
@@ -1096,6 +1108,30 @@ class AutoSorterTUI(
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         """Check whether an action is enabled before dispatching key bindings."""
+        focused = self.focused
+        if action == "open_command_palette":
+            if isinstance(self.screen, CommandPaletteModal):
+                return False
+            if (
+                getattr(focused, "id", None) != "tree-search-input"
+                and self._is_text_control_focused()
+            ):
+                return False
+
+        if getattr(focused, "id", None) == "tree-search-input":
+            if action in {
+                "open_command_palette",
+                "toggle_character_shortcuts",
+                "focus_search",
+                "quit",
+            }:
+                return super().check_action(action, parameters)
+            if action == "open_cheat_sheet" and not (
+                parameters and parameters[0] is True
+            ):
+                return super().check_action(action, parameters)
+            return False
+
         is_char_action = action in {
             "toggle_selection",
             "exclude_selected",
@@ -1139,6 +1175,7 @@ class AutoSorterTUI(
                 if valid_paths != prev_sources:
                     self.locked_files.clear()
                     self._ratings_cache.clear()
+                    self._clear_manual_plan_edits()
                     self.has_critical_errors = False
                     self.verification_result = {}
                     self.critical_error_paths.clear()
@@ -1271,6 +1308,8 @@ class AutoSorterTUI(
             logger.error(f"Error generating sample dataset: {exc}")
             self.announce(f"Failed to generate sample dataset: {exc}")
             return
+        if os.path.abspath(target_dir) != os.path.abspath(self.base_dir or ""):
+            self._clear_manual_plan_edits()
         self.base_dir = target_dir
         self.source_dirs = [target_dir]
         self.action_scan_directory()
@@ -1424,7 +1463,8 @@ class AutoSorterTUI(
 
     def action_open_command_palette(self) -> None:
         """Open command palette overlay modal [Ctrl+K]."""
-        if self._is_text_control_focused(allow_tree_search=True):
+        focused_id = getattr(self.focused, "id", None)
+        if focused_id != "tree-search-input" and self._is_text_control_focused():
             return
 
         def on_command_selected(cmd: Optional[PaletteCommand]) -> None:
@@ -1779,6 +1819,7 @@ class AutoSorterTUI(
             notify(msg, type="info")
         except Exception:
             pass
+        self._clear_manual_plan_edits()
         if not getattr(self, "source_dirs", None) and self.base_dir:
             self.source_dirs = [self.base_dir]
         if getattr(self, "source_dirs", None) and any(

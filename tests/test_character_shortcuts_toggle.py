@@ -450,3 +450,113 @@ def test_f1_and_question_mark_across_non_text_controls_and_modals(temp_workspace
             assert app.screen is export_modal
 
     asyncio.run(_test())
+
+
+def test_tree_search_input_isolates_global_shortcuts_keeping_whitelisted_keys(
+    temp_workspace,
+):
+    """When #tree-search-input holds focus, _is_text_control_focused returns True and check_action blocks tree/modal shortcuts while keeping Ctrl+K, F1, Ctrl+Alt+K, Ctrl+F, Esc, and Ctrl+Q."""
+    from app.ui.modals.command_palette import CommandPaletteModal
+    from app.ui.modals.rules import ActiveRuleManagerModal
+
+    settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
+    settings.ENABLE_CHARACTER_KEY_SHORTCUTS = True
+
+    async def _test():
+        app = AutoSorterTUI(
+            settings=settings, base_dir=temp_workspace, skip_wizard=True
+        )
+        async with app.run_test(size=(120, 40)) as pilot:
+            app.plan = {
+                "Finance": {
+                    "doc1.txt": {
+                        "__type__": "file",
+                        "filepath": os.path.join(temp_workspace, "doc1.txt"),
+                        "is_checked": True,
+                        "is_excluded": False,
+                    }
+                }
+            }
+            app.rebuild_tree()
+            await pilot.pause(0.05)
+
+            search_input = app.query_one("#tree-search-input", Input)
+            search_input.focus()
+            await pilot.pause(0.05)
+
+            # _is_text_control_focused returns True regardless of allow_tree_search
+            assert app._is_text_control_focused(allow_tree_search=False) is True
+            assert app._is_text_control_focused(allow_tree_search=True) is True
+
+            # Blocked tree & modal actions in check_action
+            for blocked_action, params in [
+                ("rename_node", ()),
+                ("open_active_rules", ()),
+                ("scan_directory", ()),
+                ("execute_sort", ()),
+                ("select_dir", ()),
+                ("open_settings", ()),
+                ("toggle_lock", ()),
+                ("new_folder", ()),
+                ("undo_last_sort", ()),
+                ("exclude_selected", ()),
+                ("reassign_selected", ()),
+                ("toggle_selection", ()),
+                ("open_cheat_sheet", (True,)),
+            ]:
+                assert app.check_action(blocked_action, params) is False, (
+                    f"{blocked_action} should be blocked in #tree-search-input"
+                )
+
+            # Allowed whitelisted actions in check_action (Ctrl+K, F1, Ctrl+Alt+K, Ctrl+F, Ctrl+Q)
+            assert app.check_action("open_command_palette", ()) is True
+            assert app.check_action("open_cheat_sheet", (False,)) is True
+            assert app.check_action("toggle_character_shortcuts", ()) is True
+            assert app.check_action("focus_search", ()) is True
+            assert app.check_action("quit", ()) is True
+
+            # Pressing F2 and Ctrl+R does NOT open RenameModal or ActiveRuleManagerModal
+            await pilot.press("f2")
+            await pilot.press("ctrl+r")
+            await pilot.pause(0.05)
+            assert not isinstance(app.screen, ActiveRuleManagerModal)
+            assert app.focused is search_input
+
+            # Typing '?' and 'x' enters text into search input instead of opening cheat sheet or excluding
+            await pilot.press("question_mark")
+            await pilot.press("x")
+            await pilot.pause(0.05)
+            assert search_input.value == "?x"
+            assert app.plan["Finance"]["doc1.txt"]["is_excluded"] is False
+
+            # Ctrl+Alt+K still toggles character shortcuts
+            await pilot.press("ctrl+alt+k")
+            await pilot.pause(0.05)
+            assert app.settings.ENABLE_CHARACTER_KEY_SHORTCUTS is False
+
+            # Ctrl+K opens CommandPaletteModal even from #tree-search-input
+            await pilot.press("ctrl+k")
+            await pilot.pause(0.05)
+            assert isinstance(app.screen, CommandPaletteModal)
+            await pilot.press("escape")
+            await pilot.pause(0.05)
+
+            # Refocus search input; F1 opens ShortcutCheatSheetModal
+            search_input.focus()
+            await pilot.pause(0.05)
+            await pilot.press("f1")
+            await pilot.pause(0.05)
+            assert isinstance(app.screen, ShortcutCheatSheetModal)
+            await pilot.press("escape")
+            await pilot.pause(0.05)
+
+            # Esc clears #tree-search-input and returns focus to #plan-tree
+            search_input.focus()
+            await pilot.pause(0.05)
+            await pilot.press("escape")
+            await pilot.pause(0.05)
+            assert search_input.value == ""
+            assert app._tree_has_focus() is True
+
+    asyncio.run(_test())

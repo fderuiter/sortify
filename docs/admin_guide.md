@@ -583,7 +583,7 @@ usage: smart-autosorter sort [-h] [--preset {demo,downloads,documents}]
                              [--flush-trash] [-q] [--no-color]
                              [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
-                             [--conflict-policy {skip,rename}]
+                             [--conflict-policy {skip,rename,overwrite}]
                              [--duplicates {off,skip,stage,trash}]
                              [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
                              [--contextual-renaming]
@@ -616,7 +616,7 @@ options:
                         Maximum number of generated subfolders
   --strategy {default,generative,clinical_tmf,clinical_isf}
                         Sorting strategy
-  --conflict-policy {skip,rename}
+  --conflict-policy {skip,rename,overwrite}
                         Conflict resolution policy
   --duplicates {off,skip,stage,trash}
                         Byte-identical duplicate handling mode (off, skip,
@@ -649,7 +649,7 @@ usage: smart-autosorter scan [-h] [--preset {demo,downloads,documents}]
                              [--json] [-q] [--no-color]
                              [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
-                             [--conflict-policy {skip,rename}]
+                             [--conflict-policy {skip,rename,overwrite}]
                              [--duplicates {off,skip,stage,trash}]
                              [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
                              [--contextual-renaming]
@@ -677,7 +677,7 @@ options:
                         Maximum number of generated subfolders
   --strategy {default,generative,clinical_tmf,clinical_isf}
                         Sorting strategy
-  --conflict-policy {skip,rename}
+  --conflict-policy {skip,rename,overwrite}
                         Conflict resolution policy
   --duplicates {off,skip,stage,trash}
                         Byte-identical duplicate handling mode (off, skip,
@@ -709,7 +709,7 @@ options:
 usage: smart-autosorter config [-h] [--show] [--json] [--set KEY VALUE] [-q]
                                [--no-color] [--max-folders MAX_FOLDERS]
                                [--strategy {default,generative,clinical_tmf,clinical_isf}]
-                               [--conflict-policy {skip,rename}]
+                               [--conflict-policy {skip,rename,overwrite}]
                                [--duplicates {off,skip,stage,trash}]
                                [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
                                [--contextual-renaming]
@@ -732,7 +732,7 @@ options:
                         Maximum number of generated subfolders
   --strategy {default,generative,clinical_tmf,clinical_isf}
                         Sorting strategy
-  --conflict-policy {skip,rename}
+  --conflict-policy {skip,rename,overwrite}
                         Conflict resolution policy
   --duplicates {off,skip,stage,trash}
                         Byte-identical duplicate handling mode (off, skip,
@@ -764,7 +764,7 @@ options:
 usage: smart-autosorter daemon [-h] [--watch] [-q] [--no-color]
                                [--max-folders MAX_FOLDERS]
                                [--strategy {default,generative,clinical_tmf,clinical_isf}]
-                               [--conflict-policy {skip,rename}]
+                               [--conflict-policy {skip,rename,overwrite}]
                                [--duplicates {off,skip,stage,trash}]
                                [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
                                [--contextual-renaming]
@@ -791,7 +791,7 @@ options:
                         Maximum number of generated subfolders
   --strategy {default,generative,clinical_tmf,clinical_isf}
                         Sorting strategy
-  --conflict-policy {skip,rename}
+  --conflict-policy {skip,rename,overwrite}
                         Conflict resolution policy
   --duplicates {off,skip,stage,trash}
                         Byte-identical duplicate handling mode (off, skip,
@@ -824,7 +824,7 @@ usage: smart-autosorter undo [-h] [--session-id SESSION_ID] [--list]
                              [--latest] [--force] [--json] [-q] [--no-color]
                              [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
-                             [--conflict-policy {skip,rename}]
+                             [--conflict-policy {skip,rename,overwrite}]
                              [--duplicates {off,skip,stage,trash}]
                              [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
                              [--contextual-renaming]
@@ -851,7 +851,7 @@ options:
                         Maximum number of generated subfolders
   --strategy {default,generative,clinical_tmf,clinical_isf}
                         Sorting strategy
-  --conflict-policy {skip,rename}
+  --conflict-policy {skip,rename,overwrite}
                         Conflict resolution policy
   --duplicates {off,skip,stage,trash}
                         Byte-identical duplicate handling mode (off, skip,
@@ -883,7 +883,7 @@ options:
 usage: smart-autosorter drop [-h] [--dest-dir DEST_DIR] [--dry-run] [--json]
                              [-q] [--no-color] [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
-                             [--conflict-policy {skip,rename}]
+                             [--conflict-policy {skip,rename,overwrite}]
                              [--duplicates {off,skip,stage,trash}]
                              [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
                              [--contextual-renaming]
@@ -911,7 +911,7 @@ options:
                         Maximum number of generated subfolders
   --strategy {default,generative,clinical_tmf,clinical_isf}
                         Sorting strategy
-  --conflict-policy {skip,rename}
+  --conflict-policy {skip,rename,overwrite}
                         Conflict resolution policy
   --duplicates {off,skip,stage,trash}
                         Byte-identical duplicate handling mode (off, skip,

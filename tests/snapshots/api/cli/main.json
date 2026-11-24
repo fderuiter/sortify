@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "486f863b11ee4d0ed2228e8abaea163d1a76581df1220410362f60cf2060cb5c"
+    "checksum": "3540b0697fa724874f1476ddf29c651537aaa53b26960fe1b77b613d52b919b5"
   },
   "cli": [
     {
@@ -587,7 +587,8 @@
       "keywords": {
         "choices": [
           "skip",
-          "rename"
+          "rename",
+          "overwrite"
         ],
         "default": null,
         "help": "Conflict resolution policy",

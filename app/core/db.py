@@ -1649,6 +1649,16 @@ class Database:
                                 True,
                                 term_counts=counts,
                             )
+            elif item["type"] == "document_delete":
+                base_dir, del_filepath = item["args"]
+                del_filepath = del_filepath.replace("\\", "/")
+                self._update_tfidf_for_document_conn(
+                    conn, base_dir, del_filepath, None, False
+                )
+                conn.execute(
+                    "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                    (base_dir, del_filepath, del_filepath),
+                )
 
     def execute_batch_updates(
         self,
@@ -2114,6 +2124,36 @@ class Database:
             filepaths_to_clear = [filepath for filepath, _ in vectors_data]
             self.clear_corrupted_vectors(base_dir, filepaths_to_clear)
 
+        self.worker.execute_write(_write)
+
+    def _purge_document_vector(self, base_dir: str, filepath: str) -> None:
+        """Zero and delete persisted vector embeddings for a redacted document."""
+        if not base_dir or not filepath:
+            return
+        norm_fp = filepath.replace("\\", "/")
+        try:
+            existing_vec = self.get_document_vector(base_dir, norm_fp)
+            if existing_vec is not None:
+                from app.core.crypto import zero_vector_buffer
+
+                zero_vector_buffer(existing_vec)
+        except Exception:
+            pass
+
+        def _write():
+            conn = get_db_connection(self.db_path)
+            with conn:
+                conn.execute(
+                    "DELETE FROM document_vectors WHERE base_dir = ? AND filepath = ?",
+                    (base_dir, norm_fp),
+                )
+
+        self.clear_corrupted_vectors(base_dir, [norm_fp])
+        if hasattr(self, "matrix_lru_cache") and self.matrix_lru_cache:
+            try:
+                self.matrix_lru_cache.invalidate(base_dir)
+            except Exception:
+                pass
         self.worker.execute_write(_write)
 
     def get_document_vectors_count(self) -> int:
