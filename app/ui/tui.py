@@ -1421,35 +1421,69 @@ class AutoSorterTUI(
         self.push_screen(SettingsModal(self.settings), on_saved)
 
     def action_open_extraction_preview(self) -> None:
-        """Open visual extraction preview modal for active or selected PDF document [Ctrl+X]."""
+        """Open document extraction preview modal for active or selected supported file [Ctrl+X]."""
         if self._is_text_control_focused(allow_tree_search=True):
             return
 
-        pdf_path: Optional[str] = None
+        from app.core.extractor_strategies import registry
+
+        def _resolve_supported_path(
+            raw_fp: Any, src_root: Optional[str] = None
+        ) -> Optional[str]:
+            if not raw_fp:
+                return None
+            fp_str = str(raw_fp)
+            if "::" in fp_str and not os.path.exists(fp_str):
+                s_root, rel_part = fp_str.split("::", 1)
+                fp_str = os.path.join(s_root, rel_part)
+            ext = os.path.splitext(fp_str)[1].lower()
+            if not ext or not registry.is_supported(ext):
+                return None
+            if not os.path.isabs(fp_str):
+                eff_root = src_root or self.base_dir
+                if eff_root:
+                    cand = os.path.join(eff_root, fp_str)
+                    if os.path.exists(cand):
+                        return cand
+            return fp_str
+
+        preview_path: Optional[str] = None
 
         active_node = self._get_active_node()
         if active_node and active_node.data:
             data = active_node.data
             if data.get("is_file"):
+                info_dict = (
+                    data.get("info") if isinstance(data.get("info"), dict) else {}
+                )
                 fp = (
                     data.get("filepath")
-                    or data.get("info", {}).get("src_path")
-                    or data.get("info", {}).get("path")
+                    or info_dict.get("src_path")
+                    or info_dict.get("path")
+                    or info_dict.get("source_path")
+                    or data.get("key")
                 )
-                if fp and str(fp).lower().endswith(".pdf"):
-                    pdf_path = str(fp)
+                preview_path = _resolve_supported_path(
+                    fp, src_root=info_dict.get("source_root")
+                )
 
-        if not pdf_path:
+        if not preview_path:
             target_files = self._get_target_file_infos()
             for tf in target_files:
-                fp = tf.get("src_path") or tf.get("path") or tf.get("filepath")
-                if fp and str(fp).lower().endswith(".pdf"):
-                    pdf_path = str(fp)
+                fp = (
+                    tf.get("src_path")
+                    or tf.get("path")
+                    or tf.get("filepath")
+                    or tf.get("source_path")
+                )
+                resolved = _resolve_supported_path(fp, src_root=tf.get("source_root"))
+                if resolved:
+                    preview_path = resolved
                     break
 
-        if not pdf_path:
+        if not preview_path:
             self.announce(
-                "Please select a PDF document to preview extraction strategies [Ctrl+X]."
+                "Please select a supported document to preview extracted text [Ctrl+X]."
             )
             return
 
@@ -1458,7 +1492,13 @@ class AutoSorterTUI(
                 self.announce(f"Updated extraction density threshold to {saved_val}.")
 
         self.push_screen(
-            ExtractionPreviewModal(pdf_path, self.settings), on_preview_closed
+            ExtractionPreviewModal(
+                preview_path,
+                self.settings,
+                db=self.db,
+                base_dir=self.base_dir,
+            ),
+            on_preview_closed,
         )
 
     def action_open_command_palette(self) -> None:
@@ -1494,7 +1534,18 @@ class AutoSorterTUI(
         """Open active rule manager modal screen [Ctrl+R]."""
         if self._is_text_control_focused(allow_tree_search=True):
             return
-        self.push_screen(ActiveRuleManagerModal(self.settings))
+
+        def on_rules_closed(mutated: Optional[bool] = None) -> None:
+            try:
+                self.query_one("#plan-tree", Tree).focus()
+            except Exception:
+                pass
+            if mutated:
+                self.update_status()
+                if self.base_dir:
+                    self.action_scan_directory()
+
+        self.push_screen(ActiveRuleManagerModal(self.settings), on_rules_closed)
 
     def action_open_template_gallery(self) -> None:
         """Open starter rule template gallery modal screen."""
