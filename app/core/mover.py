@@ -766,6 +766,136 @@ def _record_move_state(
         logging.warning(f"Failed to mark move {session_id}#{seq} {st_val}: {err}")
 
 
+def _execute_ledger_move(
+    moves: Any,
+    session_id: str,
+    base_dir: str,
+    src_path: str,
+    dst_path: str,
+    src_hash: str,
+    *,
+    allow_overwrite: bool = False,
+) -> tuple[str, str | None]:
+    """Record a MoveLedger intent, move src_path to dst_path, verify SHA-256, and mark VERIFIED."""
+    from app.core.extractor import get_file_hash
+    from app.core.resilient_file_ops import resilient_move
+
+    seq = _record_move_intent(moves, session_id, src_path, dst_path, src_hash)
+    displaced_path = None
+    overwritten_path = None
+    try:
+        if (
+            allow_overwrite
+            and os.path.lexists(dst_path)
+            and not _is_same_path(src_path, dst_path)
+        ):
+            overwritten_path = dst_path
+            displaced_path = _displace_for_overwrite(
+                dst_path,
+                base_dir,
+                session_id,
+                journal=lambda path: _record_move_state(
+                    moves,
+                    session_id,
+                    seq,
+                    MoveOpState.DISPLACEMENT,
+                    displaced=path,
+                ),
+            )
+        try:
+            dst_parent = os.path.dirname(os.path.abspath(dst_path))
+            if dst_parent:
+                os.makedirs(dst_parent, exist_ok=True)
+            actual_dst = resilient_move(src_path, dst_path)
+        except Exception:
+            if displaced_path and overwritten_path:
+                _restore_displaced(displaced_path, overwritten_path)
+            raise
+    except Exception as err:
+        _record_move_state(
+            moves,
+            session_id,
+            seq,
+            MoveOpState.FAILED,
+            required=False,
+            error=str(err),
+        )
+        raise
+
+    _record_move_state(
+        moves,
+        session_id,
+        seq,
+        MoveOpState.DONE,
+        dst=actual_dst,
+        displaced=displaced_path,
+    )
+    post_hash = None
+    if os.path.isfile(actual_dst) and not os.path.islink(actual_dst):
+        try:
+            post_hash = get_file_hash(actual_dst)
+        except OSError:
+            post_hash = None
+    if post_hash and (not src_hash or post_hash == src_hash):
+        _record_move_state(
+            moves,
+            session_id,
+            seq,
+            MoveOpState.VERIFIED,
+            required=False,
+        )
+    return actual_dst, post_hash
+
+
+def _record_policy_quarantine_audit(
+    db: Any,
+    db_lock: threading.Lock,
+    *,
+    base_dir: str,
+    original_filepath: str,
+    staged_filepath: str,
+    file_hash: str | None,
+    policy_action: str,
+    transitions: list[tuple[str, dict[str, Any]]],
+    error_message: str | None = None,
+) -> None:
+    """Persist a quarantine_records audit lifecycle trail for unified policy execution."""
+    if not db or not hasattr(db, "stage_quarantine_record"):
+        return
+    import time
+
+    with db_lock:
+        try:
+            job_id = f"qjob_mover_{uuid.uuid4().hex[:12]}"
+            db.stage_quarantine_record(
+                job_id=job_id,
+                base_dir=os.path.abspath(base_dir) if base_dir else base_dir,
+                original_filepath=original_filepath,
+                staged_filepath=staged_filepath,
+                file_hash=file_hash,
+                policy_action=policy_action,
+            )
+            if hasattr(db, "update_quarantine_status"):
+                for idx, (status_val, extra_audit) in enumerate(transitions):
+                    entry = {
+                        "timestamp": time.time(),
+                        "status": status_val,
+                        **extra_audit,
+                    }
+                    err_kw = error_message if idx == len(transitions) - 1 else None
+                    db.update_quarantine_status(
+                        job_id=job_id,
+                        status=status_val,
+                        policy_action=policy_action,
+                        error_message=err_kw,
+                        audit_entry=entry,
+                    )
+        except Exception as audit_err:
+            logging.warning(
+                f"Failed to record policy quarantine audit entry for {original_filepath}: {audit_err}"
+            )
+
+
 def _is_foreign_hidden_dir(path: str) -> bool:
     name = os.path.basename(os.path.normpath(path))
     return name.startswith(".") and name not in _OWNED_HIDDEN_DIRS
@@ -869,7 +999,7 @@ def _resolve_source_path(
     depth: int = 0,
 ) -> str:
     """Resolve normalized absolute source path for a plan node."""
-    src_p = _get_val(content, "source_path")
+    src_p = _get_val(content, "source_path") or _get_val(content, "filepath")
     src_root = _get_val(content, "source_root")
     rel_src = _get_val(content, "relative_source") or key
     raw_key = key
@@ -1253,6 +1383,7 @@ def _process_move_group(
     pending_links: list | None = None,
     chunk_hash_map: dict | None = None,
     target_locks: dict[str, threading.Lock] | None = None,
+    unarchived_children_out: list[str] | None = None,
 ) -> list[bool]:
     """Execute a bucket of move items targeting the same destination sequentially in plan order."""
     results: list[bool] = []
@@ -1272,6 +1403,7 @@ def _process_move_group(
                 pending_links,
                 chunk_hash_map,
                 target_locks=target_locks,
+                unarchived_children_out=unarchived_children_out,
             )
         )
     return results
@@ -1291,6 +1423,7 @@ def _process_move_item(
     pending_links: list | None = None,
     chunk_hash_map: dict | None = None,
     target_locks: dict[str, threading.Lock] | None = None,
+    unarchived_children_out: list[str] | None = None,
 ) -> bool:
     """Execute a single physical move and SHA-256 hash calculation off-thread."""
     source_path = item["source_path"]
@@ -1314,12 +1447,16 @@ def _process_move_item(
     filename = item["filename"]
     current_dest = item["current_dest"]
 
+    raw_policy_action = _get_val(content, "policy_action")
+    policy_action = str(raw_policy_action).strip().lower() if raw_policy_action else ""
+    post_unarchive_action = (
+        str(_get_val(content, "post_unarchive_action") or "delete").strip().lower()
+    )
+    post_unarchive_target = _get_val(content, "post_unarchive_target")
+
     # Downstream Barrier: Evaluate Sensitivity Metadata Before Physical Relocation
-    sens_rating = None
-    sens_score = 0.0
-    if isinstance(content, dict):
-        sens_rating = content.get("sensitivity_rating")
-        sens_score = content.get("sensitivity_score", 0.0)
+    sens_rating = _get_val(content, "sensitivity_rating")
+    sens_score = _get_val(content, "sensitivity_score") or 0.0
 
     sens_rating_str = str(sens_rating or "LOW").upper()
     auto_ratings = [
@@ -1335,7 +1472,7 @@ def _process_move_item(
     abs_base_dir = os.path.abspath(base_dir) if base_dir else ""
     candidate_sha256: str | None = None
     is_approved_release = False
-    if sens_rating_str in auto_ratings:
+    if sens_rating_str in auto_ratings or policy_action == "quarantine":
         from app.core.quarantine_interceptor import _is_content_approved_for_release
         from app.core.resilient_file_ops import resilient_file_hash
 
@@ -1351,8 +1488,20 @@ def _process_move_item(
             file_path=source_path,
         )
 
+    if is_approved_release and policy_action == "quarantine":
+        policy_action = ""
+
     is_sensitivity_hold = sens_rating_str in auto_ratings and not is_approved_release
     active_dest = current_dest
+    if policy_action == "quarantine" and not active_dest:
+        active_dest = quarantine_dir_name
+    elif policy_action == "archive" and not active_dest:
+        active_dest = "Archive"
+    elif policy_action == "retain" and not active_dest:
+        active_dest = "Retained_Documents"
+    elif policy_action == "redact" and not active_dest:
+        active_dest = "Redacted_Documents"
+
     if is_sensitivity_hold:
         if active_dest != quarantine_dir_name:
             logging.warning(
@@ -1395,6 +1544,10 @@ def _process_move_item(
             audit_records=audit_records,
             pending_links=pending_links,
             chunk_hash_map=chunk_hash_map,
+            policy_action=policy_action,
+            post_unarchive_action=post_unarchive_action,
+            post_unarchive_target=post_unarchive_target,
+            unarchived_children_out=unarchived_children_out,
         )
 
 
@@ -1424,6 +1577,10 @@ def _execute_locked_target_move(
     audit_records: list | None,
     pending_links: list | None,
     chunk_hash_map: dict | None,
+    policy_action: str = "",
+    post_unarchive_action: str = "delete",
+    post_unarchive_target: Any = None,
+    unarchived_children_out: list[str] | None = None,
 ) -> bool:
     """Perform collision evaluation, optional overwrite displacement, physical move, and verification under target lock."""
     if not os.path.lexists(source_path):
@@ -1596,7 +1753,434 @@ def _execute_locked_target_move(
         qdir_top,
     )
 
+    moves = getattr(history_manager, "moves", None) if history_manager else None
+
+    if policy_action == "unarchive" and not is_sensitivity_hold:
+        import tarfile
+        import zipfile
+
+        from app.core.exceptions import ArchiveSafetyError
+        from app.core.forensic_scanner import ForensicScanner
+        from app.core.resilient_file_ops import resilient_rmtree
+
+        extract_stage_dir = os.path.join(
+            overwrite_backup_dir(base_dir, session_id),
+            "unarchive_children",
+            uuid.uuid4().hex[:12],
+        )
+        os.makedirs(extract_stage_dir, exist_ok=True)
+        try:
+            staged_children = ForensicScanner().unpack_archive(
+                source_path, extract_stage_dir
+            )
+        except (ArchiveSafetyError, zipfile.BadZipFile, tarfile.TarError) as ase:
+            resilient_rmtree(extract_stage_dir)
+            q_dir = os.path.normpath(os.path.join(base_dir, quarantine_dir_name))
+            os.makedirs(q_dir, exist_ok=True)
+            q_dst = get_safe_path(q_dir, os.path.basename(source_path), source_path)
+            actual_q_dst = q_dst
+            post_q_hash = pre_hash
+            if not _is_same_path(source_path, q_dst):
+                actual_q_dst, post_q_hash = _execute_ledger_move(
+                    moves, session_id, base_dir, source_path, q_dst, pre_hash
+                )
+            _update_path_map_entry(path_map, source_path, actual_q_dst, lock=db_lock)
+            err_msg = f"Archive safety violation during unarchive: {ase}"
+            _record_policy_quarantine_audit(
+                db,
+                db_lock,
+                base_dir=base_dir,
+                original_filepath=source_rel_path,
+                staged_filepath=os.path.abspath(actual_q_dst),
+                file_hash=pre_hash or file_hash,
+                policy_action="unarchive",
+                transitions=[
+                    (
+                        "IN_INSPECTION",
+                        {"details": "SortPipeline archive safety inspection"},
+                    ),
+                    (
+                        "MANUAL_REVIEW_REQUIRED",
+                        {"details": f"Unarchive policy action aborted: {ase}"},
+                    ),
+                ],
+                error_message=err_msg,
+            )
+            if audit_records is not None:
+                with db_lock:
+                    audit_records.append(
+                        {
+                            "source_path": source_path,
+                            "destination_path": actual_q_dst,
+                            "pre_hash": pre_hash,
+                            "post_hash": post_q_hash,
+                        }
+                    )
+            return True
+
+        # 1. Handle original archive source before placing children so undo replays
+        # children first and restores the archive source last.
+        archive_final_path = source_path
+        if post_unarchive_action in ("move", "archive", "relocate"):
+            raw_arch_sub = str(post_unarchive_target or "Archive").strip() or "Archive"
+            arch_dir = os.path.normpath(os.path.join(base_dir, raw_arch_sub))
+            if not is_subpath_or_equal(arch_dir, base_dir):
+                arch_dir = os.path.normpath(os.path.join(base_dir, "Archive"))
+            os.makedirs(arch_dir, exist_ok=True)
+            arch_dst = get_safe_path(
+                arch_dir, os.path.basename(source_path), source_path
+            )
+            if not _is_same_path(source_path, arch_dst):
+                archive_final_path, _ = _execute_ledger_move(
+                    moves, session_id, base_dir, source_path, arch_dst, pre_hash
+                )
+                rel_arch_dst = safe_relpath(archive_final_path, base_dir).replace(
+                    "\\", "/"
+                )
+                with db_lock:
+                    db_updates_batch.append(
+                        {
+                            "type": "document_path",
+                            "args": (base_dir, source_rel_path, rel_arch_dst),
+                        }
+                    )
+            _update_path_map_entry(
+                path_map, source_path, archive_final_path, lock=db_lock
+            )
+        elif post_unarchive_action in ("retain", "keep"):
+            archive_final_path = source_path
+        else:
+            backup_zip_dst = os.path.join(
+                overwrite_backup_dir(base_dir, session_id),
+                "unarchive_src",
+                source_rel_path,
+            )
+            archive_final_path, _ = _execute_ledger_move(
+                moves, session_id, base_dir, source_path, backup_zip_dst, pre_hash
+            )
+            _update_path_map_entry(
+                path_map, source_path, archive_final_path, lock=db_lock
+            )
+            if db and hasattr(db, "worker"):
+                try:
+                    from app.core.db import get_db_connection
+
+                    db_path = getattr(db, "db_path", None)
+                    if db_path:
+                        db.worker.execute_write(
+                            lambda: get_db_connection(db_path).execute(
+                                "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                (base_dir, source_rel_path, source_rel_path),
+                            )
+                        )
+                except Exception:
+                    pass
+
+        # 2. Move extracted child files from session staging to target directory via MoveLedger
+        from app.core.extractor import get_file_hash
+
+        placed_children: list[str] = []
+        for staged_child in staged_children:
+            if not os.path.isfile(staged_child):
+                continue
+            rel_in_zip = safe_relpath(staged_child, extract_stage_dir)
+            child_sub_dir = os.path.dirname(rel_in_zip)
+            child_dest_dir = (
+                os.path.normpath(os.path.join(dest_dir, child_sub_dir))
+                if child_sub_dir
+                else dest_dir
+            )
+            if not is_subpath_or_equal(child_dest_dir, base_dir):
+                continue
+            os.makedirs(child_dest_dir, exist_ok=True)
+            child_dst_candidate = get_safe_path(
+                child_dest_dir, os.path.basename(rel_in_zip)
+            )
+            child_hash = ""
+            try:
+                child_hash = get_file_hash(staged_child)
+            except OSError:
+                child_hash = ""
+            actual_child_dst, _ = _execute_ledger_move(
+                moves,
+                session_id,
+                base_dir,
+                staged_child,
+                child_dst_candidate,
+                child_hash,
+            )
+            placed_children.append(actual_child_dst)
+
+        if unarchived_children_out is not None and placed_children:
+            with db_lock:
+                unarchived_children_out.extend(placed_children)
+
+        dest_sub_display = safe_relpath(dest_dir, base_dir).replace("\\", "/")
+        if dest_sub_display == ".":
+            dest_sub_display = ""
+        _record_policy_quarantine_audit(
+            db,
+            db_lock,
+            base_dir=base_dir,
+            original_filepath=source_rel_path,
+            staged_filepath=os.path.abspath(archive_final_path),
+            file_hash=pre_hash or file_hash,
+            policy_action="unarchive",
+            transitions=[
+                (
+                    "IN_INSPECTION",
+                    {"details": "SortPipeline archive inspection completed"},
+                ),
+                (
+                    "UNARCHIVED",
+                    {
+                        "policy_action": "unarchive",
+                        "details": (
+                            f"Archive extracted ({len(placed_children)} files) to "
+                            f"'{dest_sub_display or '.'}'; source archive action: {post_unarchive_action}"
+                        ),
+                        "unpacked_files": placed_children,
+                        "post_action": post_unarchive_action,
+                    },
+                ),
+            ],
+        )
+        if audit_records is not None:
+            with db_lock:
+                audit_records.append(
+                    {
+                        "source_path": source_path,
+                        "destination_path": archive_final_path,
+                        "pre_hash": pre_hash,
+                        "post_hash": pre_hash,
+                    }
+                )
+        return True
+
+    if policy_action == "redact" and not is_sensitivity_hold:
+        from app.core.extractor import get_file_hash
+        from app.core.quarantine_interceptor import _redact_document_to_path
+        from app.core.resilient_file_ops import resilient_remove
+
+        routed_by_val = str(_get_val(content, "routed_by") or "").lower()
+        match_expr = _get_val(content, "match") or _get_val(content, "keyword")
+        extra_regex = (
+            str(match_expr) if routed_by_val == "regex" and match_expr else None
+        )
+
+        staged_redacted_path = os.path.join(
+            overwrite_backup_dir(base_dir, session_id),
+            "redact_out",
+            f"{uuid.uuid4().hex[:8]}_{filename}",
+        )
+        was_redacted, scrubbed_text = _redact_document_to_path(
+            source_path,
+            staged_redacted_path,
+            extra_regex=extra_regex,
+        )
+        if not was_redacted:
+            if os.path.exists(staged_redacted_path):
+                with contextlib.suppress(OSError):
+                    resilient_remove(staged_redacted_path)
+            q_dir = os.path.normpath(os.path.join(base_dir, quarantine_dir_name))
+            os.makedirs(q_dir, exist_ok=True)
+            q_dst = get_safe_path(q_dir, filename, source_path)
+            actual_q_dst = q_dst
+            post_q_hash = pre_hash
+            if not _is_same_path(source_path, q_dst):
+                actual_q_dst, post_q_hash = _execute_ledger_move(
+                    moves, session_id, base_dir, source_path, q_dst, pre_hash
+                )
+            _update_path_map_entry(path_map, source_path, actual_q_dst, lock=db_lock)
+            rel_q_dst = safe_relpath(actual_q_dst, base_dir).replace("\\", "/")
+            with db_lock:
+                db_updates_batch.append(
+                    {
+                        "type": "document_path",
+                        "args": (base_dir, source_rel_path, rel_q_dst),
+                    }
+                )
+            _record_policy_quarantine_audit(
+                db,
+                db_lock,
+                base_dir=base_dir,
+                original_filepath=source_rel_path,
+                staged_filepath=os.path.abspath(actual_q_dst),
+                file_hash=pre_hash or file_hash,
+                policy_action="redact",
+                transitions=[
+                    (
+                        "IN_INSPECTION",
+                        {"details": "SortPipeline redaction format inspection"},
+                    ),
+                    (
+                        "QUARANTINED",
+                        {
+                            "policy_action": "redact",
+                            "details": (
+                                "Binary or PDF container cannot be safely text-redacted in place; "
+                                "held intact in quarantine for manual review"
+                            ),
+                        },
+                    ),
+                ],
+            )
+            if audit_records is not None:
+                with db_lock:
+                    audit_records.append(
+                        {
+                            "source_path": source_path,
+                            "destination_path": actual_q_dst,
+                            "pre_hash": pre_hash,
+                            "post_hash": post_q_hash,
+                        }
+                    )
+            return True
+
+        redacted_hash = ""
+        try:
+            redacted_hash = get_file_hash(staged_redacted_path)
+        except OSError:
+            redacted_hash = ""
+
+        # Move 1: displace unredacted original into session backup so undo restores original bytes
+        backup_orig_dst = os.path.join(
+            overwrite_backup_dir(base_dir, session_id),
+            "redact_orig",
+            source_rel_path,
+        )
+        _execute_ledger_move(
+            moves, session_id, base_dir, source_path, backup_orig_dst, pre_hash
+        )
+
+        # Move 2: place scrubbed output into target destination
+        allow_ow = bool(collision and conflict_policy == "overwrite")
+        redacted_dest_candidate = (
+            target_path
+            if allow_ow
+            else os.path.normpath(get_safe_path(dest_dir, filename))
+        )
+        redacted_dest_candidate = unicodedata.normalize("NFC", redacted_dest_candidate)
+        actual_redacted_dst, post_redacted_hash = _execute_ledger_move(
+            moves,
+            session_id,
+            base_dir,
+            staged_redacted_path,
+            redacted_dest_candidate,
+            redacted_hash,
+            allow_overwrite=allow_ow,
+        )
+        _update_path_map_entry(path_map, source_path, actual_redacted_dst, lock=db_lock)
+        rel_redacted_dst = safe_relpath(actual_redacted_dst, base_dir).replace(
+            "\\", "/"
+        )
+
+        if db:
+            with db_lock:
+                try:
+                    if hasattr(db, "_purge_document_vector"):
+                        db._purge_document_vector(base_dir, source_rel_path)
+                        if rel_redacted_dst != source_rel_path:
+                            db._purge_document_vector(base_dir, rel_redacted_dst)
+                    if (
+                        rel_redacted_dst != source_rel_path
+                        and hasattr(db, "worker")
+                        and getattr(db, "db_path", None)
+                    ):
+                        from app.core.db import get_db_connection
+
+                        db_p = db.db_path
+                        db.worker.execute_write(
+                            lambda: get_db_connection(db_p).execute(
+                                "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                (base_dir, source_rel_path, source_rel_path),
+                            )
+                        )
+                    if hasattr(db, "upsert_document"):
+                        db.upsert_document(
+                            base_dir,
+                            rel_redacted_dst,
+                            post_redacted_hash or redacted_hash,
+                            scrubbed_text,
+                        )
+                except Exception as vec_err:
+                    logging.warning(
+                        f"Failed to update scrubbed document/vector state for {rel_redacted_dst}: {vec_err}"
+                    )
+
+        _record_policy_quarantine_audit(
+            db,
+            db_lock,
+            base_dir=base_dir,
+            original_filepath=source_rel_path,
+            staged_filepath=os.path.abspath(actual_redacted_dst),
+            file_hash=post_redacted_hash or redacted_hash,
+            policy_action="redact",
+            transitions=[
+                (
+                    "IN_INSPECTION",
+                    {"details": "SortPipeline redaction inspection started"},
+                ),
+                (
+                    "REDACTED",
+                    {
+                        "policy_action": "redact",
+                        "details": "PII and secret scrubbing completed",
+                    },
+                ),
+                (
+                    "RELEASED",
+                    {
+                        "policy_action": "redact",
+                        "details": f"Sanitized document released to {rel_redacted_dst}",
+                    },
+                ),
+            ],
+        )
+        if audit_records is not None:
+            with db_lock:
+                audit_records.append(
+                    {
+                        "source_path": source_path,
+                        "destination_path": actual_redacted_dst,
+                        "pre_hash": redacted_hash,
+                        "post_hash": post_redacted_hash or redacted_hash,
+                    }
+                )
+        return True
+
     if dest_path == source_path:
+        if (
+            policy_action in ("quarantine", "archive", "retain")
+            and not is_sensitivity_hold
+        ):
+            status_for_action = (
+                "QUARANTINED"
+                if policy_action == "quarantine"
+                else ("ARCHIVED" if policy_action == "archive" else "RELEASED")
+            )
+            _record_policy_quarantine_audit(
+                db,
+                db_lock,
+                base_dir=base_dir,
+                original_filepath=source_rel_path,
+                staged_filepath=os.path.abspath(dest_path),
+                file_hash=pre_hash or file_hash,
+                policy_action=policy_action,
+                transitions=[
+                    (
+                        "IN_INSPECTION",
+                        {"details": f"SortPipeline {policy_action} policy inspection"},
+                    ),
+                    (
+                        status_for_action,
+                        {
+                            "policy_action": policy_action,
+                            "details": f"Policy action {policy_action} applied in place at {rel_dest}",
+                        },
+                    ),
+                ],
+            )
         with db_lock:
             if file_hash and not is_quarantine_dest:
                 db_updates_batch.append(
@@ -1612,7 +2196,6 @@ def _execute_locked_target_move(
         return True
 
     # The intent row is committed before anything on disk changes (ADR 0006).
-    moves = getattr(history_manager, "moves", None) if history_manager else None
     move_seq = _record_move_intent(moves, session_id, source_path, dest_path, pre_hash)
 
     displaced_path = overwritten_path = None
@@ -1728,6 +2311,35 @@ def _execute_locked_target_move(
                 "type": "document_path",
                 "args": (base_dir, source_rel_path, rel_dest),
             }
+        )
+
+    if policy_action in ("quarantine", "archive", "retain") and not is_sensitivity_hold:
+        status_for_action = (
+            "QUARANTINED"
+            if policy_action == "quarantine"
+            else ("ARCHIVED" if policy_action == "archive" else "RELEASED")
+        )
+        _record_policy_quarantine_audit(
+            db,
+            db_lock,
+            base_dir=base_dir,
+            original_filepath=source_rel_path,
+            staged_filepath=os.path.abspath(dest_path),
+            file_hash=dest_file_hash or pre_hash or file_hash,
+            policy_action=policy_action,
+            transitions=[
+                (
+                    "IN_INSPECTION",
+                    {"details": f"SortPipeline {policy_action} policy inspection"},
+                ),
+                (
+                    status_for_action,
+                    {
+                        "policy_action": policy_action,
+                        "details": f"Policy action {policy_action} relocated document to {rel_dest}",
+                    },
+                ),
+            ],
         )
 
     if audit_records is not None:
@@ -2050,11 +2662,13 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
         base_dir = os.path.normpath(base_dir)
         self.transition_to(MoveEngineState.PREPARING)
 
-        session_id = None
+        session_id = kwargs.get("parent_session_id")
+        is_child_session = bool(session_id)
         db_lock = threading.Lock()
         db_updates_batch: list[Any] = []
         audit_records: list[dict] = []
         pending_links: list = []
+        unarchived_children_out: list[str] = []
         has_flushed_db = False
         summary: MoveResult | None = None
 
@@ -2063,7 +2677,12 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                 runtime_settings, "progress_callback", None
             )
 
-            integrity_result = VerificationEngine.verify_plan_integrity(base_dir, plan)
+            active_conflict_policy = str(
+                getattr(runtime_settings, "CONFLICT_POLICY", "rename") or "rename"
+            ).lower()
+            integrity_result = VerificationEngine.verify_plan_integrity(
+                base_dir, plan, conflict_policy=active_conflict_policy
+            )
             if (
                 integrity_result.get("invalid_renames")
                 or integrity_result.get("unconfirmed_renames")
@@ -2149,6 +2768,9 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
             )
 
             def _item_may_move(item: dict) -> bool:
+                content = item.get("content")
+                if _get_val(content, "policy_action"):
+                    return True
                 src_abs = os.path.normcase(os.path.abspath(item["source_path"]))
                 dst_abs = os.path.normcase(
                     os.path.abspath(
@@ -2157,7 +2779,6 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                 )
                 if src_abs != dst_abs:
                     return True
-                content = item.get("content")
                 if auto_ratings and isinstance(content, dict):
                     sens = str(content.get("sensitivity_rating") or "LOW").upper()
                     if (
@@ -2172,7 +2793,12 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
             ) or bool(disposal_items)
 
             registered_session = False
-            if not resume and history_manager and has_candidate_moves:
+            if (
+                not is_child_session
+                and not resume
+                and history_manager
+                and has_candidate_moves
+            ):
                 # Without a registered session nothing could undo or roll back the
                 # moves, so refuse to start rather than move files untracked.
                 try:
@@ -2187,7 +2813,7 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                     )
                 registered_session = True
                 logging.info(f"Started sort session {session_id} for {base_dir}")
-            elif resume and history_manager:
+            elif not is_child_session and resume and history_manager:
                 logging.info(f"Resuming sort session for {base_dir}")
                 try:
                     sessions = history_manager.get_sessions()
@@ -2348,6 +2974,7 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                         pending_links,
                         chunk_hash_map,
                         target_locks,
+                        unarchived_children_out,
                     )
                     for bucket_items in target_buckets.values()
                 ]
@@ -2553,7 +3180,8 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                             real_move_count = len(audit_records)
 
                 if (
-                    session_id
+                    not is_child_session
+                    and session_id
                     and history_manager
                     and real_move_count > 0
                     and hasattr(history_manager, "complete_session")
@@ -2565,7 +3193,8 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                             f"Failed to mark session {session_id} completed: {complete_err}"
                         )
                 elif (
-                    session_id
+                    not is_child_session
+                    and session_id
                     and registered_session
                     and history_manager
                     and real_move_count == 0
@@ -2602,6 +3231,7 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
             if summary.get("cancelled"):
                 summary["lifecycle_state"] = PipelineLifecycleState.CANCELLED
             summary["audit_report"] = generate_audit_report(base_dir, audit_records)
+            summary["unarchived_children"] = list(unarchived_children_out)
             self.emit_telemetry(
                 "move_finish",
                 {

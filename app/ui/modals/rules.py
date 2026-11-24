@@ -878,7 +878,7 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Optional[Any]])
     @on(DataTable.RowSelected, "#dt-rule-conflicts")
     @on(DataTable.CellSelected, "#dt-rule-conflicts")
     def _on_conflict_selected(
-        self, event: DataTable.RowSelected | DataTable.CellSelected
+        self, event: DataTable.RowSelected | DataTable.CellSelected | Any
     ) -> None:
         """Cycle resolution strategy for the selected conflict row."""
         row_key = None

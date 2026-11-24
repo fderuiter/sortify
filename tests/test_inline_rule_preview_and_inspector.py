@@ -374,6 +374,7 @@ async def test_plan_tree_routing_badges_and_inspector_details(tmp_path: Path):
                 "expression": "confidential",
                 "target_path": "Legal/Confidential",
                 "priority": 75,
+                "action": "retain",
                 "halting": False,
                 "enabled": True,
             }
@@ -409,6 +410,7 @@ async def test_plan_tree_routing_badges_and_inspector_details(tmp_path: Path):
     assert pol_node["routed_by"] == "compliance"
     assert pol_node["match"] == "confidential"
     assert pol_node["policy_priority"] == 75
+    assert pol_node["policy_action"] == "retain"
 
     kw_node = generated["Expenses"]["Receipts"]["receipt.txt"]
     assert kw_node["routed_by"] == "keyword"
@@ -426,6 +428,7 @@ async def test_plan_tree_routing_badges_and_inspector_details(tmp_path: Path):
                 "routed_by": "compliance",
                 "match": "confidential",
                 "policy_priority": 75,
+                "policy_action": "retain",
             }
         },
         "Expenses": {
@@ -472,6 +475,7 @@ async def test_plan_tree_routing_badges_and_inspector_details(tmp_path: Path):
         labels_by_key = {n.data["key"]: n.label.plain for n in file_nodes}
 
         assert "[POLICY]" in labels_by_key["contract.txt"]
+        assert "[ACTION: RETAIN]" in labels_by_key["contract.txt"]
         assert "[KEYWORD]" in labels_by_key["receipt.txt"]
         assert "[HIST]" in labels_by_key["old_tax.pdf"]
         assert "[CLUSTER]" in labels_by_key["q1_budget.txt"]
@@ -486,6 +490,8 @@ async def test_plan_tree_routing_badges_and_inspector_details(tmp_path: Path):
         assert "confidential" in pol_inspector
         assert "Policy Priority:" in pol_inspector
         assert "75" in pol_inspector
+        assert "Policy Action:" in pol_inspector
+        assert "retain" in pol_inspector
 
         # Inspect cluster-routed file
         cluster_inspector = app._update_inspector(

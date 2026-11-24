@@ -534,3 +534,255 @@ def test_batch_rename_nested_folders_and_non_dict_metadata(
             assert app.locked_files["02_inv_2.pdf"] == "Finance/2024/Archive"
 
     asyncio.run(_test())
+
+
+def test_manual_edits_persist_sqlite_doc_relpath_nested_ops_and_rescan(
+    tmp_path, monkeypatch
+):
+    """Verify F2 single/batch rename, Ctrl+L lock, nested reassign, nested folder rename, and exclusions persist via doc_relpath across rescans until execution or workspace change."""
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path / "app_store"))
+    ws = tmp_path / "workspace"
+    (ws / "inbox").mkdir(parents=True)
+    ws_other = tmp_path / "other_workspace"
+    ws_other.mkdir()
+
+    f_inv = ws / "inbox" / "inv_1.pdf"
+    f_tax = ws / "tax_2024.pdf"
+    f_note = ws / "notes.txt"
+    f_inv.write_text("Quarterly invoice billing statement finance")
+    f_tax.write_text("Annual tax filing summary finance")
+    f_note.write_text("Scratchpad personal meeting notes")
+
+    async def _test():
+        from textual.widgets import Tree
+
+        from app.config import AppSettings
+        from app.core.metadata import MetadataPass
+        from app.core.pipeline import SortPipeline
+        from app.core.scanner import get_files_from_sources
+        from app.core.session import AppSession
+
+        settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(ws), skip_wizard=True)
+        session = AppSession(settings, base_dir=str(ws), source_dirs=[str(ws)])
+        app.app_session = session
+        app.pipeline = SortPipeline(session)
+
+        try:
+            items = get_files_from_sources([str(ws)], settings=settings)
+            MetadataPass.run(
+                str(ws), items, settings, session.db, source_dirs=[str(ws)]
+            )
+            session.db.upsert_document(
+                str(ws),
+                "inbox/inv_1.pdf",
+                "hash_inv",
+                "Quarterly invoice billing statement finance",
+            )
+            session.db.upsert_document(
+                str(ws),
+                "tax_2024.pdf",
+                "hash_tax",
+                "Annual tax filing summary finance",
+            )
+            session.db.upsert_document(
+                str(ws),
+                "notes.txt",
+                "hash_note",
+                "Scratchpad personal meeting notes",
+            )
+
+            async with app.run_test() as pilot:
+                app.plan = {
+                    "Finance": {
+                        "2024": {
+                            "Invoices": {
+                                "inbox/inv_1.pdf": {
+                                    "__type__": "file",
+                                    "source_path": "inbox/inv_1.pdf",
+                                    "filepath": str(f_inv),
+                                    "is_checked": False,
+                                },
+                                "tax_2024.pdf": {
+                                    "__type__": "file",
+                                    "source_path": "tax_2024.pdf",
+                                    "filepath": str(f_tax),
+                                    "is_checked": False,
+                                },
+                            }
+                        }
+                    },
+                    "Misc": {
+                        "notes.txt": {
+                            "__type__": "file",
+                            "source_path": "notes.txt",
+                            "filepath": str(f_note),
+                            "is_checked": False,
+                        }
+                    },
+                }
+                app.rebuild_tree()
+                await pilot.pause(0.05)
+
+                tree = app.query_one("#plan-tree", Tree)
+
+                def _find_tree_node(pred):
+                    stack = [tree.root]
+                    while stack:
+                        curr = stack.pop()
+                        if curr.data and pred(curr.data):
+                            return curr
+                        stack.extend(reversed(curr.children))
+                    return None
+
+                # 1. Single F2 rename on nested file persists source doc_relpath in SQLite
+                inv_node = _find_tree_node(
+                    lambda d: d.get("is_file") and d.get("key") == "inbox/inv_1.pdf"
+                )
+                assert inv_node is not None
+                app.active_tree_node = inv_node
+                tree.select_node(inv_node)
+                await pilot.pause(0.02)
+
+                monkeypatch.setattr(
+                    app,
+                    "push_screen",
+                    lambda _scr, cb=None: cb("2024_ACME_Invoice.pdf") if cb else None,
+                )
+                app.action_rename_node()
+                await pilot.pause(0.05)
+
+                assert (
+                    session.db.get_user_verified_target_path(str(ws), "inbox/inv_1.pdf")
+                    == "Finance/2024/Invoices"
+                )
+
+                # 2. Nested on_reassigned moves tax_2024.pdf from Finance/2024/Invoices -> Legal/Tax/2024
+                tax_node = _find_tree_node(
+                    lambda d: d.get("is_file") and d.get("key") == "tax_2024.pdf"
+                )
+                assert tax_node is not None
+                tax_node.data["info"]["is_checked"] = True
+                app.rebuild_tree()
+                await pilot.pause(0.02)
+
+                monkeypatch.setattr(
+                    app,
+                    "push_screen",
+                    lambda _scr, cb=None: cb("Legal/Tax/2024") if cb else None,
+                )
+                app.action_reassign_selected()
+                await pilot.pause(0.05)
+
+                assert "tax_2024.pdf" in app.plan["Legal"]["Tax"]["2024"]
+                assert (
+                    session.db.get_user_verified_target_path(str(ws), "tax_2024.pdf")
+                    == "Legal/Tax/2024"
+                )
+
+                # 3. Nested on_folder_renamed renames Finance/2024/Invoices -> Finance/2024/PaidInvoices
+                invoices_folder_node = _find_tree_node(
+                    lambda d: (
+                        not d.get("is_file")
+                        and d.get("folder") == "Finance/2024/Invoices"
+                    )
+                )
+                assert invoices_folder_node is not None
+                app.active_tree_node = invoices_folder_node
+                tree.select_node(invoices_folder_node)
+                await pilot.pause(0.02)
+
+                monkeypatch.setattr(
+                    app,
+                    "push_screen",
+                    lambda _scr, cb=None: cb("PaidInvoices") if cb else None,
+                )
+                app.action_rename_node()
+                await pilot.pause(0.05)
+
+                assert "Invoices" not in app.plan["Finance"]["2024"]
+                assert (
+                    "2024_ACME_Invoice.pdf"
+                    in app.plan["Finance"]["2024"]["PaidInvoices"]
+                )
+                assert (
+                    session.db.get_user_verified_target_path(str(ws), "inbox/inv_1.pdf")
+                    == "Finance/2024/PaidInvoices"
+                )
+
+                # 4. Ctrl+L unlock + re-lock on renamed file updates SQLite via doc_relpath
+                renamed_inv_node = _find_tree_node(
+                    lambda d: (
+                        d.get("is_file") and d.get("key") == "2024_ACME_Invoice.pdf"
+                    )
+                )
+                assert renamed_inv_node is not None
+                app.active_tree_node = renamed_inv_node
+                tree.select_node(renamed_inv_node)
+                await pilot.pause(0.02)
+
+                app.action_toggle_lock()
+                await pilot.pause(0.02)
+                assert (
+                    session.db.get_user_verified_target_path(str(ws), "inbox/inv_1.pdf")
+                    is None
+                )
+                app.action_toggle_lock()
+                await pilot.pause(0.02)
+                assert (
+                    session.db.get_user_verified_target_path(str(ws), "inbox/inv_1.pdf")
+                    == "Finance/2024/PaidInvoices"
+                )
+
+                # 5. Exclude notes.txt and verify rescan preserves manual rename, nested folders, and exclusion
+                for fi in app._collect_file_nodes_from_dict(app.plan):
+                    fi["is_checked"] = False
+                note_node = _find_tree_node(
+                    lambda d: d.get("is_file") and d.get("key") == "notes.txt"
+                )
+                assert note_node is not None
+                app.active_tree_node = note_node
+                tree.select_node(note_node)
+                await pilot.pause(0.02)
+                tree.focus()
+                await pilot.pause(0.02)
+                app.action_exclude_selected()
+                await pilot.pause(0.05)
+
+                # Simulate fresh generate_sorting_plan output followed by _reapply_manual_plan_edits
+                fresh_plan = session.generate_sorting_plan()
+                app.plan = fresh_plan
+                app._reapply_manual_plan_edits()
+                plan_dict = app.plan.plan if hasattr(app.plan, "plan") else app.plan
+
+                paid_inv = plan_dict["Finance"]["2024"]["PaidInvoices"][
+                    "2024_ACME_Invoice.pdf"
+                ]
+                assert paid_inv["target_filename"] == "2024_ACME_Invoice.pdf"
+                assert paid_inv["confirmed"] is True
+                assert "tax_2024.pdf" in plan_dict["Legal"]["Tax"]["2024"]
+
+                found_notes = [
+                    fi
+                    for fi in app._collect_file_nodes_from_dict(plan_dict)
+                    if fi.get("source_path") == "notes.txt"
+                ]
+                assert len(found_notes) == 1
+                assert found_notes[0]["is_excluded"] is True
+                assert found_notes[0]["is_checked"] is False
+
+                # 6. Switching workspace clears cached manual edits
+                monkeypatch.setattr(
+                    app,
+                    "push_screen",
+                    lambda _scr, cb=None: cb(str(ws_other)) if cb else None,
+                )
+                monkeypatch.setattr(app, "action_scan_directory", lambda: None)
+                app.action_select_dir()
+                await pilot.pause(0.05)
+                assert app._manual_plan_edits == {}
+        finally:
+            session.close()
+
+    asyncio.run(_test())

@@ -687,12 +687,30 @@ class TreeViewMixin:
             if isinstance(v, dict) and v.get("__type__") == "file":
                 file_key = k
                 file_info = v
-                filepath = file_info.get(
-                    "filepath",
-                    (Path(self.base_dir) / current_folder / file_key).as_posix()
-                    if self.base_dir
-                    else (Path(current_folder) / file_key).as_posix(),
-                )
+                raw_sp = file_info.get("source_path")
+                if file_info.get("filepath"):
+                    filepath = str(file_info["filepath"])
+                elif raw_sp:
+                    sp_str = str(raw_sp)
+                    s_root = str(file_info.get("source_root") or self.base_dir or "")
+                    if "::" in sp_str:
+                        parsed_root, sp_str = sp_str.split("::", 1)
+                        s_root = str(file_info.get("source_root") or parsed_root)
+                    if os.path.isabs(sp_str):
+                        filepath = Path(sp_str).as_posix()
+                    elif s_root:
+                        filepath = (Path(s_root) / sp_str).as_posix()
+                    else:
+                        filepath = Path(sp_str).as_posix()
+                elif "::" in file_key:
+                    s_root_k, rel_k = file_key.split("::", 1)
+                    filepath = (Path(s_root_k) / rel_k).as_posix()
+                else:
+                    filepath = (
+                        (Path(self.base_dir) / current_folder / file_key).as_posix()
+                        if self.base_dir
+                        else (Path(current_folder) / file_key).as_posix()
+                    )
                 target_filename = file_info.get("target_filename", "")
 
                 if query and not parent_folder_matches:
@@ -700,12 +718,24 @@ class TreeViewMixin:
                     if not file_matches:
                         continue
 
+                src_rel_lookup = (
+                    str(raw_sp).split("::", 1)[-1].replace("\\", "/") if raw_sp else ""
+                )
                 is_locked = (
                     file_key in self.locked_files
                     or filepath in self.locked_files
-                    or file_info.get("is_locked")
+                    or (bool(src_rel_lookup) and src_rel_lookup in self.locked_files)
+                    or bool(file_info.get("is_locked"))
                 )
-                rating = self._ratings_cache.get(filepath) or file_info.get("rating")
+                rating = (
+                    self._ratings_cache.get(filepath)
+                    or (
+                        self._ratings_cache.get(src_rel_lookup)
+                        if src_rel_lookup
+                        else None
+                    )
+                    or file_info.get("rating")
+                )
 
                 invalid_locks = getattr(self.plan, "invalid_locks", {}) or {}
                 if not invalid_locks and isinstance(self.plan, dict):
@@ -829,6 +859,10 @@ class TreeViewMixin:
                     routing_badge = "[FALLBACK]"
                 else:
                     routing_badge = "[CLUSTER]"
+
+                policy_action = file_info.get("policy_action")
+                if policy_action:
+                    label_parts.append(f"[ACTION: {str(policy_action).upper()}]")
 
                 sens_rating = file_info.get("sensitivity_rating")
                 if sens_rating:
@@ -1148,6 +1182,10 @@ class TreeViewMixin:
             pol_prio = info.get("policy_priority")
             if pol_prio is not None:
                 lines.append(f"[bold]Policy Priority:[/bold] {pol_prio}")
+
+            pol_action = info.get("policy_action")
+            if pol_action:
+                lines.append(f"[bold]Policy Action:[/bold] {pol_action}")
 
             match_val = info.get("match") or info.get("keyword")
             if match_val and str(match_val).strip().lower() != "none":
