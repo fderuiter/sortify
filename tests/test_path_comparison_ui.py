@@ -155,7 +155,7 @@ def _render_table_plain(table: Any) -> str:
     """Render a Rich Table to plain unstyled text for deterministic assertions."""
     from rich.console import Console
 
-    console = Console(width=300, force_terminal=False, color_system=None)
+    console = Console(width=1000, force_terminal=False, color_system=None)
     with console.capture() as capture:
         console.print(table)
     return capture.get()

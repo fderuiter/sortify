@@ -8,6 +8,7 @@ with integrity checks and offline enforcement on load.
 import logging
 import os
 import threading
+from typing import Any
 
 from app.core.network_guard import block_external_network
 from app.core.network_guard import install as apply_global_socket_sandbox
@@ -115,9 +116,10 @@ class SharedModelRegistry:
         try:
             import onnxruntime as ort
 
-            if not hasattr(ort.InferenceSession, "_original_init"):
-                original_init = ort.InferenceSession.__init__
-                ort.InferenceSession._original_init = original_init
+            session_cls: Any = ort.InferenceSession
+            if not hasattr(session_cls, "_original_init"):
+                original_init = session_cls.__init__
+                session_cls._original_init = original_init
 
                 registry_instance = self
 
@@ -129,7 +131,7 @@ class SharedModelRegistry:
                     sess_options.inter_op_num_threads = thread_limit
                     original_init(sess, model_path, sess_options, *args, **kwargs)
 
-                ort.InferenceSession.__init__ = wrapped_init
+                session_cls.__init__ = wrapped_init
         except ImportError:
             pass
 
@@ -462,11 +464,13 @@ class SharedModelRegistry:
                         )
                         task = "text-generation"
 
-                    quantized_model = torch.quantization.quantize_dynamic(
+                    torch_mod: Any = torch
+                    quantized_model = torch_mod.quantization.quantize_dynamic(
                         model, {torch.nn.Linear}, dtype=torch.qint8
                     )
 
-                    generator = pipeline(
+                    pipeline_fn: Any = pipeline
+                    generator = pipeline_fn(
                         task, model=quantized_model, tokenizer=tokenizer, device=-1
                     )
 

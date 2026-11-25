@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import posixpath
 
 import pytest
 
@@ -71,6 +72,17 @@ def isolated_app_dir(monkeypatch, tmp_path):
         app.config.AppSettings, "_trigger_save", lambda self: self._save()
     )
     monkeypatch.setattr(app.core.session_catalog, "find_abandoned_sessions", lambda: [])
+
+    orig_abspath = os.path.abspath
+    monkeypatch.setattr(
+        os.path,
+        "abspath",
+        lambda p: (
+            posixpath.normpath(os.fspath(p).replace("\\", "/"))
+            if os.fspath(p).replace("\\", "/").startswith("/dummy")
+            else orig_abspath(p)
+        ),
+    )
 
     from textual.widgets import Input
 

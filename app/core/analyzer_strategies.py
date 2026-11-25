@@ -1534,17 +1534,18 @@ def gguf_worker_main(
                             output_queue.put(err_obj)
                         continue
 
-            gen_kwargs = {"max_tokens": max_tokens, "echo": False}
+            gen_kwargs: dict[str, Any] = {"max_tokens": max_tokens, "echo": False}
             if stop_seqs is not None:
                 gen_kwargs["stop"] = stop_seqs
             if worker_token_biases:
                 gen_kwargs["logit_bias"] = worker_token_biases
 
+            llm_fn: Any = llm
             try:
                 if grammar:
-                    res = llm(prompt, grammar=grammar, **gen_kwargs)
+                    res = llm_fn(prompt, grammar=grammar, **gen_kwargs)
                 else:
-                    res = llm(prompt, **gen_kwargs)
+                    res = llm_fn(prompt, **gen_kwargs)
             except Exception as e:
                 import logging
 

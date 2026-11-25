@@ -146,6 +146,7 @@ def test_semantic_clustering_lazy_generation_and_caching(temp_env):
             analyzer.close()
 
 
+@pytest.mark.inline_clustering
 def test_fallback_to_tfidf_when_onnx_missing_or_corrupt(temp_env):
     """
     Verify fallback to standard TF-IDF only if the local ONNX model files

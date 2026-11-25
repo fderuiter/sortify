@@ -10,6 +10,7 @@ import threading
 import time
 import weakref
 from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 
@@ -673,16 +674,20 @@ class SemanticEmbeddingManager:
 
                     # Cache tokenizer in the shared registry to avoid heavy disk loads per text
                     tokenizer_key = f"tokenizer_{tokenizer_path}"
-                    tokenizer = registry._models.get(tokenizer_key)
+                    tokenizer: Any = registry._models.get(tokenizer_key)
 
                     if tokenizer is None:
                         with block_external_network(reason="tokenizer initialization"):
                             from transformers import AutoTokenizer
 
-                            tokenizer = AutoTokenizer.from_pretrained(
+                            auto_tokenizer_cls: Any = AutoTokenizer
+                            tokenizer = auto_tokenizer_cls.from_pretrained(
                                 tokenizer_path, local_files_only=True
                             )
                         registry._models[tokenizer_key] = tokenizer
+
+                    if not callable(tokenizer):
+                        raise ModelValidationError("Loaded tokenizer is not callable")
 
                     # Load/get ONNX session from registry (which applies thread limits)
                     session = registry.get_onnx_session(onnx_file)

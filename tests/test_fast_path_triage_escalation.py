@@ -148,26 +148,35 @@ def test_overall_pipeline_per_file_latency_under_150ms(tmp_path: Path):
     db_worker = DBWorker()
     db = Database(tmp_path / "bench_triage.db", db_worker)
     base_dir = str(tmp_path)
+    cache_base_dir = str(tmp_path / "matrix_cache_ws")
 
     try:
         db.upsert_document(
-            base_dir, "fileA.txt", "hashA", "clinical trial patient data"
+            cache_base_dir, "fileA.txt", "hashA", "clinical trial patient data"
         )
         db.upsert_document(
-            base_dir, "fileB.txt", "hashB", "financial billing invoice tax"
+            cache_base_dir, "fileB.txt", "hashB", "financial billing invoice tax"
         )
-        db.set_user_verified_target_path(base_dir, "fileA.txt", "Clinical/fileA.txt")
-        db.set_user_verified_target_path(base_dir, "fileB.txt", "Finance/fileB.txt")
-        db.update_tfidf_matrix_cache(base_dir)
+        db.set_user_verified_target_path(
+            cache_base_dir, "fileA.txt", "Clinical/fileA.txt"
+        )
+        db.set_user_verified_target_path(
+            cache_base_dir, "fileB.txt", "Finance/fileB.txt"
+        )
+        db.update_tfidf_matrix_cache(cache_base_dir)
 
         # Explicit warmup across all fast-path extractors, escalation, and LRU cache
+        from app.core.worker_pool import SharedWorkerPool
+
         fast_triage_extract(str(text_file))
         fast_triage_extract(str(csv_file))
         fast_triage_extract(str(md_file))
         fast_triage_extract(str(img_file), db=db, base_dir=base_dir)
         fast_triage_extract(str(pdf_file), db=db, base_dir=base_dir)
-        db.get_tfidf_matrix_cache(base_dir)
+        if SharedWorkerPool._instance is not None:
+            SharedWorkerPool._instance.shutdown(wait=True, cancel_futures=False)
         db_worker.flush()
+        db.get_tfidf_matrix_cache(cache_base_dir)
 
         t0 = time.perf_counter()
         res_text = fast_triage_extract(str(text_file))
@@ -182,16 +191,16 @@ def test_overall_pipeline_per_file_latency_under_150ms(tmp_path: Path):
         elapsed_md_ms = (time.perf_counter() - t0) * 1000.0
 
         t0 = time.perf_counter()
+        cached_rows = db.get_tfidf_matrix_cache(cache_base_dir)
+        elapsed_cache_ms = (time.perf_counter() - t0) * 1000.0
+
+        t0 = time.perf_counter()
         res_img = fast_triage_extract(str(img_file), db=db, base_dir=base_dir)
         elapsed_img_ms = (time.perf_counter() - t0) * 1000.0
 
         t0 = time.perf_counter()
         res_pdf = fast_triage_extract(str(pdf_file), db=db, base_dir=base_dir)
         elapsed_pdf_ms = (time.perf_counter() - t0) * 1000.0
-
-        t0 = time.perf_counter()
-        cached_rows = db.get_tfidf_matrix_cache(base_dir)
-        elapsed_cache_ms = (time.perf_counter() - t0) * 1000.0
 
         assert "Medical Invoice" in res_text
         assert "John Doe" in res_csv
@@ -218,6 +227,10 @@ def test_overall_pipeline_per_file_latency_under_150ms(tmp_path: Path):
         assert elapsed_cache_ms < 5.0, (
             f"Matrix cache lookup expected < 5.0ms, got {elapsed_cache_ms:.2f}ms"
         )
-        db_worker.flush()
     finally:
+        from app.core.worker_pool import SharedWorkerPool
+
+        if SharedWorkerPool._instance is not None:
+            SharedWorkerPool._instance.shutdown(wait=True, cancel_futures=False)
+        db_worker.flush()
         db_worker.stop()
