@@ -147,6 +147,9 @@ def build_global_subparser_parent(
         default=argparse.SUPPRESS,
         help="Pre-configure AI consent as declined and bypass onboarding wizard",
     )
+    from app.cli.model_cli import add_model_provisioning_args
+
+    add_model_provisioning_args(parent, suppress_default=True)
     parent.add_argument(
         "--skip-wizard",
         action="store_true",

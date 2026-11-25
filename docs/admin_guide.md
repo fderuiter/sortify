@@ -523,7 +523,8 @@ Main command-line interface for Smart AutoSorter AI Pro.
 usage: smart-autosorter [-h] [-q] [--no-color] [--demo] [--smoke-test]
                         [--json] [--daemon] [--tui] [--interactive]
                         [--accept-ai-consent | --decline-ai-consent]
-                        [--skip-wizard] [--non-interactive]
+                        [--defer-model-download] [--skip-wizard]
+                        [--non-interactive]
                         [--settings-file SETTINGS_FILE | --profile PROFILE]
                         [--duplicates {off,review,skip,stage,trash}]
                         [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
@@ -568,6 +569,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -626,8 +630,8 @@ usage: smart-autosorter sort [-h]
                              [-q] [--no-color] [--json] [--tui]
                              [--interactive]
                              [--accept-ai-consent | --decline-ai-consent]
-                             [--skip-wizard] [--non-interactive]
-                             [--max-folders MAX_FOLDERS]
+                             [--defer-model-download] [--skip-wizard]
+                             [--non-interactive] [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
                              [--conflict-policy {skip,rename,overwrite}]
                              [--duplicates {off,review,skip,stage,trash}]
@@ -659,6 +663,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -700,8 +707,8 @@ usage: smart-autosorter scan [-h]
                              [-q] [--no-color] [--json] [--tui]
                              [--interactive]
                              [--accept-ai-consent | --decline-ai-consent]
-                             [--skip-wizard] [--non-interactive]
-                             [--max-folders MAX_FOLDERS]
+                             [--defer-model-download] [--skip-wizard]
+                             [--non-interactive] [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
                              [--conflict-policy {skip,rename,overwrite}]
                              [--duplicates {off,review,skip,stage,trash}]
@@ -732,6 +739,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -768,8 +778,8 @@ usage: smart-autosorter config [-h]
                                [-q] [--no-color] [--json] [--tui]
                                [--interactive]
                                [--accept-ai-consent | --decline-ai-consent]
-                               [--skip-wizard] [--non-interactive] [--show]
-                               [--set KEY VALUE]
+                               [--defer-model-download] [--skip-wizard]
+                               [--non-interactive] [--show] [--set KEY VALUE]
 
 options:
   -h, --help            show this help message and exit
@@ -787,6 +797,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -801,8 +814,8 @@ usage: smart-autosorter daemon [-h]
                                [-q] [--no-color] [--json] [--tui]
                                [--interactive]
                                [--accept-ai-consent | --decline-ai-consent]
-                               [--skip-wizard] [--non-interactive]
-                               [--max-folders MAX_FOLDERS]
+                               [--defer-model-download] [--skip-wizard]
+                               [--non-interactive] [--max-folders MAX_FOLDERS]
                                [--strategy {default,generative,clinical_tmf,clinical_isf}]
                                [--conflict-policy {skip,rename,overwrite}]
                                [--duplicates {off,review,skip,stage,trash}]
@@ -834,6 +847,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -868,11 +884,12 @@ usage: smart-autosorter undo [-h]
                              [-q] [--no-color] [--json] [--tui]
                              [--interactive]
                              [--accept-ai-consent | --decline-ai-consent]
-                             [--skip-wizard] [--non-interactive]
-                             [--session-id SESSION_ID] [--list] [--latest]
-                             [--export PATH] [--force] [--list-moves]
-                             [--dry-run] [--step-id STEP_IDS] [--file FILES]
-                             [-f {csv,json}] [--ledger-db LEDGER_DB]
+                             [--defer-model-download] [--skip-wizard]
+                             [--non-interactive] [--session-id SESSION_ID]
+                             [--list] [--latest] [--export PATH] [--force]
+                             [--list-moves] [--dry-run] [--step-id STEP_IDS]
+                             [--file FILES] [-f {csv,json}]
+                             [--ledger-db LEDGER_DB]
 
 options:
   -h, --help            show this help message and exit
@@ -890,6 +907,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -921,8 +941,8 @@ usage: smart-autosorter drop [-h]
                              [-q] [--no-color] [--json] [--tui]
                              [--interactive]
                              [--accept-ai-consent | --decline-ai-consent]
-                             [--skip-wizard] [--non-interactive]
-                             [--max-folders MAX_FOLDERS]
+                             [--defer-model-download] [--skip-wizard]
+                             [--non-interactive] [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
                              [--conflict-policy {skip,rename,overwrite}]
                              [--duplicates {off,review,skip,stage,trash}]
@@ -953,6 +973,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -991,7 +1014,8 @@ usage: smart-autosorter ledger [-h]
                                [-q] [--no-color] [--json] [--tui]
                                [--interactive]
                                [--accept-ai-consent | --decline-ai-consent]
-                               [--skip-wizard] [--non-interactive]
+                               [--defer-model-download] [--skip-wizard]
+                               [--non-interactive]
                                {status,reconcile,purge,export} ...
 
 positional arguments:
@@ -1021,6 +1045,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -1035,7 +1062,8 @@ usage: smart-autosorter ledger status [-h]
                                       [-q] [--no-color] [--json] [--tui]
                                       [--interactive]
                                       [--accept-ai-consent | --decline-ai-consent]
-                                      [--skip-wizard] [--non-interactive]
+                                      [--defer-model-download] [--skip-wizard]
+                                      [--non-interactive]
                                       [--ledger-db LEDGER_DB]
                                       [--session-id SESSION_ID] [--failed]
                                       [--aborted]
@@ -1056,6 +1084,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -1074,6 +1105,7 @@ usage: smart-autosorter ledger reconcile [-h]
                                          [-q] [--no-color] [--json] [--tui]
                                          [--interactive]
                                          [--accept-ai-consent | --decline-ai-consent]
+                                         [--defer-model-download]
                                          [--skip-wizard] [--non-interactive]
                                          [--ledger-db LEDGER_DB]
 
@@ -1093,6 +1125,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -1107,7 +1142,8 @@ usage: smart-autosorter ledger purge [-h]
                                      [-q] [--no-color] [--json] [--tui]
                                      [--interactive]
                                      [--accept-ai-consent | --decline-ai-consent]
-                                     [--skip-wizard] [--non-interactive]
+                                     [--defer-model-download] [--skip-wizard]
+                                     [--non-interactive]
                                      [--ledger-db LEDGER_DB]
                                      [--session-id SESSION_ID] [--completed]
                                      [--failed] [--aborted] [--force]
@@ -1128,6 +1164,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -1148,7 +1187,8 @@ usage: smart-autosorter ledger export [-h]
                                       [-q] [--no-color] [--json] [--tui]
                                       [--interactive]
                                       [--accept-ai-consent | --decline-ai-consent]
-                                      [--skip-wizard] [--non-interactive]
+                                      [--defer-model-download] [--skip-wizard]
+                                      [--non-interactive]
                                       [--ledger-db LEDGER_DB]
                                       [--session-id SESSION_ID] [-o OUTPUT]
                                       [-f {csv,json}] [--csv]
@@ -1169,6 +1209,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -1190,7 +1233,8 @@ usage: smart-autosorter model [-h]
                               [-q] [--no-color] [--json] [--tui]
                               [--interactive]
                               [--accept-ai-consent | --decline-ai-consent]
-                              [--skip-wizard] [--non-interactive]
+                              [--defer-model-download] [--skip-wizard]
+                              [--non-interactive]
                               {status,download,verify,remove,delete} ...
 
 positional arguments:
@@ -1221,6 +1265,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -1233,7 +1280,8 @@ usage: smart-autosorter model status [-h]
                                      [-q] [--no-color] [--json] [--tui]
                                      [--interactive]
                                      [--accept-ai-consent | --decline-ai-consent]
-                                     [--skip-wizard] [--non-interactive]
+                                     [--defer-model-download] [--skip-wizard]
+                                     [--non-interactive]
                                      [--model-dir MODEL_DIR]
 
 options:
@@ -1252,6 +1300,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -1266,6 +1317,7 @@ usage: smart-autosorter model download [-h]
                                        [-q] [--no-color] [--json] [--tui]
                                        [--interactive]
                                        [--accept-ai-consent | --decline-ai-consent]
+                                       [--defer-model-download]
                                        [--skip-wizard] [--non-interactive]
                                        [--model-dir MODEL_DIR] [--url URL]
                                        [--proxy PROXY] [--force]
@@ -1286,6 +1338,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -1304,7 +1359,8 @@ usage: smart-autosorter model verify [-h]
                                      [-q] [--no-color] [--json] [--tui]
                                      [--interactive]
                                      [--accept-ai-consent | --decline-ai-consent]
-                                     [--skip-wizard] [--non-interactive]
+                                     [--defer-model-download] [--skip-wizard]
+                                     [--non-interactive]
                                      [--model-dir MODEL_DIR]
 
 options:
@@ -1323,6 +1379,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -1337,7 +1396,8 @@ usage: smart-autosorter model remove [-h]
                                      [-q] [--no-color] [--json] [--tui]
                                      [--interactive]
                                      [--accept-ai-consent | --decline-ai-consent]
-                                     [--skip-wizard] [--non-interactive]
+                                     [--defer-model-download] [--skip-wizard]
+                                     [--non-interactive]
                                      [--model-dir MODEL_DIR]
 
 options:
@@ -1356,6 +1416,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -1370,7 +1433,8 @@ usage: smart-autosorter model remove [-h]
                                      [-q] [--no-color] [--json] [--tui]
                                      [--interactive]
                                      [--accept-ai-consent | --decline-ai-consent]
-                                     [--skip-wizard] [--non-interactive]
+                                     [--defer-model-download] [--skip-wizard]
+                                     [--non-interactive]
                                      [--model-dir MODEL_DIR]
 
 options:
@@ -1389,6 +1453,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -1403,7 +1470,8 @@ usage: smart-autosorter quarantine [-h]
                                    [-q] [--no-color] [--json] [--tui]
                                    [--interactive]
                                    [--accept-ai-consent | --decline-ai-consent]
-                                   [--skip-wizard] [--non-interactive]
+                                   [--defer-model-download] [--skip-wizard]
+                                   [--non-interactive]
                                    {list,inspect,process,release,dismiss} ...
 
 positional arguments:
@@ -1433,6 +1501,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -1445,6 +1516,7 @@ usage: smart-autosorter quarantine list [-h]
                                         [-q] [--no-color] [--json] [--tui]
                                         [--interactive]
                                         [--accept-ai-consent | --decline-ai-consent]
+                                        [--defer-model-download]
                                         [--skip-wizard] [--non-interactive]
                                         [--db-path DB_PATH] [--status STATUS]
                                         [--base-dir BASE_DIR]
@@ -1465,6 +1537,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -1482,6 +1557,7 @@ usage: smart-autosorter quarantine inspect [-h]
                                            [-q] [--no-color] [--json] [--tui]
                                            [--interactive]
                                            [--accept-ai-consent | --decline-ai-consent]
+                                           [--defer-model-download]
                                            [--skip-wizard] [--non-interactive]
                                            [--db-path DB_PATH]
                                            [--job-id JOB_ID]
@@ -1506,6 +1582,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -1520,6 +1599,7 @@ usage: smart-autosorter quarantine process [-h]
                                            [-q] [--no-color] [--json] [--tui]
                                            [--interactive]
                                            [--accept-ai-consent | --decline-ai-consent]
+                                           [--defer-model-download]
                                            [--skip-wizard] [--non-interactive]
                                            [--db-path DB_PATH]
                                            [--job-id JOB_ID]
@@ -1546,6 +1626,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -1562,6 +1645,7 @@ usage: smart-autosorter quarantine release [-h]
                                            [-q] [--no-color] [--json] [--tui]
                                            [--interactive]
                                            [--accept-ai-consent | --decline-ai-consent]
+                                           [--defer-model-download]
                                            [--skip-wizard] [--non-interactive]
                                            [--db-path DB_PATH]
                                            [--job-id JOB_ID]
@@ -1590,6 +1674,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -1612,6 +1699,7 @@ usage: smart-autosorter quarantine dismiss [-h]
                                            [-q] [--no-color] [--json] [--tui]
                                            [--interactive]
                                            [--accept-ai-consent | --decline-ai-consent]
+                                           [--defer-model-download]
                                            [--skip-wizard] [--non-interactive]
                                            [--db-path DB_PATH]
                                            [--job-id JOB_ID]
@@ -1637,6 +1725,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -1652,8 +1743,8 @@ usage: smart-autosorter rules [-h]
                               [-q] [--no-color] [--json] [--tui]
                               [--interactive]
                               [--accept-ai-consent | --decline-ai-consent]
-                              [--skip-wizard] [--non-interactive]
-                              [--folder FOLDER]
+                              [--defer-model-download] [--skip-wizard]
+                              [--non-interactive] [--folder FOLDER]
                               {import,export,list,add,remove,enable,disable}
                               ...
 
@@ -1688,6 +1779,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -1702,9 +1796,9 @@ usage: smart-autosorter rules import [-h]
                                      [-q] [--no-color] [--json] [--tui]
                                      [--interactive]
                                      [--accept-ai-consent | --decline-ai-consent]
-                                     [--skip-wizard] [--non-interactive]
-                                     [--folder FOLDER] [-f FILE_OPT]
-                                     [--dry-run]
+                                     [--defer-model-download] [--skip-wizard]
+                                     [--non-interactive] [--folder FOLDER]
+                                     [-f FILE_OPT] [--dry-run]
                                      [--conflict-strategy {keep_existing,overwrite,skip_conflicting}]
                                      [--resolve IDENT=STRATEGY]
                                      [--disabled | --enable]
@@ -1730,6 +1824,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -1757,8 +1854,9 @@ usage: smart-autosorter rules export [-h]
                                      [-q] [--no-color] [--json] [--tui]
                                      [--interactive]
                                      [--accept-ai-consent | --decline-ai-consent]
-                                     [--skip-wizard] [--non-interactive]
-                                     [--folder FOLDER] [-o OUTPUT_OPT]
+                                     [--defer-model-download] [--skip-wizard]
+                                     [--non-interactive] [--folder FOLDER]
+                                     [-o OUTPUT_OPT]
                                      [-f {sortify_json,hazel,dropit_ini,json,hazelrules,ini}]
                                      [--dry-run]
                                      [OUTPUT]
@@ -1782,6 +1880,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -1802,8 +1903,8 @@ usage: smart-autosorter rules list [-h]
                                    [-q] [--no-color] [--json] [--tui]
                                    [--interactive]
                                    [--accept-ai-consent | --decline-ai-consent]
-                                   [--skip-wizard] [--non-interactive]
-                                   [--folder FOLDER]
+                                   [--defer-model-download] [--skip-wizard]
+                                   [--non-interactive] [--folder FOLDER]
                                    [--kind {all,keyword,learned,extension,policy}]
                                    [--status {all,active,disabled}]
 
@@ -1823,6 +1924,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -1841,8 +1945,9 @@ usage: smart-autosorter rules add [-h]
                                   [-q] [--no-color] [--json] [--tui]
                                   [--interactive]
                                   [--accept-ai-consent | --decline-ai-consent]
-                                  [--skip-wizard] [--non-interactive]
-                                  [--folder FOLDER] [--pattern PATTERN_OPT]
+                                  [--defer-model-download] [--skip-wizard]
+                                  [--non-interactive] [--folder FOLDER]
+                                  [--pattern PATTERN_OPT]
                                   [--target TARGET_OPT]
                                   [--kind {keyword,learned,extension,policy}]
                                   [--type {keyword,pattern,override,action,compliance,unarchive,duplicate,age,modified_date,created_date,exif_date,size,glob,regex,extension}]
@@ -1874,6 +1979,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -1904,8 +2012,9 @@ usage: smart-autosorter rules remove [-h]
                                      [-q] [--no-color] [--json] [--tui]
                                      [--interactive]
                                      [--accept-ai-consent | --decline-ai-consent]
-                                     [--skip-wizard] [--non-interactive]
-                                     [--folder FOLDER] [--pattern PATTERN_OPT]
+                                     [--defer-model-download] [--skip-wizard]
+                                     [--non-interactive] [--folder FOLDER]
+                                     [--pattern PATTERN_OPT]
                                      [--kind {all,keyword,learned,extension,policy}]
                                      [PATTERN]
 
@@ -1929,6 +2038,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -1948,8 +2060,9 @@ usage: smart-autosorter rules enable [-h]
                                      [-q] [--no-color] [--json] [--tui]
                                      [--interactive]
                                      [--accept-ai-consent | --decline-ai-consent]
-                                     [--skip-wizard] [--non-interactive]
-                                     [--folder FOLDER] [--pattern PATTERN_OPT]
+                                     [--defer-model-download] [--skip-wizard]
+                                     [--non-interactive] [--folder FOLDER]
+                                     [--pattern PATTERN_OPT]
                                      [--kind {all,keyword,learned,policy}]
                                      [PATTERN]
 
@@ -1972,6 +2085,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
@@ -1990,8 +2106,8 @@ usage: smart-autosorter rules disable [-h]
                                       [-q] [--no-color] [--json] [--tui]
                                       [--interactive]
                                       [--accept-ai-consent | --decline-ai-consent]
-                                      [--skip-wizard] [--non-interactive]
-                                      [--folder FOLDER]
+                                      [--defer-model-download] [--skip-wizard]
+                                      [--non-interactive] [--folder FOLDER]
                                       [--pattern PATTERN_OPT]
                                       [--kind {all,keyword,learned,policy}]
                                       [PATTERN]
@@ -2015,6 +2131,9 @@ options:
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
                         onboarding wizard
+  --defer-model-download
+                        Skip automatic AI model download and use local
+                        keyword/TF-IDF fallback
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs

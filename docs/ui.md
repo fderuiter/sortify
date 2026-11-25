@@ -16,6 +16,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.ui.a11y
 
+## `app.ui.ai_runtime`
+
+::: app.ui.ai_runtime
+
 ## `app.ui.catalog`
 
 ::: app.ui.catalog

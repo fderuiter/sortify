@@ -290,13 +290,34 @@ def test_wizard_modal_reflects_real_local_model_status(tmp_path):
             )
             _VERIFICATION_CACHE.clear()
 
-            modal_ok = WizardModal(settings)
-            app.push_screen(modal_ok)
-            await pilot.pause(0.05)
-            rendered_ok = str(
-                modal_ok.query_one("#lbl-wizard-model-status", Label).render()
-            )
-            assert "Verified local AI model weights ready on disk." in rendered_ok
+            # 3a. Verified local bundle WITHOUT onnxruntime -> [AI: Fallback] guidance
+            from unittest.mock import patch
+
+            with patch(
+                "app.core.downloader.is_onnxruntime_available", return_value=False
+            ):
+                modal_no_onnx = WizardModal(settings)
+                app.push_screen(modal_no_onnx)
+                await pilot.pause(0.05)
+                rendered_no_onnx = str(
+                    modal_no_onnx.query_one("#lbl-wizard-model-status", Label).render()
+                )
+                assert "[AI: Fallback]" in rendered_no_onnx
+                assert "smart-autosorter[ml]" in rendered_no_onnx
+                app.pop_screen()
+                await pilot.pause(0.05)
+
+            # 3b. Verified local bundle WITH onnxruntime -> Verified status
+            with patch(
+                "app.core.downloader.is_onnxruntime_available", return_value=True
+            ):
+                modal_ok = WizardModal(settings)
+                app.push_screen(modal_ok)
+                await pilot.pause(0.05)
+                rendered_ok = str(
+                    modal_ok.query_one("#lbl-wizard-model-status", Label).render()
+                )
+                assert "Verified local AI model weights ready on disk." in rendered_ok
 
     asyncio.run(_test())
 
@@ -394,9 +415,25 @@ def test_wizard_finish_with_consent_provisions_or_falls_back_cleanly(tmp_path):
             dm.transition_to(DownloadState.COMPLETED)
             dm.state["error"] = None
 
-            app._poll_ai_provisioning_status()
-            await pilot.pause(0.05)
-            assert "[AI: Active]" in str(sb.render())
+            # Without onnxruntime -> stays [AI: Fallback] even with verified weights
+            with patch(
+                "app.core.downloader.is_onnxruntime_available", return_value=False
+            ):
+                app._last_ai_poll_token = None
+                app._poll_ai_provisioning_status()
+                await pilot.pause(0.05)
+                assert "[AI: Fallback]" in str(sb.render())
+
+            # With onnxruntime available -> switches to [AI: Active]
+            dm.transition_to(DownloadState.DOWNLOADING)
+            dm.transition_to(DownloadState.COMPLETED)
+            with patch(
+                "app.core.downloader.is_onnxruntime_available", return_value=True
+            ):
+                app._last_ai_poll_token = None
+                app._poll_ai_provisioning_status()
+                await pilot.pause(0.05)
+                assert "[AI: Active]" in str(sb.render())
 
             # Verify deferring download skips start_download and displays [AI: Fallback]
             shutil.rmtree(model_dir, ignore_errors=True)
@@ -460,5 +497,77 @@ def test_wizard_demo_preset_auto_enables_sample_corpus_and_renders_non_empty_pla
             tree = app.query_one("#plan-tree", Tree)
             node_labels = [str(child.label) for child in tree.root.children]
             assert not any("Empty Workspace" in lbl for lbl in node_labels)
+
+    asyncio.run(_test())
+
+
+def test_wizard_80x24_unchecked_starter_packs_live_rule_counter_and_finish_toast(
+    tmp_path,
+):
+    """AC 1 & AC 2: Opening WizardModal in 80x24 leaves starter packs unchecked, renders pinned rule counter, and emits Finish toast."""
+    from unittest.mock import patch
+
+    from textual.widgets import Button, Checkbox, Label
+
+    from app.core.rule_templates import (
+        BUILTIN_STARTER_TEMPLATES,
+        get_starter_template_by_id,
+    )
+
+    async def _test():
+        workspace = tmp_path / "compact_ws"
+        workspace.mkdir()
+        settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+        settings._settings_model.AI_CONSENT_GRANTED = None
+        app = AutoSorterTUI(
+            settings=settings, base_dir=str(workspace), skip_wizard=True
+        )
+
+        async with app.run_test(size=(80, 24)) as pilot:
+            modal = WizardModal(settings, current_dir=str(workspace))
+            app.push_screen(modal)
+            await pilot.pause(0.1)
+
+            assert modal.has_class("compact")
+            for pack in BUILTIN_STARTER_TEMPLATES:
+                assert (
+                    modal.query_one(f"#chk-template-{pack.id}", Checkbox).value is False
+                )
+
+            counter = modal.query_one("#lbl-wizard-rule-summary", Label)
+            finish_btn = modal.query_one("#btn-finish", Button)
+            assert "Selected: 0 keyword rules, 0 policies" in str(counter.render())
+            # Pinned counter sits inside .button-row directly above #btn-finish and within 80x24 viewport
+            assert counter.region.y < finish_btn.region.y
+            assert finish_btn.region.bottom <= 24
+
+            # Check two starter packs -> live counter updates immediately
+            modal.query_one("#chk-template-financial_tax", Checkbox).value = True
+            modal.query_one("#chk-template-personal_admin", Checkbox).value = True
+            await pilot.pause(0.05)
+
+            fin_pack = get_starter_template_by_id("financial_tax")
+            adm_pack = get_starter_template_by_id("personal_admin")
+            assert fin_pack is not None and adm_pack is not None
+            expected_kw = len(set(fin_pack.keyword_rules) | set(adm_pack.keyword_rules))
+            expected_pol = len(fin_pack.policies) + len(adm_pack.policies)
+
+            updated_counter = str(counter.render())
+            assert (
+                f"Selected: {expected_kw} keyword rules, {expected_pol} policies (2 packs)"
+                in updated_counter
+            )
+
+            with (
+                patch.object(app, "notify") as mock_notify,
+                patch.object(app, "action_scan_directory"),
+            ):
+                finish_btn.press()
+                await pilot.pause(0.1)
+
+                mock_notify.assert_called_once()
+                toast_msg = str(mock_notify.call_args.args[0])
+                assert f"{expected_kw} keyword rule(s)" in toast_msg
+                assert f"{expected_pol} policy rule(s)" in toast_msg
 
     asyncio.run(_test())

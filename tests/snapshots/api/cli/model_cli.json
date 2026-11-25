@@ -1,9 +1,21 @@
 {
   "_metadata": {
-    "checksum": "e01bb243237eb1ccededb6abc42bf512c45d0a33742db18b3a3de0bef1c09090"
+    "checksum": "b9d9635ce411e865ed4ba76bf2045cd7d4b97a1550d8d8595e63a079679e980e"
   },
   "classes": [],
   "cli": [
+    {
+      "args": [
+        "--defer-model-download"
+      ],
+      "caller": "parser",
+      "keywords": {
+        "action": "store_true",
+        "default": "default_val",
+        "help": "Skip automatic AI model download and use local keyword/TF-IDF fallback"
+      },
+      "method": "add_argument"
+    },
     {
       "args": [
         "model"
@@ -114,6 +126,24 @@
     {
       "async": false,
       "decorators": [],
+      "name": "add_model_provisioning_args",
+      "parameters": [
+        {
+          "annotation": "argparse.ArgumentParser",
+          "default": null,
+          "name": "parser"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "suppress_default"
+        }
+      ],
+      "returns": "None"
+    },
+    {
+      "async": false,
+      "decorators": [],
       "name": "handle_model_command",
       "parameters": [
         {
@@ -128,6 +158,24 @@
         }
       ],
       "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "maybe_provision_model_for_cli_consent",
+      "parameters": [
+        {
+          "annotation": "argparse.Namespace",
+          "default": null,
+          "name": "args"
+        },
+        {
+          "annotation": "AppSettings",
+          "default": null,
+          "name": "settings"
+        }
+      ],
+      "returns": "None"
     },
     {
       "async": false,

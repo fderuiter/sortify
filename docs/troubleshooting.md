@@ -6,14 +6,15 @@ Welcome to the Smart AutoSorter AI Pro troubleshooting guide. This page covers m
 
 ## Model download failures
 
-The Onboarding Wizard (`[Ctrl+W]`) and Model Manager (`[Ctrl+G]` or Command Palette `[Ctrl+K]`) download the optional local embedding model (`all-MiniLM-L6-v2` in ONNX format) from Hugging Face and verify its SHA-256 digests before activation. While weights are missing or if a download fails, the status bar shows `[AI: Fallback]` and Sortify continues organizing folders locally with keyword rules and TF-IDF clustering.
+The Onboarding Wizard (`[Ctrl+W]`) and Model Manager (`[Ctrl+G]` or Command Palette `[Ctrl+K]`) download the optional local embedding model (`all-MiniLM-L6-v2` in ONNX format) from Hugging Face and verify its SHA-256 digests before activation. While weights are missing, if a download fails, or if the optional `onnxruntime` package (`smart-autosorter[ml]`) is not installed, the status bar shows `[AI: Fallback]` and Sortify continues organizing folders locally with keyword rules and TF-IDF clustering.
 
 ### Network errors
 The message names a network, connection or timeout error. A firewall, antivirus, VPN or proxy is blocking `huggingface.co`, or the machine is offline.
 
 - Check your internet connection, and try again with the VPN off.
 - Behind a corporate proxy, enter the proxy URL directly in the Onboarding Wizard (`#input-wizard-proxy`), in the Model Manager (`[Ctrl+G]`), or on the CLI via `smart-autosorter model download --proxy http://proxy.example.com:8080`.
-- On metered or offline networks, enable **Defer model download** in the Onboarding Wizard to skip background transfers and sort immediately in `[AI: Fallback]` mode.
+- On metered or offline networks, enable **Defer model download** in the Onboarding Wizard (or pass `--defer-model-download` on the CLI) to skip background transfers and sort immediately in `[AI: Fallback]` mode.
+- If verified weights are present on disk but the badge still shows `[AI: Fallback]`, run `smart-autosorter model status` to check `ONNX Runtime:`; install `smart-autosorter[ml]` (`uv sync --extra ml` or `pip install 'smart-autosorter[ml]'`) so `onnxruntime` can execute local semantic inference.
 - If the network can't be opened, ask your administrator for the offline deployment bundle, which includes the pre-verified model files.
 
 ### "Insufficient disk space"
@@ -21,23 +22,26 @@ The message reads `Insufficient disk space. Required: N bytes, Free: M bytes.` o
 
 ## Granting consent and retrying the download
 
-Completing onboarding with **AI Consent Granted** switched on automatically starts a background model download when verified weights are absent (unless deferred), while scanning your workspace right away. Once SHA-256 verification finishes, the status bar switches from `[AI: Downloading …]` to `[AI: Active]`.
+Completing onboarding with **AI Consent Granted** switched on automatically starts a background model download when verified weights are absent (unless deferred), while scanning your workspace right away. Once SHA-256 verification finishes (and `onnxruntime` is installed), the status bar switches from `[AI: Downloading …]` to `[AI: Active]` and automatically re-scans an unedited mock sorting plan with semantic embeddings.
 
 ### In the terminal UI
 1. Start the app with `smart-autosorter` (or `smart-autosorter --tui`).
-2. On first launch (or by pressing `[Ctrl+W]`), switch **AI Consent Granted** on with `[Space]`, optionally configure a proxy URL, and choose **Finish & Save** to save consent and start background provisioning automatically.
+2. On first launch (or by pressing `[Ctrl+W]`), switch **AI Consent Granted** on with `[Space]`, optionally configure a proxy URL or opt into starter rule template packs, and choose **Finish & Save** to save consent and start background provisioning automatically.
 3. To inspect progress, retry an interrupted download, verify hashes, or delete cached weights later, press `[Ctrl+G]` (or open the Command Palette with `[Ctrl+K]` and select **Open Model Manager**).
 
 ### From the command line
-- Save AI consent across restarts, verify or download model weights with terminal progress output, and keep interactive workspace selection active in terminal sessions:
+- Save AI consent across restarts, verify or download model weights with terminal progress output, and run directly from top-level setup or `scan`, `sort`, `drop`, and `daemon`:
   ```bash
   smart-autosorter --accept-ai-consent
+  smart-autosorter scan ~/Downloads --accept-ai-consent
+  smart-autosorter sort ~/Downloads --accept-ai-consent
   ```
-- Save AI consent and provision weights in headless scripts without interactive prompts:
+- Save AI consent in headless scripts or on metered/offline links without downloading weights immediately:
   ```bash
   smart-autosorter --accept-ai-consent --non-interactive
+  smart-autosorter scan ~/Downloads --accept-ai-consent --defer-model-download
   ```
-- Check model status, retry downloads (including `--proxy`), verify SHA-256 hashes, or remove local model files directly:
+- Check model and ONNX Runtime status, retry downloads (including `--proxy`), verify SHA-256 hashes, or remove local model files directly:
   ```bash
   smart-autosorter model status
   smart-autosorter model download --proxy http://proxy.example.com:8080

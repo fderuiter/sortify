@@ -220,3 +220,84 @@ def test_incremental_analyzer_propagates_degraded_telemetry(db, tmp_path):
         assert notifications == []
     finally:
         notif_mgr._custom_handlers.remove(notifications.append)
+
+
+def test_missing_onnxruntime_records_install_ml_extra_and_marks_runtime_fallback(
+    db, tmp_path, monkeypatch
+):
+    """Req 4 & Req 5: Missing onnxruntime records INSTALL_ML_EXTRA in SharedModelRegistry and reports [AI: Fallback]."""
+    import hashlib
+    import importlib.machinery
+    import importlib.util
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from app.core.downloader import (
+        _VERIFICATION_CACHE,
+        DownloadManager,
+        get_ai_runtime_state,
+        is_onnxruntime_available,
+    )
+
+    registry = SharedModelRegistry.get_instance()
+    registry.record_model_health("onnx_embeddings", status="HEALTHY")
+
+    model_dir = tmp_path / "verified_model"
+    model_dir.mkdir()
+    bundle_payloads = {
+        "model.onnx": b"onnx-bytes",
+        "config.json": b'{"model_type": "bert"}',
+        "tokenizer.json": b'{"version": "1.0"}',
+        "tokenizer_config.json": b'{"do_lower_case": true}',
+        "special_tokens_map.json": b'{"cls_token": "[CLS]"}',
+        "vocab.txt": b"[PAD]\n[CLS]\n",
+        "version.txt": b"1.0.0",
+    }
+    expected_hashes = {}
+    for fname, payload in bundle_payloads.items():
+        (model_dir / fname).write_bytes(payload)
+        expected_hashes[fname] = hashlib.sha256(payload).hexdigest()
+    registry.register_expected_hashes("model_download", expected_hashes)
+    _VERIFICATION_CACHE.clear()
+
+    real_find_spec = importlib.util.find_spec
+    monkeypatch.setattr(
+        importlib.util,
+        "find_spec",
+        lambda name, pkg=None: (
+            importlib.machinery.ModuleSpec("onnxruntime", loader=None)
+            if name == "onnxruntime"
+            else real_find_spec(name, pkg)
+        ),
+    )
+    DownloadManager.reset_instance()
+    assert is_onnxruntime_available() is True
+
+    # Simulate runtime ImportError inside SemanticEmbeddingManager.generate_embedding
+    manager = SemanticEmbeddingManager(
+        db, model_path=str(model_dir), bypass_validation=True
+    )
+    manager.is_model_valid = True
+    registry._models[f"tokenizer_{model_dir}"] = lambda *a, **kw: {}
+    with patch.object(
+        registry,
+        "get_onnx_session",
+        side_effect=ModuleNotFoundError("No module named 'onnxruntime'"),
+    ):
+        vec = manager.generate_embedding("Tax invoice 2025")
+        assert len(vec) == 384
+
+    health = registry.get_model_health("onnx_embeddings")
+    assert health["status"] == "DEGRADED_FALLBACK"
+    assert health["suggested_recovery_action"] == "INSTALL_ML_EXTRA"
+    assert is_onnxruntime_available() is False
+
+    rt = get_ai_runtime_state(
+        SimpleNamespace(AI_CONSENT_GRANTED=True), model_dir=str(model_dir)
+    )
+    assert rt["state"] == "fallback"
+    assert rt["badge"] == "[AI: Fallback]"
+    assert rt["onnxruntime_available"] is False
+
+    registry.record_model_health("onnx_embeddings", status="HEALTHY")
+    DownloadManager.reset_instance()

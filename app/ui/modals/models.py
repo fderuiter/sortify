@@ -12,19 +12,6 @@ from app.ui.heading import Heading
 from app.ui.layout import ModalBox, ResponsiveModalScreen
 
 
-def _is_onnxruntime_available() -> bool:
-    """Return True when the optional `onnxruntime` package is importable."""
-    import importlib.util
-    import sys
-
-    if "onnxruntime" in sys.modules:
-        return sys.modules["onnxruntime"] is not None
-    try:
-        return importlib.util.find_spec("onnxruntime") is not None
-    except (ImportError, ValueError):
-        return False
-
-
 class ModelManagerModal(ResponsiveModalScreen[None]):
     """Modal screen for interactive local ONNX model management."""
 
@@ -123,7 +110,10 @@ class ModelManagerModal(ResponsiveModalScreen[None]):
             with Vertical(classes="modal-body"):
                 yield Heading("Model Status:", level=2, classes="field-label")
                 yield Label(
-                    "Status: Checking...", id="lbl-model-status", classes="info-label"
+                    "Status: Checking...",
+                    id="lbl-model-status",
+                    classes="info-label",
+                    markup=False,
                 )
                 yield Label(
                     "Location: Checking...", id="lbl-model-path", classes="path-label"
@@ -217,12 +207,15 @@ class ModelManagerModal(ResponsiveModalScreen[None]):
         from app.core.downloader import (
             DownloadManager,
             _inspect_model_bundle,
+            get_ai_runtime_state,
             verify_downloaded_model,
         )
 
         dm = DownloadManager.get_instance()
 
         model_dir = self._resolve_model_dir()
+        runtime = get_ai_runtime_state(self.settings, model_dir=model_dir)
+        onnx_available = bool(runtime.get("onnxruntime_available", False))
         onnx_file = os.path.join(model_dir, "model.onnx")
         tmp_file = os.path.join(model_dir, "model.onnx.tmp")
 
@@ -234,7 +227,7 @@ class ModelManagerModal(ResponsiveModalScreen[None]):
 
         lbl_path.update(f"Location: {model_dir}")
 
-        if _is_onnxruntime_available():
+        if onnx_available:
             lbl_ml.update("")
             lbl_ml.display = False
         else:
@@ -258,7 +251,8 @@ class ModelManagerModal(ResponsiveModalScreen[None]):
             size_mb = total_bytes / (1024 * 1024)
             lbl_size.update(f"Size on Disk: {size_mb:.2f} MB")
             if verify_downloaded_model(model_dir):
-                lbl_status.update("Status: Downloaded & Present")
+                status_suffix = "" if onnx_available else " ([AI: Fallback])"
+                lbl_status.update(f"Status: Downloaded & Present{status_suffix}")
                 lbl_hash.update("Verification: Valid (Cryptographically Verified)")
             else:
                 bundle_state, bundle_detail = _inspect_model_bundle(model_dir)

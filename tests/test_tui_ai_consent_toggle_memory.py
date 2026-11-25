@@ -183,7 +183,7 @@ async def test_changing_consent_state_updates_status_bar_badge_and_announcements
 
         assert "[AI: Fallback]" in str(sb.render())
 
-        # When local model bundle is verified, status bar switches to [AI: Active]
+        # When local model bundle is verified without onnxruntime -> remains [AI: Fallback]
         from unittest.mock import patch
 
         with patch(
@@ -191,6 +191,24 @@ async def test_changing_consent_state_updates_status_bar_badge_and_announcements
             return_value={
                 "status": "verified",
                 "verified": True,
+                "onnxruntime_available": False,
+                "model_dir": str(tmp_path / "model"),
+                "present_files": [],
+                "missing_files": [],
+                "detail": "Verified",
+            },
+        ):
+            app.update_status()
+            await pilot.pause(0.05)
+            assert "[AI: Fallback]" in str(sb.render())
+
+        # When local model bundle is verified AND onnxruntime is available -> [AI: Active]
+        with patch(
+            "app.core.downloader.inspect_local_model_bundle",
+            return_value={
+                "status": "verified",
+                "verified": True,
+                "onnxruntime_available": True,
                 "model_dir": str(tmp_path / "model"),
                 "present_files": [],
                 "missing_files": [],

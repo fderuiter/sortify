@@ -314,12 +314,15 @@ def test_bare_cli_accept_ai_consent_non_interactive_json(tmp_path, capsys):
     assert AppSettings(filepath=settings_file).AI_CONSENT_GRANTED is True
 
 
-def test_subcommand_accept_ai_consent_persists_without_blocking_download(tmp_path):
-    """Operational subcommands with `--accept-ai-consent` persist consent without blocking on remote model download."""
+def test_subcommand_accept_ai_consent_provisions_unless_deferred_or_tui(
+    tmp_path, capsys
+):
+    """AC 6 / Req 8: scan, sort, drop, and watching daemon with `--accept-ai-consent` run `provision_model_cli` unless `--defer-model-download`, `--tui`, or a non-watching control action is set."""
     import sys
 
     import pytest
 
+    from app.core.downloader import NetworkError
     from app.main import _main_impl, _maybe_provision_model_for_cli_consent
 
     settings_file = str(tmp_path / "settings.json")
@@ -330,20 +333,60 @@ def test_subcommand_accept_ai_consent_persists_without_blocking_download(tmp_pat
     )
 
     parser = build_parser()
-    sub_args = parser.parse_args(
-        ["sort", str(workspace), "--accept-ai-consent", "--non-interactive"]
-    )
-    settings = AppSettings(filepath=settings_file)
-    apply_config_overrides(settings, sub_args)
 
-    with patch("app.core.downloader.provision_model_cli") as mock_prov:
-        _maybe_provision_model_for_cli_consent(sub_args, settings)
-        mock_prov.assert_not_called()
+    # 1. Operational subcommands (scan, sort, drop, watching daemon) call provision_model_cli
+    for argv in (
+        ["scan", str(workspace), "--accept-ai-consent", "--non-interactive"],
+        ["sort", str(workspace), "--accept-ai-consent", "--non-interactive"],
+        ["drop", str(workspace / "invoice_2025.txt"), "--accept-ai-consent"],
+        ["daemon", str(workspace), "--accept-ai-consent"],
+        ["daemon", "start", str(workspace), "--accept-ai-consent"],
+    ):
+        sub_args = parser.parse_args(argv)
+        settings = AppSettings(filepath=settings_file)
+        apply_config_overrides(settings, sub_args)
+        with patch("app.core.downloader.provision_model_cli") as mock_prov:
+            _maybe_provision_model_for_cli_consent(sub_args, settings)
+            mock_prov.assert_called_once()
 
+    # 2. --defer-model-download (subcommand or top-level), --tui / --interactive, config, and daemon IPC control actions skip provision_model_cli
+    for skip_argv in (
+        [
+            "scan",
+            str(workspace),
+            "--accept-ai-consent",
+            "--defer-model-download",
+            "--non-interactive",
+        ],
+        [
+            "--defer-model-download",
+            "scan",
+            str(workspace),
+            "--accept-ai-consent",
+            "--non-interactive",
+        ],
+        ["sort", str(workspace), "--accept-ai-consent", "--tui"],
+        ["scan", str(workspace), "--accept-ai-consent", "--interactive"],
+        ["config", "--show", "--accept-ai-consent"],
+        ["daemon", "status", "--accept-ai-consent"],
+        ["daemon", "status", str(workspace), "--accept-ai-consent"],
+        ["daemon", "stop", "--accept-ai-consent"],
+        ["model", "--defer-model-download", "status", "--accept-ai-consent"],
+        ["model", "status", "--accept-ai-consent", "--defer-model-download"],
+    ):
+        skip_args = parser.parse_args(skip_argv)
+        settings = AppSettings(filepath=settings_file)
+        apply_config_overrides(settings, skip_args)
+        with patch("app.core.downloader.provision_model_cli") as mock_prov_skip:
+            _maybe_provision_model_for_cli_consent(skip_args, settings)
+            mock_prov_skip.assert_not_called()
+
+    # 3. End-to-end `scan <dir> --accept-ai-consent` saves consent and runs provision_model_cli
+    settings_e2e = str(tmp_path / "settings_e2e.json")
     with (
         patch(
             "app.main.AppSettings",
-            side_effect=lambda *a, **kw: AppSettings(filepath=settings_file),
+            side_effect=lambda *a, **kw: AppSettings(filepath=settings_e2e),
         ),
         patch("app.core.downloader.provision_model_cli") as mock_prov_main,
         patch.object(
@@ -363,5 +406,64 @@ def test_subcommand_accept_ai_consent_persists_without_blocking_download(tmp_pat
         _main_impl()
 
     assert excinfo.value.code == 0
-    mock_prov_main.assert_not_called()
-    assert AppSettings(filepath=settings_file).AI_CONSENT_GRANTED is True
+    mock_prov_main.assert_called_once()
+    assert AppSettings(filepath=settings_e2e).AI_CONSENT_GRANTED is True
+
+    # 4. End-to-end `scan <dir> --accept-ai-consent --defer-model-download` saves consent and skips download
+    settings_deferred = str(tmp_path / "settings_deferred.json")
+    with (
+        patch(
+            "app.main.AppSettings",
+            side_effect=lambda *a, **kw: AppSettings(filepath=settings_deferred),
+        ),
+        patch("app.core.downloader.provision_model_cli") as mock_prov_deferred,
+        patch.object(
+            sys,
+            "argv",
+            [
+                "smart-autosorter",
+                "scan",
+                str(workspace),
+                "--accept-ai-consent",
+                "--defer-model-download",
+                "--non-interactive",
+                "--quiet",
+            ],
+        ),
+        pytest.raises(SystemExit) as excinfo_def,
+    ):
+        _main_impl()
+
+    assert excinfo_def.value.code == 0
+    mock_prov_deferred.assert_not_called()
+    assert AppSettings(filepath=settings_deferred).AI_CONSENT_GRANTED is True
+
+    # 5. Offline DownloaderError warns cleanly and falls back without failing scan
+    capsys.readouterr()
+    with (
+        patch(
+            "app.main.AppSettings",
+            side_effect=lambda *a, **kw: AppSettings(filepath=settings_e2e),
+        ),
+        patch(
+            "app.core.downloader.provision_model_cli",
+            side_effect=NetworkError("Offline network"),
+        ),
+        patch.object(
+            sys,
+            "argv",
+            [
+                "smart-autosorter",
+                "scan",
+                str(workspace),
+                "--accept-ai-consent",
+                "--non-interactive",
+            ],
+        ),
+        pytest.raises(SystemExit) as excinfo_offline,
+    ):
+        _main_impl()
+
+    assert excinfo_offline.value.code == 0
+    err_out = capsys.readouterr().err
+    assert "Proceeding with local keyword/TF-IDF fallback" in err_out

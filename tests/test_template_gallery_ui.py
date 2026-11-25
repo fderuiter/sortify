@@ -23,7 +23,10 @@ def mock_find_abandoned_sessions(monkeypatch):
 
 
 def test_wizard_modal_starter_templates_applied(tmp_path):
-    """Verify selecting starter rule template packs during wizard onboarding populates settings."""
+    """Verify clean wizard onboarding leaves starter packs unchecked, and checking packs populates settings."""
+    from textual.widgets import Checkbox
+
+    from app.core.rule_templates import BUILTIN_STARTER_TEMPLATES
 
     async def _test():
         settings = AppSettings(filepath=str(tmp_path / "settings.json"))
@@ -35,15 +38,32 @@ def test_wizard_modal_starter_templates_applied(tmp_path):
             modal = app.screen
             assert isinstance(modal, WizardModal)
 
-            # Finish wizard onboarding
+            # Clean profile: all starter packs default to unchecked
+            for pack in BUILTIN_STARTER_TEMPLATES:
+                chk = modal.query_one(f"#chk-template-{pack.id}", Checkbox)
+                assert chk.value is False
+
+            # Finishing with none checked adds zero hidden rules
             modal.action_finish()
             await pilot.pause(0.1)
 
-            # Verify default starter templates (financial_tax, personal_admin) populated folder-scoped KEYWORD_RULES & POLICIES
             scoped = settings.for_folder(app.base_dir)
-            assert "invoice" in scoped.KEYWORD_RULES
-            assert "utility" in scoped.KEYWORD_RULES
-            assert len(scoped.POLICIES) > 0
+            assert scoped.KEYWORD_RULES == {}
+            assert scoped.POLICIES == []
+
+            # Re-open wizard, opt into starter templates, and finish
+            modal2 = WizardModal(settings, current_dir=app.base_dir)
+            app.push_screen(modal2)
+            await pilot.pause(0.1)
+            modal2.query_one("#chk-template-financial_tax", Checkbox).value = True
+            modal2.query_one("#chk-template-personal_admin", Checkbox).value = True
+            modal2.action_finish()
+            await pilot.pause(0.1)
+
+            scoped_after = settings.for_folder(app.base_dir)
+            assert "invoice" in scoped_after.KEYWORD_RULES
+            assert "utility" in scoped_after.KEYWORD_RULES
+            assert len(scoped_after.POLICIES) > 0
 
     asyncio.run(_test())
 

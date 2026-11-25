@@ -7,6 +7,7 @@ from textual import events, on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.css.query import NoMatches
 from textual.widgets import Button, Checkbox, Input, Label, Static, Switch
 
 from app.ui.heading import Heading
@@ -107,7 +108,16 @@ class WizardModal(ResponsiveModalScreen[None]):
         align: left middle;
     }
     .button-row {
-        min-height: 3;
+        height: auto;
+        min-height: 4;
+        align: right middle;
+    }
+    .rule-summary {
+        width: 100%;
+        height: 1;
+        color: $text-muted;
+        text-overflow: ellipsis;
+        overflow: hidden;
     }
     Button:focus, Checkbox:focus, Switch:focus, Input:focus, .privacy-card:focus {
         border: heavy $accent;
@@ -136,6 +146,21 @@ class WizardModal(ResponsiveModalScreen[None]):
         &.narrow .privacy-card {
             padding: 0 1;
             border: round $primary;
+        }
+        &.compact .privacy-card {
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+        &.compact .field-label, &.compact .preset-label {
+            margin-top: 0;
+        }
+        &.compact .switch-row {
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+        &.compact .button-row {
+            margin-top: 0;
+            min-height: 2;
         }
         &.compact .preset-row {
             margin-top: 0;
@@ -230,6 +255,7 @@ class WizardModal(ResponsiveModalScreen[None]):
                         defer_download=False,
                     ),
                     id="lbl-wizard-model-status",
+                    markup=False,
                 )
 
                 chk_defer = Checkbox(
@@ -315,10 +341,9 @@ class WizardModal(ResponsiveModalScreen[None]):
                 from app.core.rule_templates import get_starter_templates
 
                 for pack in get_starter_templates():
-                    is_default = pack.id in ("financial_tax", "personal_admin")
                     chk = Checkbox(
                         f"{pack.icon} {pack.title}",
-                        value=is_default,
+                        value=False,
                         id=f"chk-template-{pack.id}",
                     )
                     chk.tooltip = pack.description
@@ -352,7 +377,13 @@ class WizardModal(ResponsiveModalScreen[None]):
                     tooltip="Automatically hold HIGH sensitivity documents (e.g. financial, tax, legal, resume records) in compliance quarantine",
                 )
 
-            with Horizontal(classes="button-row"):
+            with Vertical(classes="button-row"):
+                yield Label(
+                    self._format_selected_rules_summary(selected_pack_ids=[]),
+                    id="lbl-wizard-rule-summary",
+                    classes="rule-summary",
+                    markup=False,
+                )
                 btn_finish = Button("Finish & Save", id="btn-finish", variant="primary")
                 btn_finish.tooltip = (
                     "Save AI consent setting and complete onboarding wizard"
@@ -384,6 +415,7 @@ class WizardModal(ResponsiveModalScreen[None]):
                 defer_download = False
 
         bundle = inspect_local_model_bundle()
+        onnx_available = bool(bundle.get("onnxruntime_available", False))
         if bundle["is_downloading"]:
             pct = int(round(bundle["progress_percent"]))
             return (
@@ -391,6 +423,14 @@ class WizardModal(ResponsiveModalScreen[None]):
                 "workspace sorts with keyword clustering until verification completes."
             )
         if bundle["verified"]:
+            if not onnx_available:
+                return (
+                    "Model Status: [AI: Fallback] Verified weights on disk, but optional "
+                    "'onnxruntime' is absent — install 'smart-autosorter[ml]' for semantic vectors "
+                    "(using local keyword/TF-IDF fallback)."
+                )
+            if consent_enabled:
+                return "Model Status: [AI: Active] Verified local AI model weights ready on disk."
             return "Model Status: Verified local AI model weights ready on disk."
         if bundle["disk_bundle_status"] in ("incomplete", "corrupted"):
             reason = bundle["detail"]
@@ -400,23 +440,73 @@ class WizardModal(ResponsiveModalScreen[None]):
                     "fresh background download will start on Finish."
                 )
             return (
-                f"Model Status: Unverified/incomplete weights ({reason}) — "
+                f"Model Status: [AI: Fallback] Unverified/incomplete weights ({reason}) — "
                 "using local keyword/TF-IDF fallback."
             )
         if consent_enabled and not defer_download:
+            if not onnx_available:
+                return (
+                    "Model Status: [AI: Fallback] Missing local model weights "
+                    "(install 'smart-autosorter[ml]' for ONNX runtime) — background download (~80 MB) "
+                    "will start automatically on Finish."
+                )
             return (
                 "Model Status: Missing local model weights — background download (~80 MB) "
                 "will start automatically on Finish."
             )
         if consent_enabled and defer_download:
             return (
-                "Model Status: Missing local model weights — download deferred "
+                "Model Status: [AI: Fallback] Missing local model weights — download deferred "
                 "(using local keyword/TF-IDF fallback)."
             )
         return (
             "Model Status: Missing local model weights — AI disabled "
             "(using local keyword/TF-IDF sorting)."
         )
+
+    def _selected_pack_rule_totals(
+        self, selected_pack_ids: list[str] | None = None
+    ) -> tuple[int, int, int]:
+        """Return (pack_count, keyword_rule_count, policy_count) for selected starter packs."""
+        from app.core.rule_templates import get_starter_templates
+
+        ids = (
+            set(selected_pack_ids)
+            if selected_pack_ids is not None
+            else set(self._get_selected_pack_ids())
+        )
+        kw_keys: set[str] = set()
+        pol_count = 0
+        matched_packs = 0
+        for pack in get_starter_templates():
+            if pack.id in ids:
+                matched_packs += 1
+                kw_keys.update(k.lower() for k in pack.keyword_rules)
+                pol_count += len(pack.policies)
+        return matched_packs, len(kw_keys), pol_count
+
+    def _format_selected_rules_summary(
+        self, selected_pack_ids: list[str] | None = None
+    ) -> str:
+        """Build concise summary of selected starter rules pinned above Finish."""
+        pack_count, kw_count, pol_count = self._selected_pack_rule_totals(
+            selected_pack_ids
+        )
+        pack_word = "pack" if pack_count == 1 else "packs"
+        rule_word = "rule" if kw_count == 1 else "rules"
+        pol_word = "policy" if pol_count == 1 else "policies"
+        return (
+            f"Selected: {kw_count} keyword {rule_word}, "
+            f"{pol_count} {pol_word} ({pack_count} {pack_word})"
+        )
+
+    def _refresh_rule_summary_label(self) -> None:
+        """Refresh the pinned starter rule counter label inside the button row."""
+        try:
+            lbl = self.query_one("#lbl-wizard-rule-summary", Label)
+        except NoMatches:
+            return
+        lbl.update(self._format_selected_rules_summary())
 
     def _refresh_model_status_label(self) -> None:
         """Refresh the live model status label inside the wizard."""
@@ -513,6 +603,7 @@ class WizardModal(ResponsiveModalScreen[None]):
         """Focus switch on mount, refresh model status, and emit screen reader announcement."""
         super().on_mount()
         self._refresh_model_status_label()
+        self._refresh_rule_summary_label()
         self.set_interval(0.5, self._refresh_model_status_label)
         try:
             self.query_one("#switch-consent", Switch).focus()
@@ -590,6 +681,7 @@ class WizardModal(ResponsiveModalScreen[None]):
             return
 
         pack_id = chk_id[len(prefix) :]
+        self._refresh_rule_summary_label()
         from app.core.rule_templates import get_starter_templates
 
         for pack in get_starter_templates():
@@ -624,6 +716,7 @@ class WizardModal(ResponsiveModalScreen[None]):
                     chk.value = desired
             except Exception:
                 pass
+        self._refresh_rule_summary_label()
 
         if payload.get("committed"):
             committed_dir = str(payload.get("target_dir") or "").strip()
@@ -788,18 +881,45 @@ class WizardModal(ResponsiveModalScreen[None]):
         from app.core.rule_templates import apply_starter_templates
 
         selected_packs = self._get_selected_pack_ids()
+        applied_starter_ok = True
+        toast_msg = "Saved onboarding settings (0 starter rules added)."
         if selected_packs:
             try:
                 scoped_settings = resolve_scoped_settings(
                     self.settings, target_dir, fallback_to_global=True
                 )
-                apply_starter_templates(scoped_settings, selected_packs)
+                prev_kw_count = len(getattr(scoped_settings, "KEYWORD_RULES", {}) or {})
+                prev_pol_count = len(getattr(scoped_settings, "POLICIES", []) or [])
+                new_keywords, new_policies = apply_starter_templates(
+                    scoped_settings, selected_packs
+                )
+                added_kw = max(0, len(new_keywords) - prev_kw_count)
+                added_pol = max(0, len(new_policies) - prev_pol_count)
+                pack_count, total_kw, total_pol = self._selected_pack_rule_totals(
+                    selected_packs
+                )
+                if added_kw > 0 or added_pol > 0:
+                    toast_msg = (
+                        f"Applied {pack_count} starter pack(s): "
+                        f"added {added_kw} keyword rule(s) and {added_pol} policy rule(s)."
+                    )
+                else:
+                    toast_msg = (
+                        f"Saved {pack_count} starter pack(s) "
+                        f"({total_kw} keyword rule(s) and {total_pol} policy rule(s) active)."
+                    )
             except Exception as exc:
+                applied_starter_ok = False
                 logger.error(f"Failed to apply starter templates: {exc}")
                 err_msg = f"Failed to apply starter rule template pack(s): {exc}"
                 self.announce(err_msg)
                 if hasattr(self.app, "notify"):
                     self.app.notify(err_msg, severity="error")
+
+        if applied_starter_ok:
+            self.announce(toast_msg)
+            if hasattr(self.app, "notify"):
+                self.app.notify(toast_msg)
 
         if hasattr(self.settings, "_save"):
             try:

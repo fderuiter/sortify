@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "6eaa87608d61b749c86dd7d625cf7bece8acdb19d382b20ae8724d2b4834abc6"
+    "checksum": "8126c9a0212c556952350fdfd84a4e64cab68cf4f920af531432fe3e7460b56e"
   },
   "classes": [
     {
@@ -314,6 +314,13 @@
         }
       ],
       "returns": "dict[str, Any]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "is_onnxruntime_available",
+      "parameters": [],
+      "returns": "bool"
     },
     {
       "async": false,
