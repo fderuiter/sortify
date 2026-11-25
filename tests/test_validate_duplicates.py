@@ -124,6 +124,65 @@ def my_func(x, y):
     assert compute_normalized_ast_hash(node1) == compute_normalized_ast_hash(node2)
 
 
+def test_compute_normalized_ast_hash_anonymizes_renamed_functions():
+    code1 = """
+def _normalize_trusted_model_hosts(hosts: list[str] | None = None) -> set[str]:
+    '''Normalize downloader hosts.'''
+    cleaned = {h.strip().lower() for h in (hosts or []) if h}
+    return cleaned
+"""
+    code2 = """
+def _normalize_trusted_hosts(raw_items=None):
+    '''Normalize advisory hosts.'''
+    out = {item.strip().lower() for item in (raw_items or []) if item}
+    return out
+"""
+    node1 = ast.parse(code1).body[0]
+    node2 = ast.parse(code2).body[0]
+    assert isinstance(node1, ast.FunctionDef)
+    assert isinstance(node2, ast.FunctionDef)
+
+    assert compute_normalized_ast_hash(node1) == compute_normalized_ast_hash(node2)
+    assert node1.name == "_normalize_trusted_model_hosts"
+    assert node2.name == "_normalize_trusted_hosts"
+
+
+def test_validate_codebase_duplication_catches_renamed_clones_and_skips_docstring_wrappers():
+    from scripts.validate_architecture import validate_codebase_duplication
+
+    mod_a = ast.parse(
+        "def _normalize_model_hosts(items=None):\n"
+        '    """Normalize model hosts."""\n'
+        "    cleaned = [x.strip().lower() for x in (items or [])]\n"
+        "    return frozenset(cleaned)\n\n"
+        "def _get_model_hosts(self):\n"
+        '    """Thin getter with docstring."""\n'
+        "    return _resolve_hosts(self._settings)\n"
+    )
+    mod_b = ast.parse(
+        "def _normalize_advisory_hosts(values=None):\n"
+        '    """Normalize advisory hosts."""\n'
+        "    normalized = [v.strip().lower() for v in (values or [])]\n"
+        "    return frozenset(normalized)\n\n"
+        "def _get_advisory_hosts(self):\n"
+        '    """Another thin getter with docstring."""\n'
+        "    return _resolve_hosts(self._settings)\n"
+    )
+
+    errors: list[str] = []
+    validate_codebase_duplication(
+        errors,
+        parsed_files=[
+            ("app/core/mod_a.py", mod_a),
+            ("app/core/mod_b.py", mod_b),
+        ],
+    )
+    assert len(errors) == 1
+    assert "_normalize_advisory_hosts" in errors[0]
+    assert "_normalize_model_hosts" in errors[0]
+    assert "_get_advisory_hosts" not in errors[0]
+
+
 def test_utility_anti_duplication_visitor_canonical_registry():
     errors = []
     hashes = {}
