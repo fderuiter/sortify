@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "6f04baa28c9840d2eec139911e2fb53ea2dd3cad09be0132c669d633102ef4e4"
+    "checksum": "5f6fb4ecb6fdd82723f5e6cbaff33d6a9b4e5dd046d294ff9ec4da4e62afa0a4"
   },
   "classes": [
     {
@@ -110,7 +110,7 @@
               "name": "content"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "header_class"
             }
@@ -133,7 +133,7 @@
               "name": "content"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "main_class"
             }
@@ -198,17 +198,17 @@
           "name": "lang"
         },
         {
-          "annotation": "Optional[str]",
+          "annotation": "str | None",
           "default": "None",
           "name": "container_class"
         },
         {
-          "annotation": "Optional[str]",
+          "annotation": "str | None",
           "default": "None",
           "name": "header_class"
         },
         {
-          "annotation": "Optional[str]",
+          "annotation": "str | None",
           "default": "None",
           "name": "main_class"
         }
@@ -277,7 +277,7 @@
           "name": "input_class"
         },
         {
-          "annotation": "Optional[dict[str, str]]",
+          "annotation": "dict[str, str] | None",
           "default": "None",
           "name": "extra_attrs"
         },
@@ -287,7 +287,7 @@
           "name": "sr_only_label"
         },
         {
-          "annotation": "Optional[str]",
+          "annotation": "str | None",
           "default": "None",
           "name": "aria_label"
         }
@@ -310,7 +310,7 @@
           "name": "label_text"
         },
         {
-          "annotation": "Optional[list[tuple[str, str]]]",
+          "annotation": "list[tuple[str, str]] | None",
           "default": "None",
           "name": "options"
         },
@@ -320,12 +320,12 @@
           "name": "select_class"
         },
         {
-          "annotation": "Optional[str]",
+          "annotation": "str | None",
           "default": "None",
           "name": "options_html"
         },
         {
-          "annotation": "Optional[dict[str, str]]",
+          "annotation": "dict[str, str] | None",
           "default": "None",
           "name": "extra_attrs"
         },
@@ -335,7 +335,7 @@
           "name": "sr_only_label"
         },
         {
-          "annotation": "Optional[str]",
+          "annotation": "str | None",
           "default": "None",
           "name": "aria_label"
         }
@@ -358,12 +358,12 @@
           "name": "rows_html"
         },
         {
-          "annotation": "Optional[str]",
+          "annotation": "str | None",
           "default": "None",
           "name": "table_id"
         },
         {
-          "annotation": "Optional[str]",
+          "annotation": "str | None",
           "default": "None",
           "name": "table_class"
         }
@@ -399,7 +399,7 @@
           "name": "heading_level"
         },
         {
-          "annotation": "Optional[str]",
+          "annotation": "str | None",
           "default": "None",
           "name": "title"
         },

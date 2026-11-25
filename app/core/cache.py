@@ -11,7 +11,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Generic,
-    Optional,
     TypeVar,
     cast,
 )
@@ -228,7 +227,7 @@ class SparseMatrixLRUCache:
         self._access_order: list[str] = []
         self._lock = threading.Lock()
 
-    def get(self, base_dir: str) -> Optional[list[tuple[str, str, float]]]:
+    def get(self, base_dir: str) -> list[tuple[str, str, float]] | None:
         """Serve precomputed matrix rows from in-memory cache in under 5ms."""
         with self._lock:
             if base_dir in self._cache:
@@ -265,12 +264,12 @@ class SparseMatrixLRUCache:
                 self._access_order.remove(base_dir)
             self._access_order.append(base_dir)
 
-    def invalidate(self, base_dir: Optional[str] = None):
+    def invalidate(self, base_dir: str | None = None):
         """Invalidate cache entries for a given base_dir or clear entire cache if base_dir is None."""
         with self._lock:
             self._invalidate_unlocked(base_dir)
 
-    def _invalidate_unlocked(self, base_dir: Optional[str] = None):
+    def _invalidate_unlocked(self, base_dir: str | None = None):
         if base_dir is None:
             self._cache.clear()
             self._doc_counts.clear()
@@ -281,7 +280,7 @@ class SparseMatrixLRUCache:
             if base_dir in self._access_order:
                 self._access_order.remove(base_dir)
 
-    def doc_count(self, base_dir: Optional[str] = None) -> int:
+    def doc_count(self, base_dir: str | None = None) -> int:
         """Return total cached document count, or count for specific base_dir."""
         with self._lock:
             if base_dir is not None:

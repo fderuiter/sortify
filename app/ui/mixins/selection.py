@@ -2,7 +2,7 @@
 
 import os
 import re
-from typing import Any, Optional
+from typing import Any
 
 from textual.widgets.tree import TreeNode
 
@@ -17,7 +17,7 @@ from app.ui.protocols import TUIHostProtocol
 
 def _resolve_plan_folder_dict(
     plan: dict[str, Any], folder_path: str, *, create: bool = False
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Resolve a flat or slash-delimited nested folder dictionary inside ``plan``."""
     if not folder_path:
         return plan
@@ -53,12 +53,12 @@ def _resolve_plan_folder_dict(
 
 
 def _resolve_source_disk_path(
-    base_dir: Optional[str],
+    base_dir: str | None,
     key_val: str,
     folder_val: str,
     info_dict: dict[str, Any],
-    explicit_fp: Optional[str] = None,
-) -> Optional[str]:
+    explicit_fp: str | None = None,
+) -> str | None:
     """Locate the physical source file on disk before or after moves execute."""
     src_root = str(info_dict.get("source_root") or base_dir or "")
     candidates: list[str] = []
@@ -118,7 +118,7 @@ def _find_file_in_plan(
     file_key: str,
     target_info: Any = None,
     current_folder: str = "",
-) -> tuple[str, Optional[dict[str, Any]], Any]:
+) -> tuple[str, dict[str, Any] | None, Any]:
     """Recursively locate ``file_key`` (or ``target_info``) inside a nested ``plan``."""
     for k, v in plan.items():
         if isinstance(v, dict) and v.get("__type__") == "file":
@@ -171,9 +171,9 @@ def _make_manual_edit_key(db_base_dir: str, doc_relpath: str) -> str:
 
 def _resolve_source_identity(
     host: Any,
-    file_key: Optional[str] = None,
-    filepath: Optional[str] = None,
-    info: Optional[dict[str, Any]] = None,
+    file_key: str | None = None,
+    filepath: str | None = None,
+    info: dict[str, Any] | None = None,
 ) -> tuple[str, str, str]:
     """Resolve ``(db_base_dir, doc_relpath, abs_filepath)`` for a plan file node."""
     from app.core.path_utils import safe_relpath
@@ -261,7 +261,7 @@ def _record_manual_edit(
             entry[k] = v
 
 
-def _derive_learned_pattern(raw_name: str) -> Optional[str]:
+def _derive_learned_pattern(raw_name: str) -> str | None:
     """Derive a normalized lowercase keyword pattern from a reassigned filename."""
     if not raw_name:
         return None
@@ -475,7 +475,7 @@ class SelectionActionsMixin:
                 seen_folders.add(folder.lower())
                 existing_folders.append(folder)
 
-        def on_reassigned(target_folder: Optional[str]) -> None:
+        def on_reassigned(target_folder: str | None) -> None:
             if not target_folder:
                 return
 
@@ -668,7 +668,7 @@ class SelectionActionsMixin:
             self.announce(f"{status_str} {len(all_files)} file item(s).")
 
     def _get_executable_plan(
-        self: TUIHostProtocol, plan_dict: Optional[dict[str, Any]] = None
+        self: TUIHostProtocol, plan_dict: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         """Return filtered plan dictionary containing only checked, non-excluded file nodes."""
         if plan_dict is None:
@@ -764,8 +764,8 @@ class SelectionActionsMixin:
                 key_val: str,
                 folder_val: str,
                 info_dict: dict[str, Any],
-                explicit_fp: Optional[str] = None,
-            ) -> tuple[Optional[str], str]:
+                explicit_fp: str | None = None,
+            ) -> tuple[str | None, str]:
                 fp = _resolve_source_disk_path(
                     getattr(self, "base_dir", None),
                     key_val,
@@ -901,7 +901,7 @@ class SelectionActionsMixin:
                 base_dir=self.base_dir,
             )
 
-            def on_folder_renamed(new_name: Optional[str | Any]) -> None:
+            def on_folder_renamed(new_name: str | Any | None) -> None:
                 if not new_name:
                     return
 
@@ -937,7 +937,7 @@ class SelectionActionsMixin:
                 if not eff_folder_path or eff_folder_path == old_folder_path:
                     return
 
-                old_content: Optional[dict[str, Any]] = None
+                old_content: dict[str, Any] | None = None
                 if old_folder_path in self.plan and isinstance(
                     self.plan[old_folder_path], dict
                 ):
@@ -1043,7 +1043,7 @@ class SelectionActionsMixin:
                 files=checked_entries,
             )
 
-            def on_batch_renamed(result: Optional[str | RenameResult]) -> None:
+            def on_batch_renamed(result: str | RenameResult | None) -> None:
                 if not result:
                     return
 
@@ -1231,7 +1231,7 @@ class SelectionActionsMixin:
                 source_path=filepath,
             )
 
-            def on_renamed(new_formatted: Optional[str | Any]) -> None:
+            def on_renamed(new_formatted: str | Any | None) -> None:
                 if not new_formatted:
                     return
 
@@ -1343,7 +1343,7 @@ class SelectionActionsMixin:
         if self._is_text_control_focused(allow_tree_search=True):
             return
 
-        def on_created(folder_name: Optional[str]) -> None:
+        def on_created(folder_name: str | None) -> None:
             if not folder_name:
                 return
             existing = _resolve_plan_folder_dict(self.plan, folder_name, create=False)

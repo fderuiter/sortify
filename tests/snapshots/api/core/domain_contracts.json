@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "34c366fbe690c6352ce98aca87d9bce4006c11261ede3c15e74149e30221f576"
+    "checksum": "10641406e09e7c507ee8ea60525c5e7344d1f447ccb52404e3db2e5bad59e474"
   },
   "classes": [
     {
@@ -266,7 +266,7 @@
               "name": "v"
             }
           ],
-          "returns": "Optional[float]"
+          "returns": "float | None"
         },
         {
           "async": false,
@@ -343,7 +343,7 @@
       "name": "validate_quarantine_transition",
       "parameters": [
         {
-          "annotation": "Optional[str]",
+          "annotation": "str | None",
           "default": null,
           "name": "current_status"
         },
@@ -353,7 +353,7 @@
           "name": "target_status"
         },
         {
-          "annotation": "Optional[str]",
+          "annotation": "str | None",
           "default": "None",
           "name": "job_id"
         }

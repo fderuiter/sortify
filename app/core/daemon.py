@@ -11,8 +11,8 @@ import sys
 import threading
 import time
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Optional
+from enum import StrEnum
+from typing import Any
 
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
@@ -71,8 +71,8 @@ def lower_process_priority() -> None:
 
 def _run_sorting_process_entry(
     base_dir: str,
-    config_filepath: Optional[str] = None,
-    cancel_event: Optional[Any] = None,
+    config_filepath: str | None = None,
+    cancel_event: Any | None = None,
 ):
     """Entry point for the process-isolated background sorting worker subprocess."""
     lower_process_priority()
@@ -98,8 +98,8 @@ class FileChangeEvent:
     event_type: str
     file_path: str
     timestamp: float = field(default_factory=time.time)
-    dest_path: Optional[str] = None
-    priority_key: Optional[tuple[int, float]] = None
+    dest_path: str | None = None
+    priority_key: tuple[int, float] | None = None
     archival_priority: int = 5
     archival_priority_score: float = 0.0
 
@@ -171,7 +171,7 @@ class DaemonFolderHandler(FileSystemEventHandler):
         self.daemon.enqueue_event(change_event)
 
 
-class DaemonState(str, Enum):
+class DaemonState(StrEnum):
     """Operational lifecycle states of ContinuousWatchdogDaemon."""
 
     STOPPED = "stopped"
@@ -218,7 +218,7 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         self._lock = threading.RLock()
         self._debounce_timer = None
         self._cancel_event = threading.Event()
-        self._scoped_run_token: Optional[threading.Event] = None
+        self._scoped_run_token: threading.Event | None = None
         self._move_ref_count = 0
         self._pending_dirty = False
         self._active_move_paths = set()
@@ -233,20 +233,20 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         )
 
         # Pipeline state
-        self._event_loop: Optional[asyncio.AbstractEventLoop] = None
-        self._event_queue: Optional[asyncio.PriorityQueue] = None
+        self._event_loop: asyncio.AbstractEventLoop | None = None
+        self._event_queue: asyncio.PriorityQueue | None = None
         self._recent_events: dict[str, float] = {}
         self._active_path_locks: dict[str, asyncio.Lock] = {}
         self._active_triage_paths: set[str] = set()
         self._worker_tasks: list[asyncio.Task] = []
-        self._reconciliation_task: Optional[asyncio.Task] = None
-        self._app_session: Optional[AppSession] = None
+        self._reconciliation_task: asyncio.Task | None = None
+        self._app_session: AppSession | None = None
         self._queue_sequence_counter: int = 0
 
         # Telemetry & IPC Server State
         self._events_enqueued_count: int = 0
         self._events_processed_count: int = 0
-        self._start_time: Optional[float] = None
+        self._start_time: float | None = None
         self._ipc_server: Any = None
 
         # We run the actual sorting loop on a dedicated background execution thread
@@ -255,11 +255,11 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         # Triage's blocking work (staging, planning, moving, training) runs here,
         # one job at a time, so the event loop stays free for IPC and queueing
         # and the shared analyzer is never used from two threads at once (#717).
-        self._sort_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
+        self._sort_executor: concurrent.futures.ThreadPoolExecutor | None = None
 
         # Process-isolated worker management
-        self._sorting_process: Optional[multiprocessing.process.BaseProcess] = None
-        self._proc_cancel_event: Optional[Any] = None
+        self._sorting_process: multiprocessing.process.BaseProcess | None = None
+        self._proc_cancel_event: Any | None = None
         self._rerun_pending: bool = False
 
     @property
@@ -342,12 +342,12 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
                     self._transition_to(DaemonState.RUNNING)
 
     @property
-    def scoped_run_token(self) -> Optional[threading.Event]:
+    def scoped_run_token(self) -> threading.Event | None:
         """Get the current scoped recalculation cancellation token, if active."""
         with self._lock:
             return self._scoped_run_token
 
-    def _is_cancelled(self, token: Optional[threading.Event] = None) -> bool:
+    def _is_cancelled(self, token: threading.Event | None = None) -> bool:
         """Cooperatively check if lifecycle token or scoped run token is cancelled."""
         if not self.is_running or self._cancel_event.is_set():
             return True
@@ -843,7 +843,7 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         ready_event.wait(timeout=5.0)
 
     async def _triage_worker(
-        self, worker_id: int, cancel_token: Optional[threading.Event] = None
+        self, worker_id: int, cancel_token: threading.Event | None = None
     ):
         """Async worker task that continuously consumes FileChangeEvents and triages paths."""
         logger.info(f"Async triage worker {worker_id} started.")
@@ -885,7 +885,7 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
                     self._event_queue.task_done()
 
     async def _process_single_event(
-        self, event: FileChangeEvent, cancel_token: Optional[threading.Event] = None
+        self, event: FileChangeEvent, cancel_token: threading.Event | None = None
     ):
         """Triage a single file event without whole-directory scans."""
         file_path = event.file_path
@@ -1013,7 +1013,7 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         return registered_count
 
     async def _triage_file_path(
-        self, abs_path: str, cancel_token: Optional[threading.Event] = None
+        self, abs_path: str, cancel_token: threading.Event | None = None
     ):
         """Targeted triage on a single item path using QuarantineInterceptorService staging and compliance policy evaluation."""
         if not os.path.exists(abs_path):
@@ -1210,9 +1210,7 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
                 f"Targeted Slow-Path AI triage completed for {rel_path}: {slow_outcome.summary}"
             )
 
-    async def _reconciliation_worker(
-        self, cancel_token: Optional[threading.Event] = None
-    ):
+    async def _reconciliation_worker(self, cancel_token: threading.Event | None = None):
         """Periodic background reconciliation task executing low-priority directory audits."""
         logger.info("Background reconciliation task started.")
         token = cancel_token or self._cancel_event
@@ -1239,7 +1237,7 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
                     )
 
     async def _run_reconciliation_audit(
-        self, cancel_token: Optional[threading.Event] = None
+        self, cancel_token: threading.Event | None = None
     ):
         """Low-priority directory audit to enqueue any untracked files missed during OS buffer overflows."""
         if not self.base_dir or not os.path.exists(self.base_dir):
@@ -1292,7 +1290,7 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         validated_paths: list[str],
         *,
         dry_run: bool = False,
-        dest_dir: Optional[str] = None,
+        dest_dir: str | None = None,
         errors: list[str] | None = None,
     ) -> dict[str, Any]:
         """Run SortPipeline over pre-validated drop target paths."""
@@ -1344,7 +1342,7 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         self,
         paths: list[str],
         dry_run: bool = False,
-        dest_dir: Optional[str] = None,
+        dest_dir: str | None = None,
     ) -> dict[str, Any]:
         """Process dropped file or directory path payloads through active triage pipeline."""
         validated_paths, issues = validate_drop_paths(

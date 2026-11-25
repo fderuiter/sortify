@@ -9,8 +9,8 @@ import logging
 import os
 import threading
 from collections.abc import Callable
-from enum import Enum
-from typing import Any, Optional
+from enum import StrEnum
+from typing import Any
 
 import pypdf.errors
 from pydantic import BaseModel, ConfigDict
@@ -23,7 +23,7 @@ from app.core.text_utils import sanitize_text
 logger = logging.getLogger(__name__)
 
 
-class ExtractionStatus(str, Enum):
+class ExtractionStatus(StrEnum):
     """Enumeration of document extraction statuses."""
 
     SUCCESS = "SUCCESS"
@@ -43,10 +43,10 @@ class ExtractionResult(BaseModel):
 
     text: str = ""
     status: ExtractionStatus = ExtractionStatus.SUCCESS
-    error_message: Optional[str] = None
+    error_message: str | None = None
     truncated: bool = False
-    truncation_reason: Optional[str] = None
-    truncated_bounds: Optional[dict[str, Any]] = None
+    truncation_reason: str | None = None
+    truncated_bounds: dict[str, Any] | None = None
 
     model_config = ConfigDict(extra="allow")
 

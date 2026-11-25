@@ -552,7 +552,7 @@ def test_proxy_encryption_and_decryption_roundtrip(tmp_path):
     app_settings._save()
 
     # Read from disk to verify it's encrypted and not human readable (doesn't contain password123)
-    with open(mock_filepath, "r", encoding="utf-8") as f:
+    with open(mock_filepath, encoding="utf-8") as f:
         disk_data = json.load(f)
 
     assert "password123" not in disk_data["PROXY"]
@@ -589,7 +589,7 @@ def test_proxy_automatic_migration_from_plaintext(tmp_path):
         app_settings._save_timer.cancel()
 
     # Verify that the file on disk is now encrypted
-    with open(mock_filepath, "r", encoding="utf-8") as f:
+    with open(mock_filepath, encoding="utf-8") as f:
         disk_data = json.load(f)
 
     assert proxy_string not in disk_data["PROXY"]
@@ -663,7 +663,7 @@ def test_proxy_decryption_failure_placeholder(tmp_path):
     # Now trigger self._save() and verify that the invalid encrypted ciphertext is NOT lost on disk
     app_settings._save()
 
-    with open(mock_filepath, "r", encoding="utf-8") as f:
+    with open(mock_filepath, encoding="utf-8") as f:
         disk_data = json.load(f)
 
     assert disk_data["PROXY"] == "enc:invalid_ciphertext_that_cannot_be_decrypted"
@@ -675,7 +675,7 @@ def test_proxy_decryption_failure_placeholder(tmp_path):
     # Trigger save again, and check that the new proxy is encrypted
     app_settings._save()
 
-    with open(mock_filepath, "r", encoding="utf-8") as f:
+    with open(mock_filepath, encoding="utf-8") as f:
         disk_data = json.load(f)
 
     assert disk_data["PROXY"].startswith("enc:")

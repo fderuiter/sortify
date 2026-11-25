@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "e39d401d28a038dba65f1e9ed667f05ba942c745cddadff433ca0a26cca7bdfb"
+    "checksum": "ff5ca814233a2007904c991582f4be06e227db56345d0be897ce6cd2ea60d558"
   },
   "classes": [
     {
@@ -25,7 +25,7 @@
               "name": "pattern"
             },
             {
-              "annotation": "Optional[dict[str, Any]]",
+              "annotation": "dict[str, Any] | None",
               "default": "None",
               "name": "metadata"
             },
@@ -40,7 +40,7 @@
               "name": "fallback_original"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "file_path"
             }
@@ -65,7 +65,7 @@
               "name": "target_path"
             },
             {
-              "annotation": "Optional[dict[str, Any]]",
+              "annotation": "dict[str, Any] | None",
               "default": "None",
               "name": "metadata"
             },
@@ -80,7 +80,7 @@
               "name": "fallback_original"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "file_path"
             }
@@ -122,7 +122,7 @@
           "name": "pattern"
         },
         {
-          "annotation": "Optional[dict[str, Any]]",
+          "annotation": "dict[str, Any] | None",
           "default": "None",
           "name": "metadata"
         },
@@ -137,7 +137,7 @@
           "name": "fallback_original"
         },
         {
-          "annotation": "Optional[str]",
+          "annotation": "str | None",
           "default": "None",
           "name": "file_path"
         }
@@ -160,7 +160,7 @@
           "name": "base_dir"
         }
       ],
-      "returns": "Optional[str]"
+      "returns": "str | None"
     }
   ]
 }

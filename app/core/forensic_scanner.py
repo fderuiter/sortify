@@ -13,7 +13,6 @@ import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from app.core.exceptions import ArchiveSafetyError
 from app.core.extractor import extract_file_text
@@ -75,11 +74,11 @@ class DiscoveredDocument:
     file_name: str
     file_size_bytes: int
     sha256_hash: str
-    archive_origin: Optional[str] = None
+    archive_origin: str | None = None
     extracted_text: str = ""
     is_duplicate: bool = False
-    duplicate_of: Optional[str] = None
-    staging_file_path: Optional[str] = None
+    duplicate_of: str | None = None
+    staging_file_path: str | None = None
 
 
 class ForensicScanner:
@@ -87,7 +86,7 @@ class ForensicScanner:
 
     def __init__(
         self,
-        temp_staging_dir: Optional[str] = None,
+        temp_staging_dir: str | None = None,
         max_files: int = 1000,
         max_total_size_bytes: int = 500 * 1024 * 1024,
         max_file_size_bytes: int = 100 * 1024 * 1024,
@@ -116,10 +115,10 @@ class ForensicScanner:
         self,
         archive_path: str,
         destination_dir: str,
-        max_files: Optional[int] = None,
-        max_total_size_bytes: Optional[int] = None,
-        max_file_size_bytes: Optional[int] = None,
-        max_ratio: Optional[float] = None,
+        max_files: int | None = None,
+        max_total_size_bytes: int | None = None,
+        max_file_size_bytes: int | None = None,
+        max_ratio: float | None = None,
     ) -> list[str]:
         """Safely unpack compressed archives (.zip, .tar, .tgz) into staging destination with streaming limits."""
         eff_max_files = max_files if max_files is not None else self.max_files
@@ -343,8 +342,8 @@ class ForensicScanner:
     def scan_drive(
         self,
         source_root: str,
-        progress_callback: Optional[Callable[..., None]] = None,
-        cancel_check: Optional[Callable[[], bool]] = None,
+        progress_callback: Callable[..., None] | None = None,
+        cancel_check: Callable[[], bool] | None = None,
     ) -> list[DiscoveredDocument]:
         """Perform comprehensive forensic scan of a source drive or directory."""
         self.discovered_documents.clear()
@@ -457,8 +456,8 @@ class ForensicScanner:
         source_path: str,
         actual_file_path: str,
         rel_path: str,
-        archive_origin: Optional[str] = None,
-        pre_extracted_text: Optional[str] = None,
+        archive_origin: str | None = None,
+        pre_extracted_text: str | None = None,
     ) -> DiscoveredDocument:
         """Process a single file, calculate hash, extract text, and register document."""
         try:

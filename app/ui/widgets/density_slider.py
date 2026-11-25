@@ -2,7 +2,6 @@
 
 import time
 from collections.abc import Callable
-from typing import Optional
 
 from textual import events
 from textual.message import Message
@@ -50,7 +49,7 @@ class DensitySlider(A11yMixin, Widget):
         min_value: int = 0,
         max_value: int = 500,
         step: int = 5,
-        announce_formatter: Optional[Callable[[int], str]] = None,
+        announce_formatter: Callable[[int], str] | None = None,
         *,
         name: str | None = None,
         id: str | None = None,
@@ -67,7 +66,7 @@ class DensitySlider(A11yMixin, Widget):
         # set_reactive avoids a pre-mount watcher firing with the class default.
         self.set_reactive(DensitySlider.value, max(min_value, min(max_value, value)))
 
-    def _announce_value(self, value: int, force: bool = False) -> Optional[str]:
+    def _announce_value(self, value: int, force: bool = False) -> str | None:
         """Rate-limited screen reader announcement helper."""
         if self.announce_formatter is not None:
             try:

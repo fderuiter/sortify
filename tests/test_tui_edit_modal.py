@@ -1,7 +1,6 @@
 """Unit and integration tests for edit modal collision warning helper and delegation."""
 
 import asyncio
-from typing import Optional
 from unittest.mock import MagicMock
 
 import pytest
@@ -23,7 +22,7 @@ pytestmark = pytest.mark.xdist_group(name="tui")
 class MockLabel:
     """Mock Label widget mimicking Textual Label update and CSS class manipulation."""
 
-    def __init__(self, initial_classes: Optional[list[str]] = None) -> None:
+    def __init__(self, initial_classes: list[str] | None = None) -> None:
         self.text: str = ""
         self.classes: set[str] = set(initial_classes or [])
 
@@ -43,7 +42,7 @@ class MockLabel:
 class MockModal:
     """Mock modal screen that provides query_one behavior."""
 
-    def __init__(self, label: Optional[MockLabel] = None) -> None:
+    def __init__(self, label: MockLabel | None = None) -> None:
         self.label = label
 
     def query_one(self, selector: str, expect_type=None):

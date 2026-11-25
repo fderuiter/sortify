@@ -10,7 +10,7 @@ import logging
 import os
 import re
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from app.core.path_utils import sanitize_name, validate_target_path
 
@@ -47,7 +47,7 @@ DEFAULT_TOKEN_FALLBACKS: dict[str, Any] = {
 def resolve_disk_file_date(
     file_path: str | os.PathLike[str] | None,
     base_dir: str | os.PathLike[str] | None = None,
-) -> Optional[str]:
+) -> str | None:
     """Read a file's modification timestamp from disk and format as YYYY-MM-DD.
 
     Returns None when no path is given or the file cannot be stated on disk.
@@ -113,10 +113,10 @@ class PatternTokenFormatter:
     @classmethod
     def _prepare_metadata(
         cls,
-        metadata: Optional[dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
         seq: int = 1,
         fallback_original: str = "",
-        file_path: Optional[str] = None,
+        file_path: str | None = None,
     ) -> tuple[dict[str, Any], str, str]:
         """Normalize metadata dictionary and resolve stem, extension, date, year/month/day, and sequence."""
         meta = dict(metadata or {})
@@ -222,10 +222,10 @@ class PatternTokenFormatter:
     def format_pattern(
         cls,
         pattern: str,
-        metadata: Optional[dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
         seq: int = 1,
         fallback_original: str = "",
-        file_path: Optional[str] = None,
+        file_path: str | None = None,
     ) -> str:
         """Format a pattern template string with provided metadata values.
 
@@ -319,10 +319,10 @@ class PatternTokenFormatter:
     def format_target_path(
         cls,
         target_path: str,
-        metadata: Optional[dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
         seq: int = 1,
         fallback_original: str = "",
-        file_path: Optional[str] = None,
+        file_path: str | None = None,
     ) -> str:
         """Expand metadata placeholders inside a relative destination folder path and validate safety.
 
@@ -387,10 +387,10 @@ class PatternTokenFormatter:
 
 def format_pattern(
     pattern: str,
-    metadata: Optional[dict[str, Any]] = None,
+    metadata: dict[str, Any] | None = None,
     seq: int = 1,
     fallback_original: str = "",
-    file_path: Optional[str] = None,
+    file_path: str | None = None,
 ) -> str:
     """Format pattern string using PatternTokenFormatter."""
     return PatternTokenFormatter.format_pattern(

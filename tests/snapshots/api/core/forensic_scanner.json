@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "5be8eca4df04c5b0ccba4cccb03960b90cc6a1a38c74443dc1a5eab06d090e18"
+    "checksum": "11d6e90282a77f3c4df6e0d4dd28095fcbdf184f7c96b8e52da5506f944375d5"
   },
   "classes": [
     {
@@ -25,7 +25,7 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "temp_staging_dir"
             },
@@ -119,12 +119,12 @@
               "name": "source_root"
             },
             {
-              "annotation": "Optional[Callable[..., None]]",
+              "annotation": "Callable[..., None] | None",
               "default": "None",
               "name": "progress_callback"
             },
             {
-              "annotation": "Optional[Callable[[], bool]]",
+              "annotation": "Callable[[], bool] | None",
               "default": "None",
               "name": "cancel_check"
             }
@@ -152,22 +152,22 @@
               "name": "destination_dir"
             },
             {
-              "annotation": "Optional[int]",
+              "annotation": "int | None",
               "default": "None",
               "name": "max_files"
             },
             {
-              "annotation": "Optional[int]",
+              "annotation": "int | None",
               "default": "None",
               "name": "max_total_size_bytes"
             },
             {
-              "annotation": "Optional[int]",
+              "annotation": "int | None",
               "default": "None",
               "name": "max_file_size_bytes"
             },
             {
-              "annotation": "Optional[float]",
+              "annotation": "float | None",
               "default": "None",
               "name": "max_ratio"
             }

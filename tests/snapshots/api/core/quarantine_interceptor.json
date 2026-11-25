@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "189966a96a97b5b0871ca366a1e54181eb416fd961fdb4a5f6dfdf129a237d61"
+    "checksum": "d9efe7e2079a69a917e3526c04f03548aa4b48d2fadf4503cf3b719b93e1262c"
   },
   "classes": [
     {
@@ -23,7 +23,7 @@
               "name": "db"
             },
             {
-              "annotation": "Optional[list[dict[str, Any]]]",
+              "annotation": "list[dict[str, Any]] | None",
               "default": "None",
               "name": "policies"
             },
@@ -33,17 +33,17 @@
               "name": "worker_timeout"
             },
             {
-              "annotation": "Optional[Any]",
+              "annotation": "Any | None",
               "default": "None",
               "name": "jev_classifier"
             },
             {
-              "annotation": "Optional[list[str]]",
+              "annotation": "list[str] | None",
               "default": "None",
               "name": "auto_quarantine_ratings"
             },
             {
-              "annotation": "Optional[Any]",
+              "annotation": "Any | None",
               "default": "None",
               "name": "runtime_settings"
             }
@@ -84,7 +84,7 @@
               "name": "job_ids"
             },
             {
-              "annotation": "Optional[float]",
+              "annotation": "float | None",
               "default": "None",
               "name": "timeout_override"
             }
@@ -107,7 +107,7 @@
               "name": "job_id"
             },
             {
-              "annotation": "Optional[float]",
+              "annotation": "float | None",
               "default": "None",
               "name": "timeout_override"
             }
@@ -125,7 +125,7 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[float]",
+              "annotation": "float | None",
               "default": "None",
               "name": "timeout_seconds"
             }
@@ -148,7 +148,7 @@
               "name": "job_ids"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "dest_dir"
             },
@@ -186,7 +186,7 @@
               "name": "base_dir"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": null,
               "name": "target_subfolder"
             },
@@ -219,12 +219,12 @@
               "name": "base_dir"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "original_relative_path"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "policy_action"
             }

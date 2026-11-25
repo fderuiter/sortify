@@ -2,7 +2,7 @@
 
 import logging
 import os
-from typing import Any, Optional
+from typing import Any
 
 from textual import on
 from textual.app import ComposeResult
@@ -184,7 +184,7 @@ class ConsentRevocationModal(_ArtifactConfirmModal):
     CONFIRM_BUTTON_ID = "btn-confirm-revoke"
 
 
-class SettingsModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
+class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
     """Modal dialog for modifying application settings."""
 
     AUTO_FOCUS = None
@@ -664,7 +664,7 @@ class SettingsModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         """Open active rule manager modal."""
         from app.ui.modals.rules import ActiveRuleManagerModal
 
-        def on_rules_closed(mutated: Optional[bool] = None) -> None:
+        def on_rules_closed(mutated: bool | None = None) -> None:
             if mutated:
                 update_fn = getattr(self.app, "update_status", None)
                 if callable(update_fn):
@@ -792,7 +792,7 @@ class SettingsModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
             model_dir = str(get_app_dir() / "model")
             dm = DownloadManager.get_instance()
 
-            def _on_purge_done(success: bool, err: Optional[Exception]):
+            def _on_purge_done(success: bool, err: Exception | None):
                 if success:
                     if hasattr(self, "announce"):
                         self.announce(

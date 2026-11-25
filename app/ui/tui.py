@@ -6,7 +6,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from textual import events, on, work
 from textual.app import App, ComposeResult
@@ -359,14 +359,14 @@ class AutoSorterTUI(
     def __init__(
         self,
         settings,
-        base_dir: Optional[str] = None,
-        source_dirs: Optional[list[str]] = None,
+        base_dir: str | None = None,
+        source_dirs: list[str] | None = None,
         skip_wizard: bool = False,
         non_interactive: bool = False,
-        db: Optional[Any] = None,
+        db: Any | None = None,
         open_dropzone: bool = False,
-        initial_drop_paths: Optional[list[str]] = None,
-        initial_dest_dir: Optional[str] = None,
+        initial_drop_paths: list[str] | None = None,
+        initial_dest_dir: str | None = None,
     ):
         super().__init__()
         self.settings = settings
@@ -393,14 +393,14 @@ class AutoSorterTUI(
         self.initial_drop_paths: list[str] = (
             list(initial_drop_paths) if initial_drop_paths else []
         )
-        self.initial_dest_dir: Optional[str] = initial_dest_dir
-        self._last_drop_session_id: Optional[str] = None
+        self.initial_dest_dir: str | None = initial_dest_dir
+        self._last_drop_session_id: str | None = None
         self.plan: dict[str, Any] = {}
         self.locked_files: dict[str, str] = {}
         self._ratings_cache: dict[str, str] = {}
-        self.app_session: Optional[Any] = None
-        self.pipeline: Optional[Any] = None
-        self.active_tree_node: Optional[TreeNode[Any]] = None
+        self.app_session: Any | None = None
+        self.pipeline: Any | None = None
+        self.active_tree_node: TreeNode[Any] | None = None
         self.visual_select_active: bool = False
         self.visual_selected_nodes: list[TreeNode[Any]] = []
         self._wizard_dismissed_this_session: bool = False
@@ -535,7 +535,7 @@ class AutoSorterTUI(
         self,
         message: str,
         priority: str = "polite",
-        help_url: Optional[str] = None,
+        help_url: str | None = None,
     ) -> str:
         """Emit screen reader announcement and log to live execution log feed."""
         res = super().announce(message, priority=priority, help_url=help_url)
@@ -552,9 +552,9 @@ class AutoSorterTUI(
     def _handle_progress_update(
         self,
         update_or_prog: Any = 0.0,
-        stage: Optional[str] = None,
-        unit_count: Optional[int] = None,
-        unit_type: Optional[str] = None,
+        stage: str | None = None,
+        unit_count: int | None = None,
+        unit_type: str | None = None,
         **kwargs: Any,
     ) -> None:
         """Handle progress updates dispatched from worker threads to main UI thread."""
@@ -612,7 +612,7 @@ class AutoSorterTUI(
         except Exception:
             pass
 
-    def _update_layout(self, width: int, height: Optional[int] = None) -> None:
+    def _update_layout(self, width: int, height: int | None = None) -> None:
         """Update container CSS classes based on viewport width and height breakpoints."""
         effective_height = self._resolve_viewport_height(height)
         is_compact = width <= 100 or effective_height <= 30
@@ -758,7 +758,7 @@ class AutoSorterTUI(
             if len(abandoned) == 1:
                 session_info = abandoned[0]
 
-                def on_recovery_choice(choice: Optional[str]) -> None:
+                def on_recovery_choice(choice: str | None) -> None:
                     if not choice:
                         return
                     if choice == "resume":
@@ -822,7 +822,7 @@ class AutoSorterTUI(
         plan_path = session_info.get("plan_path")
         if plan_path and os.path.exists(plan_path):
             try:
-                with open(plan_path, "r", encoding="utf-8") as f:
+                with open(plan_path, encoding="utf-8") as f:
                     self.plan = json.load(f)
             except Exception:
                 self.plan = self.app_session.generate_sorting_plan()
@@ -1020,7 +1020,7 @@ class AutoSorterTUI(
         except Exception:
             pass
 
-    def update_status(self, text: Optional[str] = None) -> None:
+    def update_status(self, text: str | None = None) -> None:
         """Update status bar label with current message, truthful AI badge, and daemon badge."""
         try:
             if text is not None:
@@ -1080,7 +1080,7 @@ class AutoSorterTUI(
         except Exception as e:
             logger.debug(f"Error updating onboarding CTA visibility: {e}")
 
-    def _get_active_node(self) -> Optional[TreeNode[Any]]:
+    def _get_active_node(self) -> TreeNode[Any] | None:
         try:
             tree = self.query_one("#plan-tree", Tree)
             if tree.cursor_node and tree.cursor_node.data:
@@ -1172,7 +1172,7 @@ class AutoSorterTUI(
         if self._is_text_control_focused(allow_tree_search=True):
             return
 
-        def on_selected(path: Optional[str | list[str]]) -> None:
+        def on_selected(path: str | list[str] | None) -> None:
             if not path:
                 return
             paths = [path] if isinstance(path, str) else list(path)
@@ -1345,7 +1345,7 @@ class AutoSorterTUI(
         if self._is_text_control_focused(allow_tree_search=True):
             return
 
-        def on_saved(res: Optional[dict[str, Any]]) -> None:
+        def on_saved(res: dict[str, Any] | None) -> None:
             if res:
                 if "PROTECTED_PATHS" in res:
                     try:
@@ -1442,8 +1442,8 @@ class AutoSorterTUI(
         from app.core.extractor_strategies import registry
 
         def _resolve_supported_path(
-            raw_fp: Any, src_root: Optional[str] = None
-        ) -> Optional[str]:
+            raw_fp: Any, src_root: str | None = None
+        ) -> str | None:
             if not raw_fp:
                 return None
             fp_str = str(raw_fp)
@@ -1461,7 +1461,7 @@ class AutoSorterTUI(
                         return cand
             return fp_str
 
-        preview_path: Optional[str] = None
+        preview_path: str | None = None
 
         active_node = self._get_active_node()
         if active_node and active_node.data:
@@ -1501,7 +1501,7 @@ class AutoSorterTUI(
             )
             return
 
-        def on_preview_closed(saved_val: Optional[int]) -> None:
+        def on_preview_closed(saved_val: int | None) -> None:
             if saved_val is not None:
                 self.announce(f"Updated extraction density threshold to {saved_val}.")
 
@@ -1521,7 +1521,7 @@ class AutoSorterTUI(
         if focused_id != "tree-search-input" and self._is_text_control_focused():
             return
 
-        def on_command_selected(cmd: Optional[PaletteCommand]) -> None:
+        def on_command_selected(cmd: PaletteCommand | None) -> None:
             try:
                 self.query_one("#plan-tree", Tree).focus()
             except Exception:
@@ -1549,7 +1549,7 @@ class AutoSorterTUI(
         if self._is_text_control_focused(allow_tree_search=True):
             return
 
-        def on_rules_closed(mutated: Optional[bool] = None) -> None:
+        def on_rules_closed(mutated: bool | None = None) -> None:
             try:
                 self.query_one("#plan-tree", Tree).focus()
             except Exception:
@@ -1637,7 +1637,7 @@ class AutoSorterTUI(
         else:
             self.announce("CRO Forensic ingestion plugin is not enabled.")
 
-    def action_open_cheat_sheet(self, from_character: Optional[bool] = None) -> None:
+    def action_open_cheat_sheet(self, from_character: bool | None = None) -> None:
         """Open keyboard shortcut cheat sheet modal screen."""
         if from_character is True:
             if (
@@ -1669,15 +1669,15 @@ class AutoSorterTUI(
 
     def action_open_dropzone(
         self,
-        initial_paths: Optional[list[str]] = None,
+        initial_paths: list[str] | None = None,
         force: bool = False,
-        initial_dest_dir: Optional[str] = None,
+        initial_dest_dir: str | None = None,
     ) -> None:
         """Open floating dropzone overlay modal screen."""
         if not force and self._is_text_control_focused(allow_tree_search=True):
             return
 
-        def on_drop_done(res: Optional[dict[str, Any]]) -> None:
+        def on_drop_done(res: dict[str, Any] | None) -> None:
             if res:
                 if res.get("session_id"):
                     self._last_drop_session_id = str(res["session_id"])
@@ -1715,7 +1715,7 @@ class AutoSorterTUI(
 
         default_out = str(Path(self.base_dir) / "simulation_report.html")
 
-        def handle_export_modal_result(result: Optional[tuple[str, str]]) -> None:
+        def handle_export_modal_result(result: tuple[str, str] | None) -> None:
             if not result:
                 return
             export_path, report_format = result
@@ -1750,7 +1750,7 @@ class AutoSorterTUI(
 
         sessions = list_sessions()
 
-        def handle_history_modal_result(result: Optional[dict[str, Any]]) -> None:
+        def handle_history_modal_result(result: dict[str, Any] | None) -> None:
             if not result:
                 return
             session_id = result["session_id"]
@@ -1829,7 +1829,7 @@ class AutoSorterTUI(
             self.announce("No completed sorting session available to undo.")
             return
 
-        def handle_confirm_result(result: Optional[dict[str, Any]]) -> None:
+        def handle_confirm_result(result: dict[str, Any] | None) -> None:
             if not result or not result.get("confirmed"):
                 return
             sid = result["session_id"]
@@ -1847,7 +1847,7 @@ class AutoSorterTUI(
         self,
         session_id: str,
         ignore_missing: bool = False,
-        selected_step_ids: Optional[list[Any]] = None,
+        selected_step_ids: list[Any] | None = None,
     ) -> None:
         """Execute session rollback restoration asynchronously in background worker thread."""
         try:
@@ -1929,7 +1929,7 @@ class AutoSorterTUI(
         self.action_execute_sort()
 
     def action_open_audit_report(
-        self, audit_report: Optional[dict[str, Any]] = None
+        self, audit_report: dict[str, Any] | None = None
     ) -> None:
         """Open the Audit Report Modal Screen."""
         if not audit_report and self.app_session and self.plan:
@@ -2076,12 +2076,12 @@ if TYPE_CHECKING:
 
 def run_tui(
     settings,
-    base_dir: Optional[str] = None,
+    base_dir: str | None = None,
     skip_wizard: bool = False,
     non_interactive: bool = False,
     open_dropzone: bool = False,
-    initial_drop_paths: Optional[list[str]] = None,
-    initial_dest_dir: Optional[str] = None,
+    initial_drop_paths: list[str] | None = None,
+    initial_dest_dir: str | None = None,
 ) -> None:
     """Run the Textual full-screen terminal interface."""
     import shutil

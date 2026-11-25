@@ -122,7 +122,7 @@ def test_export_audit_report_json(tmp_path):
     res = export_audit_report_json(report, out_file)
     assert os.path.exists(res)
 
-    with open(res, "r", encoding="utf-8") as f:
+    with open(res, encoding="utf-8") as f:
         data = json.load(f)
 
     assert data["total_files"] == 1
@@ -146,7 +146,7 @@ def test_export_audit_report_csv(tmp_path):
     res = export_audit_report_csv(report, out_file)
     assert os.path.exists(res)
 
-    with open(res, "r", encoding="utf-8") as f:
+    with open(res, encoding="utf-8") as f:
         reader = csv.reader(f)
         rows = list(reader)
 

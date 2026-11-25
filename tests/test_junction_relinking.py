@@ -227,7 +227,7 @@ def test_directory_cleanup_deletes_junction_without_modifying_target_files(tmp_p
         # Verify target directory and files are completely intact!
         assert os.path.exists(target_dir)
         assert os.path.exists(target_file)
-        with open(target_file, "r") as f:
+        with open(target_file) as f:
             assert f.read() == "DO NOT DELETE"
 
 

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "53cb410b0c8417a42a8f5d0ffc357701f1d6d7408f9e576adde28306dc469cf7"
+    "checksum": "4bf0e6c37e5b6ccb7d654e0174fec33ed9884e47d46de4888621020da4e31bf1"
   },
   "classes": [],
   "functions": [
@@ -35,12 +35,12 @@
       "name": "simulate_corpus_classification",
       "parameters": [
         {
-          "annotation": "Optional[list[str]]",
+          "annotation": "list[str] | None",
           "default": "None",
           "name": "selected_packs"
         },
         {
-          "annotation": "Optional[Any]",
+          "annotation": "Any | None",
           "default": "None",
           "name": "settings"
         }

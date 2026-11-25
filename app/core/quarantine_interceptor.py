@@ -8,7 +8,7 @@ import shutil
 import time
 import unicodedata
 import uuid
-from typing import Any, Optional
+from typing import Any
 
 from app.core.analyzer_strategies import redact_sensitive_text
 from app.core.crypto import zero_vector_buffer
@@ -35,8 +35,8 @@ logger = logging.getLogger(__name__)
 def _is_content_approved_for_release(
     db: Any,
     base_dir: str = "",
-    file_hash: Optional[str] = None,
-    file_path: Optional[str] = None,
+    file_hash: str | None = None,
+    file_path: str | None = None,
 ) -> bool:
     """Return True if an unchanged file's SHA-256 hash has an approved user release exemption."""
     if db is None:
@@ -163,7 +163,7 @@ def scrub_pii_from_text(text: Any) -> str:
 def _redact_document_to_path(
     src_path: str,
     out_path: str,
-    extra_regex: Optional[str] = None,
+    extra_regex: str | None = None,
 ) -> tuple[bool, str]:
     """Scrub sensitive content from supported text, .docx, and .xlsx files into out_path.
 
@@ -173,7 +173,7 @@ def _redact_document_to_path(
     Filesystem ``OSError`` failures during reading or writing propagate to the caller.
     """
     ext = os.path.splitext(str(src_path or ""))[1].lower()
-    compiled_extra: Optional[re.Pattern[str]] = None
+    compiled_extra: re.Pattern[str] | None = None
     if extra_regex:
         with contextlib.suppress(re.error):
             compiled_extra = re.compile(extra_regex, re.IGNORECASE)
@@ -186,7 +186,7 @@ def _redact_document_to_path(
 
     if ext in _REDACTABLE_TEXT_EXTENSIONS:
         try:
-            with open(src_path, "r", encoding="utf-8") as fh:
+            with open(src_path, encoding="utf-8") as fh:
                 raw_text = fh.read()
         except UnicodeDecodeError:
             return False, ""
@@ -324,11 +324,11 @@ class QuarantineInterceptorService:
     def __init__(
         self,
         db: Database,
-        policies: Optional[list[dict[str, Any]]] = None,
+        policies: list[dict[str, Any]] | None = None,
         worker_timeout: float = 300.0,
-        jev_classifier: Optional[Any] = None,
-        auto_quarantine_ratings: Optional[list[str]] = None,
-        runtime_settings: Optional[Any] = None,
+        jev_classifier: Any | None = None,
+        auto_quarantine_ratings: list[str] | None = None,
+        runtime_settings: Any | None = None,
     ):
         self.db = db
         self.policies = PolicyEngine.sort_policies(policies)
@@ -362,7 +362,7 @@ class QuarantineInterceptorService:
     def resolve_safe_target_dir(
         self,
         base_dir: str,
-        target_subfolder: Optional[str],
+        target_subfolder: str | None,
         default_subfolder: str = "",
     ) -> str:
         """Validate target subfolder and ensure containment within base_dir boundaries.
@@ -437,8 +437,8 @@ class QuarantineInterceptorService:
         self,
         source_path: str,
         base_dir: str,
-        original_relative_path: Optional[str] = None,
-        policy_action: Optional[str] = None,
+        original_relative_path: str | None = None,
+        policy_action: str | None = None,
     ) -> dict[str, Any]:
         """Immediately place incoming unverified file into temporary _Quarantine_Staging prior to compliance evaluation."""
         abs_source = os.path.abspath(source_path)
@@ -494,7 +494,7 @@ class QuarantineInterceptorService:
         }
 
     def process_quarantine_job(
-        self, job_id: str, timeout_override: Optional[float] = None
+        self, job_id: str, timeout_override: float | None = None
     ) -> QuarantineRecordModel:
         """Execute deep forensic scanning, PII redaction, policy evaluation, and archival lifecycle actions."""
         return self._run_quarantine_job(
@@ -504,7 +504,7 @@ class QuarantineInterceptorService:
         )
 
     def _process_phase0_job(
-        self, job_id: str, timeout_override: Optional[float] = None
+        self, job_id: str, timeout_override: float | None = None
     ) -> QuarantineRecordModel:
         """Execute daemon Phase 0 safety checks and quarantine holds without routing non-quarantine policies."""
         return self._run_quarantine_job(
@@ -533,7 +533,7 @@ class QuarantineInterceptorService:
     def _run_quarantine_job(
         self,
         job_id: str,
-        timeout_override: Optional[float] = None,
+        timeout_override: float | None = None,
         phase0_only: bool = False,
     ) -> QuarantineRecordModel:
         """Run quarantine job with optional Phase 0 safety-and-hold restriction."""
@@ -1325,7 +1325,7 @@ class QuarantineInterceptorService:
             return validate_quarantine_record(fallback)
 
     def process_quarantine_batch(
-        self, job_ids: list[str], timeout_override: Optional[float] = None
+        self, job_ids: list[str], timeout_override: float | None = None
     ) -> list[Any]:
         """Execute forensic scanning and policy evaluation for a batch of quarantine job IDs.
 
@@ -1356,7 +1356,7 @@ class QuarantineInterceptorService:
     def release_quarantine_batch(
         self,
         job_ids: list[str],
-        dest_dir: Optional[str] = None,
+        dest_dir: str | None = None,
         conflict_policy: str = "rename",
         allow_external: bool = False,
         **kwargs: Any,
@@ -1648,9 +1648,7 @@ class QuarantineInterceptorService:
                 )
         return results
 
-    def recover_orphaned_jobs(
-        self, timeout_seconds: Optional[float] = None
-    ) -> list[str]:
+    def recover_orphaned_jobs(self, timeout_seconds: float | None = None) -> list[str]:
         """Detect and reset orphaned inspection jobs exceeding configured timeouts back to STAGED."""
         effective_timeout = (
             timeout_seconds if timeout_seconds is not None else self.worker_timeout

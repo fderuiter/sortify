@@ -7,7 +7,6 @@ and essential document compliance checklists for clinical trial document organiz
 import re
 from dataclasses import dataclass, field
 from re import Pattern
-from typing import Optional
 
 
 @dataclass
@@ -997,7 +996,7 @@ ICH_GCP_ESSENTIAL_CHECKLIST = [
 ]
 
 
-def get_artifact_by_id(artifact_id: str) -> Optional[ClinicalArtifactDefinition]:
+def get_artifact_by_id(artifact_id: str) -> ClinicalArtifactDefinition | None:
     """Retrieve an artifact definition by its unique identifier."""
     for art in CLINICAL_ARTIFACTS:
         if art.artifact_id == artifact_id:

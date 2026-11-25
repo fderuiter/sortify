@@ -10,7 +10,7 @@ import os
 import threading
 import unicodedata
 import uuid
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +31,7 @@ except ImportError:
     pylnk3 = None
 
 
-class MoveEngineState(str, Enum):
+class MoveEngineState(StrEnum):
     """Lifecycle states for AsyncMoveEngine."""
 
     IDLE = "IDLE"
@@ -124,7 +124,7 @@ _VALID_MOVE_ENGINE_TRANSITIONS: dict[MoveEngineState, set[MoveEngineState]] = {
 }
 
 
-class MoveOpState(str, Enum):
+class MoveOpState(StrEnum):
     """Operation states for individual move records."""
 
     INTENT = "intent"
@@ -134,14 +134,14 @@ class MoveOpState(str, Enum):
     FAILED = "failed"
 
 
-class DirectoryCleanupStatus(str, Enum):
+class DirectoryCleanupStatus(StrEnum):
     """Status values for directory cleanup nodes."""
 
     TO_BE_DELETED = "To Be Deleted"
     PROTECTED = "Protected"
 
 
-class MoveVerificationStatus(str, Enum):
+class MoveVerificationStatus(StrEnum):
     """Verification statuses for moved and retried files."""
 
     VERIFIED_PASS = "VERIFIED_PASS"
@@ -880,7 +880,7 @@ def _record_move_state(
     """Move the intent row ``seq`` to ``state``; a failure raises unless not ``required``."""
     if not (moves and session_id) or seq is None:
         return
-    st_val = state.value if isinstance(state, MoveOpState) else str(state)
+    st_val = str(state)
     method = "record_displacement" if st_val == "displacement" else f"mark_{st_val}"
     try:
         getattr(moves, method)(session_id, seq, **fields)

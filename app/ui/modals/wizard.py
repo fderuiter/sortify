@@ -2,7 +2,6 @@
 
 import logging
 import os
-from typing import Optional
 
 from textual import events, on
 from textual.app import ComposeResult
@@ -158,11 +157,11 @@ class WizardModal(ResponsiveModalScreen[None]):
     }
     """
 
-    def __init__(self, settings, current_dir: Optional[str] = None):
+    def __init__(self, settings, current_dir: str | None = None):
         super().__init__()
         self.settings = settings
         self.current_dir = current_dir
-        self._playground_committed_dir: Optional[str] = None
+        self._playground_committed_dir: str | None = None
         self._sample_auto_enabled_by_demo: bool = False
 
     def compose(self) -> ComposeResult:
@@ -362,8 +361,8 @@ class WizardModal(ResponsiveModalScreen[None]):
 
     def _format_model_status_text(
         self,
-        consent_enabled: Optional[bool] = None,
-        defer_download: Optional[bool] = None,
+        consent_enabled: bool | None = None,
+        defer_download: bool | None = None,
     ) -> str:
         """Build truthful live model status description for the wizard."""
         from app.core.downloader import inspect_local_model_bundle

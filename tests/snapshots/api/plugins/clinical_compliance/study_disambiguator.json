@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "490c92bd22c7a1e310be380a2edabf8074dee1ca24074a09a45743dd029d7dd7"
+    "checksum": "c54d0a05e5a632eed421fcf0c519370be4b8432f3e172cada1f6a7d8bb48cedb"
   },
   "classes": [
     {
@@ -59,7 +59,7 @@
               "name": "path"
             }
           ],
-          "returns": "Optional[str]"
+          "returns": "str | None"
         }
       ]
     },

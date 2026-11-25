@@ -314,7 +314,7 @@ def test_end_to_end_generate_and_verify(tmp_path, monkeypatch, ed25519_keypair):
     generate()
 
     assert manifest_path.exists()
-    with open(manifest_path, "r", encoding="utf-8") as f:
+    with open(manifest_path, encoding="utf-8") as f:
         manifest_data = json.load(f)
 
     assert "_signature" in manifest_data
@@ -430,7 +430,7 @@ def test_main_cli(tmp_path, monkeypatch, capsys):
     main()
 
     assert manifest_path.exists()
-    with open(manifest_path, "r", encoding="utf-8") as f:
+    with open(manifest_path, encoding="utf-8") as f:
         manifest_data = json.load(f)
     assert "_signature" in manifest_data
 
@@ -547,7 +547,7 @@ def test_verify_fails_with_tampered_signature(tmp_path, monkeypatch, ed25519_key
     agent1.write_text("Hello 1", encoding="utf-8", newline="\n")
 
     generate(private_key=private_key_hex)
-    with open(manifest_path, "r", encoding="utf-8") as f:
+    with open(manifest_path, encoding="utf-8") as f:
         valid_manifest = json.load(f)
 
     # Flip one nibble in valid 128-char hex signature
@@ -594,7 +594,7 @@ def test_verify_fails_with_tampered_prompt_and_manifest_hash(
     )
     new_hash = compute_sha256(agent1)
 
-    with open(manifest_path, "r", encoding="utf-8") as f:
+    with open(manifest_path, encoding="utf-8") as f:
         manifest_data = json.load(f)
     manifest_data["agent1.md"] = new_hash
     with open(manifest_path, "w", encoding="utf-8") as f:
@@ -631,7 +631,7 @@ def test_verify_fails_with_missing_signature_unconditionally(
     generate(private_key=private_key_hex)
 
     # Remove signature key
-    with open(manifest_path, "r", encoding="utf-8") as f:
+    with open(manifest_path, encoding="utf-8") as f:
         manifest_data = json.load(f)
     del manifest_data["_signature"]
     with open(manifest_path, "w", encoding="utf-8") as f:

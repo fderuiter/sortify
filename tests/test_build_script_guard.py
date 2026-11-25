@@ -354,7 +354,7 @@ def test_spec_cpu_build_excludes_nvidia_and_triton():
     spec_path = os.path.join(
         os.path.dirname(os.path.dirname(__file__)), "smart-autosorter.spec"
     )
-    with open(spec_path, "r", encoding="utf-8") as f:
+    with open(spec_path, encoding="utf-8") as f:
         spec_content = f.read()
 
     mock_globals = {

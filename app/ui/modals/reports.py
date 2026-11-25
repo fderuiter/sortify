@@ -2,7 +2,7 @@
 
 import logging
 import os
-from typing import Any, Optional
+from typing import Any
 
 from rich.text import Text
 from textual import on
@@ -27,7 +27,7 @@ from app.ui.widgets.density_slider import DensitySlider
 logger = logging.getLogger(__name__)
 
 
-class ExtractionPreviewModal(ResponsiveModalScreen[Optional[int]]):
+class ExtractionPreviewModal(ResponsiveModalScreen[int | None]):
     """Modal dialog for inspecting sanitized document text and PDF page extraction density."""
 
     BINDINGS = [
@@ -127,7 +127,7 @@ class ExtractionPreviewModal(ResponsiveModalScreen[Optional[int]]):
         file_path: str,
         settings: Any,
         db: Any = None,
-        base_dir: Optional[str] = None,
+        base_dir: str | None = None,
     ) -> None:
         super().__init__()
         self.file_path = file_path
@@ -378,7 +378,7 @@ class ExtractionPreviewModal(ResponsiveModalScreen[Optional[int]]):
         self.dismiss(None)
 
 
-class ExportReportModal(ResponsiveModalScreen[Optional[tuple[str, str]]]):
+class ExportReportModal(ResponsiveModalScreen[tuple[str, str] | None]):
     """Modal dialog for exporting dry-run simulation reports."""
 
     BINDINGS = [

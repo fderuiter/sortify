@@ -1,7 +1,6 @@
 """Unit tests for standalone resilient asset download helper in scripts/build.py."""
 
 import io
-import socket
 import urllib.error
 from unittest.mock import MagicMock, call, patch
 
@@ -48,7 +47,7 @@ def test_download_file_retries_transient_failures(tmp_path):
     mock_response.__exit__.return_value = False
 
     # First attempt fails with socket.timeout, second attempt succeeds
-    side_effects = [socket.timeout("Socket read timed out"), mock_response]
+    side_effects = [TimeoutError("Socket read timed out"), mock_response]
 
     with (
         patch("urllib.request.urlopen", side_effect=side_effects) as mock_urlopen,
@@ -77,7 +76,7 @@ def test_download_file_cleans_up_partial_file_on_failure(tmp_path):
         # Write partial data before failing
         dst.write(b"partial byte data")
         dst.flush()
-        raise socket.timeout("Connection reset mid-stream")
+        raise TimeoutError("Connection reset mid-stream")
 
     mock_response = MagicMock()
     mock_response.__enter__.return_value = io.BytesIO(b"full content")

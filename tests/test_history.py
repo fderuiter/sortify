@@ -132,9 +132,9 @@ def test_rollback_cyclic_collision(test_history_env):
     history_manager.rollback(session_id)
 
     # Verify files restored
-    with open(file1_src, "r") as f:
+    with open(file1_src) as f:
         assert f.read() == "A"
-    with open(file2_src, "r") as f:
+    with open(file2_src) as f:
         assert f.read() == "B"
 
     # Verify db restored
@@ -192,11 +192,11 @@ def test_rollback_multi_file_cyclic_collision(test_history_env):
     history_manager.rollback(session_id)
 
     # Verify files restored to original contents
-    with open(file_a, "r") as f:
+    with open(file_a) as f:
         assert f.read() == "A"
-    with open(file_b, "r") as f:
+    with open(file_b) as f:
         assert f.read() == "B"
-    with open(file_c, "r") as f:
+    with open(file_c) as f:
         assert f.read() == "C"
 
     # Verify db records restored
@@ -261,18 +261,18 @@ def test_rollback_cyclic_collision_with_non_cyclic_dest(test_history_env):
     history_manager.rollback(session_id)
 
     # Verify A and B restored
-    with open(file_a, "r") as f:
+    with open(file_a) as f:
         assert f.read() == "A"
-    with open(file_b, "r") as f:
+    with open(file_b) as f:
         assert f.read() == "B"
 
     # Unmanaged file at C.txt is preserved untouched; C restores non-destructively to C_1.txt (ADR 0006)
-    with open(file_c, "r") as f:
+    with open(file_c) as f:
         assert f.read() == "unmanaged"
 
     restored_c = os.path.join(base_dir, "C_1.txt")
     assert os.path.exists(restored_c)
-    with open(restored_c, "r") as f:
+    with open(restored_c) as f:
         assert f.read() == "C"
 
     # Verify db documents restored

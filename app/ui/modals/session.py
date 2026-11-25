@@ -5,7 +5,7 @@ import os
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from textual import on, work
 from textual.app import ComposeResult
@@ -26,7 +26,7 @@ from app.ui.notifications import TROUBLESHOOTING_URL, notify
 logger = logging.getLogger(__name__)
 
 
-class SessionRecoveryModal(ResponsiveModalScreen[Optional[str]]):
+class SessionRecoveryModal(ResponsiveModalScreen[str | None]):
     """Modal dialog for recovering interrupted file sorting sessions."""
 
     HELP_URL = f"{TROUBLESHOOTING_URL}#session-recovery"
@@ -146,14 +146,14 @@ class RecoveryResult(str):
     """Result returned when session recovery modal dismisses with an action."""
 
     action: str
-    session: Optional[dict[str, Any]]
+    session: dict[str, Any] | None
     sessions: list[dict[str, Any]]
 
     def __new__(
         cls,
         action: str,
-        session: Optional[dict[str, Any]] = None,
-        sessions: Optional[list[dict[str, Any]]] = None,
+        session: dict[str, Any] | None = None,
+        sessions: list[dict[str, Any]] | None = None,
     ):
         """Instantiate recovery result string with action and session context."""
         obj = super().__new__(cls, action)
@@ -163,7 +163,7 @@ class RecoveryResult(str):
         return obj
 
 
-class MultiSessionRecoveryModal(ResponsiveModalScreen[Optional[Any]]):
+class MultiSessionRecoveryModal(ResponsiveModalScreen[Any | None]):
     """Modal dialog for recovering multiple interrupted file sorting sessions."""
 
     HELP_URL = f"{TROUBLESHOOTING_URL}#multi-session-recovery"
@@ -250,8 +250,8 @@ class MultiSessionRecoveryModal(ResponsiveModalScreen[Optional[Any]]):
 
     def __init__(
         self,
-        sessions: Optional[list[dict[str, Any]]] = None,
-        settings: Optional[Any] = None,
+        sessions: list[dict[str, Any]] | None = None,
+        settings: Any | None = None,
     ):
         super().__init__()
         if sessions is None:
@@ -376,7 +376,7 @@ class MultiSessionRecoveryModal(ResponsiveModalScreen[Optional[Any]]):
                 pass
         self._update_selected_session_display()
 
-    def get_selected_session(self) -> Optional[dict[str, Any]]:
+    def get_selected_session(self) -> dict[str, Any] | None:
         """Return the currently selected session dictionary."""
         if not self.sessions:
             return None
@@ -524,7 +524,7 @@ class MultiSessionRecoveryModal(ResponsiveModalScreen[Optional[Any]]):
         self.dismiss(None)
 
 
-class RollbackConfirmModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
+class RollbackConfirmModal(ResponsiveModalScreen[dict[str, Any] | None]):
     """Two-stage interactive confirmation modal dialog before executing session rollback."""
 
     BINDINGS = [
@@ -726,9 +726,9 @@ class RollbackConfirmModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         self.all_items: list[dict[str, Any]] = list(session_info.get("items") or [])
         self.selected_step_ids: set = set()
         self.filtered_items: list[dict[str, Any]] = []
-        self.history_error: Optional[str] = None
+        self.history_error: str | None = None
         self.current_stage: int = 1
-        self.preview_data: Optional[dict[str, Any]] = None
+        self.preview_data: dict[str, Any] | None = None
 
     def compose(self) -> ComposeResult:
         """Compose confirmation modal widgets across Stage 1 and Stage 2."""
@@ -1255,7 +1255,7 @@ class RollbackErrorModal(ResponsiveModalScreen[None]):
         self.error_message = error_message
         self.settings = settings
         self.help_url = f"{TROUBLESHOOTING_URL}#session-recovery"
-        self.last_exported_diagnostics_path: Optional[str] = None
+        self.last_exported_diagnostics_path: str | None = None
 
     def compose(self) -> ComposeResult:
         """Compose error modal widgets."""
@@ -1391,7 +1391,7 @@ class RollbackErrorModal(ResponsiveModalScreen[None]):
         self.dismiss(None)
 
 
-class HistoryModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
+class HistoryModal(ResponsiveModalScreen[dict[str, Any] | None]):
     """Modal dialog for viewing session history records, exporting audit logs, and rolling back sessions."""
 
     BINDINGS = [
@@ -1458,7 +1458,7 @@ class HistoryModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
 
     def __init__(
         self,
-        sessions: Optional[list[dict[str, Any]]] = None,
+        sessions: list[dict[str, Any]] | None = None,
         base_dir: str = "",
     ):
         super().__init__()
@@ -1672,7 +1672,7 @@ class HistoryModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
             self.announce("Selected session cannot be rolled back.")
             return
 
-        def handle_confirm_result(result: Optional[dict[str, Any]]) -> None:
+        def handle_confirm_result(result: dict[str, Any] | None) -> None:
             if not result or not result.get("confirmed"):
                 return
 
@@ -1701,7 +1701,7 @@ class HistoryModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         self,
         session_id: str,
         ignore_missing: bool,
-        selected_step_ids: Optional[list[Any]] = None,
+        selected_step_ids: list[Any] | None = None,
     ) -> None:
         """Execute session rollback asynchronously in background worker thread."""
         app_obj = getattr(self, "app", None)
@@ -1802,7 +1802,7 @@ class HistoryModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
             )
         )
 
-    def _refresh_session_options(self, selected_sid: Optional[str] = None) -> None:
+    def _refresh_session_options(self, selected_sid: str | None = None) -> None:
         """Re-populate session select dropdown widget options after state update."""
         select_sess = self.query_one("#select-history-session", Select)
         options = self._build_session_select_options()

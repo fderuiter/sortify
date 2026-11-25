@@ -2,7 +2,7 @@
 
 import threading
 from collections.abc import Callable
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -24,17 +24,17 @@ class DiagramNode(BaseModel, defer_build=True):
 
     id: str
     label: str
-    shape: Optional[str] = "rectangle"
-    style: Optional[str] = None
-    url: Optional[str] = None
-    tooltip: Optional[str] = None
-    target: Optional[str] = None
-    step_number: Optional[int] = None
-    step_description: Optional[str] = None
+    shape: str | None = "rectangle"
+    style: str | None = None
+    url: str | None = None
+    tooltip: str | None = None
+    target: str | None = None
+    step_number: int | None = None
+    step_description: str | None = None
 
     @field_validator("url")
     @classmethod
-    def validate_url_scheme(cls, v: Optional[str]) -> Optional[str]:
+    def validate_url_scheme(cls, v: str | None) -> str | None:
         """Validate URL target scheme to block invalid or unsafe URI schemes."""
         if not v:
             return v
@@ -63,7 +63,7 @@ class DiagramEdge(BaseModel, defer_build=True):
 
     source: str
     target: str
-    label: Optional[str] = None
+    label: str | None = None
     arrow_type: str = "-->"
 
 
@@ -183,7 +183,7 @@ class SequenceParticipant(BaseModel, defer_build=True):
     """Participant or actor node in a sequence diagram."""
 
     id: str
-    label: Optional[str] = None
+    label: str | None = None
     is_actor: bool = False
 
 
@@ -318,7 +318,7 @@ class StateNode(BaseModel, defer_build=True):
     """Specification model for a state in a state diagram."""
 
     id: str
-    label: Optional[str] = None
+    label: str | None = None
     is_choice: bool = False
 
 
@@ -327,14 +327,14 @@ class StateTransition(BaseModel, defer_build=True):
 
     source: str
     target: str
-    label: Optional[str] = None
+    label: str | None = None
 
 
 class StateComposite(BaseModel, defer_build=True):
     """Specification model for a composite state container."""
 
     id: str
-    label: Optional[str] = None
+    label: str | None = None
     states: list[StateNode] = Field(default_factory=list)
     transitions: list[StateTransition] = Field(default_factory=list)
 
@@ -353,7 +353,7 @@ class StateDiagramSpec(BaseModel, defer_build=True):
     id: str
     title: str
     diagram_type: str = "stateDiagram-v2"
-    direction: Optional[Literal["TB", "LR", "BT", "RL"]] = None
+    direction: Literal["TB", "LR", "BT", "RL"] | None = None
     states: list[StateNode] = Field(default_factory=list)
     transitions: list[StateTransition] = Field(default_factory=list)
     composite_states: list[StateComposite] = Field(default_factory=list)
@@ -400,25 +400,25 @@ class StateDiagramSpec(BaseModel, defer_build=True):
 class DataStoreNode(DiagramNode):
     """Specification model for a data store node in a Data Flow Diagram."""
 
-    shape: Optional[str] = "database"
+    shape: str | None = "database"
 
 
 class ProcessNode(DiagramNode):
     """Specification model for a process transform node in a Data Flow Diagram."""
 
-    shape: Optional[str] = "stadium"
+    shape: str | None = "stadium"
 
 
 class ExternalEntityNode(DiagramNode):
     """Specification model for an external entity node in a Data Flow Diagram."""
 
-    shape: Optional[str] = "rectangle"
+    shape: str | None = "rectangle"
 
 
 class DataStreamEdge(DiagramEdge):
     """Specification model for a data stream contract edge in a Data Flow Diagram."""
 
-    contract: Optional[str] = None
+    contract: str | None = None
 
 
 class DataFlowDiagramSpec(BaseModel):

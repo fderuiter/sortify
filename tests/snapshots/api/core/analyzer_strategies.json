@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "18abd24acecca221aa6d0f6fb310b11ab216e16d17cfeb79eb16fa2f3793c791"
+    "checksum": "321e47dc3491ea0eba9eba07e22b0b865284f48d8374be266fcd960ed80873e4"
   },
   "classes": [
     {
@@ -36,7 +36,7 @@
               "name": "name"
             }
           ],
-          "returns": "Optional[ClusteringStrategy]"
+          "returns": "ClusteringStrategy | None"
         },
         {
           "async": false,

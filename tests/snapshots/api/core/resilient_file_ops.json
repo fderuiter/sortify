@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "79007d45acafc003e974de3c2f69d6fbb77b74616881f4725efa1d973b428171"
+    "checksum": "773a360f53e6ae712d7fc39daef76da086fb95a2b7f5c75cbd169fc16d5a4931"
   },
   "classes": [],
   "functions": [
@@ -30,7 +30,7 @@
       "name": "atomic_quarantine_relocation",
       "parameters": [
         {
-          "annotation": "Optional[str | os.PathLike]",
+          "annotation": "str | os.PathLike | None",
           "default": null,
           "name": "staged_path"
         },
@@ -58,7 +58,7 @@
           "name": "base_dir"
         },
         {
-          "annotation": "Optional[str | os.PathLike]",
+          "annotation": "str | os.PathLike | None",
           "default": "None",
           "name": "source_root"
         }
@@ -225,12 +225,12 @@
           "name": "path"
         },
         {
-          "annotation": "Optional[Callable[[str], Any]]",
+          "annotation": "Callable[[str], Any] | None",
           "default": "None",
           "name": "trash_fn"
         }
       ],
-      "returns": "tuple[bool, Optional[str]]"
+      "returns": "tuple[bool, str | None]"
     },
     {
       "async": false,

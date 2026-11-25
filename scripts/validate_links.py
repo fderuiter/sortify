@@ -5,7 +5,6 @@ import argparse
 import concurrent.futures
 import os
 import re
-import socket
 import sys
 import threading
 import urllib.error
@@ -209,7 +208,7 @@ def validate_url(
                 f"Connection/Timeout Error: {e.reason}",
                 not allow_offline,
             )
-        except socket.timeout:
+        except TimeoutError:
             return (
                 False,
                 "Connection/Timeout Error: timed out",
@@ -284,7 +283,7 @@ def validate_url(
                         f"Connection/Timeout Error: {e_get.reason}",
                         not allow_offline,
                     )
-                except socket.timeout:
+                except TimeoutError:
                     return (
                         False,
                         "Connection/Timeout Error: timed out",
@@ -297,7 +296,7 @@ def validate_url(
 
     except urllib.error.URLError as e:
         return False, f"Connection/Timeout Error: {e.reason}", not allow_offline
-    except socket.timeout:
+    except TimeoutError:
         return False, "Connection/Timeout Error: timed out", not allow_offline
     except Exception as e:
         return False, f"Unexpected Error: {str(e)}", not allow_offline
@@ -373,7 +372,7 @@ def main():
 
     for file_path in target_files:
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
+            with open(file_path, encoding="utf-8") as f:
                 try:
                     file_content = f.read()
                 except UnicodeDecodeError:

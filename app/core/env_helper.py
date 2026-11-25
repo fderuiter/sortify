@@ -461,7 +461,7 @@ if sys.platform == "win32":
 
 else:
 
-    class RestrictedPopen(object):
+    class RestrictedPopen:
         """Fallback mock/placeholder of RestrictedPopen for non-Windows platforms."""
 
 
