@@ -3,6 +3,7 @@
 import logging
 import os
 import re
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, NamedTuple, Optional
 
@@ -10,6 +11,7 @@ from rich.text import Text
 from textual.widgets import Input, Static, Tree
 from textual.widgets.tree import TreeNode
 
+from app.core.path_utils import _is_absolute_path
 from app.ui.protocols import TUIHostProtocol
 from app.ui.widgets.path_diff import (
     format_folder_path_comparison,
@@ -34,6 +36,46 @@ class PathLookupIndex(NamedTuple):
             or item in self.basenames
             or item.replace("\\", "/") in self.paths
             or item.replace("/", "\\") in self.paths
+        )
+
+    @classmethod
+    def _coerce(cls, index: tuple[set[str], set[str]]) -> "PathLookupIndex":
+        """Return ``index`` as a ``PathLookupIndex``, wrapping plain 2-tuples."""
+        if isinstance(index, cls):
+            return index
+        return cls(paths=index[0], basenames=index[1])
+
+    def _matches_path(self, raw_path: Optional[str]) -> bool:
+        """Check whether normalized or absolute variants of ``raw_path`` exist in ``self.paths``."""
+        if not raw_path or not self.paths:
+            return False
+        norm_p = os.path.normpath(raw_path)
+        if norm_p in self.paths or norm_p.replace("\\", "/") in self.paths:
+            return True
+        abs_p = os.path.normpath(os.path.abspath(raw_path))
+        return abs_p in self.paths or abs_p.replace("\\", "/") in self.paths
+
+    def _matches_node(self, filepath: Optional[str], key: Optional[str]) -> bool:
+        """Check whether ``filepath`` matches ``self.paths`` or ``norm_key`` is in the index."""
+        if self._matches_path(filepath):
+            return True
+        norm_key = os.path.normpath(key) if key else ""
+        return norm_key in self
+
+    def _matches_collision(
+        self,
+        file_info: Mapping[str, Any],
+        target_path: Optional[str],
+        filepath: Optional[str],
+        key: Optional[str],
+    ) -> bool:
+        """Check collision flags, ``target_path``, ``filepath``, and ``key`` against the index."""
+        return bool(
+            file_info.get("collision")
+            or file_info.get("has_collision")
+            or file_info.get("is_collision")
+            or self._matches_path(target_path)
+            or self._matches_node(filepath, key)
         )
 
 
@@ -98,8 +140,6 @@ class TreeViewMixin:
 
             if base_dir:
                 try:
-                    from app.core.path_utils import _is_absolute_path
-
                     if not _is_absolute_path(p_str):
                         joined = os.path.normpath(os.path.join(base_dir, p_str))
                         indexed_paths.add(joined)
@@ -119,6 +159,90 @@ class TreeViewMixin:
                     indexed_basenames.add(os.path.normpath(basename))
 
         return PathLookupIndex(paths=indexed_paths, basenames=indexed_basenames)
+
+    def _resolve_node_target_path(
+        self: TUIHostProtocol,
+        file_info: Mapping[str, Any],
+        folder: str,
+        file_key: str,
+    ) -> Optional[str]:
+        """Resolve destination path for a file node while preserving Windows drive separators."""
+        override_dir = file_info.get("destination_override")
+        eff_folder = str(override_dir) if override_dir else folder
+        target_filename = str(file_info.get("target_filename") or file_key)
+        if eff_folder and _is_absolute_path(eff_folder):
+            if re.match(r"^[a-zA-Z]:[/\\]", eff_folder):
+                sep = "\\" if "\\" in eff_folder else "/"
+                return f"{eff_folder.rstrip('/\\')}{sep}{target_filename}"
+            return os.path.normpath(os.path.join(eff_folder, target_filename))
+        base_dir = getattr(self, "base_dir", None)
+        if base_dir:
+            return os.path.normpath(os.path.join(base_dir, eff_folder, target_filename))
+        if eff_folder:
+            return os.path.normpath(os.path.join(eff_folder, target_filename))
+        return None
+
+    def _get_plan_invalid_locks(self: TUIHostProtocol) -> dict[str, Any]:
+        """Extract the ``invalid_locks`` mapping from ``SortingPlan`` or ``dict`` plans."""
+        plan = getattr(self, "plan", None)
+        invalid_locks = getattr(plan, "invalid_locks", None) or {}
+        if not invalid_locks and isinstance(plan, dict):
+            invalid_locks = plan.get("invalid_locks", {}) or {}
+        return invalid_locks if isinstance(invalid_locks, dict) else {}
+
+    @staticmethod
+    def _invalid_lock_candidates(
+        filepath: Optional[str], key: Optional[str]
+    ) -> tuple[str, ...]:
+        """Build up to 4 normalized lookup keys for ``invalid_locks`` checks."""
+        candidates: list[str] = []
+        if filepath:
+            candidates.append(filepath)
+        if key:
+            candidates.append(key)
+        if filepath:
+            candidates.append(filepath.replace("\\", "/"))
+            candidates.append(os.path.normpath(filepath))
+        return tuple(candidates)
+
+    def _has_invalid_lock(
+        self: TUIHostProtocol,
+        filepath: Optional[str],
+        key: Optional[str],
+        invalid_locks: Optional[Mapping[str, Any]] = None,
+    ) -> bool:
+        """Check whether any of the 4 path variants exists in ``invalid_locks``."""
+        locks = (
+            TreeViewMixin._get_plan_invalid_locks(self)
+            if invalid_locks is None
+            else invalid_locks
+        )
+        if not locks:
+            return False
+        return any(
+            candidate in locks
+            for candidate in TreeViewMixin._invalid_lock_candidates(filepath, key)
+        )
+
+    def _get_invalid_lock_error(
+        self: TUIHostProtocol,
+        filepath: Optional[str],
+        key: Optional[str],
+        invalid_locks: Optional[Mapping[str, Any]] = None,
+    ) -> Optional[str]:
+        """Return the first truthy ``invalid_locks`` error across 4 path variants."""
+        locks = (
+            TreeViewMixin._get_plan_invalid_locks(self)
+            if invalid_locks is None
+            else invalid_locks
+        )
+        if not locks:
+            return None
+        for candidate in TreeViewMixin._invalid_lock_candidates(filepath, key):
+            err = locks.get(candidate)
+            if err:
+                return str(err)
+        return None
 
     def _capture_tree_state(
         self: TUIHostProtocol, tree: Tree[Any], search_query: str = ""
@@ -188,13 +312,13 @@ class TreeViewMixin:
         try:
             tree = self.query_one("#plan-tree", Tree)
 
-            crit_paths, crit_names = self._build_path_lookup_index(
+            crit_index = self._build_path_lookup_index(
                 getattr(self, "critical_error_paths", set())
             )
-            warn_paths, warn_names = self._build_path_lookup_index(
+            warn_index = self._build_path_lookup_index(
                 getattr(self, "warning_paths", set())
             )
-            col_paths, col_names = self._build_path_lookup_index(
+            collision_index = self._build_path_lookup_index(
                 getattr(self, "collision_paths", set())
             )
 
@@ -207,50 +331,9 @@ class TreeViewMixin:
 
                 filepath = data.get("filepath", "")
                 key = data.get("key", "")
-                norm_fp = os.path.normpath(filepath) if filepath else ""
-                abs_fp = os.path.normpath(os.path.abspath(filepath)) if filepath else ""
-                norm_key = os.path.normpath(key) if key else ""
 
-                is_crit = bool(
-                    (
-                        norm_fp
-                        and (
-                            norm_fp in crit_paths
-                            or norm_fp.replace("\\", "/") in crit_paths
-                        )
-                    )
-                    or (
-                        abs_fp
-                        and (
-                            abs_fp in crit_paths
-                            or abs_fp.replace("\\", "/") in crit_paths
-                        )
-                    )
-                    or (norm_key and (norm_key in crit_paths or norm_key in crit_names))
-                )
-                is_warn = bool(
-                    not is_crit
-                    and (
-                        (
-                            norm_fp
-                            and (
-                                norm_fp in warn_paths
-                                or norm_fp.replace("\\", "/") in warn_paths
-                            )
-                        )
-                        or (
-                            abs_fp
-                            and (
-                                abs_fp in warn_paths
-                                or abs_fp.replace("\\", "/") in warn_paths
-                            )
-                        )
-                        or (
-                            norm_key
-                            and (norm_key in warn_paths or norm_key in warn_names)
-                        )
-                    )
-                )
+                is_crit = crit_index._matches_node(filepath, key)
+                is_warn = not is_crit and warn_index._matches_node(filepath, key)
 
                 plain_txt = (
                     node.label.plain
@@ -260,78 +343,21 @@ class TreeViewMixin:
                 plain_txt = re.sub(r"\[(ERR|WARN)\]\s*", "", plain_txt)
 
                 if data.get("is_file"):
-                    file_info = data.get("info") or {}
-                    target_path = data.get("target_path")
-                    if not target_path:
-                        from app.core.path_utils import _is_absolute_path
-
-                        override_dir = file_info.get("destination_override")
-                        eff_folder = (
-                            override_dir if override_dir else data.get("folder", "")
+                    raw_info = data.get("info")
+                    file_info = raw_info if isinstance(raw_info, Mapping) else {}
+                    raw_tp = data.get("target_path")
+                    target_path = (
+                        raw_tp
+                        if isinstance(raw_tp, str) and raw_tp
+                        else TreeViewMixin._resolve_node_target_path(
+                            self,
+                            file_info,
+                            str(data.get("folder") or ""),
+                            str(key),
                         )
-                        target_filename = file_info.get("target_filename") or key
-                        if eff_folder and _is_absolute_path(eff_folder):
-                            if re.match(r"^[a-zA-Z]:[/\\]", eff_folder):
-                                sep = "\\" if "\\" in eff_folder else "/"
-                                target_path = (
-                                    f"{eff_folder.rstrip('/\\')}{sep}{target_filename}"
-                                )
-                            else:
-                                target_path = os.path.normpath(
-                                    os.path.join(eff_folder, target_filename)
-                                )
-                        elif self.base_dir:
-                            target_path = os.path.normpath(
-                                os.path.join(self.base_dir, eff_folder, target_filename)
-                            )
-                        elif eff_folder:
-                            target_path = os.path.normpath(
-                                os.path.join(eff_folder, target_filename)
-                            )
-
-                    norm_tp = os.path.normpath(target_path) if target_path else ""
-                    abs_tp = (
-                        os.path.normpath(os.path.abspath(target_path))
-                        if target_path
-                        else ""
                     )
-
-                    is_node_collision = bool(
-                        file_info.get("collision")
-                        or file_info.get("has_collision")
-                        or file_info.get("is_collision")
-                        or (
-                            norm_tp
-                            and (
-                                norm_tp in col_paths
-                                or norm_tp.replace("\\", "/") in col_paths
-                            )
-                        )
-                        or (
-                            abs_tp
-                            and (
-                                abs_tp in col_paths
-                                or abs_tp.replace("\\", "/") in col_paths
-                            )
-                        )
-                        or (
-                            norm_fp
-                            and (
-                                norm_fp in col_paths
-                                or norm_fp.replace("\\", "/") in col_paths
-                            )
-                        )
-                        or (
-                            abs_fp
-                            and (
-                                abs_fp in col_paths
-                                or abs_fp.replace("\\", "/") in col_paths
-                            )
-                        )
-                        or (
-                            norm_key
-                            and (norm_key in col_paths or norm_key in col_names)
-                        )
+                    is_node_collision = collision_index._matches_collision(
+                        file_info, target_path, filepath, key
                     )
 
                     pol = str(
@@ -660,22 +686,22 @@ class TreeViewMixin:
                 node_dict, query, current_folder=current_folder
             )
 
-        if crit_index is None:
-            crit_index = self._build_path_lookup_index(
-                getattr(self, "critical_error_paths", set())
-            )
-        if warn_index is None:
-            warn_index = self._build_path_lookup_index(
-                getattr(self, "warning_paths", set())
-            )
-        if collision_index is None:
-            collision_index = self._build_path_lookup_index(
-                getattr(self, "collision_paths", set())
-            )
-
-        crit_paths, crit_names = crit_index
-        warn_paths, warn_names = warn_index
-        col_paths, col_names = collision_index
+        crit_lookup = (
+            self._build_path_lookup_index(getattr(self, "critical_error_paths", set()))
+            if crit_index is None
+            else PathLookupIndex._coerce(crit_index)
+        )
+        warn_lookup = (
+            self._build_path_lookup_index(getattr(self, "warning_paths", set()))
+            if warn_index is None
+            else PathLookupIndex._coerce(warn_index)
+        )
+        col_lookup = (
+            self._build_path_lookup_index(getattr(self, "collision_paths", set()))
+            if collision_index is None
+            else PathLookupIndex._coerce(collision_index)
+        )
+        invalid_locks = TreeViewMixin._get_plan_invalid_locks(self)
 
         for k, v in sorted(
             node_dict.items(),
@@ -711,7 +737,6 @@ class TreeViewMixin:
                         if self.base_dir
                         else (Path(current_folder) / file_key).as_posix()
                     )
-                target_filename = file_info.get("target_filename", "")
 
                 if query and not parent_folder_matches:
                     file_matches = matching_ids is not None and id(v) in matching_ids
@@ -737,15 +762,8 @@ class TreeViewMixin:
                     or file_info.get("rating")
                 )
 
-                invalid_locks = getattr(self.plan, "invalid_locks", {}) or {}
-                if not invalid_locks and isinstance(self.plan, dict):
-                    invalid_locks = self.plan.get("invalid_locks", {}) or {}
-
-                is_invalid_lock = (
-                    filepath in invalid_locks
-                    or file_key in invalid_locks
-                    or (bool(filepath) and filepath.replace("\\", "/") in invalid_locks)
-                    or (bool(filepath) and os.path.normpath(filepath) in invalid_locks)
+                is_invalid_lock = TreeViewMixin._has_invalid_lock(
+                    self, filepath, file_key, invalid_locks
                 )
 
                 is_excluded = file_info.get("is_excluded", False)
@@ -758,49 +776,9 @@ class TreeViewMixin:
                 file_info["is_checked"] = is_checked
                 file_info["is_excluded"] = is_excluded
 
-                norm_fp = os.path.normpath(filepath) if filepath else ""
-                abs_fp = os.path.normpath(os.path.abspath(filepath)) if filepath else ""
-                norm_key = os.path.normpath(file_key) if file_key else ""
-
-                is_crit_node = bool(
-                    (
-                        norm_fp
-                        and (
-                            norm_fp in crit_paths
-                            or norm_fp.replace("\\", "/") in crit_paths
-                        )
-                    )
-                    or (
-                        abs_fp
-                        and (
-                            abs_fp in crit_paths
-                            or abs_fp.replace("\\", "/") in crit_paths
-                        )
-                    )
-                    or (norm_key and (norm_key in crit_paths or norm_key in crit_names))
-                )
-                is_warn_node = bool(
-                    not is_crit_node
-                    and (
-                        (
-                            norm_fp
-                            and (
-                                norm_fp in warn_paths
-                                or norm_fp.replace("\\", "/") in warn_paths
-                            )
-                        )
-                        or (
-                            abs_fp
-                            and (
-                                abs_fp in warn_paths
-                                or abs_fp.replace("\\", "/") in warn_paths
-                            )
-                        )
-                        or (
-                            norm_key
-                            and (norm_key in warn_paths or norm_key in warn_names)
-                        )
-                    )
+                is_crit_node = crit_lookup._matches_node(filepath, file_key)
+                is_warn_node = not is_crit_node and warn_lookup._matches_node(
+                    filepath, file_key
                 )
 
                 cb_str = "[x]" if is_checked else "[ ]"
@@ -887,71 +865,11 @@ class TreeViewMixin:
                     label_parts.append(f"[ARCH: {arch_str}]")
 
                 target_filename = file_info.get("target_filename") or file_key
-                target_path = None
-                from app.core.path_utils import _is_absolute_path
-
-                override_dir = file_info.get("destination_override")
-                eff_folder = override_dir if override_dir else current_folder
-
-                if eff_folder and _is_absolute_path(eff_folder):
-                    if re.match(r"^[a-zA-Z]:[/\\]", eff_folder):
-                        sep = "\\" if "\\" in eff_folder else "/"
-                        target_path = (
-                            f"{eff_folder.rstrip('/\\')}{sep}{target_filename}"
-                        )
-                    else:
-                        target_path = os.path.normpath(
-                            os.path.join(eff_folder, target_filename)
-                        )
-                elif self.base_dir:
-                    target_path = os.path.normpath(
-                        os.path.join(self.base_dir, eff_folder, target_filename)
-                    )
-                elif eff_folder:
-                    target_path = os.path.normpath(
-                        os.path.join(eff_folder, target_filename)
-                    )
-
-                norm_tp = os.path.normpath(target_path) if target_path else ""
-                abs_tp = (
-                    os.path.normpath(os.path.abspath(target_path))
-                    if target_path
-                    else ""
+                target_path = TreeViewMixin._resolve_node_target_path(
+                    self, file_info, current_folder, file_key
                 )
-
-                is_collision = bool(
-                    file_info.get("collision")
-                    or file_info.get("has_collision")
-                    or file_info.get("is_collision")
-                    or (
-                        norm_tp
-                        and (
-                            norm_tp in col_paths
-                            or norm_tp.replace("\\", "/") in col_paths
-                        )
-                    )
-                    or (
-                        abs_tp
-                        and (
-                            abs_tp in col_paths
-                            or abs_tp.replace("\\", "/") in col_paths
-                        )
-                    )
-                    or (
-                        norm_fp
-                        and (
-                            norm_fp in col_paths
-                            or norm_fp.replace("\\", "/") in col_paths
-                        )
-                    )
-                    or (
-                        abs_fp
-                        and (
-                            abs_fp in col_paths
-                            or abs_fp.replace("\\", "/") in col_paths
-                        )
-                    )
-                    or (norm_key and (norm_key in col_paths or norm_key in col_names))
+                is_collision = col_lookup._matches_collision(
+                    file_info, target_path, filepath, file_key
                 )
 
                 pol = str(getattr(self.settings, "CONFLICT_POLICY", "rename")).lower()
@@ -1036,9 +954,9 @@ class TreeViewMixin:
                     query=query,
                     parent_folder_matches=parent_folder_matches or folder_matches,
                     matching_ids=matching_ids,
-                    crit_index=crit_index,
-                    warn_index=warn_index,
-                    collision_index=collision_index,
+                    crit_index=crit_lookup,
+                    warn_index=warn_lookup,
+                    collision_index=col_lookup,
                 )
                 added_count += 1 + child_added
 
@@ -1158,24 +1076,8 @@ class TreeViewMixin:
             lines.append(f"[bold]Locked:[/bold] {locked}")
             lines.append(f"[bold]ML Rating:[/bold] {rating}")
 
-            invalid_locks = getattr(self.plan, "invalid_locks", {}) or {}
-            if not invalid_locks and isinstance(self.plan, dict):
-                invalid_locks = self.plan.get("invalid_locks", {}) or {}
-            filepath_str = data.get("filepath", "")
-            key_str = data.get("key", "")
-            lock_err = (
-                invalid_locks.get(filepath_str)
-                or invalid_locks.get(key_str)
-                or (
-                    invalid_locks.get(filepath_str.replace("\\", "/"))
-                    if filepath_str
-                    else None
-                )
-                or (
-                    invalid_locks.get(os.path.normpath(filepath_str))
-                    if filepath_str
-                    else None
-                )
+            lock_err = TreeViewMixin._get_invalid_lock_error(
+                self, data.get("filepath"), data.get("key")
             )
             if lock_err:
                 lines.append(f"[bold error]Lock Warning:[/bold error] {lock_err}")

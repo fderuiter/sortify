@@ -850,3 +850,258 @@ def test_tui_tree_filter_lookup_efficiency_large_collection(temp_workspace):
             assert "[ERR]" not in nodes["doc_001.pdf"]
 
     asyncio.run(_test())
+
+
+def test_path_lookup_index_helpers_and_tuple_coercion(temp_workspace):
+    """Verify PathLookupIndex helpers distinguish path-only checks from basename __contains__ checks and coerce plain tuples."""
+    from app.ui.mixins.tree_view import PathLookupIndex
+
+    settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
+    app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+    other_path = os.path.normpath("/other/folder/shared_name.pdf")
+    raw_tuple: tuple[set[str], set[str]] = (
+        {other_path, other_path.replace("\\", "/")},
+        {"shared_name.pdf"},
+    )
+    coerced = PathLookupIndex._coerce(raw_tuple)
+    assert isinstance(coerced, PathLookupIndex)
+    assert PathLookupIndex._coerce(coerced) is coerced
+
+    # _matches_path checks self.paths only and must not match self.basenames
+    assert coerced._matches_path(other_path) is True
+    assert coerced._matches_path("shared_name.pdf") is False
+    assert coerced._matches_path("") is False
+    assert coerced._matches_path(None) is False
+
+    # _matches_node checks filepath via _matches_path and norm_key via __contains__
+    assert coerced._matches_node("/unrelated/source.pdf", "shared_name.pdf") is True
+    assert coerced._matches_node("shared_name.pdf", "distinct_key.pdf") is False
+
+    # _matches_collision checks file_info flags, target_path (paths only), filepath (paths only), and key (__contains__)
+    assert coerced._matches_collision({"collision": True}, None, None, None) is True
+    assert coerced._matches_collision({"has_collision": True}, None, None, None) is True
+    assert coerced._matches_collision({"is_collision": True}, None, None, None) is True
+    assert (
+        coerced._matches_collision(
+            {}, "shared_name.pdf", "shared_name.pdf", "distinct_key.pdf"
+        )
+        is False
+    )
+    assert coerced._matches_collision({}, other_path, "/src/a.pdf", "a.pdf") is True
+    assert (
+        coerced._matches_collision({}, "/dst/a.pdf", "/src/a.pdf", "shared_name.pdf")
+        is True
+    )
+
+    async def _test():
+        async with app.run_test() as pilot:
+            tree = app.query_one("#plan-tree", Tree)
+            tree.reset("Plan")
+            src_fp = os.path.join(temp_workspace, "Docs", "distinct_key.pdf")
+            plan_sub = {
+                "Docs": {
+                    "distinct_key.pdf": {
+                        "__type__": "file",
+                        "filepath": src_fp,
+                        "target_filename": "shared_name.pdf",
+                    },
+                    "shared_name.pdf": {
+                        "__type__": "file",
+                        "filepath": os.path.join(
+                            temp_workspace, "Docs", "shared_name.pdf"
+                        ),
+                        "target_filename": "shared_name.pdf",
+                    },
+                }
+            }
+            # Pass plain 2-tuples directly to _build_tree_nodes
+            added = app._build_tree_nodes(
+                plan_sub,
+                tree.root,
+                current_folder="",
+                crit_index=raw_tuple,
+                warn_index=(set(), set()),
+                collision_index=raw_tuple,
+            )
+            await pilot.pause(0.02)
+            assert added == 3
+            docs_node = tree.root.children[0]
+            by_key = {
+                c.data["key"]: c
+                for c in docs_node.children
+                if isinstance(c.data, dict) and "key" in c.data
+            }
+            assert "[ERR]" not in str(by_key["distinct_key.pdf"].label)
+            assert "[COLLISION:" not in str(by_key["distinct_key.pdf"].label)
+            assert "[ERR]" in str(by_key["shared_name.pdf"].label)
+            assert "[COLLISION:" in str(by_key["shared_name.pdf"].label)
+
+            # _apply_tree_node_styles must preserve pre-existing data["target_path"]
+            # and must not match target_path or filepath against basenames
+            custom_tp = "shared_name.pdf"
+            assert isinstance(by_key["distinct_key.pdf"].data, dict)
+            by_key["distinct_key.pdf"].data["target_path"] = custom_tp
+            by_key["distinct_key.pdf"].data["filepath"] = "shared_name.pdf"
+            app.collision_paths = {other_path}
+            app.critical_error_paths = {other_path}
+            app._apply_tree_node_styles()
+            assert by_key["distinct_key.pdf"].data["target_path"] == custom_tp
+            assert by_key["distinct_key.pdf"].data["is_collision"] is False
+            assert "[ERR]" not in str(by_key["distinct_key.pdf"].label)
+            assert "[COLLISION:" not in str(by_key["distinct_key.pdf"].label)
+
+    asyncio.run(_test())
+
+
+def test_resolve_node_target_path_windows_drives_and_fallbacks(temp_workspace):
+    """Verify _resolve_node_target_path preserves Windows drive separators and handles base_dir and relative fallbacks."""
+    settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
+    app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+    # Windows backslash drive override preserves backslash separator even on POSIX hosts
+    win_back = app._resolve_node_target_path(
+        {"destination_override": "C:\\Sorted\\Finance\\", "target_filename": "q4.pdf"},
+        "IgnoredFolder",
+        "raw.pdf",
+    )
+    assert win_back == "C:\\Sorted\\Finance\\q4.pdf"
+
+    # Windows forward-slash drive override preserves forward-slash separator
+    win_fwd = app._resolve_node_target_path(
+        {"destination_override": "D:/Sorted/Legal/", "target_filename": "nda.pdf"},
+        "IgnoredFolder",
+        "raw.pdf",
+    )
+    assert win_fwd == "D:/Sorted/Legal/nda.pdf"
+
+    # Relative folder joins against base_dir and falls back to file_key when target_filename is absent
+    rel_joined = app._resolve_node_target_path({}, "Reports", "summary.pdf")
+    assert rel_joined == os.path.normpath(
+        os.path.join(str(temp_workspace), "Reports", "summary.pdf")
+    )
+
+    # Without base_dir, relative folder joins folder + filename, and empty folder returns None
+    app.base_dir = ""
+    assert app._resolve_node_target_path({}, "Reports", "summary.pdf") == (
+        os.path.normpath(os.path.join("Reports", "summary.pdf"))
+    )
+    assert app._resolve_node_target_path({}, "", "summary.pdf") is None
+
+
+def test_invalid_locks_parity_across_tree_and_inspector(temp_workspace):
+    """Verify invalid_locks helpers support SortingPlan and dict plans and all 4 lookup variants in tree and inspector."""
+    from app.core.analyzer import SortingPlan
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+        async with app.run_test() as pilot:
+            fp_exact = os.path.join(temp_workspace, "Docs", "exact_fp.pdf")
+            fp_by_key = os.path.join(temp_workspace, "Docs", "key_match.pdf")
+            fp_win_sep = "C:\\Locked\\win_sep.pdf"
+            fp_unnorm = os.path.join(temp_workspace, "Docs", ".", "norm_match.pdf")
+            fp_clean = os.path.join(temp_workspace, "Docs", "clean.pdf")
+
+            plan_nodes = {
+                "Docs": {
+                    "exact_fp.pdf": {
+                        "__type__": "file",
+                        "filepath": fp_exact,
+                        "target_filename": "exact_fp.pdf",
+                    },
+                    "key_match.pdf": {
+                        "__type__": "file",
+                        "filepath": fp_by_key,
+                        "target_filename": "key_match.pdf",
+                    },
+                    "win_sep.pdf": {
+                        "__type__": "file",
+                        "filepath": fp_win_sep,
+                        "target_filename": "win_sep.pdf",
+                    },
+                    "norm_match.pdf": {
+                        "__type__": "file",
+                        "filepath": fp_unnorm,
+                        "target_filename": "norm_match.pdf",
+                    },
+                    "empty_fp.pdf": {
+                        "__type__": "file",
+                        "filepath": "",
+                        "target_filename": "empty_fp.pdf",
+                    },
+                    "clean.pdf": {
+                        "__type__": "file",
+                        "filepath": fp_clean,
+                        "target_filename": "clean.pdf",
+                    },
+                }
+            }
+            locks = {
+                fp_exact: "Invalid exact filepath lock",
+                "key_match.pdf": "Invalid key lock",
+                "C:/Locked/win_sep.pdf": "Invalid slash-normalized lock",
+                os.path.normpath(fp_unnorm): "Invalid normpath lock",
+                ".": "Dot sentinel must not match empty filepath",
+            }
+
+            # 1. Test with SortingPlan instance
+            app.plan = SortingPlan(plan_nodes, invalid_locks=locks)
+            app.rebuild_tree(run_validation=False)
+            await pilot.pause(0.05)
+
+            tree = app.query_one("#plan-tree", Tree)
+            docs_node = tree.root.children[0]
+            by_key = {
+                c.data["key"]: c
+                for c in docs_node.children
+                if isinstance(c.data, dict) and "key" in c.data
+            }
+
+            expected_errors = {
+                "exact_fp.pdf": "Invalid exact filepath lock",
+                "key_match.pdf": "Invalid key lock",
+                "win_sep.pdf": "Invalid slash-normalized lock",
+                "norm_match.pdf": "Invalid normpath lock",
+            }
+            for k, expected_msg in expected_errors.items():
+                assert "[LOCK WARNING]" in str(by_key[k].label)
+                inspector_txt = app._update_inspector(by_key[k], announce=False)
+                assert f"Lock Warning:[/bold error] {expected_msg}" in inspector_txt
+
+            # Empty filepath fallback in _build_tree_nodes resolves via base_dir,
+            # while direct helper calls with empty filepath must not match "."
+            assert app._has_invalid_lock("", "unlisted.pdf", locks) is False
+            assert app._get_invalid_lock_error("", "unlisted.pdf", locks) is None
+            assert "[LOCK WARNING]" not in str(by_key["clean.pdf"].label)
+            assert "Lock Warning:" not in app._update_inspector(
+                by_key["clean.pdf"], announce=False
+            )
+
+            # 2. Test with plain dict plan carrying "invalid_locks"
+            dict_plan = {
+                "Docs": plan_nodes["Docs"],
+                "invalid_locks": {"clean.pdf": "Dict plan lock error"},
+            }
+            app.plan = dict_plan
+            app.rebuild_tree(run_validation=False)
+            await pilot.pause(0.05)
+
+            docs_node_dict = next(
+                n for n in tree.root.children if "Docs" in str(n.label)
+            )
+            clean_node = next(
+                c
+                for c in docs_node_dict.children
+                if isinstance(c.data, dict) and c.data.get("key") == "clean.pdf"
+            )
+            assert "[LOCK WARNING]" in str(clean_node.label)
+            assert "Dict plan lock error" in app._update_inspector(
+                clean_node, announce=False
+            )
+
+    asyncio.run(_test())
