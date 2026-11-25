@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "f8ec3d2475efd2ab542db80b0a9bdbb3fa96d63ca70b9f541634cc83a3ae2923"
+    "checksum": "05b164f98c0c78fc009b6d349f40338571aeea4215d28c2da327802434810ff9"
   },
   "cli": [
     {
@@ -430,7 +430,7 @@
       ],
       "caller": "subparsers",
       "keywords": {
-        "help": "Rollback sorting operations and manage history sessions"
+        "help": "Undo sorting operations and manage session history"
       },
       "method": "add_parser"
     },
@@ -441,7 +441,7 @@
       "caller": "parser_undo",
       "keywords": {
         "default": null,
-        "help": "Specific historical session ID UUID to rollback",
+        "help": "Specific historical session ID UUID to undo",
         "type": "str"
       },
       "method": "add_argument"
@@ -464,7 +464,20 @@
       "caller": "parser_undo",
       "keywords": {
         "action": "store_true",
-        "help": "Rollback the latest historical sorting session"
+        "help": "Undo the latest historical sorting session"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--export"
+      ],
+      "caller": "parser_undo",
+      "keywords": {
+        "default": null,
+        "help": "Export audit records for the selected session (or all sessions) to CSV or JSON",
+        "metavar": "PATH",
+        "type": "str"
       },
       "method": "add_argument"
     },
@@ -475,7 +488,7 @@
       "caller": "parser_undo",
       "keywords": {
         "action": "store_true",
-        "help": "Force rollback even if original files are missing"
+        "help": "Force undo even if sorted files are missing"
       },
       "method": "add_argument"
     },
@@ -486,7 +499,7 @@
       "caller": "parser_undo",
       "keywords": {
         "action": "store_true",
-        "help": "Output session list or rollback status in structured JSON format"
+        "help": "Output session list or undo status in structured JSON format"
       },
       "method": "add_argument"
     },

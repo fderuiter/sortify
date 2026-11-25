@@ -1,9 +1,27 @@
 {
   "_metadata": {
-    "checksum": "4eb5ad3b123860110e2981bf43318990539889bca7167db2bd36380b6db8331b"
+    "checksum": "bb0260e97ae432a6b534693426257af19e955793de2cd1ee8484ad94fb1b55cb"
   },
   "classes": [],
   "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "can_undo_session",
+      "parameters": [
+        {
+          "annotation": "dict[str, Any] | None",
+          "default": null,
+          "name": "session_entry"
+        },
+        {
+          "annotation": "Any",
+          "default": "None",
+          "name": "store"
+        }
+      ],
+      "returns": "bool"
+    },
     {
       "async": false,
       "decorators": [],

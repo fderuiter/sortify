@@ -152,8 +152,19 @@ def import_step_ledger(conn) -> int:
     columns = {row[1] for row in conn.execute('PRAGMA table_info("step_ledger")')}
     if not columns:
         return 0
+    has_sessions = bool(
+        {row[1] for row in conn.execute('PRAGMA table_info("sessions")')}
+    )
+    snapshot_filter = (
+        "AND session_id NOT IN ("
+        "SELECT session_id FROM sessions "
+        "WHERE LOWER(COALESCE(status, '')) = 'undo_snapshot'"
+        ") "
+        if has_sessions
+        else ""
+    )
     cursor = conn.execute(
-        """
+        f"""
         INSERT INTO moves (
             session_id, seq, src, dst, src_sha256, size, displaced, state,
             error, created_at, updated_at
@@ -169,6 +180,7 @@ def import_step_ledger(conn) -> int:
           AND COALESCE(source_path, original_path) IS NOT NULL
           AND target_path IS NOT NULL
           AND session_id NOT IN (SELECT DISTINCT session_id FROM moves)
+          {snapshot_filter}
         ORDER BY session_id, step_id
         """
     )
@@ -453,6 +465,7 @@ def query_session_summaries(db_path: str) -> list[SessionSummaryRow]:
         "COALESCE(SUM(CASE WHEN m.state = 'exported_to_trash' THEN 1 ELSE 0 END), 0) AS trashed_count "
         "FROM sessions s "
         "LEFT JOIN moves m ON s.session_id = m.session_id "
+        "WHERE LOWER(COALESCE(s.status, '')) != 'undo_snapshot' "
         "GROUP BY s.session_id "
         "ORDER BY s.timestamp DESC"
     )
@@ -467,6 +480,7 @@ def query_session_summaries(db_path: str) -> list[SessionSummaryRow]:
                 "0 AS trashed_count "
                 "FROM sessions s "
                 "LEFT JOIN step_ledger m ON s.session_id = m.session_id "
+                "WHERE LOWER(COALESCE(s.status, '')) != 'undo_snapshot' "
                 "GROUP BY s.session_id ORDER BY s.timestamp DESC"
             ),
             (
@@ -476,6 +490,7 @@ def query_session_summaries(db_path: str) -> list[SessionSummaryRow]:
                 "0 AS trashed_count "
                 "FROM sessions s "
                 "LEFT JOIN transaction_ledger m ON s.session_id = m.session_id "
+                "WHERE LOWER(COALESCE(s.status, '')) != 'undo_snapshot' "
                 "GROUP BY s.session_id ORDER BY s.timestamp DESC"
             ),
         ):
@@ -488,7 +503,9 @@ def query_session_summaries(db_path: str) -> list[SessionSummaryRow]:
         fallback = (
             "SELECT s.session_id, s.timestamp, s.base_dir, s.status, "
             "0 AS step_count, 0 AS file_count, 0 AS trashed_count "
-            "FROM sessions s ORDER BY s.timestamp DESC"
+            "FROM sessions s "
+            "WHERE LOWER(COALESCE(s.status, '')) != 'undo_snapshot' "
+            "ORDER BY s.timestamp DESC"
         )
         return [SessionSummaryRow(*r) for r in conn.execute(fallback).fetchall()]
 

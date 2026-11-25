@@ -541,8 +541,7 @@ positional arguments:
                         files
     config              View or update application configuration settings
     daemon              Launch or control persistent directory-watching daemon
-    undo                Rollback sorting operations and manage history
-                        sessions
+    undo                Undo sorting operations and manage session history
     drop                Quick file drop triage receiver for target files or
                         directories
     ledger              Manage transaction ledger entries and automated
@@ -889,8 +888,10 @@ options:
 ##### `undo`
 ```text
 usage: smart-autosorter undo [-h] [--session-id SESSION_ID] [--list]
-                             [--latest] [--force] [--json] [--list-moves]
-                             [--dry-run] [--step-id STEP_IDS] [--file FILES]
+                             [--latest] [--export PATH] [--force] [--json]
+                             [--list-moves] [--dry-run] [--step-id STEP_IDS]
+                             [--file FILES] [-f {csv,json}]
+                             [--ledger-db LEDGER_DB]
                              [--settings-file SETTINGS_FILE | --profile PROFILE]
                              [-q] [--no-color] [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
@@ -908,20 +909,26 @@ usage: smart-autosorter undo [-h] [--session-id SESSION_ID] [--list]
 options:
   -h, --help            show this help message and exit
   --session-id SESSION_ID
-                        Specific historical session ID UUID to rollback
+                        Specific historical session ID UUID to undo
   --list                List active and completed historical sorting sessions
-  --latest              Rollback the latest historical sorting session
-  --force               Force rollback even if original files are missing
-  --json                Output session list or rollback status in structured
-                        JSON format
+  --latest              Undo the latest historical sorting session
+  --export PATH         Export audit records for the selected session (or all
+                        sessions) to CSV or JSON
+  --force               Force undo even if sorted files are missing
+  --json                Output session list or undo status in structured JSON
+                        format
   --list-moves          List remaining undoable file moves for the target
                         session
-  --dry-run             Preview rollback outcome and potential collisions
-                        without moving files
+  --dry-run             Preview undo outcome and potential collisions without
+                        moving files
   --step-id STEP_IDS    Specific move step ID to revert (repeatable for
                         selective undo)
   --file FILES          Source or destination file path/name to revert
                         (repeatable for selective undo)
+  -f {csv,json}, --format {csv,json}
+                        Audit export format when using --export (csv or json)
+  --ledger-db LEDGER_DB
+                        Optional store database file path when using --export
   --settings-file SETTINGS_FILE
                         Path to an explicit Sortify settings.json file
   --profile PROFILE     Named configuration profile under

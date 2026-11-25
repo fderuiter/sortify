@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "1160655b7b4ab8b214f29afd604ca749ed53a2a6eb0a6969e65791d0103ab111"
+    "checksum": "29a9f35351fade4f6b8c97a719ec0a727098b604ea9df8cf97ce80a0512e32dd"
   },
   "classes": [],
   "cli": [
@@ -22,7 +22,7 @@
       "caller": "parser_undo",
       "keywords": {
         "action": "store_true",
-        "help": "Preview rollback outcome and potential collisions without moving files"
+        "help": "Preview undo outcome and potential collisions without moving files"
       },
       "method": "add_argument"
     },
@@ -50,6 +50,35 @@
         "default": null,
         "dest": "files",
         "help": "Source or destination file path/name to revert (repeatable for selective undo)",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "-f",
+        "--format"
+      ],
+      "caller": "parser_undo",
+      "keywords": {
+        "choices": [
+          "csv",
+          "json"
+        ],
+        "default": null,
+        "help": "Audit export format when using --export (csv or json)",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--ledger-db"
+      ],
+      "caller": "parser_undo",
+      "keywords": {
+        "default": null,
+        "help": "Optional store database file path when using --export",
         "type": "str"
       },
       "method": "add_argument"

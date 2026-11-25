@@ -333,7 +333,7 @@ def test_cli_undo_list_moves_dry_run_step_id_and_file_text_and_json(
     # 4. Revert remaining move using --step-id in text mode (defaults to --latest partially_rolled_back session)
     code, _, err_txt = _invoke(["undo", "--step-id", str(step_map["notes_b.txt"])])
     assert code == 0
-    assert "Rollback completed successfully" in err_txt
+    assert "Undo completed successfully" in err_txt
     assert file_b.exists()
     assert not (workspace / "Notes" / "notes_b.txt").exists()
 

@@ -300,21 +300,68 @@ def _reencrypt(
     return transform
 
 
+def _snapshot_session_ids(conn) -> set[str]:
+    """Return session IDs marked with legacy ``undo_snapshot`` status in ``conn``."""
+    cols = set(_columns(conn, "sessions"))
+    if not {"session_id", "status"} <= cols:
+        return set()
+    rows = conn.execute(
+        "SELECT session_id FROM sessions WHERE LOWER(COALESCE(status, '')) = 'undo_snapshot'"
+    ).fetchall()
+    return {str(r[0]) for r in rows if r[0] is not None}
+
+
 def _copy_history(src, dst, old_crypto, new_crypto) -> int:
-    count = _copy_table(src, dst, "sessions")
-    count += _copy_table(src, dst, "snapshot_files")
-    count += _copy_table(src, dst, "snapshot_cache")
+    snapshot_sids = _snapshot_session_ids(src)
+
+    def _skip_snapshot_session(record: dict) -> dict | None:
+        status_val = str(record.get("status") or "").strip().lower()
+        sid_val = record.get("session_id")
+        if status_val == "undo_snapshot" or (
+            sid_val is not None and str(sid_val) in snapshot_sids
+        ):
+            return None
+        return record
+
+    def _skip_snapshot_children(record: dict) -> dict | None:
+        sid_val = record.get("session_id")
+        if sid_val is not None and str(sid_val) in snapshot_sids:
+            return None
+        return record
+
+    reencrypt_doc = _reencrypt("extracted_text", old_crypto, new_crypto, dst=dst)
+
+    def _transform_snapshot_doc(record: dict) -> dict | None:
+        if _skip_snapshot_children(record) is None:
+            return None
+        return reencrypt_doc(record)
+
+    count = _copy_table(src, dst, "sessions", transform=_skip_snapshot_session)
+    count += _copy_table(src, dst, "snapshot_files", transform=_skip_snapshot_children)
+    count += _copy_table(src, dst, "snapshot_cache", transform=_skip_snapshot_children)
     count += _copy_table(
         src,
         dst,
         "snapshot_documents",
-        transform=_reencrypt("extracted_text", old_crypto, new_crypto, dst=dst),
+        transform=_transform_snapshot_doc,
     )
     # step_id is a store-wide sequence; the copied steps get new ids in their old order.
-    count += _copy_table(src, dst, "step_ledger", skip=("step_id",))
+    count += _copy_table(
+        src,
+        dst,
+        "step_ledger",
+        skip=("step_id",),
+        transform=_skip_snapshot_children,
+    )
     # The move ledger (ADR 0006): copy it where the old file has one, and build
     # it from the copied steps for the sessions it lacks.
-    count += _copy_table(src, dst, "moves", skip=("id",))
+    count += _copy_table(
+        src,
+        dst,
+        "moves",
+        skip=("id",),
+        transform=_skip_snapshot_children,
+    )
     count += import_step_ledger(dst)
     return count
 

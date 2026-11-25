@@ -195,11 +195,11 @@ def _validate_and_resolve_export_path(
     base_dir: str | None = None,
     report_data: dict[str, Any] | None = None,
 ) -> str:
-    """Validate export output path against allowed base directory boundary.
+    """Validate export output path, blocking traversal sequences and writes inside the sorted folder.
 
     Args:
         output_path: Proposed export file path (relative or absolute).
-        base_dir: Allowed base directory boundary.
+        base_dir: Active sorted folder boundary (exports inside this folder are blocked).
         report_data: Audit report dictionary containing fallback 'base_dir'.
 
     Returns
@@ -208,66 +208,49 @@ def _validate_and_resolve_export_path(
 
     Raises
     ------
-        AuditExportError: If target path escapes allowed base directory boundary.
+        AuditExportError: If target path is empty, contains directory traversal, or writes inside the sorted folder.
     """
-    if not output_path:
+    if not output_path or not str(output_path).strip():
         raise AuditExportError("Export output path cannot be empty.")
 
-    target_base = None
-    if base_dir:
-        target_base = base_dir
-    elif report_data and report_data.get("base_dir"):
-        target_base = report_data["base_dir"]
-
-    if target_base:
-        resolved_base = Path(target_base).resolve()
-        if os.path.isabs(output_path):
-            target_path = Path(output_path)
-        else:
-            target_path = resolved_base / output_path
-
-        resolved_target = target_path.resolve()
-
-        try:
-            resolved_target.relative_to(resolved_base)
-        except ValueError as err:
-            msg = (
-                f"Export target path '{output_path}' escapes allowed base "
-                f"directory boundary '{resolved_base}'"
-            )
-            logger.error(msg)
-            raise AuditExportError(msg) from err
-        return str(resolved_target)
-
-    # Fallback if no base_dir parameter or report_data/session base_dir is present:
-    path_parts = Path(output_path).parts
-    if ".." in path_parts:
-        msg = f"Export target path '{output_path}' contains invalid directory traversal sequences"
+    raw_path_str = str(output_path).strip()
+    normalized_sep = raw_path_str.replace("\\", "/")
+    if ".." in Path(raw_path_str).parts or ".." in Path(normalized_sep).parts:
+        msg = (
+            f"Export target path '{output_path}' contains invalid directory traversal "
+            "sequences"
+        )
         logger.error(msg)
         raise AuditExportError(msg)
 
-    if os.path.isabs(output_path):
-        resolved_target = Path(output_path).resolve()
-        resolved_parent = Path(output_path).parent.resolve()
-        try:
-            resolved_target.relative_to(resolved_parent)
-        except ValueError as err:
+    expanded = os.path.expanduser(raw_path_str)
+    if os.path.isabs(expanded):
+        resolved_target = Path(expanded).resolve()
+    else:
+        resolved_cwd = Path.cwd().resolve()
+        resolved_target = (resolved_cwd / expanded).resolve()
+
+    target_base: str | None = None
+    if base_dir and str(base_dir).strip():
+        target_base = str(base_dir).strip()
+    elif report_data and isinstance(report_data, dict):
+        rep_base = report_data.get("base_dir")
+        if rep_base and str(rep_base).strip():
+            target_base = str(rep_base).strip()
+
+    if target_base:
+        resolved_base = Path(os.path.expanduser(target_base)).resolve()
+        if resolved_target == resolved_base or resolved_target.is_relative_to(
+            resolved_base
+        ):
             msg = (
-                f"Export target path '{output_path}' escapes parent directory boundary"
+                f"Export target path '{output_path}' resolves inside sorted folder "
+                f"'{resolved_base}'. Choose an external path outside the sorted folder."
             )
             logger.error(msg)
-            raise AuditExportError(msg) from err
-        return str(resolved_target)
-    else:
-        resolved_base = Path.cwd().resolve()
-        resolved_target = (resolved_base / output_path).resolve()
-        try:
-            resolved_target.relative_to(resolved_base)
-        except ValueError as err:
-            msg = f"Export target path '{output_path}' escapes current working directory boundary"
-            logger.error(msg)
-            raise AuditExportError(msg) from err
-        return str(resolved_target)
+            raise AuditExportError(msg)
+
+    return str(resolved_target)
 
 
 def _open_secure_export_file(
@@ -289,14 +272,14 @@ def _open_secure_export_file(
         AuditExportError: If directory creation or file opening fails.
     """
     out_dir = os.path.dirname(abs_path)
-    if out_dir:
-        os.makedirs(out_dir, exist_ok=True)
 
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
     if hasattr(os, "O_BINARY"):
         flags |= os.O_BINARY
 
     try:
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
         fd = os.open(abs_path, flags, 0o600)
         if os.name != "nt":
             with contextlib.suppress(OSError):

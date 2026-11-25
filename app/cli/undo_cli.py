@@ -1,4 +1,4 @@
-"""CLI subcommand helpers and execution handler for full and selective session rollback."""
+"""CLI subcommand helpers and execution handler for full and selective session undo."""
 
 from __future__ import annotations
 
@@ -13,7 +13,9 @@ from typing import Any, cast
 
 from app.cli.error_emitter import emit_cli_error
 from app.config import AppSettings
+from app.core.exceptions import AuditExportError
 from app.core.session_catalog import (
+    can_undo_session,
     get_session_moves,
     has_remaining_undo_moves,
     list_sessions,
@@ -22,7 +24,7 @@ from app.core.session_catalog import (
 
 
 def extend_undo_parser(parser_undo: argparse.ArgumentParser) -> None:
-    """Register selective rollback, move listing, and dry-run flags on ``parser_undo``.
+    """Register selective undo, move listing, export format, and dry-run flags on ``parser_undo``.
 
     Parameters
     ----------
@@ -37,7 +39,7 @@ def extend_undo_parser(parser_undo: argparse.ArgumentParser) -> None:
     parser_undo.add_argument(
         "--dry-run",
         action="store_true",
-        help="Preview rollback outcome and potential collisions without moving files",
+        help="Preview undo outcome and potential collisions without moving files",
     )
     parser_undo.add_argument(
         "--step-id",
@@ -54,6 +56,20 @@ def extend_undo_parser(parser_undo: argparse.ArgumentParser) -> None:
         action="append",
         default=None,
         help="Source or destination file path/name to revert (repeatable for selective undo)",
+    )
+    parser_undo.add_argument(
+        "-f",
+        "--format",
+        type=str,
+        choices=["csv", "json"],
+        default=None,
+        help="Audit export format when using --export (csv or json)",
+    )
+    parser_undo.add_argument(
+        "--ledger-db",
+        type=str,
+        default=None,
+        help="Optional store database file path when using --export",
     )
 
 
@@ -142,12 +158,61 @@ def execute_undo_command(
     list_moves_flag = getattr(args, "list_moves", False)
     dry_run_flag = getattr(args, "dry_run", False)
     latest_flag = getattr(args, "latest", False)
+    export_path = getattr(args, "export", None)
+    export_format = getattr(args, "format", None)
+    ledger_db_path = getattr(args, "ledger_db", None)
     session_id_arg = getattr(args, "session_id", None)
     force_flag = getattr(args, "force", False)
     json_output = getattr(args, "json", False)
     quiet = getattr(args, "quiet", False)
     raw_step_ids: list[int] = list(getattr(args, "step_ids", None) or [])
     raw_files: list[str] = list(getattr(args, "files", None) or [])
+
+    if export_path is not None:
+        from app.core.services import acquire_services
+
+        lease = (
+            acquire_services(db_path=ledger_db_path)
+            if ledger_db_path
+            else acquire_services()
+        )
+        try:
+            history_mgr = lease.history
+            target_export_sid: str | None = session_id_arg
+            if target_export_sid is None and latest_flag:
+                export_sessions = history_mgr.get_sessions()
+                if not export_sessions:
+                    emit_cli_error(
+                        "Error: No historical sorting sessions available to export.",
+                        json_mode=json_output,
+                        exit_code=1,
+                    )
+                target_export_sid = str(export_sessions[0]["session_id"])
+
+            export_res = history_mgr.export_audit_log(
+                output_path=export_path,
+                session_id=target_export_sid,
+                format=export_format,
+            )
+            if json_output:
+                sys.stdout.write(json.dumps(export_res, indent=2) + "\n")
+                sys.stdout.flush()
+            elif not quiet:
+                print(
+                    f"Audit log exported ({export_res.get('format', '').upper()}) to "
+                    f"'{export_res.get('output_path', export_path)}'. "
+                    f"{export_res.get('count', 0)} record(s) written.",
+                    file=sys.stderr,
+                )
+            sys.exit(0)
+        except (ValueError, AuditExportError) as err:
+            emit_cli_error(
+                str(err),
+                json_mode=json_output,
+                exit_code=1,
+            )
+        finally:
+            lease.close()
 
     # Constraint: Default to --latest when no session ID or --list flag specified
     if not list_flag and not latest_flag and not session_id_arg:
@@ -172,8 +237,11 @@ def execute_undo_command(
                         if ts
                         else "N/A"
                     )
+                    step_cnt = int(s.get("step_count") or 0)
+                    file_cnt = int(s.get("file_count") or 0)
                     print(
-                        f"  Session ID: {s['session_id']} | Base: {s.get('base_dir', 'N/A')} | Status: {s.get('status', 'N/A')} | Time: {ts_str}"
+                        f"  Session ID: {s['session_id']} | Base: {s.get('base_dir', 'N/A')} | "
+                        f"Status: {s.get('status', 'N/A')} | Moves: {step_cnt} | Files: {file_cnt} | Time: {ts_str}"
                     )
         sys.exit(0)
 
@@ -184,34 +252,62 @@ def execute_undo_command(
                 target_session = s
                 break
         if not target_session:
+            if not list_moves_flag and not dry_run_flag:
+                emit_cli_error(
+                    f"Error: Session '{session_id_arg}' was not found or cannot be undone.",
+                    json_mode=json_output,
+                    exit_code=1,
+                    extra={"session_id": session_id_arg},
+                )
             target_session = {
                 "session_id": session_id_arg,
                 "history_db_path": None,
                 "base_dir": None,
             }
+        elif (
+            not list_moves_flag
+            and not dry_run_flag
+            and not raw_step_ids
+            and not raw_files
+            and not can_undo_session(target_session)
+        ):
+            sess_status = str(target_session.get("status") or "").strip().lower()
+            if sess_status == "rolled_back":
+                reason_msg = (
+                    f"Error: Session '{session_id_arg}' has already been undone."
+                )
+            elif sess_status == "abandoned":
+                reason_msg = f"Error: Session '{session_id_arg}' was abandoned and cannot be undone."
+            elif sess_status == "undo_snapshot":
+                reason_msg = f"Error: Session '{session_id_arg}' cannot be undone."
+            else:
+                reason_msg = f"Error: Session '{session_id_arg}' has no reversible file moves to undo."
+            emit_cli_error(
+                reason_msg,
+                json_mode=json_output,
+                exit_code=1,
+                extra={"session_id": session_id_arg},
+            )
     elif latest_flag:
         # Include completed/partially_rolled_back sessions with remaining moves as well as trash-only completed sessions.
         undoable = [
             s
             for s in all_sessions
-            if (
-                str(s.get("status", "")).lower()
-                in ("completed", "partially_rolled_back")
-                and has_remaining_undo_moves(s)
-            )
-            or (
-                str(s.get("status", "")).lower() == "completed"
-                and int(s.get("trashed_count") or 0) > 0
+            if can_undo_session(s)
+            and (
+                (
+                    str(s.get("status", "")).lower()
+                    in ("completed", "partially_rolled_back")
+                    and has_remaining_undo_moves(s)
+                )
+                or (
+                    str(s.get("status", "")).lower() == "completed"
+                    and int(s.get("trashed_count") or 0) > 0
+                )
             )
         ]
         if not undoable:
-            undoable = [
-                s
-                for s in all_sessions
-                if str(s.get("status", "")).lower() not in ("rolled_back", "abandoned")
-                and int(s.get("step_count") or 0) > 0
-                and has_remaining_undo_moves(s)
-            ]
+            undoable = [s for s in all_sessions if can_undo_session(s)]
         if undoable:
             target_session = undoable[0]
         else:
@@ -352,7 +448,7 @@ def execute_undo_command(
         )
         is_selective = selected_step_ids is not None
         if is_selective and selected_step_ids is not None:
-            msg = f"Successfully rolled back {len(selected_step_ids)} selected move(s) in session '{target_session_id}'."
+            msg = f"Successfully undid {len(selected_step_ids)} selected move(s) in session '{target_session_id}'."
         elif restored_count == 0 and trashed_remaining > 0:
             noun = "copy" if trashed_remaining == 1 else "copies"
             verb_rem = "remains" if trashed_remaining == 1 else "remain"
@@ -361,7 +457,7 @@ def execute_undo_command(
                 f"{trashed_remaining} duplicate {noun} {verb_rem} in OS Trash."
             )
         else:
-            msg = f"Successfully rolled back sorting session '{target_session_id}'."
+            msg = f"Successfully undid sorting session '{target_session_id}'."
 
         result: dict[str, Any] = {
             "status": "success",
@@ -384,12 +480,12 @@ def execute_undo_command(
             if not (restored_count == 0 and trashed_remaining > 0) and not quiet:
                 if is_selective and selected_step_ids is not None:
                     print(
-                        f"Rollback completed successfully for {len(selected_step_ids)} selected move(s) in session '{target_session_id}'.",
+                        f"Undo completed successfully for {len(selected_step_ids)} selected move(s) in session '{target_session_id}'.",
                         file=sys.stderr,
                     )
                 else:
                     print(
-                        f"Rollback completed successfully for session '{target_session_id}'.",
+                        f"Undo completed successfully for session '{target_session_id}'.",
                         file=sys.stderr,
                     )
             if trash_warning:
@@ -398,7 +494,7 @@ def execute_undo_command(
         sys.exit(0)
     except (OSError, RuntimeError, ValueError, LookupError, TypeError) as ex:
         emit_cli_error(
-            f"Rollback failed for session '{target_session_id}': {ex}",
+            f"Undo failed for session '{target_session_id}': {ex}",
             json_mode=json_output,
             exit_code=1,
             extra={"session_id": target_session_id},

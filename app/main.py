@@ -1785,13 +1785,13 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
 
     # Subcommand: undo
     parser_undo = subparsers.add_parser(
-        "undo", help="Rollback sorting operations and manage history sessions"
+        "undo", help="Undo sorting operations and manage session history"
     )
     parser_undo.add_argument(
         "--session-id",
         type=str,
         default=None,
-        help="Specific historical session ID UUID to rollback",
+        help="Specific historical session ID UUID to undo",
     )
     parser_undo.add_argument(
         "--list",
@@ -1801,17 +1801,24 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
     parser_undo.add_argument(
         "--latest",
         action="store_true",
-        help="Rollback the latest historical sorting session",
+        help="Undo the latest historical sorting session",
+    )
+    parser_undo.add_argument(
+        "--export",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Export audit records for the selected session (or all sessions) to CSV or JSON",
     )
     parser_undo.add_argument(
         "--force",
         action="store_true",
-        help="Force rollback even if original files are missing",
+        help="Force undo even if sorted files are missing",
     )
     parser_undo.add_argument(
         "--json",
         action="store_true",
-        help="Output session list or rollback status in structured JSON format",
+        help="Output session list or undo status in structured JSON format",
     )
     from app.cli.undo_cli import extend_undo_parser
 

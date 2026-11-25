@@ -115,7 +115,7 @@ def test_shared_duplicate_and_trash_formatting_helpers() -> None:
 
     msg_clean, ntype_clean = format_session_rollback_outcome("sess_abcd1234", 4, 0)
     assert ntype_clean == "info"
-    assert "successfully rolled back (4 file(s) restored)" in msg_clean
+    assert "successfully undone (4 file(s) restored)" in msg_clean
 
 
 def test_migration_4_upgrades_v3_moves_check_constraint_without_data_loss(
@@ -1100,7 +1100,7 @@ def test_cli_sort_and_undo_separate_counts_surface_trash_errors_and_omit_zero_re
         out_u1, err_u1 = _run_main(
             ["sortify", "--decline-ai-consent", "undo", "--latest"]
         )
-        assert "Rollback completed successfully" in (out_u1 + err_u1)
+        assert "Undo completed successfully" in (out_u1 + err_u1)
         assert orig.exists() and dup.exists()
 
         # 2. Succeeding OS Trash handoff on mixed session -> undo warns trashed copy remains in OS Trash

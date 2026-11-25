@@ -143,17 +143,23 @@ def test_audit_report_modal_bindings_no_ctrl_c():
     assert len(ctrl_c_bindings) == 0
 
 
-def test_audit_report_modal_export_actions(sample_audit_report, tmp_path):
-    """Test JSON and CSV export buttons in AuditReportModal and verify ctrl+c does not export."""
+def test_audit_report_modal_export_actions(sample_audit_report, tmp_path, monkeypatch):
+    """Test JSON and CSV export buttons prompt with external path outside base_dir and block sorted-folder writes."""
+    from app.ui.modals.reports import ExportReportModal
+
     assert not any(
         getattr(b, "key", None) == "ctrl+c" for b in AuditReportModal.BINDINGS
     )
 
+    app_dir = tmp_path / "app_dir"
+    sorted_dir = tmp_path / "sorted_folder"
+    sorted_dir.mkdir()
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(app_dir))
+
     async def _test():
-        # Set base_dir in report to tmp_path
-        sample_audit_report["base_dir"] = str(tmp_path)
+        sample_audit_report["base_dir"] = str(sorted_dir)
         modal = AuditReportModal(sample_audit_report)
-        settings = AppSettings()
+        settings = AppSettings(filepath=str(tmp_path / "settings.json"))
         settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings)
 
@@ -162,23 +168,54 @@ def test_audit_report_modal_export_actions(sample_audit_report, tmp_path):
             await pilot.pause()
 
             # Pressing ctrl+c should not trigger report export or write CSV to disk
-            csv_export_file = tmp_path / "audit_report.csv"
             await pilot.press("ctrl+c")
             await pilot.pause()
-            assert not csv_export_file.exists()
+            assert list(sorted_dir.iterdir()) == []
 
+            # Pressing Export JSON opens ExportReportModal defaulting to <app_dir>/exports/audit_report.json
             btn_json = modal.query_one("#btn-export-json", Button)
             btn_json.press()
             await pilot.pause()
+            assert isinstance(app.screen, ExportReportModal)
+            expected_json = app_dir / "exports" / "audit_report.json"
+            assert app.screen.query_one("#input-export-path", Input).value == str(
+                expected_json
+            )
+            app.screen.query_one("#btn-export", Button).press()
+            await pilot.pause()
 
-            json_export_file = tmp_path / "audit_report.json"
-            assert json_export_file.exists()
+            assert expected_json.exists()
+            assert list(sorted_dir.iterdir()) == []
 
+            # Pressing Export CSV opens ExportReportModal defaulting to <app_dir>/exports/audit_report.csv
             btn_csv = modal.query_one("#btn-export-csv", Button)
             btn_csv.press()
             await pilot.pause()
+            assert isinstance(app.screen, ExportReportModal)
+            expected_csv = app_dir / "exports" / "audit_report.csv"
+            assert app.screen.query_one("#input-export-path", Input).value == str(
+                expected_csv
+            )
+            app.screen.query_one("#btn-export", Button).press()
+            await pilot.pause()
 
-            assert csv_export_file.exists()
+            assert expected_csv.exists()
+            assert list(sorted_dir.iterdir()) == []
+
+            # Attempting to save inside the sorted folder fails cleanly with AuditExportError announcement
+            btn_json.press()
+            await pilot.pause()
+            assert isinstance(app.screen, ExportReportModal)
+            inside_path = sorted_dir / "audit_report.json"
+            app.screen.query_one("#input-export-path", Input).value = str(inside_path)
+            app.screen.query_one("#btn-export", Button).press()
+            await pilot.pause()
+
+            assert not inside_path.exists()
+            assert list(sorted_dir.iterdir()) == []
+            assert "Failed to export audit report" in (
+                modal.get_last_announcement() or ""
+            )
 
     asyncio.run(_test())
 

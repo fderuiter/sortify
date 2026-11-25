@@ -159,7 +159,7 @@ DEFAULT_COMMAND_CATALOG: list[PaletteCommand] = [
         title="Open Session History",
         category="History",
         shortcut="Ctrl+Y",
-        description="View past session rollbacks and audit logs",
+        description="View past sessions, undo sorts, and export audit records",
         action_name="action_open_history",
     ),
     PaletteCommand(

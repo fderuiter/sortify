@@ -100,3 +100,62 @@ def test_undo_latest_twice_reaches_the_previous_sort(tmp_path, monkeypatch):
     assert Path(first_undo["base_dir"]).name == "second"
     assert Path(second_undo["base_dir"]).name == "first"
     assert first_undo["status"] == second_undo["status"] == "rolled_back"
+
+
+@pytest.mark.xdist_group(name="cli_undo_presets")
+def test_undo_list_prints_move_and_file_counts_and_guards_non_undoable_sessions(
+    tmp_path, monkeypatch
+):
+    """Plain-text `undo --list` prints move/file counts, hides undo_snapshot rows, and `undo` guards non-undoable sessions without InvalidStateTransitionError."""
+    from app.core.db_conn import get_db_connection
+    from app.core.store import open_store
+
+    app_dir = tmp_path / "app_dir"
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(app_dir))
+
+    workspace = tmp_path / "workspace"
+    create_sample_corpus(workspace)
+    code_sort, _out_sort, err_sort = run_cli(["sort", str(workspace), "--json"])
+    assert code_sort == 0, f"Sort failed: {err_sort}"
+
+    store = open_store(app_dir, legacy_session_root=tmp_path / "none")
+    conn = get_db_connection(str(store.path))
+    with conn:
+        conn.execute(
+            "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, ?)",
+            ("legacy_snap_id", 1999999999.0, str(workspace), "undo_snapshot"),
+        )
+        conn.execute(
+            "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, ?)",
+            ("zero_move_id", 1999999998.0, str(workspace), "completed"),
+        )
+
+    code_json, out_json, _ = run_cli(["undo", "--list", "--json"])
+    assert code_json == 0
+    sessions_json = json.loads(out_json)
+    listed_ids = {s["session_id"] for s in sessions_json}
+    assert "legacy_snap_id" not in listed_ids
+    sorted_entry = next(s for s in sessions_json if s["session_id"] != "zero_move_id")
+    assert sorted_entry["step_count"] > 0
+    assert sorted_entry["file_count"] > 0
+
+    code_txt, out_txt, _ = run_cli(["undo", "--list"])
+    assert code_txt == 0
+    assert "legacy_snap_id" not in out_txt
+    assert (
+        f"Moves: {sorted_entry['step_count']} | Files: {sorted_entry['file_count']}"
+        in out_txt
+    )
+
+    # Targeting legacy undo_snapshot or 0-move session returns clean error (never InvalidStateTransitionError)
+    for bad_id in ("legacy_snap_id", "zero_move_id"):
+        c_bad, o_bad, e_bad = run_cli(["undo", "--session-id", bad_id, "--json"])
+        assert c_bad == 1
+        assert "InvalidStateTransitionError" not in (o_bad + e_bad)
+        payload = json.loads(o_bad)
+        assert payload["status"] == "error"
+
+    # Despite zero_move_id and legacy_snap_id having newer timestamps, `undo --latest` skips them and undoes the real sort!
+    c_latest, o_latest, e_latest = run_cli(["undo", "--latest", "--json"])
+    assert c_latest == 0, f"undo --latest failed: {e_latest}"
+    assert json.loads(o_latest)["session_id"] == sorted_entry["session_id"]

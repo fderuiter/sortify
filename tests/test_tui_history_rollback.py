@@ -470,7 +470,7 @@ async def test_escape_does_not_close_history_modal_mid_rollback(
 
         assert app.screen is modal
         lbl_status = modal.query_one("#lbl-rollback-status", Label)
-        assert "successfully rolled back" in str(lbl_status.render())
+        assert "successfully undone" in str(lbl_status.render())
 
         await pilot.press("escape")
         await pilot.pause()
@@ -526,10 +526,10 @@ async def test_rollback_confirm_modal_history_load_failure(monkeypatch, caplog):
         assert banner.display is True
         assert "database is locked" in str(banner.render())
 
-        # 3. Verify confirm rollback button is disabled with explanatory tooltip
+        # 3. Verify confirm undo button is disabled with explanatory tooltip
         btn_confirm = modal.query_one("#btn-confirm-rollback", Button)
         assert btn_confirm.disabled is True
-        assert "Cannot confirm rollback" in str(btn_confirm.tooltip)
+        assert "Cannot confirm undo" in str(btn_confirm.tooltip)
 
         # 4. Verify announcement and logging
         assert any(
@@ -744,3 +744,188 @@ async def test_pipeline_execution_announces_undo_available(tmp_path):
             await pilot.pause()
 
         assert any("[Ctrl+Z] Undo available" in msg for msg in announced)
+
+
+def test_legacy_import_skips_undo_snapshot_rows_without_bumping_schema_version(
+    tmp_path,
+):
+    """Legacy import excludes undo_snapshot rows and child records while keeping STORE_MIGRATIONS at v4."""
+    import sqlite3
+
+    from app.core.session_catalog import can_undo_session, list_sessions
+    from app.core.store import STORE_MIGRATIONS, open_store
+
+    assert max(m.version for m in STORE_MIGRATIONS) == 4
+
+    legacy_root = tmp_path / "legacy_sessions"
+    legacy_dir = legacy_root / "sess_dir"
+    legacy_dir.mkdir(parents=True)
+    legacy_db = legacy_dir / "history.db"
+    conn = sqlite3.connect(str(legacy_db))
+    with conn:
+        conn.execute(
+            "CREATE TABLE sessions (session_id TEXT PRIMARY KEY, timestamp REAL, base_dir TEXT, status TEXT)"
+        )
+        conn.execute(
+            "CREATE TABLE step_ledger (step_id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, source_path TEXT, target_path TEXT, file_hash TEXT, status TEXT, timestamp REAL)"
+        )
+        conn.execute(
+            "CREATE TABLE snapshot_files (session_id TEXT, filepath TEXT, mtime REAL, size INTEGER)"
+        )
+        conn.execute(
+            "INSERT INTO sessions VALUES ('real_sess', 1700000000.0, '/tmp/sorted', 'completed')"
+        )
+        conn.execute(
+            "INSERT INTO step_ledger (session_id, source_path, target_path, file_hash, status, timestamp) VALUES ('real_sess', '/tmp/sorted/a.txt', '/tmp/sorted/Docs/a.txt', 'h1', 'completed', 1700000001.0)"
+        )
+        conn.execute(
+            "INSERT INTO sessions VALUES ('snap_sess', 1700000010.0, '/tmp/sorted', 'undo_snapshot')"
+        )
+        conn.execute(
+            "INSERT INTO step_ledger (session_id, source_path, target_path, file_hash, status, timestamp) VALUES ('snap_sess', '/tmp/sorted/Docs/a.txt', '/tmp/sorted/a.txt', 'h1', 'completed', 1700000011.0)"
+        )
+        conn.execute(
+            "INSERT INTO snapshot_files VALUES ('snap_sess', '/tmp/sorted/a.txt', 1.0, 10)"
+        )
+    conn.close()
+
+    store = open_store(tmp_path / "app_store", legacy_session_root=legacy_root)
+    listed = list_sessions(store)
+    assert [s["session_id"] for s in listed] == ["real_sess"]
+    assert can_undo_session(listed[0]) is True
+
+    store_conn = get_db_connection(str(store.path))
+    with store_conn:
+        sids = {
+            r[0]
+            for r in store_conn.execute("SELECT session_id FROM sessions").fetchall()
+        }
+        move_sids = {
+            r[0] for r in store_conn.execute("SELECT session_id FROM moves").fetchall()
+        }
+        snap_sids = {
+            r[0]
+            for r in store_conn.execute(
+                "SELECT session_id FROM snapshot_files"
+            ).fetchall()
+        }
+    assert "snap_sess" not in sids
+    assert "snap_sess" not in move_sids
+    assert "snap_sess" not in snap_sids
+
+
+@pytest.mark.anyio
+async def test_history_modal_disables_undo_for_non_undoable_sessions_and_aligns_terminology(
+    tui_rollback_env,
+):
+    """HistoryModal disables Undo Session for 0-move/abandoned/undo_snapshot sessions and preserves Rollback on recovery modals."""
+    from app.core.session_catalog import can_undo_session
+    from app.ui.modals.session import MultiSessionRecoveryModal, SessionRecoveryModal
+
+    assert (
+        can_undo_session(
+            {
+                "session_id": "s1",
+                "status": "completed",
+                "step_count": 0,
+                "file_count": 0,
+            }
+        )
+        is False
+    )
+    assert (
+        can_undo_session(
+            {
+                "session_id": "s2",
+                "status": "completed",
+                "step_count": 0,
+                "trashed_count": 1,
+            }
+        )
+        is True
+    )
+    assert (
+        can_undo_session({"session_id": "s3", "status": "abandoned", "step_count": 3})
+        is False
+    )
+    assert (
+        can_undo_session({"session_id": "s4", "status": "rolled_back", "step_count": 3})
+        is False
+    )
+    assert (
+        can_undo_session(
+            {"session_id": "s5", "status": "undo_snapshot", "step_count": 3}
+        )
+        is False
+    )
+
+    zero_move_session = {
+        "session_id": "zero_move_12345678",
+        "base_dir": tui_rollback_env["base_dir"],
+        "status": "completed",
+        "timestamp": 1700000500.0,
+        "step_count": 0,
+        "file_count": 0,
+    }
+    abandoned_session = {
+        "session_id": "abandoned_12345678",
+        "base_dir": tui_rollback_env["base_dir"],
+        "status": "abandoned",
+        "timestamp": 1700000400.0,
+        "step_count": 2,
+        "file_count": 2,
+    }
+    snapshot_session = {
+        "session_id": "snapshot_12345678",
+        "base_dir": tui_rollback_env["base_dir"],
+        "status": "undo_snapshot",
+        "timestamp": 1700000600.0,
+        "step_count": 2,
+        "file_count": 2,
+    }
+
+    settings = tui_rollback_env["settings"]
+    app = AutoSorterTUI(settings=settings)
+    async with app.run_test() as pilot:
+        modal = HistoryModal(
+            sessions=[zero_move_session, abandoned_session, snapshot_session],
+            base_dir=tui_rollback_env["base_dir"],
+        )
+        app.push_screen(modal)
+        await pilot.pause()
+
+        # undo_snapshot is filtered out of HistoryModal
+        assert [s["session_id"] for s in modal.sessions] == [
+            "zero_move_12345678",
+            "abandoned_12345678",
+        ]
+        assert "Undo" in str(modal.query_one("#modal-title").render())
+        btn_undo = modal.query_one("#btn-rollback-session", Button)
+        assert "Undo Session" in str(btn_undo.label)
+
+        select_sess = modal.query_one("#select-history-session", Select)
+        select_sess.value = "zero_move_12345678"
+        await pilot.pause()
+        assert btn_undo.disabled is True
+
+        # Even direct action invocation refuses cleanly without raising InvalidStateTransitionError
+        modal.action_rollback_session()
+        await pilot.pause()
+        assert app.screen is modal
+
+        select_sess.value = "abandoned_12345678"
+        await pilot.pause()
+        assert btn_undo.disabled is True
+
+        # Recovery modals retain Rollback terminology per CONTEXT.md
+        rec_modal = SessionRecoveryModal(session_info=abandoned_session)
+        app.push_screen(rec_modal)
+        await pilot.pause()
+        assert "Rollback" in str(rec_modal.query_one("#btn-rollback", Button).label)
+        app.pop_screen()
+        await pilot.pause()
+
+        multi_rec = MultiSessionRecoveryModal(sessions=[abandoned_session])
+        app.push_screen(multi_rec)
+        await pilot.pause()
+        assert "Rollback" in str(multi_rec.query_one("#btn-rollback-all", Button).label)
