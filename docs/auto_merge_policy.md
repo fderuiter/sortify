@@ -32,7 +32,7 @@ Thresholds for low-risk opt-in PRs:
 - $\le 10$ changed files
 - $\le 500$ non-generated changed lines
 - No sensitive paths touched
-- No snapshot or API baseline modifications
+- No snapshot, type-check, or API baseline modifications
 - Not draft
 
 *(Note: Resolved review conversations are mandatory and enforced directly by GitHub main branch rulesets.)*
@@ -51,7 +51,7 @@ The controller **fails closed** and blocks auto-merge for PRs touching any of th
 - Release & compilation toolchains and CI/merge tooling (`scripts/**`, `smart-autosorter.spec`)
 - Dependency manifests and lockfiles (`pyproject.toml`, `uv.lock`, `offline_bundle/requirements.txt`, with `.github/CODEOWNERS` requiring owner review on `offline_bundle/requirements.txt`), unless the PR is an approved native Dependabot update (`dependabot[bot]`) or an automated security patch with a maintainer-applied `automerge` label
 - Major dependency updates (e.g. major version bumps)
-- Snapshot baselines (`tests/snapshots/api/**`, `tests/snapshots/tui_svg/**`)
+- Snapshot and type-check baselines (`tests/snapshots/api/**`, `tests/snapshots/tui_svg/**`, `tests/ty_baseline.json`)
 
 ---
 

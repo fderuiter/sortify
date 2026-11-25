@@ -175,9 +175,6 @@ convention = "numpy"
 [tool.ruff.format]
 docstring-code-format = true
 
-[tool.ty]
-baseline = "tests/ty_baseline.json"
-
 [tool.ty.environment]
 python-version = "3.12"
 
@@ -185,7 +182,7 @@ python-version = "3.12"
 error-on-warning = true
 
 [tool.ty.src]
-include = ["app", "scripts", "tests", ".agents", "sandbox_cli.py"]
+include = ["app", "scripts", ".agents", "sandbox_cli.py"]
 
 [tool.ty.analysis]
 # Optional `ml` extra and `build`/`docs` group packages, imported lazily behind guards.
@@ -288,7 +285,8 @@ show_missing = true
 
 # Per-file upper-bound ceilings for legacy ty warnings across linux, darwin, and
 # win32, enforced by scripts/check_ty_warnings.py. Ceilings and baseline entries
-# are forbidden for app/, scripts/, and .agents/; unlisted files must have 0 warnings.
+# are forbidden for app/, scripts/, .agents/, and sandbox_cli.py; unlisted files
+# must have 0 warnings (legacy test rule ceilings live in tests/ty_baseline.json).
 [tool.sortify.ty-warning-ceilings]
 
 # Shrink-only per-file ceilings for legacy Ruff BLE001/S110/SIM105 violations

@@ -962,8 +962,9 @@ def test_policy_rule_typed_schema_and_runtime_dict_compatibility():
     assert len(settings.POLICIES) == len(rules)
     for rule in settings.POLICIES:
         assert isinstance(rule, dict)
-    assert settings.POLICIES[0]["custom_metadata"] == "preserved"
-    assert settings.POLICIES[0]["post_unarchive_target"] == "Processed_Archives"
+    first_rule: dict[str, object] = dict(settings.POLICIES[0])
+    assert first_rule["custom_metadata"] == "preserved"
+    assert first_rule["post_unarchive_target"] == "Processed_Archives"
 
 
 def test_app_settings_load_accepts_legacy_unarchive_aliases(tmp_path, caplog):

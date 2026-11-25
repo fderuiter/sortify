@@ -31,7 +31,8 @@ uv run python sandbox_cli.py analyze -q --json  # isolated sandbox analysis (aut
 uv run pytest -m "not slow"             # fast suite, parallel by default (pytest-xdist)
 uv run pytest -m slow -n 0              # ML, snapshot and integration tests
 uv run ruff check . && uv run ruff format .
-uv run ty check                         # type check app/, scripts/, tests/, .agents/ and sandbox_cli.py (config in pyproject.toml)
+uv run ty check                         # type check app/, scripts/, .agents/ and sandbox_cli.py (config in pyproject.toml)
+uv run python scripts/check_ty_warnings.py  # 3-OS type check including tests/ against tests/ty_baseline.json ceilings
 SKIP=no-commit-to-branch uv run pre-commit run --all-files       # every hook offline, including on main
 uv run python scripts/validate_config.py --check                 # verify config schema and pyproject.toml bounds read-only
 uv run python scripts/generate_docs.py --check --no-build --local-only  # verify generated docs/diagrams offline and read-only
@@ -65,6 +66,7 @@ Read-only `--check` and `--verify` commands never overwrite tracked files on dis
 - **Generated docs:** `uv run python scripts/generate_docs.py` rewrites the generated pages, `SECURITY.md`, and synchronizes `app/config_schema.json` offline without building `site/` (pass `--build` to also build the MkDocs HTML site and `--live-links` to probe external URLs).
 - **API and CLI signatures:** `uv run python scripts/validate_signatures.py --update`.
 - **TUI snapshots:** `UPDATE_SNAPSHOTS=1 uv run pytest tests/test_visual_snapshots.py -n 0`, then commit `tests/snapshots/tui_svg/`.
+- **Test type-check ceilings:** `uv run python scripts/check_ty_warnings.py --sync-baseline` rewrites `tests/ty_baseline.json` with deterministic `(file, rule)` ceilings across `linux`, `darwin`, and `win32`.
 - **Diagrams:** edit the spec in `scripts/diagram_schema.py`, then run `uv run python scripts/diagram_toolchain.py build` and commit the `.mmd` and `.svg` files in `docs/assets/diagrams/`. Rendering needs Node and mermaid-cli (`npm install -g @mermaid-js/mermaid-cli`, which also fetches the headless Chrome it uses). Without it the build keeps the existing SVGs and warns that a changed diagram is stale.
 
 ## Code conventions
@@ -80,7 +82,7 @@ Read-only `--check` and `--verify` commands never overwrite tracked files on dis
 1. Branch from `main`; the `no-commit-to-branch` hook blocks commits on `main` itself.
 2. Keep each PR to one topic, with tests for behavior changes.
 3. Fill in the pull request template.
-4. Sensitive paths (workflows, `SECURITY.md`, `PRIVACY.md`, config, crypto, mover, history, session, build tooling and the snapshot baselines) need code-owner review and are never auto-merged. The full list is in [Auto-Merge Policy](docs/auto_merge_policy.md) and `.github/CODEOWNERS`.
+4. Sensitive paths (workflows, `SECURITY.md`, `PRIVACY.md`, config, crypto, mover, history, session, build tooling, and snapshot or type-check baselines including `tests/ty_baseline.json`) need code-owner review and are never auto-merged. The full list is in [Auto-Merge Policy](docs/auto_merge_policy.md) and `.github/CODEOWNERS`.
 
 ## Releasing
 

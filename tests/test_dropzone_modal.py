@@ -24,6 +24,7 @@ class DummySettings:
         self.MAX_FOLDERS = 10
         self.STOP_WORDS = set()
         self.AI_CONSENT_GRANTED = False
+        self.KEYWORD_RULES: dict[str, str] = {}
         self.POLICIES = []
         self.PROTECTED_PATHS = [str(tmp_path / "protected")]
         self.IGNORED_EXTENSIONS = [".tmp"]

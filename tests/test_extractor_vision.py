@@ -7,11 +7,12 @@ from app.core.extractor_strategies import get_ocr_reader
 
 
 @pytest.fixture(autouse=True)
-def reset_ocr_reader(monkeypatch):
-    import app.core.extractor_strategies as strat
+def reset_ocr_reader():
+    from app.core.model_registry import SharedModelRegistry
 
-    strat._ocr_reader = None
-    strat._ocr_reader_loaded = False
+    SharedModelRegistry.get_instance().unload_model("easyocr")
+    yield
+    SharedModelRegistry.get_instance().unload_model("easyocr")
 
 
 def test_extract_image_success(mocker):
@@ -192,3 +193,16 @@ def test_extract_image_downscaled(mocker):
     assert text == "downscaled text"
     mock_image.resize.assert_called_once()
     mock_numpy.array.assert_called_once_with(mock_resized)
+
+
+def test_reset_ocr_reader_clears_shared_model_registry_cache():
+    from app.core.model_registry import SharedModelRegistry
+
+    registry = SharedModelRegistry.get_instance()
+    assert "easyocr" not in registry._models
+    assert "easyocr_info" not in registry._models
+    registry._models["easyocr"] = "cached_reader"
+    registry._models["easyocr_info"] = (["en"], False)
+    registry.unload_model("easyocr")
+    assert "easyocr" not in registry._models
+    assert "easyocr_info" not in registry._models

@@ -28,3 +28,4 @@ CLAUDE.md @fderuiter
 offline_bundle/requirements.txt @fderuiter
 tests/snapshots/api/ @fderuiter
 tests/snapshots/tui_svg/ @fderuiter
+tests/ty_baseline.json @fderuiter

@@ -483,8 +483,8 @@ def test_check_release_changes_skips_tool_only_pyproject_and_builds_packaging_ed
         base_pyproject.replace("line-length = 88", "line-length = 100"),
         base_pyproject.replace("error-on-warning = true", "error-on-warning = false"),
         base_pyproject.replace(
-            'baseline = "tests/ty_baseline.json"',
-            'baseline = "tests/ty_baseline_v2.json"',
+            'include = ["app", "scripts", ".agents", "sandbox_cli.py"]',
+            'include = ["app", "scripts", "tests", ".agents", "sandbox_cli.py"]',
         ),
         base_pyproject.replace("timeout = 360", "timeout = 400"),
         base_pyproject.replace("show_missing = true", "show_missing = false"),

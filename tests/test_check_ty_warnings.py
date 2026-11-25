@@ -189,10 +189,17 @@ def test_windows_and_repo_prefixed_paths_normalize(tmp_path: Path) -> None:
 
 
 def test_pyproject_has_zero_app_warning_ceilings_and_clean_baseline() -> None:
+    import tomllib
+
     pyproject = REPO_ROOT / "pyproject.toml"
     ceilings = load_ceilings(pyproject)
     assert ceilings == {}, f"Expected zero warning ceilings, found {ceilings}"
     assert check_baseline(pyproject, repo_root=REPO_ROOT) == []
+
+    config = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    ty_cfg = config.get("tool", {}).get("ty", {})
+    assert "baseline" not in ty_cfg
+    assert "tests" not in ty_cfg.get("src", {}).get("include", [])
 
 
 def test_main_report_modes_and_github_annotations(
@@ -304,3 +311,288 @@ def test_ty_rejects_invalid_parameter_default_probe(tmp_path: Path) -> None:
     combined = f"{res.stdout}\n{res.stderr}"
     assert "invalid-parameter-default" in combined
     assert "invalid-argument-type" in combined
+
+
+def test_sandbox_cli_forbidden_in_ceilings_and_baseline(tmp_path: Path) -> None:
+    from scripts.check_ty_warnings import FORBIDDEN_ROOTS
+
+    assert "sandbox_cli.py" in FORBIDDEN_ROOTS
+    ceiling_failures = check([], {"sandbox_cli.py": 1})
+    assert len(ceiling_failures) == 1
+    assert "warning ceilings are forbidden" in ceiling_failures[0]
+
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(
+        "[tool.ty.environment]\npython-version = '3.12'\n", encoding="utf-8"
+    )
+    baseline = tmp_path / "tests" / "ty_baseline.json"
+    baseline.parent.mkdir(parents=True)
+    baseline.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "files": {
+                    "sandbox_cli.py": {"missing-attribute": 1},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    baseline_failures = check_baseline(pyproject, repo_root=tmp_path)
+    assert len(baseline_failures) == 1
+    assert "baseline entries are forbidden" in baseline_failures[0]
+
+
+def test_rule_ceiling_baseline_ignores_column_shifts_and_ratchets_stale_entries(
+    tmp_path: Path,
+) -> None:
+    test_file = tmp_path / "tests" / "test_sample.py"
+    test_file.parent.mkdir(parents=True)
+    test_file.write_text("x = 1\n", encoding="utf-8")
+
+    baseline_ceilings = {"tests/test_sample.py": {"missing-union-attribute": 2}}
+
+    # Column shifts (+4 spaces or different lines) still pass
+    shifted_reports = {
+        "linux": [
+            _diag(
+                "tests/test_sample.py",
+                severity="major",
+                rule="missing-union-attribute",
+                line=50,
+                col=16,
+            ),
+            _diag(
+                "tests/test_sample.py",
+                severity="major",
+                rule="missing-union-attribute",
+                line=51,
+                col=16,
+            ),
+        ],
+        "darwin": [
+            _diag(
+                "tests/test_sample.py",
+                severity="major",
+                rule="missing-union-attribute",
+                line=50,
+                col=16,
+            ),
+            _diag(
+                "tests/test_sample.py",
+                severity="major",
+                rule="missing-union-attribute",
+                line=51,
+                col=16,
+            ),
+        ],
+        "win32": [
+            _diag(
+                "tests/test_sample.py",
+                severity="major",
+                rule="missing-union-attribute",
+                line=50,
+                col=16,
+            ),
+        ],
+    }
+    assert (
+        check(
+            shifted_reports,
+            {},
+            repo_root=tmp_path,
+            baseline_ceilings=baseline_ceilings,
+        )
+        == []
+    )
+
+    # Scoped or single-OS run skips staleness ratchet on untouched files and OS branches
+    assert (
+        check(
+            {"linux": [], "darwin": [], "win32": []},
+            {},
+            repo_root=tmp_path,
+            baseline_ceilings=baseline_ceilings,
+            enforce_ratchet=False,
+        )
+        == []
+    )
+
+    # Full 3-OS run catches stale baseline ceiling when max count drops below ceiling
+    stale = check(
+        {
+            "linux": [
+                _diag(
+                    "tests/test_sample.py",
+                    severity="major",
+                    rule="missing-union-attribute",
+                )
+            ],
+            "darwin": [],
+            "win32": [],
+        },
+        {},
+        repo_root=tmp_path,
+        baseline_ceilings=baseline_ceilings,
+        enforce_ratchet=True,
+    )
+    assert len(stale) == 1
+    assert "1 diagnostic(s) is below its baseline ceiling of 2" in stale[0]
+    assert "--sync-baseline" in stale[0]
+
+    # Exceeding ceiling or introducing a new rule fails immediately
+    exceeded = check(
+        [
+            _diag(
+                "tests/test_sample.py",
+                severity="major",
+                rule="missing-union-attribute",
+                line=1,
+            ),
+            _diag(
+                "tests/test_sample.py",
+                severity="major",
+                rule="missing-union-attribute",
+                line=2,
+            ),
+            _diag(
+                "tests/test_sample.py",
+                severity="major",
+                rule="missing-union-attribute",
+                line=3,
+            ),
+        ],
+        {},
+        repo_root=tmp_path,
+        baseline_ceilings=baseline_ceilings,
+    )
+    assert len(exceeded) == 1
+    assert "exceeds its baseline ceiling of 2" in exceeded[0]
+
+
+def test_sync_baseline_removes_stale_entries_and_is_platform_deterministic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(
+        "[tool.ty.environment]\npython-version = '3.12'\n", encoding="utf-8"
+    )
+    mod_a = tmp_path / "tests" / "test_a.py"
+    mod_a.parent.mkdir(parents=True)
+    mod_a.write_text("a = 1\n", encoding="utf-8")
+
+    # Pre-seed stale baseline entry
+    baseline = tmp_path / "tests" / "ty_baseline.json"
+    baseline.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "files": {
+                    "tests/test_a.py": {"missing-attribute": 5, "stale-rule": 2},
+                    "tests/deleted_test.py": {"missing-attribute": 1},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    fake_by_plat = {
+        "linux": (
+            0,
+            [_diag("tests/test_a.py", severity="major", rule="missing-attribute")],
+            "",
+        ),
+        "darwin": (
+            0,
+            [_diag("tests/test_a.py", severity="major", rule="missing-attribute")],
+            "",
+        ),
+        "win32": (
+            0,
+            [
+                _diag(
+                    "tests/test_a.py",
+                    severity="major",
+                    rule="missing-attribute",
+                    line=10,
+                ),
+                _diag(
+                    "tests/test_a.py",
+                    severity="major",
+                    rule="missing-attribute",
+                    line=20,
+                ),
+                _diag(
+                    "tests/test_a.py",
+                    severity="major",
+                    rule="invalid-assignment",
+                    line=30,
+                ),
+            ],
+            "",
+        ),
+    }
+    monkeypatch.setattr(
+        "scripts.check_ty_warnings.run_ty_reports_parallel",
+        lambda _root, _plats=PLATFORMS, *, paths=None: dict(fake_by_plat),
+    )
+
+    assert main(["prog", "--sync-baseline"], repo_root=tmp_path) == 0
+    first_bytes = baseline.read_bytes()
+    parsed = json.loads(first_bytes.decode("utf-8"))
+    assert parsed == {
+        "version": 1,
+        "files": {
+            "tests/test_a.py": {
+                "invalid-assignment": 1,
+                "missing-attribute": 2,
+            }
+        },
+    }
+
+    # Re-running with reversed platform key order writes byte-for-byte identical JSON
+    reversed_by_plat = {k: fake_by_plat[k] for k in reversed(list(fake_by_plat))}
+    monkeypatch.setattr(
+        "scripts.check_ty_warnings.run_ty_reports_parallel",
+        lambda _root, _plats=PLATFORMS, *, paths=None: reversed_by_plat,
+    )
+    assert main(["prog", "--sync-baseline"], repo_root=tmp_path) == 0
+    assert baseline.read_bytes() == first_bytes
+
+
+def test_scoped_cli_mode_vs_config_triggers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(
+        "[tool.ty.environment]\npython-version = '3.12'\n", encoding="utf-8"
+    )
+    sandbox = tmp_path / "sandbox_cli.py"
+    sandbox.write_text("x = 1\n", encoding="utf-8")
+
+    recorded_paths: list[tuple[str, ...] | None] = []
+
+    def _fake_parallel(
+        _root: Path,
+        platforms: tuple[str, ...] = PLATFORMS,
+        *,
+        paths: list[str] | None = None,
+    ) -> dict[str, tuple[int, list[dict[str, Any]], str]]:
+        recorded_paths.append(tuple(paths) if paths is not None else None)
+        return {plat: (0, [], "") for plat in platforms}
+
+    monkeypatch.setattr(
+        "scripts.check_ty_warnings.run_ty_reports_parallel", _fake_parallel
+    )
+
+    assert main(["prog", "sandbox_cli.py"], repo_root=tmp_path) == 0
+    assert recorded_paths[-1] == ("sandbox_cli.py",)
+
+    for cfg_file in ("pyproject.toml", "uv.lock", "tests/ty_baseline.json"):
+        assert main(["prog", "sandbox_cli.py", cfg_file], repo_root=tmp_path) == 0
+        assert recorded_paths[-1] is None
+
+
+def test_live_scoped_checks_pass_across_all_platforms_for_os_branch_tests() -> None:
+    assert main(["prog", "sandbox_cli.py"]) == 0
+    assert main(["prog", "tests/test_env_helper.py", "tests/test_ipc.py"]) == 0

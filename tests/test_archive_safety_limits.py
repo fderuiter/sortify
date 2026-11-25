@@ -1,6 +1,7 @@
 """Tests for inline streaming guards and resource limits in forensic scanner archive unpacking."""
 
 import hashlib
+import io
 import os
 import tarfile
 import zipfile
@@ -43,7 +44,7 @@ def test_unpack_tar_max_files_limit_aborts_and_cleans_up(tmp_path):
             content = f"Content {i}".encode()
             ti = tarfile.TarInfo(name=f"file_{i}.txt")
             ti.size = len(content)
-            tf.addfile(ti, fileobj=zipfile.io.BytesIO(content))
+            tf.addfile(ti, fileobj=io.BytesIO(content))
 
     scanner = ForensicScanner(max_files=2)
     with pytest.raises(ArchiveSafetyError) as exc_info:
