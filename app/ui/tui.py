@@ -413,6 +413,8 @@ class AutoSorterTUI(
         self._daemon_state: str = "idle"
         self._daemon_is_moving: bool = False
         self._pending_flush_trash: bool = False
+        self._pending_ai_active_rescan: bool = False
+        self._last_ai_poll_token: tuple[Any, ...] | None = None
         self._manual_plan_edits: dict[str, dict[str, Any]] = {}
         self._manual_empty_folders: set[str] = set()
 
@@ -927,18 +929,140 @@ class AutoSorterTUI(
                 self.announce("Watchdog daemon idle.", priority="assertive")
 
     def _compute_ai_poll_token(self) -> tuple[Any, ...]:
-        """Build an in-memory token of consent and DownloadManager state without disk stat calls."""
-        from app.core.downloader import DownloadManager
+        """Build an in-memory token of consent, ONNX readiness, and DownloadManager state without disk stat calls."""
+        from app.core.downloader import DownloadManager, is_onnxruntime_available
+        from app.core.shared_registry import SharedModelRegistry
 
         consent = getattr(self.settings, "AI_CONSENT_GRANTED", None) is True
+        onnx_ready = is_onnxruntime_available()
+        reg = SharedModelRegistry._instance
+        onnx_health = (
+            str(reg.get_model_health("onnx_embeddings").get("status", ""))
+            if reg is not None
+            else ""
+        )
         dm = DownloadManager._instance
         if dm is None:
-            return (0, consent, "IDLE", False, 0, "")
+            return (0, consent, onnx_ready, onnx_health, "IDLE", False, 0, "")
         is_downloading = bool(dm.state.get("is_downloading", False))
         raw_progress = float(dm.state.get("progress", 0.0) or 0.0)
         pct = int(round(min(100.0, max(0.0, raw_progress * 100.0))))
         err = str(dm.state.get("error") or "")
-        return (id(dm), consent, str(dm.status), is_downloading, pct, err)
+        return (
+            id(dm),
+            consent,
+            onnx_ready,
+            onnx_health,
+            str(dm.status),
+            is_downloading,
+            pct,
+            err,
+        )
+
+    def _plan_has_manual_modifications(self) -> bool:
+        """Return True if the current plan has manual edits, empty folders, locks, or unchecked overrides."""
+        if (
+            bool(getattr(self, "_manual_plan_edits", None))
+            or bool(getattr(self, "_manual_empty_folders", None))
+            or bool(getattr(self, "locked_files", None))
+        ):
+            return True
+
+        raw_plan = getattr(self, "plan", None)
+        plan_tree = getattr(raw_plan, "plan_tree", None)
+        if plan_tree is None and isinstance(raw_plan, dict):
+            plan_tree = raw_plan
+        if not isinstance(plan_tree, dict):
+            return False
+
+        def _has_node_override(tree: dict[str, Any]) -> bool:
+            for name, node in tree.items():
+                if str(name).startswith("__") or not isinstance(node, dict):
+                    continue
+                is_file = (
+                    node.get("__type__") == "file"
+                    or node.get("node_type") == "file"
+                    or (
+                        node.get("node_type") != "directory"
+                        and (
+                            "relative_source" in node
+                            or "target_filename" in node
+                            or "source_path" in node
+                            or "filepath" in node
+                            or "original_path" in node
+                        )
+                    )
+                )
+                if is_file:
+                    if (
+                        node.get("is_locked")
+                        or node.get("locked")
+                        or node.get("destination_override")
+                        or node.get("is_overridden")
+                        or node.get("manual_edit")
+                        or node.get("excluded")
+                        or node.get("is_checked") is False
+                    ):
+                        return True
+                elif _has_node_override(node):
+                    return True
+            return False
+
+        return _has_node_override(plan_tree)
+
+    def _is_mock_or_degraded_session(self) -> bool:
+        """Return True when an existing scan session or plan used mock/TF-IDF fallback embeddings."""
+        session = getattr(self, "app_session", None)
+        has_files = self._has_file_nodes(getattr(self, "plan", {}))
+        if session is None and not has_files:
+            return False
+        if session is not None:
+            if getattr(session, "is_mock", False):
+                return True
+            analyzer = getattr(session, "analyzer", None)
+            emb = getattr(analyzer, "embedding_manager", None)
+            if emb is not None and (
+                getattr(emb, "is_mock", False) or getattr(emb, "is_degraded", False)
+            ):
+                return True
+        plan = getattr(self, "plan", None)
+        model_status = getattr(plan, "model_status", None)
+        if model_status is None and isinstance(plan, dict):
+            model_status = plan.get("model_status")
+        return model_status == "DEGRADED_FALLBACK"
+
+    def _should_auto_rescan_mock_session(self) -> bool:
+        """Return True if an unedited mock/fallback plan can be safely upgraded with active AI embeddings."""
+        s_dirs = getattr(self, "source_dirs", None) or (
+            [self.base_dir] if self.base_dir else []
+        )
+        if not s_dirs or not any(os.path.exists(d) for d in s_dirs):
+            return False
+        if self._running_pipeline_worker() is not None or getattr(
+            self, "_daemon_is_moving", False
+        ):
+            return False
+        if not self._is_mock_or_degraded_session():
+            return False
+        if self._plan_has_manual_modifications():
+            return False
+        return True
+
+    def _trigger_ai_active_rescan_if_eligible(self) -> None:
+        """Re-scan an unedited mock session when verified AI weights and ONNX Runtime are active."""
+        self._pending_ai_active_rescan = False
+        from app.core.downloader import get_ai_runtime_state
+
+        if get_ai_runtime_state(self.settings).get("state") != "active":
+            return
+        if not getattr(self, "source_dirs", None) and self.base_dir:
+            self.source_dirs = [self.base_dir]
+        if self._should_auto_rescan_mock_session():
+            self.announce(
+                "Upgrading unedited sorting plan with verified AI embeddings...",
+                priority="polite",
+            )
+            self._start_scan()
 
     def _get_ai_status_badge(self) -> str:
         """Return visual AI runtime status badge distinguishing active, downloading, fallback, and disabled."""
@@ -974,11 +1098,20 @@ class AutoSorterTUI(
 
             if prev_badge is not None and prev_badge != new_badge:
                 self.update_status()
-            if prev_state == "downloading" and new_state == "active":
-                self.announce(
-                    "AI model weights verified and active.",
-                    priority="polite",
-                )
+            if (
+                prev_state is not None
+                and prev_state != "active"
+                and new_state == "active"
+            ):
+                if prev_state == "downloading":
+                    self.announce(
+                        "AI model weights verified and active.",
+                        priority="polite",
+                    )
+                if self._running_pipeline_worker() == "run_scan_worker":
+                    self._pending_ai_active_rescan = True
+                else:
+                    self._trigger_ai_active_rescan_if_eligible()
             elif (
                 prev_state == "downloading"
                 and new_state == "fallback"

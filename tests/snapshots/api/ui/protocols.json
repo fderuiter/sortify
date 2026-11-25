@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "b4f79eaa8d971088a43fbda17b56bc752b1821ac81dad7e6afad56b41c8291b3"
+    "checksum": "bc362310bd9594e0c8150801857c73eb9cdbbc23ee4416a23e38a86688d97574"
   },
   "classes": [
     {
@@ -1174,6 +1174,19 @@
         {
           "async": false,
           "decorators": [],
+          "name": "_should_auto_rescan_mock_session",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
           "name": "_start_hint",
           "parameters": [
             {
@@ -1188,6 +1201,19 @@
           "async": false,
           "decorators": [],
           "name": "_start_scan",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_trigger_ai_active_rescan_if_eligible",
           "parameters": [
             {
               "annotation": null,

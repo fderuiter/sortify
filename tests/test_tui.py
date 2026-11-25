@@ -999,6 +999,7 @@ def test_tui_settings_modal_ai_consent_toggle_flow(temp_workspace):
                     return_value={
                         "status": "verified",
                         "verified": True,
+                        "onnxruntime_available": True,
                         "model_dir": temp_workspace,
                         "present_files": [],
                         "missing_files": [],
@@ -2946,5 +2947,107 @@ def test_tui_rollback_error_modal_help_and_scrubbed_diagnostics_export(
                 "Application log file unavailable or absent on disk."
                 in fb_file.read_text(encoding="utf-8")
             )
+
+    asyncio.run(_test())
+
+
+def test_tui_auto_rescans_unedited_mock_plan_when_ai_becomes_active_and_respects_guards(
+    temp_workspace,
+):
+    """AC 5 / Req 7: Completing a background download with onnxruntime installed automatically re-scans an unedited mock TUI plan, while skipping edited, locked, or busy sessions."""
+    from types import SimpleNamespace
+
+    from app.core.downloader import DownloadManager, DownloadState
+    from app.core.pipeline import PipelineLifecycleState
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(
+            settings=settings, base_dir=temp_workspace, skip_wizard=True
+        )
+        DownloadManager.reset_instance()
+        dm = DownloadManager.get_instance()
+
+        async with app.run_test() as pilot:
+            await pilot.pause(0.05)
+
+            # Set up an unedited mock session plan
+            app.app_session = SimpleNamespace(
+                base_dir=temp_workspace,
+                lifecycle_state=PipelineLifecycleState.PLANNED,
+                analyzer=SimpleNamespace(
+                    embedding_manager=SimpleNamespace(is_mock=True, is_degraded=False)
+                ),
+            )
+            app.plan = {
+                "Invoices": {
+                    "invoice_1.txt": {
+                        "__type__": "file",
+                        "filepath": os.path.join(temp_workspace, "invoice_1.txt"),
+                        "is_checked": True,
+                    }
+                }
+            }
+
+            # Start in downloading state
+            dm.transition_to(DownloadState.DOWNLOADING)
+            dm.state["is_downloading"] = True
+            dm.state["progress"] = 0.5
+            app._poll_ai_provisioning_status()
+
+            # Idle polling executes zero os.stat calls
+            with patch("os.stat") as mock_stat:
+                app._poll_ai_provisioning_status()
+                mock_stat.assert_not_called()
+
+            # Transition to active with onnxruntime installed -> triggers _start_scan on unedited mock plan
+            dm.state["is_downloading"] = False
+            dm.transition_to(DownloadState.COMPLETED)
+            with (
+                patch(
+                    "app.core.downloader.get_ai_runtime_state",
+                    return_value={
+                        "state": "active",
+                        "badge": "[AI: Active]",
+                        "consent_granted": True,
+                        "onnxruntime_available": True,
+                        "verified": True,
+                    },
+                ),
+                patch.object(app, "_start_scan") as mock_scan,
+            ):
+                app._last_ai_poll_token = None
+                app._poll_ai_provisioning_status()
+                mock_scan.assert_called_once()
+
+            # Guard 1: Manual edits prevent automatic re-scan
+            app._manual_plan_edits["doc_1"] = {"folder": "Custom"}
+            assert app._should_auto_rescan_mock_session() is False
+            app._manual_plan_edits.clear()
+
+            # Guard 2: Locked files prevent automatic re-scan
+            app.locked_files["invoice_1.txt"] = "Invoices"
+            assert app._should_auto_rescan_mock_session() is False
+            app.locked_files.clear()
+
+            # Guard 3: Unchecked or overridden tree node prevents automatic re-scan
+            app.plan["Invoices"]["invoice_1.txt"]["is_checked"] = False
+            assert app._should_auto_rescan_mock_session() is False
+            app.plan["Invoices"]["invoice_1.txt"]["is_checked"] = True
+
+            # Guard 4: Running moves (EXECUTING or daemon moving) prevent automatic re-scan
+            app.app_session.lifecycle_state = PipelineLifecycleState.EXECUTING
+            assert app._should_auto_rescan_mock_session() is False
+            app.app_session.lifecycle_state = PipelineLifecycleState.PLANNED
+            app._daemon_is_moving = True
+            assert app._should_auto_rescan_mock_session() is False
+            app._daemon_is_moving = False
+
+            # Guard 5: Non-mock healthy session does not re-scan unnecessarily
+            app.app_session.analyzer.embedding_manager.is_mock = False
+            assert app._should_auto_rescan_mock_session() is False
+
+        DownloadManager.reset_instance()
 
     asyncio.run(_test())

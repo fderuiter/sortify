@@ -47,6 +47,7 @@ class TUIHostProtocol(Protocol):
     _tree_expansion_memory: dict[str, bool]
     _last_cursor_key: str | None
     _pending_flush_trash: bool
+    _pending_ai_active_rescan: bool
     initial_dest_dir: str | None
     _last_drop_session_id: str | None
     _manual_plan_edits: dict[str, dict[str, Any]]
@@ -156,6 +157,14 @@ class TUIHostProtocol(Protocol):
 
     def _clear_manual_plan_edits(self) -> None:
         """Clear cached manual plan edits and manually created folders."""
+        ...
+
+    def _should_auto_rescan_mock_session(self) -> bool:
+        """Return True if an active mock/degraded session has no manual edits, locks, or running moves."""
+        ...
+
+    def _trigger_ai_active_rescan_if_eligible(self) -> None:
+        """Trigger an automatic workspace re-scan when AI transitions to active on an unedited mock plan."""
         ...
 
     def _reapply_manual_plan_edits(self) -> None:

@@ -166,6 +166,8 @@ class DownloadManager(LifecycleTelemetryMixin):
                 except Exception:
                     logger.debug("Could not remove proxy observer", exc_info=True)
                 cls._instance = None
+        with _ONNXRUNTIME_PROBE_LOCK:
+            _ONNXRUNTIME_PROBE_CACHE.clear()
 
     def __init__(self, settings=None):
         self._status = DownloadState.IDLE
@@ -972,6 +974,7 @@ def run_background_download(
                     raise DownloadCancelledError("Download was cancelled by the user.")
 
                 _activate_staged_bundle(staging_dir, abs_model_dir)
+                _clear_stale_redownload_health()
 
                 if on_success:
                     on_success()
@@ -1030,6 +1033,81 @@ def run_background_download(
 
 _VERIFICATION_CACHE_LOCK = threading.Lock()
 _VERIFICATION_CACHE: dict[str, tuple[tuple[Any, ...], bool, str, str]] = {}
+_ONNXRUNTIME_PROBE_LOCK = threading.Lock()
+_ONNXRUNTIME_PROBE_CACHE: dict[tuple[tuple[str, ...], int], bool] = {}
+
+
+def _clear_stale_redownload_health() -> None:
+    """Clear stale RE_DOWNLOAD_MODEL health once verified model weights are active."""
+    from app.core.shared_registry import SharedModelRegistry
+
+    registry = SharedModelRegistry._instance
+    if registry is None:
+        return
+    health = registry.get_model_health("onnx_embeddings")
+    if (
+        health.get("status") == "DEGRADED_FALLBACK"
+        and health.get("suggested_recovery_action") == "RE_DOWNLOAD_MODEL"
+    ):
+        with registry._lock:
+            registry._model_health.pop("onnx_embeddings", None)
+
+
+def is_onnxruntime_available() -> bool:
+    """Return True when ``onnxruntime`` is importable and ONNX embedding health is not degraded by missing ML extras.
+
+    Probes ``onnxruntime`` lazily inside the function body and caches negative/positive
+    lookup results by ``(tuple(sys.path), id(importlib.util.find_spec))`` so repeated
+    idle TUI status polls execute zero filesystem ``stat`` calls.
+
+    Returns
+    -------
+    bool
+        True when ONNX semantic inference runtime is ready, False when falling back to TF-IDF.
+    """
+    import importlib.util
+    import sys
+
+    from app.core.shared_registry import SharedModelRegistry
+
+    registry = SharedModelRegistry._instance
+    if registry is not None:
+        health = registry.get_model_health("onnx_embeddings")
+        if (
+            health.get("status") == "DEGRADED_FALLBACK"
+            and health.get("suggested_recovery_action") == "INSTALL_ML_EXTRA"
+        ):
+            return False
+
+    if "onnxruntime" in sys.modules:
+        return sys.modules["onnxruntime"] is not None
+
+    cache_key = (tuple(sys.path), id(importlib.util.find_spec))
+    with _ONNXRUNTIME_PROBE_LOCK:
+        cached = _ONNXRUNTIME_PROBE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    available = False
+    try:
+        spec = importlib.util.find_spec("onnxruntime")
+    except (ImportError, ValueError, AttributeError):
+        spec = None
+
+    if spec is not None:
+        if getattr(spec, "loader", None) is None:
+            available = True
+        else:
+            try:
+                import onnxruntime as _ort  # noqa: F401
+
+                available = True
+            except (ImportError, OSError, RuntimeError, ValueError):
+                available = False
+
+    with _ONNXRUNTIME_PROBE_LOCK:
+        _ONNXRUNTIME_PROBE_CACHE[cache_key] = available
+    return available
 
 
 def resolve_default_model_dir() -> str:
@@ -1143,9 +1221,12 @@ def inspect_local_model_bundle(model_dir: str | None = None) -> dict[str, Any]:
                 detail,
             )
 
+    onnx_available = is_onnxruntime_available()
+
     return {
         "model_dir": resolved_dir,
         "verified": verified,
+        "onnxruntime_available": onnx_available,
         "bundle_status": "downloading" if is_downloading else bundle_status,
         "disk_bundle_status": bundle_status,
         "detail": detail,
@@ -1166,8 +1247,8 @@ def get_ai_runtime_state(
     Distinguishes:
     - ``disabled``: AI consent is False or unset -> ``[AI: Disabled]``
     - ``downloading``: AI consent is True and model transfer is active -> ``[AI: Downloading XX%]``
-    - ``active``: AI consent is True and verified model weights exist on disk -> ``[AI: Active]``
-    - ``fallback``: AI consent is True and verified weights are absent -> ``[AI: Fallback]``
+    - ``active``: AI consent is True, verified model weights exist on disk, and ``onnxruntime`` is healthy -> ``[AI: Active]``
+    - ``fallback``: AI consent is True, but verified weights or ``onnxruntime`` are unavailable -> ``[AI: Fallback]``
 
     Parameters
     ----------
@@ -1179,10 +1260,19 @@ def get_ai_runtime_state(
     Returns
     -------
     dict[str, Any]
-        Dictionary containing ``state``, ``badge``, ``consent_granted``, and bundle metadata.
+        Dictionary containing ``state``, ``badge``, ``consent_granted``, ``onnxruntime_available``, and bundle metadata.
     """
+    from app.core.shared_registry import SharedModelRegistry
+
     consent = getattr(settings, "AI_CONSENT_GRANTED", None) if settings else None
     bundle = inspect_local_model_bundle(model_dir=model_dir)
+    onnx_available = bool(bundle.get("onnxruntime_available", False))
+    registry = SharedModelRegistry._instance
+    onnx_degraded = (
+        registry is not None
+        and registry.get_model_health("onnx_embeddings").get("status")
+        == "DEGRADED_FALLBACK"
+    )
 
     if consent is not True:
         state = "disabled"
@@ -1191,7 +1281,7 @@ def get_ai_runtime_state(
         state = "downloading"
         pct = int(round(float(bundle.get("progress_percent", 0.0) or 0.0)))
         badge = f"[AI: Downloading {pct}%]" if pct > 0 else "[AI: Downloading]"
-    elif bundle.get("verified", False):
+    elif bundle.get("verified", False) and onnx_available and not onnx_degraded:
         state = "active"
         badge = "[AI: Active]"
     else:
@@ -1247,6 +1337,7 @@ def provision_model_cli(
     resolved_dir = os.path.abspath(model_dir or resolve_default_model_dir())
 
     if not force and verify_downloaded_model(resolved_dir):
+        _clear_stale_redownload_health()
         if not quiet and out is not None:
             print(
                 f"AI model weights verified at '{resolved_dir}'.",
@@ -1326,6 +1417,7 @@ def provision_model_cli(
             f"Model verification failed after download: {detail}"
         )
 
+    _clear_stale_redownload_health()
     if not quiet and out is not None:
         print(
             f"AI model weights downloaded and verified at '{resolved_dir}'.",

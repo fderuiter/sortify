@@ -270,6 +270,8 @@ class SortPipelineMixin:
             self.call_from_thread(self.announce, f"Scan error: {e}")
         finally:
             self.call_from_thread(self.reset_progress_bar)
+            if getattr(self, "_pending_ai_active_rescan", False):
+                self.call_from_thread(self._trigger_ai_active_rescan_if_eligible)
 
     def action_execute_sort(self: TUIHostProtocol) -> None:
         """Trigger sorting plan execution worker with pre-move duplicate cluster review."""

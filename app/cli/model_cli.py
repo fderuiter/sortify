@@ -16,7 +16,6 @@ from app.core.downloader import (
     remove_local_model_bundle,
 )
 from app.core.exceptions import DownloaderError
-from app.core.verifier import is_ml_available
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +144,7 @@ def handle_model_command(args: argparse.Namespace, settings: AppSettings) -> boo
 
     if action == "status":
         runtime = get_ai_runtime_state(settings=settings, model_dir=model_dir)
-        ml_ready = is_ml_available()
+        onnx_ready = bool(runtime["onnxruntime_available"])
         payload = {
             "status": "ok",
             "ai_state": runtime["state"],
@@ -156,7 +155,7 @@ def handle_model_command(args: argparse.Namespace, settings: AppSettings) -> boo
             "detail": runtime["detail"],
             "model_dir": runtime["model_dir"],
             "size_bytes": runtime["size_bytes"],
-            "onnxruntime_available": ml_ready,
+            "onnxruntime_available": onnx_ready,
             "proxy_configured": bool(getattr(settings, "PROXY", "")),
             "files": runtime["files"],
         }
@@ -173,9 +172,12 @@ def handle_model_command(args: argparse.Namespace, settings: AppSettings) -> boo
                 f"Bundle Integrity:  {runtime['bundle_status']} ({runtime['detail']})"
             )
             print(f"Size on Disk:      {size_mb:.2f} MB")
-            print(
-                f"ONNX Runtime:      {'Available' if ml_ready else 'Not installed (offline TF-IDF fallback)'}"
+            onnx_text = (
+                "Available"
+                if onnx_ready
+                else "Not installed — install smart-autosorter[ml] (offline TF-IDF fallback)"
             )
+            print(f"ONNX Runtime:      {onnx_text}")
         sys.exit(0)
 
     if action == "download":

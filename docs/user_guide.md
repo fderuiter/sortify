@@ -14,9 +14,15 @@ On first launch the **Privacy & Data Setup Wizard** asks whether you allow the o
 Declining is fine. Sorting still works offline using TF-IDF keyword clustering (see [Offline Mode](#offline-mode)).
 
 ### From the command line
-- Grant consent, persist your preference across restarts, verify or download the local ONNX model with terminal progress, and select a workspace in interactive terminals:
+- Grant consent, persist your preference across restarts, verify or download the local ONNX model with terminal progress, and select a workspace in interactive terminals (or combine directly with `scan`, `sort`, `drop`, or `daemon`):
   ```bash
   smart-autosorter --accept-ai-consent
+  smart-autosorter scan ~/Downloads --accept-ai-consent
+  smart-autosorter sort ~/Downloads --accept-ai-consent
+  ```
+- Save AI consent without downloading model weights right away (for metered or offline networks), falling back cleanly to local keyword/TF-IDF clustering:
+  ```bash
+  smart-autosorter scan ~/Downloads --accept-ai-consent --defer-model-download
   ```
 - Decline AI consent, persist that preference across restarts, and stay 100% offline:
   ```bash
@@ -36,23 +42,23 @@ Declining is fine. Sorting still works offline using TF-IDF keyword clustering (
 
 ### In the terminal interface
 The wizard opens automatically on first launch of `smart-autosorter`:
-1. **AI Consent & Live Model Status**: Use `[Tab]` / `[Shift+Tab]` to focus the AI Consent switch (`#switch-consent`), then press `[Space]` or `[Enter]` to toggle consent. The wizard inspects your local model directory on launch and shows whether weights are **Verified**, **Downloading**, or **Missing** (`#lbl-wizard-model-status`).
+1. **AI Consent & Live Model Status**: Use `[Tab]` / `[Shift+Tab]` to focus the AI Consent switch (`#switch-consent`), then press `[Space]` or `[Enter]` to toggle consent. The wizard inspects your local model directory and ONNX Runtime availability on launch and shows whether semantic AI is **Verified** (`[AI: Active]`), **Downloading**, **Missing**, or in `[AI: Fallback]` when `smart-autosorter[ml]` (`onnxruntime`) is not installed (`#lbl-wizard-model-status`).
 2. **Proxy & Deferred Download Options**: Optionally enter a corporate HTTP/HTTPS proxy URL (`#input-wizard-proxy`) or check **Defer model download (metered or offline network)** (`#chk-defer-download`) to skip background transfers and sort immediately using offline keyword/TF-IDF rules.
 3. **Workspace Directory & Quick Presets**: Enter the target directory path (`#input-dir`), or choose a quick preset button:
    - **Demo Workspace**: creates `sandbox/demo_workspace` and automatically enables **Generate Sample Documents** (`#chk-sample-corpus`) so finishing setup renders a non-empty sorting plan immediately.
    - **Downloads**: your user `~/Downloads` directory.
    - **Documents**: your user `~/Documents` directory.
-4. **Interactive Sample Playground**: Select **Try Interactive Sample Playground** (`#btn-open-playground`) to preview sample documents and test how each of the six built-in starter rule template packs changes live classification predictions. Toggling starter packs or committing the sandbox synchronizes your chosen folder and pack selections back to the onboarding wizard.
+4. **Opt-In Starter Rule Templates & Live Rule Counter**: All six built-in starter rule template packs start unchecked on clean profiles so no rules are added unless you select them. Checking packs updates the pinned rule counter (`#lbl-wizard-rule-summary`) above **Finish & Save** in real time. Select **Try Interactive Sample Playground** (`#btn-open-playground`) to preview sample documents and test how starter packs change live classification predictions before saving.
 5. **Validation and Error Handling**: If an invalid or non-existent path is entered, selecting **Finish & Save** (or pressing `[Enter]` inside `#input-dir`) displays an inline error banner (`#lbl-error`), announces the error message via screen reader, and restores focus directly to the input field so you can correct it.
-6. **Finish & Save**: Highlight **Finish & Save** (or press `[Enter]` inside `#input-dir`). When AI consent is enabled and verified weights are absent (unless deferred), Sortify automatically starts a non-blocking background model download, scans the chosen workspace immediately using local keyword/TF-IDF clustering, and switches the status bar badge from `[AI: Downloading …]` / `[AI: Fallback]` to `[AI: Active]` once SHA-256 verification completes.
+6. **Finish & Save**: Highlight **Finish & Save** (or press `[Enter]` inside `#input-dir`). If you selected starter packs, a confirmation toast reports the saved keyword rule and policy counts. When AI consent is enabled and verified weights are absent (unless deferred), Sortify automatically starts a non-blocking background model download and scans the chosen workspace immediately using local keyword/TF-IDF clustering. Once SHA-256 verification completes (with `onnxruntime` installed), the status bar switches to `[AI: Active]` and automatically re-scans the workspace if the mock plan has no manual edits, locks, or running moves.
 
 Reopen the wizard any time with `[Ctrl+W]`, or open the **Model Manager** directly with `[Ctrl+G]` (also available in the Command Palette via `[Ctrl+K]`).
 
 ### AI Status Bar Badges
-The TUI status bar distinguishes four runtime AI states:
-- `[AI: Active]`: AI consent is enabled and cryptographically verified ONNX model weights exist on disk.
+The TUI status bar and `smart-autosorter model status` distinguish four runtime AI states:
+- `[AI: Active]`: AI consent is enabled, cryptographically verified ONNX model weights exist on disk, and `onnxruntime` (`smart-autosorter[ml]`) is installed and healthy.
 - `[AI: Downloading XX%]`: AI consent is enabled and local model weights are downloading in the background while keyword/TF-IDF clustering remains available.
-- `[AI: Fallback]`: AI consent is enabled, but verified model weights are missing, deferred, or offline (sorting continues locally with keyword rules and TF-IDF vectors).
+- `[AI: Fallback]`: AI consent is enabled, but verified model weights are missing/deferred/degraded or `onnxruntime` (`smart-autosorter[ml]`) is not installed (sorting continues locally with keyword rules and TF-IDF vectors).
 - `[AI: Disabled]`: AI consent is off and in-memory AI models are unloaded.
 
 ## Sorting a Folder

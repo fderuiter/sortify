@@ -248,9 +248,12 @@ class SemanticEmbeddingManager:
                     self.validate_model_assets()
                 except Exception as e:
                     err_msg = str(e)
+                    err_lower = err_msg.lower()
                     missing_ml_extra = (
-                        isinstance(e.__cause__, (ImportError, ModuleNotFoundError))
-                        or "onnxruntime" in err_msg.lower()
+                        isinstance(e, (ImportError, ModuleNotFoundError))
+                        or isinstance(e.__cause__, (ImportError, ModuleNotFoundError))
+                        or "onnxruntime" in err_lower
+                        or "transformers" in err_lower
                     )
                     recovery_action = (
                         "INSTALL_ML_EXTRA" if missing_ml_extra else "RE_DOWNLOAD_MODEL"
@@ -588,22 +591,43 @@ class SemanticEmbeddingManager:
         # If model_path is provided, we must check local ONNX model
         if self.model_path is not None:
             if not getattr(self, "is_model_valid", True):
-                msg = getattr(
-                    self,
-                    "validation_error_message",
-                    "Model validation failed or files are missing.",
+                import importlib.util
+
+                msg = (
+                    getattr(
+                        self,
+                        "validation_error_message",
+                        "Model validation failed or files are missing.",
+                    )
+                    or "Model validation failed or files are missing."
                 )
+                msg_lower = msg.lower()
+                missing_ml_runtime = os.path.exists(self.model_path) and (
+                    getattr(self, "suggested_recovery_action", None)
+                    == "INSTALL_ML_EXTRA"
+                    or "onnxruntime" in msg_lower
+                    or "transformers" in msg_lower
+                    or importlib.util.find_spec("onnxruntime") is None
+                )
+                rec_action = (
+                    "INSTALL_ML_EXTRA" if missing_ml_runtime else "RE_DOWNLOAD_MODEL"
+                )
+                if (
+                    missing_ml_runtime
+                    and msg == "Model validation failed or files are missing."
+                ):
+                    msg = "Optional 'onnxruntime' package is not installed."
                 self.is_degraded = True
                 self.degradation_state = "DEGRADED_FALLBACK"
                 self.degradation_reason = msg
-                self.suggested_recovery_action = "RE_DOWNLOAD_MODEL"
+                self.suggested_recovery_action = rec_action
                 from app.core.shared_registry import SharedModelRegistry
 
                 SharedModelRegistry.get_instance().record_model_health(
                     "onnx_embeddings",
                     status="DEGRADED_FALLBACK",
                     failure_reason=msg,
-                    suggested_recovery_action="RE_DOWNLOAD_MODEL",
+                    suggested_recovery_action=rec_action,
                 )
                 if getattr(self, "force_validation", False):
                     raise ModelValidationError(msg)
@@ -730,17 +754,28 @@ class SemanticEmbeddingManager:
                     raise ModelValidationError("Model ONNX file not found.")
 
             except Exception as e:
+                err_msg = str(e)
+                err_lower = err_msg.lower()
+                missing_ml_extra = (
+                    isinstance(e, (ImportError, ModuleNotFoundError))
+                    or isinstance(e.__cause__, (ImportError, ModuleNotFoundError))
+                    or "onnxruntime" in err_lower
+                    or "transformers" in err_lower
+                )
+                recovery_action = (
+                    "INSTALL_ML_EXTRA" if missing_ml_extra else "RE_DOWNLOAD_MODEL"
+                )
                 self.is_degraded = True
                 self.degradation_state = "DEGRADED_FALLBACK"
-                self.degradation_reason = str(e)
-                self.suggested_recovery_action = "RE_DOWNLOAD_MODEL"
+                self.degradation_reason = err_msg
+                self.suggested_recovery_action = recovery_action
                 from app.core.shared_registry import SharedModelRegistry
 
                 SharedModelRegistry.get_instance().record_model_health(
                     "onnx_embeddings",
                     status="DEGRADED_FALLBACK",
-                    failure_reason=str(e),
-                    suggested_recovery_action="RE_DOWNLOAD_MODEL",
+                    failure_reason=err_msg,
+                    suggested_recovery_action=recovery_action,
                 )
                 if isinstance(e, ModelValidationError) and getattr(
                     self, "force_validation", False

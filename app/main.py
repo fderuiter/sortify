@@ -382,10 +382,17 @@ def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
 def _maybe_provision_model_for_cli_consent(
     args: argparse.Namespace, settings: AppSettings
 ) -> None:
-    """Initiate model verification/download with terminal progress on top-level --accept-ai-consent setup."""
+    """Initiate model verification/download with terminal progress on --accept-ai-consent CLI runs."""
     if not _extract_bool_arg(args, "accept_ai_consent"):
         return
-    if getattr(args, "subcommand", None) is not None:
+    subcommand = getattr(args, "subcommand", None)
+    if subcommand not in (None, "scan", "sort", "drop", "daemon"):
+        return
+    if (
+        _extract_bool_arg(args, "defer_model_download")
+        or _extract_bool_arg(args, "tui")
+        or _extract_bool_arg(args, "interactive")
+    ):
         return
     if getattr(args, "_cli_consent_model_checked", False):
         return
@@ -399,6 +406,10 @@ def _maybe_provision_model_for_cli_consent(
     try:
         provision_model_cli(proxy=proxy, quiet=quiet, stream=sys.stderr)
     except DownloaderError as exc:
+        logging.warning(
+            "Could not download AI model weights (%s); proceeding with local keyword/TF-IDF fallback.",
+            exc,
+        )
         if not quiet:
             print(
                 f"Warning: Could not download AI model weights ({exc}). "
@@ -407,6 +418,10 @@ def _maybe_provision_model_for_cli_consent(
                 file=sys.stderr,
             )
     except Exception as exc:
+        logging.warning(
+            "Model provisioning check encountered an error (%s); proceeding with local keyword/TF-IDF fallback.",
+            exc,
+        )
         if not quiet:
             print(
                 f"Warning: Model provisioning check encountered an error ({exc}). "
@@ -1517,6 +1532,12 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         help="Pre-configure AI consent as declined and bypass onboarding wizard",
     )
     parser.add_argument(
+        "--defer-model-download",
+        action="store_true",
+        default=False,
+        help="Skip automatic AI model download and use local keyword/TF-IDF fallback",
+    )
+    parser.add_argument(
         "--skip-wizard",
         action="store_true",
         default=False,
@@ -1651,6 +1672,12 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
             action="store_true",
             default=False,
             help="Pre-configure AI consent as declined and bypass onboarding wizard",
+        )
+        subparser.add_argument(
+            "--defer-model-download",
+            action="store_true",
+            default=False,
+            help="Skip automatic AI model download and use local keyword/TF-IDF fallback",
         )
         subparser.add_argument(
             "--skip-wizard",
