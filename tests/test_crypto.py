@@ -1284,7 +1284,26 @@ def test_import_fallbacks():
     )
     assert res_np.returncode == 0, f"Numpy fallback failed: {res_np.stderr}"
 
-    # 2. Simulate sqlite3 and sqlcipher3 import error
+    # 2. Simulate sqlcipher3 import error falling back to stdlib sqlite3
+    code_stdlib_fallback = (
+        "import sqlite3 as stdlib_sqlite3\n"
+        "import sys\n"
+        "sys.modules['sqlcipher3'] = None\n"
+        "import app.core.crypto\n"
+        "assert app.core.crypto.sqlite3 is stdlib_sqlite3\n"
+    )
+    res_stdlib = subprocess.run(
+        [sys.executable, "-c", code_stdlib_fallback],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=repo_root,
+    )
+    assert res_stdlib.returncode == 0, (
+        f"Stdlib sqlite3 fallback failed: {res_stdlib.stderr}"
+    )
+
+    # 3. Simulate sqlite3 and sqlcipher3 import error
     code_sql = (
         "import sys\n"
         "sys.modules['sqlite3'] = None\n"

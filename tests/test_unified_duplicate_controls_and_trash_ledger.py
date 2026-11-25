@@ -1210,3 +1210,171 @@ async def test_tui_ctrl_z_undo_handles_trash_only_and_mixed_sessions(
                 await pilot.pause()
 
         assert any("OS Trash" in m for m in announced)
+
+
+def test_session_summaries_preserve_failed_step_counts_while_separating_exported_to_trash(
+    tmp_path: Path,
+) -> None:
+    """query_session_summaries and list_sessions count failed moves in step_count/file_count while separating exported_to_trash and keeping failed sessions non-undoable."""
+    from app.core.history import open_session_history
+    from app.core.moves import FAILED, VERIFIED
+    from app.core.session_catalog import has_remaining_undo_moves, list_sessions
+    from app.core.store import open_store
+
+    store_dir = tmp_path / "summary_store"
+    ws = tmp_path / "summary_ws"
+    ws.mkdir()
+    with mock.patch.dict(os.environ, {"AUTOSORTER_APP_DIR": str(store_dir)}):
+        store = open_store()
+        with open_session_history(store) as history:
+            ledger = history.moves
+
+            # 1. Failed session with one failed move
+            sid_failed = history.start_session(str(ws))
+            seq_f = ledger.record_intent(
+                sid_failed,
+                str(ws / "broken.txt"),
+                str(ws / "Docs" / "broken.txt"),
+                None,
+                12,
+            )
+            ledger.mark_failed(sid_failed, seq_f, "disk full")
+            history._transition_session_status(sid_failed, "failed")
+
+            # 2. Mixed completed session with one verified move + one exported_to_trash duplicate
+            sid_mixed = history.start_session(str(ws))
+            seq_v = ledger.record_intent(
+                sid_mixed,
+                str(ws / "orig.txt"),
+                str(ws / "Docs" / "orig.txt"),
+                "abc",
+                10,
+            )
+            ledger.mark_done(sid_mixed, seq_v, str(ws / "Docs" / "orig.txt"))
+            ledger.mark_verified(sid_mixed, seq_v)
+            seq_t = ledger.record_intent(
+                sid_mixed,
+                str(ws / "dup.txt"),
+                str(ws / ".sortify_duplicates" / sid_mixed / "_trash" / "dup.txt"),
+                "abc",
+                10,
+            )
+            ledger.mark_done(
+                sid_mixed,
+                seq_t,
+                str(ws / ".sortify_duplicates" / sid_mixed / "_trash" / "dup.txt"),
+            )
+            ledger.mark_verified(sid_mixed, seq_t)
+            ledger.mark_exported_to_trash(sid_mixed, seq_t)
+            history.complete_session(sid_mixed)
+
+            by_hist = {s["session_id"]: s for s in history.get_sessions()}
+
+        by_cat = {s["session_id"]: s for s in list_sessions(store)}
+        for mapping in (by_hist, by_cat):
+            assert mapping[sid_failed]["status"] == FAILED
+            assert mapping[sid_failed]["step_count"] == 1
+            assert mapping[sid_failed]["file_count"] == 1
+            assert mapping[sid_failed]["trashed_count"] == 0
+
+            assert mapping[sid_mixed]["status"] == "completed"
+            assert mapping[sid_mixed]["step_count"] == 1
+            assert mapping[sid_mixed]["file_count"] == 1
+            assert mapping[sid_mixed]["trashed_count"] == 1
+            assert VERIFIED != FAILED
+
+        assert has_remaining_undo_moves(by_cat[sid_failed], store=store) is False
+        assert has_remaining_undo_moves(by_cat[sid_mixed], store=store) is True
+
+
+def test_unencrypted_legacy_store_upgrade_to_v4_and_worker_rollback_preserves_wal_shm(
+    tmp_path: Path,
+) -> None:
+    """Upgrading an unencrypted stdlib-sqlite3 v2 store to v4 on MainThread and probing via HistoryManager DBWorker must not corrupt WAL -shm locks across threads."""
+    import sqlite3 as stdlib_sqlite3
+
+    from app.core.db_conn import get_db_connection
+    from app.core.history import open_session_history
+    from app.core.store import _store_initial, open_store
+
+    app_dir = tmp_path / "legacy_unencrypted_app"
+    app_dir.mkdir()
+    ws = tmp_path / "legacy_ws"
+    (ws / "Sorted").mkdir(parents=True)
+    trash_stage = ws / ".sortify_duplicates" / "s-legacy" / "_trash"
+    trash_stage.mkdir(parents=True)
+
+    moved_dst = ws / "Sorted" / "report.txt"
+    moved_dst.write_text("report body", encoding="utf-8")
+    staged_dup = trash_stage / "report_copy.txt"
+    staged_dup.write_text("report body", encoding="utf-8")
+
+    # Build an unencrypted legacy v2 SQLite store with no key file using stdlib sqlite3
+    db_file = app_dir / "sortify.db"
+    raw = stdlib_sqlite3.connect(str(db_file))
+    _store_initial(raw)
+    raw.execute("DROP TABLE IF EXISTS moves")
+    raw.execute(
+        """
+        CREATE TABLE moves (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            seq INTEGER NOT NULL,
+            src TEXT NOT NULL,
+            dst TEXT NOT NULL,
+            src_sha256 TEXT,
+            size INTEGER,
+            displaced TEXT,
+            state TEXT NOT NULL CHECK (state IN ('intent', 'done', 'verified', 'failed')),
+            error TEXT,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            UNIQUE (session_id, seq)
+        )
+        """
+    )
+    raw.execute(
+        "INSERT INTO sessions VALUES ('s-legacy', 1700000100.0, ?, 'completed')",
+        (str(ws),),
+    )
+    raw.execute(
+        "INSERT INTO moves (session_id, seq, src, dst, state, created_at, updated_at) "
+        "VALUES ('s-legacy', 1, ?, ?, 'verified', 1700000100.0, 1700000101.0)",
+        (str(ws / "report.txt"), str(moved_dst)),
+    )
+    raw.execute(
+        "INSERT INTO moves (session_id, seq, src, dst, state, created_at, updated_at) "
+        "VALUES ('s-legacy', 2, ?, ?, 'verified', 1700000100.0, 1700000101.0)",
+        (str(ws / "report_copy.txt"), str(staged_dup)),
+    )
+    raw.execute("PRAGMA user_version = 2")
+    raw.commit()
+    raw.close()
+
+    with mock.patch.dict(os.environ, {"AUTOSORTER_APP_DIR": str(app_dir)}):
+        # Opens & migrates sortify.db to v4 on MainThread while keeping WAL connection cached
+        store = open_store(app_dir)
+        user_ver = (
+            get_db_connection(str(store.path)).execute("PRAGMA user_version").fetchone()
+        )
+        assert user_ver is not None and user_ver[0] == 4
+
+        # Opens HistoryManager on DBWorker thread (triggers SessionCrypto.get_cipher probe)
+        with open_session_history(store) as history:
+            handoff = history.flush_staged_duplicates(
+                "s-legacy",
+                base_dir=str(ws),
+                trashed_only=True,
+                trash_fn=lambda p: os.remove(p),
+            )
+            assert len(handoff["exported"]) == 1
+            restored_count = history.rollback("s-legacy")
+            assert restored_count == 1
+
+        summaries = list_sessions(store)
+        assert summaries[0]["status"] == "rolled_back"
+        assert summaries[0]["trashed_count"] == 1
+
+    assert (ws / "report.txt").read_text(encoding="utf-8") == "report body"
+    assert not moved_dst.exists()
+    assert not staged_dup.exists()
