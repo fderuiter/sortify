@@ -777,3 +777,77 @@ def test_custom_advisory_mirror_with_trusted_model_hosts(tmp_path):
             endpoint="https://unlisted.corp.example.com/api/v1/advisories",
             settings=settings,
         )
+
+
+def test_advisory_decryption_failed_proxy_blocks_unproxied_requests():
+    """Verify <DECRYPTION_FAILED> proxy raises NetworkError in _build_opener, raises in strict mode, and returns uncached fallback in permissive mode without socket traffic."""
+    from types import SimpleNamespace
+
+    from app.core.downloader import NetworkError
+
+    broken_settings = SimpleNamespace(PROXY="<DECRYPTION_FAILED>")
+
+    strict_client = SecurityAdvisoryClient(
+        settings=broken_settings,
+        fallback_policy="strict",
+    )
+    with patch("urllib.request.build_opener") as mock_build_opener:
+        with pytest.raises(
+            NetworkError, match="Invalid proxy configuration: decryption failed"
+        ):
+            strict_client._build_opener()
+
+        with pytest.raises(
+            ModelVerificationError, match="under strict security policy"
+        ) as exc_info:
+            strict_client.check_advisory(repo_id="Xenova/all-MiniLM-L6-v2")
+        assert isinstance(exc_info.value.__cause__, NetworkError)
+        mock_build_opener.assert_not_called()
+
+    permissive_client = SecurityAdvisoryClient(
+        settings=broken_settings,
+        fallback_policy="permissive",
+    )
+    with patch("urllib.request.build_opener") as mock_build_opener:
+        res = permissive_client.check_advisory(repo_id="Xenova/all-MiniLM-L6-v2")
+        assert res.has_advisory is False
+        assert res.details is not None
+        assert "Invalid proxy configuration: decryption failed" in res.details
+        assert "permissive fallback policy" in res.details
+        assert (
+            permissive_client.get_cached_advisory("Xenova/all-MiniLM-L6-v2", None)
+            is None
+        )
+        mock_build_opener.assert_not_called()
+
+
+def test_advisory_partial_settings_falls_back_to_app_settings_trusted_hosts(
+    monkeypatch,
+):
+    """Verify partial settings objects lacking TRUSTED_MODEL_HOSTS still inherit AppSettings().TRUSTED_MODEL_HOSTS."""
+    import json
+    from types import SimpleNamespace
+
+    import app.config
+
+    fake_app_settings = SimpleNamespace(
+        TRUSTED_MODEL_HOSTS=["mirror.partial.example.com"],
+        PROXY="",
+    )
+    monkeypatch.setattr(app.config, "AppSettings", lambda: fake_app_settings)
+
+    partial_settings = SimpleNamespace(SECURITY_ADVISORY_FALLBACK_POLICY="strict")
+    client = SecurityAdvisoryClient(
+        settings=partial_settings,
+        endpoint="https://mirror.partial.example.com/api/v1/advisories",
+    )
+    assert "mirror.partial.example.com" in client._get_trusted_hosts()
+
+    mock_opener = MagicMock()
+    resp = MagicMock()
+    resp.read.return_value = json.dumps({"advisories": []}).encode("utf-8")
+    mock_opener.open.return_value.__enter__.return_value = resp
+
+    with patch.object(client, "_build_opener", return_value=mock_opener):
+        result = client.check_advisory(repo_id="Xenova/all-MiniLM-L6-v2")
+        assert result.has_advisory is False

@@ -24,7 +24,13 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from app.core.policy_engine import is_masked_by
+from app.core.policy_engine import (
+    VALID_MATCH_MODES,
+    is_masked_by,
+    summarize_policy_conditions,
+    validate_policy_conditions,
+    validate_safe_regex,
+)
 
 _SCHEMA_VALIDATOR = None
 _SCHEMA_VALIDATOR_LOCK = threading.Lock()
@@ -102,6 +108,91 @@ def get_debug_log_dir() -> Path:
 
 
 @with_config(ConfigDict(extra="allow"))
+class PolicyCondition(TypedDict):
+    """Typed dictionary schema for a single compound policy condition clause."""
+
+    field: Annotated[
+        Literal["name", "extension", "content", "path", "any_text"],
+        Field(
+            description=(
+                "File or document target inspected by this clause: 'name' (basename), "
+                "'extension' (file suffix), 'content' (extracted text), 'path' (relative/full path), "
+                "or 'any_text' (basename, path, or extracted text)."
+            )
+        ),
+    ]
+    operator: Annotated[
+        Literal[
+            "contains",
+            "equals",
+            "starts_with",
+            "ends_with",
+            "glob",
+            "regex",
+        ],
+        Field(
+            description=(
+                "Comparison operator applied to the target field: 'contains', 'equals', "
+                "'starts_with', 'ends_with', 'glob' wildcard matching, or bounded 'regex'."
+            )
+        ),
+    ]
+    value: Annotated[
+        str,
+        Field(
+            min_length=1,
+            description="Non-empty string, wildcard mask, or bounded regular expression (<= 256 chars) to match.",
+        ),
+    ]
+    negate: NotRequired[
+        Annotated[
+            bool,
+            Field(
+                description="When true, invert this individual condition clause's match result."
+            ),
+        ]
+    ]
+    case_sensitive: NotRequired[
+        Annotated[
+            bool,
+            Field(
+                description="When true, preserve character casing when evaluating this condition clause."
+            ),
+        ]
+    ]
+
+
+@with_config(ConfigDict(extra="allow"))
+class PolicyConditionGroup(TypedDict):
+    """Typed dictionary schema for a nested boolean condition group within a PolicyRule."""
+
+    match_mode: Annotated[
+        Literal["all", "any", "none"],
+        Field(
+            description=(
+                "Boolean combinator applied across nested clauses: 'all' (AND), "
+                "'any' (OR), or 'none' (NOR)."
+            )
+        ),
+    ]
+    conditions: Annotated[
+        list[PolicyCondition],
+        Field(
+            min_length=1,
+            description="Non-empty list of leaf PolicyCondition clauses evaluated under match_mode.",
+        ),
+    ]
+    negate: NotRequired[
+        Annotated[
+            bool,
+            Field(
+                description="When true, invert the boolean outcome of this nested condition group."
+            ),
+        ]
+    ]
+
+
+@with_config(ConfigDict(extra="allow"))
 class PolicyRule(TypedDict):
     """Typed dictionary schema for unified compliance and routing policy rules."""
 
@@ -135,8 +226,8 @@ class PolicyRule(TypedDict):
         Field(
             min_length=1,
             description=(
-                "Non-empty case-insensitive substring, wildcard pattern, or metadata comparison "
-                "expression (such as '> 30d', '< 2025-01-01', or '> 10MB') to match."
+                "Non-empty case-insensitive substring, wildcard/regex pattern, metadata comparison "
+                "expression (such as '> 30d', '< 2025-01-01', or '> 10MB'), or readable summary of compound conditions."
             ),
         ),
     ]
@@ -157,6 +248,56 @@ class PolicyRule(TypedDict):
         Field(
             description="Integer evaluation priority; rules execute sequentially from highest priority to lowest."
         ),
+    ]
+    match_mode: NotRequired[
+        Annotated[
+            Literal["all", "any", "none"],
+            Field(
+                description=(
+                    "Optional boolean combinator for compound 'conditions' (or single-clause 'none' inversion): "
+                    "'all' (every clause must match), 'any' (at least one clause must match), "
+                    "or 'none' (no clause may match)."
+                )
+            ),
+        ]
+    ]
+    conditions: NotRequired[
+        Annotated[
+            list[PolicyCondition | PolicyConditionGroup],
+            Field(
+                description=(
+                    "Optional compound boolean condition tree (capped at 2 nesting levels and "
+                    "32 total clauses per PolicyRule)."
+                )
+            ),
+        ]
+    ]
+    negate: NotRequired[
+        Annotated[
+            bool,
+            Field(
+                description="When true, invert the overall match result of this policy rule."
+            ),
+        ]
+    ]
+    regex: NotRequired[
+        Annotated[
+            bool,
+            Field(
+                description=(
+                    "When true, evaluate 'expression' as a bounded ReDoS-safe regular expression "
+                    "(<= 256 characters, rejecting nested quantifiers)."
+                )
+            ),
+        ]
+    ]
+    case_sensitive: NotRequired[
+        Annotated[
+            bool,
+            Field(
+                description="When true, preserve character casing during policy evaluation."
+            ),
+        ]
     ]
     halting: NotRequired[
         Annotated[
@@ -997,9 +1138,44 @@ class Settings(BaseSettings):
                     f"Invalid policy type: {rule_type}. Must be one of {', '.join(valid_rule_types)}."
                 )
 
+            raw_match_mode = rule.get("match_mode")
+            normalized_match_mode: str | None = None
+            if raw_match_mode is not None:
+                if (
+                    not isinstance(raw_match_mode, str)
+                    or raw_match_mode.strip().lower() not in VALID_MATCH_MODES
+                ):
+                    raise ValueError(
+                        f"Invalid policy match_mode: {raw_match_mode}. Must be one of {list(VALID_MATCH_MODES)}."
+                    )
+                normalized_match_mode = raw_match_mode.strip().lower()
+
+            for bool_field in ("negate", "regex", "case_sensitive"):
+                if (
+                    bool_field in rule
+                    and rule[bool_field] is not None
+                    and not isinstance(rule[bool_field], bool)
+                ):
+                    raise ValueError(f"Policy {bool_field} property must be a boolean.")
+
+            raw_conditions = rule.get("conditions")
+            normalized_conditions: list[dict[str, Any]] | None = None
+            if raw_conditions is not None:
+                normalized_conditions = validate_policy_conditions(raw_conditions)
+
             expression = rule.get("expression")
             defaulted_expression = False
-            if rule_type == "duplicate" and (
+            if normalized_conditions and (
+                expression is None
+                or (isinstance(expression, str) and not expression.strip())
+            ):
+                expression = summarize_policy_conditions(
+                    normalized_conditions,
+                    match_mode=normalized_match_mode or "all",
+                    negate=bool(rule.get("negate", False)),
+                )
+                defaulted_expression = True
+            elif rule_type == "duplicate" and (
                 expression is None
                 or (isinstance(expression, str) and not expression.strip())
             ):
@@ -1008,8 +1184,13 @@ class Settings(BaseSettings):
             elif not isinstance(expression, str) or not expression.strip():
                 raise ValueError("Policy expression must be a non-empty string.")
 
-            if rule_type in METADATA_POLICY_TYPES:
+            if rule_type in METADATA_POLICY_TYPES and not normalized_conditions:
                 validate_metadata_expression(rule_type, expression)
+            elif bool(rule.get("regex", False)) and not normalized_conditions:
+                validate_safe_regex(
+                    expression,
+                    case_sensitive=bool(rule.get("case_sensitive", False)),
+                )
 
             action = rule.get("action")
             action_lower = action.lower() if isinstance(action, str) else None
@@ -1107,6 +1288,20 @@ class Settings(BaseSettings):
             needs_copy = (
                 defaulted_expression
                 or defaulted_target
+                or ("match_mode" in rule and rule["match_mode"] is None)
+                or (
+                    isinstance(raw_match_mode, str)
+                    and raw_match_mode != normalized_match_mode
+                )
+                or ("conditions" in rule and rule["conditions"] is None)
+                or (
+                    normalized_conditions is not None
+                    and normalized_conditions != raw_conditions
+                )
+                or any(
+                    k in rule and rule[k] is None
+                    for k in ("negate", "regex", "case_sensitive")
+                )
                 or ("action" in rule and rule["action"] is None)
                 or (isinstance(action, str) and action != action.lower())
                 or ("rename_pattern" in rule and rule["rename_pattern"] is None)
@@ -1130,6 +1325,19 @@ class Settings(BaseSettings):
                     updated_rule["expression"] = expression
                 if defaulted_target:
                     updated_rule["target_path"] = target_path
+                if "match_mode" in updated_rule:
+                    if updated_rule["match_mode"] is None:
+                        updated_rule.pop("match_mode")
+                    elif normalized_match_mode is not None:
+                        updated_rule["match_mode"] = normalized_match_mode
+                if "conditions" in updated_rule:
+                    if updated_rule["conditions"] is None:
+                        updated_rule.pop("conditions")
+                    elif normalized_conditions is not None:
+                        updated_rule["conditions"] = normalized_conditions
+                for bool_field in ("negate", "regex", "case_sensitive"):
+                    if bool_field in updated_rule and updated_rule[bool_field] is None:
+                        updated_rule.pop(bool_field)
                 if "action" in updated_rule:
                     if updated_rule["action"] is None:
                         updated_rule.pop("action")

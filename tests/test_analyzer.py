@@ -873,3 +873,56 @@ def test_get_document_hashes_empty_edge_cases():
     """Verify get_document_hashes returns empty dict immediately for empty inputs."""
     assert db.get_document_hashes("", ["doc.txt"]) == {}
     assert db.get_document_hashes("base_dir", []) == {}
+
+
+def test_incremental_analyzer_unspecified_sentinel_vs_explicit_none(
+    tmp_path, monkeypatch
+):
+    """Verify omitted model_path resolves bundled models while explicit None skips lookup."""
+    from app.core.analyzer import _UNSPECIFIED, _Unspecified
+
+    assert isinstance(_UNSPECIFIED, _Unspecified)
+
+    bundle_model_dir = tmp_path / "offline_bundle" / "model"
+    bundle_model_dir.mkdir(parents=True)
+    app_dir = tmp_path / "app_dir"
+    app_dir.mkdir()
+
+    monkeypatch.setattr("app.core.path_utils.get_meipass_dir", lambda: None)
+    monkeypatch.setattr(
+        "app.core.path_utils.get_base_path", lambda caller_file_path=None: str(tmp_path)
+    )
+    monkeypatch.setattr("app.config.get_app_dir", lambda: app_dir)
+
+    seen_model_paths: list[str | None] = []
+
+    class DummyEmbeddingManager:
+        is_degraded = False
+
+        def __init__(self, _db, resolved_model_path: str | None) -> None:
+            seen_model_paths.append(resolved_model_path)
+            self.model_path = resolved_model_path
+
+    monkeypatch.setattr(
+        "app.core.semantic_embeddings.SemanticEmbeddingManager",
+        DummyEmbeddingManager,
+    )
+
+    # 1. Omitted model_path uses _UNSPECIFIED and discovers local bundle
+    omitted_analyzer = IncrementalAnalyzer(max_folders=3, stop_words=set(), db=db)
+    assert omitted_analyzer.model_path == str(bundle_model_dir)
+
+    # 2. Explicit model_path=None bypasses bundle lookup (mock/TF-IDF mode)
+    explicit_none_analyzer = IncrementalAnalyzer(
+        max_folders=3, stop_words=set(), db=db, model_path=None
+    )
+    assert explicit_none_analyzer.model_path is None
+
+    # 3. Explicit str model_path is preserved without bundle lookup
+    custom_path = str(tmp_path / "custom_model")
+    explicit_str_analyzer = IncrementalAnalyzer(
+        max_folders=3, stop_words=set(), db=db, model_path=custom_path
+    )
+    assert explicit_str_analyzer.model_path == custom_path
+
+    assert seen_model_paths == [str(bundle_model_dir), None, custom_path]

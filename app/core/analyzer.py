@@ -21,7 +21,14 @@ from app.core.domain_contracts import (
 )
 from app.core.path_utils import safe_relpath
 
-_UNSPECIFIED = object()
+
+class _Unspecified:
+    """Sentinel type distinguishing an omitted parameter from explicit None."""
+
+    __slots__ = ()
+
+
+_UNSPECIFIED = _Unspecified()
 
 _SortingPlanNodeSchema = SortingPlanNodeModel
 
@@ -262,12 +269,9 @@ def pre_fetch_historical_corpus(
     db, base_dir, filenames, documents, pre_fetched_vectors=None, max_examples=50
 ):
     """Query, decrypt, and package up to 50 relevant historical folder examples from the database."""
-    import json
     import logging
 
     import numpy as np
-
-    from app.core.db_conn import get_db_connection
 
     # Retrieve model metadata from the database
     try:
@@ -289,20 +293,23 @@ def pre_fetch_historical_corpus(
         "active_model_version": stored_version,
     }
 
-    conn = get_db_connection(db.db_path)
-    rows = []
+    if (
+        not db
+        or not base_dir
+        or not callable(getattr(db, "get_verified_historical_vectors", None))
+    ):
+        return validate_corpus_prefetch_batch(
+            {"model_metadata": model_metadata, "examples": []}
+        )
+
     try:
-        with conn:
-            cursor = conn.execute(
-                """
-                SELECT d.filepath, d.user_verified_target_path, v.vector, d.extracted_text
-                FROM documents d
-                LEFT JOIN document_vectors v ON d.base_dir = v.base_dir AND (d.filepath = v.filepath OR REPLACE(d.filepath, '\\', '/') = REPLACE(v.filepath, '\\', '/'))
-                WHERE d.base_dir = ? AND d.user_verified_target_path IS NOT NULL AND d.user_verified_target_path != ''
-                """,
-                (base_dir,),
+        rows = list(
+            db.get_verified_historical_vectors(
+                base_dir,
+                include_unvectorized=True,
+                track_corrupted=True,
             )
-            rows = cursor.fetchall()
+        )
     except Exception as e:
         logging.error(
             f"Failed to query historical documents from DB: {e}", exc_info=True
@@ -316,79 +323,71 @@ def pre_fetch_historical_corpus(
             {"model_metadata": model_metadata, "examples": []}
         )
 
-    def _safe_decrypt_text(crypto_obj, enc_text):
-        if not enc_text:
-            return ""
+    def _fetch_texts_map(filepaths: list[str]) -> dict[str, str]:
+        if not filepaths or not callable(
+            getattr(db, "get_documents_by_filepaths", None)
+        ):
+            return {}
         try:
-            dec = crypto_obj.decrypt_text(enc_text)
-            return dec if dec is not None else ""
+            doc_rows = db.get_documents_by_filepaths(base_dir, filepaths)
         except Exception:
-            logging.debug("Could not decrypt historical example text", exc_info=True)
-            return ""
+            logging.debug("Could not fetch historical example texts", exc_info=True)
+            return {}
+        texts: dict[str, str] = {}
+        for fp, text in doc_rows:
+            val = text if text is not None else ""
+            texts[fp] = val
+            norm_fp = fp.replace("\\", "/")
+            if norm_fp not in texts:
+                texts[norm_fp] = val
+        return texts
 
-    def _safe_decrypt_and_parse_vector(crypto_obj, vector_str):
-        if not vector_str:
-            return None
-        try:
-            if hasattr(crypto_obj, "decrypt_and_parse_vector"):
-                return crypto_obj.decrypt_and_parse_vector(vector_str)
-            decrypted_str = crypto_obj.decrypt_vector(vector_str)
-            return json.loads(decrypted_str) if decrypted_str else None
-        except Exception:
-            logging.debug(
-                "Could not decrypt or parse historical example vector", exc_info=True
-            )
-            return None
+    def _lookup_text(texts_map: dict[str, str], filepath: str) -> str:
+        if filepath in texts_map:
+            return texts_map[filepath]
+        return texts_map.get(filepath.replace("\\", "/"), "")
 
-    # Store raw candidate payloads without initial decryption
-    candidates = []
-    for filepath, user_verified_target_path, vector_str, extracted_text_enc in rows:
-        candidates.append(
-            {
-                "filepath": filepath,
-                "user_verified_target_path": user_verified_target_path,
-                "vector_str": vector_str,
-                "extracted_text_enc": extracted_text_enc,
-            }
-        )
+    candidates: list[dict[str, Any]] = [
+        {
+            "filepath": filepath,
+            "user_verified_target_path": user_verified_target_path,
+            "vector": vector,
+        }
+        for filepath, user_verified_target_path, vector in rows
+    ]
 
     # Restrict to maximum of 50 relevant historical examples
+    selected_examples: list[dict[str, Any]] = []
     if len(candidates) <= max_examples:
+        texts_map = _fetch_texts_map([c["filepath"] for c in candidates])
         selected_examples = [
             {
                 "filepath": c["filepath"],
                 "user_verified_target_path": c["user_verified_target_path"],
-                "vector": _safe_decrypt_and_parse_vector(db.crypto, c["vector_str"]),
-                "text": _safe_decrypt_text(db.crypto, c["extracted_text_enc"]),
+                "vector": c["vector"],
+                "text": _lookup_text(texts_map, c["filepath"]),
             }
             for c in candidates
         ]
     else:
-        # Rank candidates by relevance
+        # Rank candidates by relevance while deferring text decryption to selected examples
         ranked = False
-        selected_examples = []
         active_vectors = [v for v in (pre_fetched_vectors or []) if v is not None]
 
-        # Attempt semantic ranking if active vectors exist and candidate vector payloads exist
-        if active_vectors and any(c["vector_str"] for c in candidates):
+        # Attempt semantic ranking if active vectors and candidate vectors exist
+        if active_vectors and any(c["vector"] is not None for c in candidates):
             try:
                 centroid = np.mean(active_vectors, axis=0)
                 from sklearn.metrics.pairwise import cosine_similarity
 
-                cand_vectors = []
-                cand_indices = []
-                cand_parsed_vectors = {}
+                cand_vectors: list[list[float]] = []
+                cand_indices: list[int] = []
 
                 for idx, c in enumerate(candidates):
-                    if c["vector_str"]:
-                        parsed_v = _safe_decrypt_and_parse_vector(
-                            db.crypto, c["vector_str"]
-                        )
-                        if parsed_v is not None:
-                            cand_parsed_vectors[idx] = parsed_v
-                            if len(parsed_v) == len(centroid):
-                                cand_vectors.append(parsed_v)
-                                cand_indices.append(idx)
+                    parsed_v = c["vector"]
+                    if parsed_v is not None and len(parsed_v) == len(centroid):
+                        cand_vectors.append(parsed_v)
+                        cand_indices.append(idx)
 
                 if cand_vectors:
                     sims = cosine_similarity([centroid], cand_vectors).flatten()
@@ -404,22 +403,19 @@ def pre_fetch_historical_corpus(
                                 if len(chosen_indices) == max_examples:
                                     break
 
+                    texts_map = _fetch_texts_map(
+                        [candidates[idx]["filepath"] for idx in chosen_indices]
+                    )
                     for idx in chosen_indices:
                         c = candidates[idx]
-                        v = cand_parsed_vectors.get(idx)
-                        if v is None and c["vector_str"]:
-                            v = _safe_decrypt_and_parse_vector(
-                                db.crypto, c["vector_str"]
-                            )
-                        text = _safe_decrypt_text(db.crypto, c["extracted_text_enc"])
                         selected_examples.append(
                             {
                                 "filepath": c["filepath"],
                                 "user_verified_target_path": c[
                                     "user_verified_target_path"
                                 ],
-                                "vector": v,
-                                "text": text,
+                                "vector": c["vector"],
+                                "text": _lookup_text(texts_map, c["filepath"]),
                             }
                         )
                     ranked = True
@@ -431,16 +427,16 @@ def pre_fetch_historical_corpus(
 
         if not ranked:
             # Fallback: TF-IDF ranking
+            texts_map = {}
             try:
                 from sklearn.feature_extraction.text import TfidfVectorizer
                 from sklearn.metrics.pairwise import cosine_similarity
 
                 from app.core.text_utils import sanitize_text
 
-                # Decrypt texts for candidate evaluation during TF-IDF vectorization
+                texts_map = _fetch_texts_map([c["filepath"] for c in candidates])
                 decrypted_texts = [
-                    _safe_decrypt_text(db.crypto, c["extracted_text_enc"])
-                    for c in candidates
+                    _lookup_text(texts_map, c["filepath"]) for c in candidates
                 ]
                 hist_texts = [sanitize_text(t) for t in decrypted_texts]
                 active_text = sanitize_text(" ".join(documents or []))
@@ -455,12 +451,11 @@ def pre_fetch_historical_corpus(
                 selected_examples = []
                 for idx in sorted_indices[:max_examples]:
                     c = candidates[idx]
-                    v = _safe_decrypt_and_parse_vector(db.crypto, c["vector_str"])
                     selected_examples.append(
                         {
                             "filepath": c["filepath"],
                             "user_verified_target_path": c["user_verified_target_path"],
-                            "vector": v,
+                            "vector": c["vector"],
                             "text": decrypted_texts[idx],
                         }
                     )
@@ -469,18 +464,20 @@ def pre_fetch_historical_corpus(
                     f"TF-IDF ranking of historical examples failed: {e}",
                     exc_info=True,
                 )
-                selected_examples = []
-                for c in candidates[:max_examples]:
-                    v = _safe_decrypt_and_parse_vector(db.crypto, c["vector_str"])
-                    text = _safe_decrypt_text(db.crypto, c["extracted_text_enc"])
-                    selected_examples.append(
-                        {
-                            "filepath": c["filepath"],
-                            "user_verified_target_path": c["user_verified_target_path"],
-                            "vector": v,
-                            "text": text,
-                        }
+                fallback_candidates = candidates[:max_examples]
+                if not texts_map:
+                    texts_map = _fetch_texts_map(
+                        [c["filepath"] for c in fallback_candidates]
                     )
+                selected_examples = [
+                    {
+                        "filepath": c["filepath"],
+                        "user_verified_target_path": c["user_verified_target_path"],
+                        "vector": c["vector"],
+                        "text": _lookup_text(texts_map, c["filepath"]),
+                    }
+                    for c in fallback_candidates
+                ]
 
     return validate_corpus_prefetch_batch(
         {"model_metadata": model_metadata, "examples": selected_examples}
@@ -522,20 +519,20 @@ class IncrementalAnalyzer:
         stop_words: set,
         db,
         strategy_name: str = "generative",
-        model_path: str | object | None = _UNSPECIFIED,
+        model_path: str | None | _Unspecified = _UNSPECIFIED,
     ) -> None:
         self.db = db
         self.max_folders = max_folders
         self.stop_words = stop_words
         self.strategy_name = strategy_name
         self.model_path: str | None = (
-            model_path if isinstance(model_path, str) else None
+            None if isinstance(model_path, _Unspecified) else model_path
         )
         self.model_name = None
         self.corpus = {}
         self._last_reconstruction_error = 0.0
 
-        if model_path is _UNSPECIFIED:
+        if isinstance(model_path, _Unspecified):
             self.model_path = None
             from app.core.path_utils import get_meipass_dir
 

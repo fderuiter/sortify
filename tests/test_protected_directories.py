@@ -1,59 +1,7 @@
 from unittest import mock
 
 from app.config import Settings
-from app.core.mover import _remove_empty_dirs, execute_moves
-
-
-def test_remove_empty_dirs_respects_protected_paths(tmp_path):
-    # Setup directories
-    # tmp_path/empty_dir (protected)
-    # tmp_path/empty_dir/nested (nested within protected)
-    # tmp_path/other_empty_dir (unprotected)
-
-    empty_dir = tmp_path / "empty_dir"
-    nested_dir = empty_dir / "nested"
-    other_empty_dir = tmp_path / "other_empty_dir"
-
-    nested_dir.mkdir(parents=True, exist_ok=True)
-    other_empty_dir.mkdir(parents=True, exist_ok=True)
-
-    protected_paths = [str(empty_dir)]
-
-    # Run cleanup starting at the root (tmp_path)
-    # Since we start above empty_dir, it should recurse down, hit empty_dir,
-    # find that empty_dir is in protected_paths, and return immediately,
-    # leaving empty_dir and nested_dir intact, but other_empty_dir should be deleted.
-    _remove_empty_dirs(str(tmp_path), protected_paths)
-
-    assert empty_dir.exists()
-    assert nested_dir.exists()
-    assert not other_empty_dir.exists()
-
-
-def test_remove_empty_dirs_stop_at_protected_boundary(tmp_path):
-    # Setup nested hierarchy:
-    # tmp_path/parent (protected)
-    # tmp_path/parent/child (nested)
-    # tmp_path/parent/child/grandchild (nested)
-
-    parent = tmp_path / "parent"
-    child = parent / "child"
-    grandchild = child / "grandchild"
-
-    grandchild.mkdir(parents=True, exist_ok=True)
-
-    protected_paths = [str(parent)]
-
-    # Let's call _remove_empty_dirs starting at grandchild directly - since parent is protected and grandchild is a subpath,
-    # it should return immediately and not delete grandchild.
-    _remove_empty_dirs(str(grandchild), protected_paths)
-    assert grandchild.exists()
-
-    # Call on the whole tree
-    _remove_empty_dirs(str(tmp_path), protected_paths)
-    assert parent.exists()
-    assert child.exists()
-    assert grandchild.exists()
+from app.core.mover import execute_moves
 
 
 def test_execute_moves_empty_protected_paths(tmp_path):

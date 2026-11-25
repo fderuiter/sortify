@@ -1,7 +1,6 @@
 """Model downloader module with sandbox bypass, proxy support, and real-time tracking."""
 
 import contextlib
-import ipaddress
 import json
 import logging
 import os
@@ -16,6 +15,12 @@ from typing import Any
 
 from app.core.exceptions import DownloaderError, ModelVerificationError
 from app.core.lifecycle import LifecycleTelemetryMixin
+from app.core.network_guard import (
+    _DEFAULT_TRUSTED_HOSTS,
+    _build_proxy_opener,
+    _resolve_trusted_hosts,
+    _validate_outbound_https_url,
+)
 from app.core.progress import ProgressUpdate, emit_progress
 
 logger = logging.getLogger(__name__)
@@ -39,113 +44,19 @@ class DownloadError(DownloaderError):
     """Base class for download exceptions."""
 
 
-ALLOWED_MODEL_HOSTS: frozenset[str] = frozenset({"huggingface.co", "hf.co"})
-_ALLOWED_MODEL_HOSTS = ALLOWED_MODEL_HOSTS
-_LOCAL_HOSTNAMES: frozenset[str] = frozenset(
-    {"127.0.0.1", "localhost", "::1", "0.0.0.0", ""}
-)
-
-
-def _normalize_trusted_model_hosts(trusted_hosts=None) -> frozenset[str]:
-    """Normalize optional configured trusted hostnames alongside default Hugging Face hosts."""
-    combined = set(_ALLOWED_MODEL_HOSTS)
-    if not trusted_hosts:
-        return frozenset(combined)
-    for raw_host in trusted_hosts:
-        if not isinstance(raw_host, str):
-            continue
-        candidate = raw_host.strip().lower().rstrip(".")
-        if "://" in candidate:
-            parsed_cand = urllib.parse.urlsplit(candidate)
-            candidate = (parsed_cand.hostname or "").strip().lower().rstrip(".")
-        if (
-            not candidate
-            or candidate.startswith(".")
-            or candidate in _LOCAL_HOSTNAMES
-            or candidate.endswith((".local", ".localhost"))
-        ):
-            continue
-        try:
-            ipaddress.ip_address(candidate)
-        except ValueError:
-            combined.add(candidate)
-    return frozenset(combined)
-
-
-def _is_allowed_model_host(hostname: str, trusted_hosts=None) -> bool:
-    """Check if the given hostname matches an allowed model host or trusted subdomain."""
-    host = hostname.lower().rstrip(".")
-    if not host or host.startswith("."):
-        return False
-    allowed_set = _normalize_trusted_model_hosts(trusted_hosts)
-    return host in allowed_set or any(
-        host.endswith(f".{allowed}") for allowed in allowed_set
-    )
+ALLOWED_MODEL_HOSTS: frozenset[str] = _DEFAULT_TRUSTED_HOSTS
 
 
 def _validate_url(url: str, trusted_hosts=None) -> None:
-    """Validate that the model download URL uses HTTPS and points to an allowed model host.
-
-    Rejects non-HTTPS schemes, private/loopback/link-local IP addresses, empty hostnames,
-    and untrusted hostnames with DownloadError.
-    """
-    if not isinstance(url, str) or not url.strip():
-        raise DownloadError("Model download URL must be a non-empty string.")
-
-    cleaned_url = url.strip()
-    try:
-        parsed = urllib.parse.urlsplit(cleaned_url)
-    except ValueError as e:
-        raise DownloadError(f"Malformed model download URL: {e}") from e
-
-    scheme = (parsed.scheme or "").lower()
-    if scheme != "https":
-        raise DownloadError(
-            f"Unsupported URL scheme '{parsed.scheme}'. Only HTTPS is permitted."
-        )
-
-    hostname = parsed.hostname
-    if not hostname or not hostname.strip():
-        raise DownloadError("URL hostname is missing or empty.")
-
-    host_clean = hostname.strip().lower().rstrip(".")
-    if not host_clean or host_clean.startswith("."):
-        raise DownloadError(f"Invalid URL hostname: {hostname}")
-
-    # Reject IP address literals (loopback, private, link-local, unspecified, or public)
-    try:
-        ip = ipaddress.ip_address(host_clean)
-        if (
-            ip.is_loopback
-            or ip.is_private
-            or ip.is_link_local
-            or ip.is_unspecified
-            or ip.is_reserved
-            or ip.is_multicast
-        ):
-            raise DownloadError(
-                f"Private or local IP addresses are not permitted: {hostname}"
-            )
-        raise DownloadError(
-            f"IP address literals are not permitted as model download hosts: {hostname}"
-        )
-    except ValueError:
-        pass
-
-    # Reject local hostnames and loopback names
-    if host_clean in _LOCAL_HOSTNAMES or host_clean.endswith((".local", ".localhost")):
-        raise DownloadError(
-            f"Local or loopback hostnames are not permitted: {hostname}"
-        )
-
-    # Restrict to trusted model hosts
-    if not _is_allowed_model_host(host_clean, trusted_hosts=trusted_hosts):
-        raise DownloadError(
-            f"Untrusted model download host: {hostname}. Only trusted model hosts are permitted."
-        )
-
-
-_validate_model_url = _validate_url
+    """Validate that the model download URL uses HTTPS and points to an allowed model host."""
+    return _validate_outbound_https_url(
+        url,
+        trusted_hosts=trusted_hosts,
+        default_hosts=ALLOWED_MODEL_HOSTS,
+        error_cls=DownloadError,
+        endpoint_label="model download",
+        trusted_label="model",
+    )
 
 
 class InvalidStateTransitionError(DownloadError, ValueError):
@@ -370,65 +281,27 @@ class DownloadManager(LifecycleTelemetryMixin):
         with self._opener_lock:
             self._proxy = proxy_str or ""
             self._proxy_error = None
-            handlers = []
-            if self._proxy and self._proxy.strip():
-                p_str = self._proxy.strip()
-                if "<DECRYPTION_FAILED>" in p_str:
-                    self._proxy_error = (
-                        "Invalid proxy configuration: decryption failed."
-                    )
-                    self._opener = None
-                else:
-                    handlers.append(
-                        urllib.request.ProxyHandler({"http": p_str, "https": p_str})
-                    )
-                    self._opener = urllib.request.build_opener(*handlers)
-            else:
-                handlers.append(urllib.request.ProxyHandler({}))
-                self._opener = urllib.request.build_opener(*handlers)
+            try:
+                self._opener = _build_proxy_opener(self._proxy, error_cls=NetworkError)
+            except NetworkError as err:
+                self._proxy_error = str(err)
+                self._opener = None
 
     def get_opener(self, proxy: str | None = None) -> urllib.request.OpenerDirector:
         """Retrieve the active cached opener or raise NetworkError if proxy configuration is invalid."""
         with self._opener_lock:
             if proxy is not None and proxy != "":
-                p_str = str(proxy).strip()
-                if "<DECRYPTION_FAILED>" in p_str:
-                    raise NetworkError(
-                        "Invalid proxy configuration: decryption failed."
-                    )
-                handlers = [
-                    urllib.request.ProxyHandler({"http": p_str, "https": p_str})
-                ]
-                return urllib.request.build_opener(*handlers)
+                return _build_proxy_opener(proxy, error_cls=NetworkError)
 
-            if self._proxy_error or "<DECRYPTION_FAILED>" in self._proxy:
-                raise NetworkError(
-                    self._proxy_error
-                    or "Invalid proxy configuration: decryption failed."
-                )
+            if self._proxy_error:
+                raise NetworkError(self._proxy_error)
 
-            handlers = []
-            if self._proxy and self._proxy.strip():
-                p_str = self._proxy.strip()
-                handlers.append(
-                    urllib.request.ProxyHandler({"http": p_str, "https": p_str})
-                )
-            else:
-                handlers.append(urllib.request.ProxyHandler({}))
-            self._opener = urllib.request.build_opener(*handlers)
+            self._opener = _build_proxy_opener(self._proxy, error_cls=NetworkError)
             return self._opener
 
     def _get_trusted_hosts(self) -> frozenset[str]:
         """Return normalized trusted model download hostnames including configured mirrors."""
-        raw_hosts = getattr(self._settings, "TRUSTED_MODEL_HOSTS", None)
-        if raw_hosts is None:
-            try:
-                from app.config import AppSettings
-
-                raw_hosts = AppSettings().TRUSTED_MODEL_HOSTS
-            except (OSError, ValueError, RuntimeError):
-                raw_hosts = None
-        return _normalize_trusted_model_hosts(raw_hosts)
+        return _resolve_trusted_hosts(self._settings, default_hosts=ALLOWED_MODEL_HOSTS)
 
     def start_download(self, url: str, model_dir: str, proxy: str = ""):
         """Initiate model download thread-safely if not already downloading."""
@@ -832,17 +705,10 @@ def run_background_download(
         if dm is not None and hasattr(dm, "_get_trusted_hosts"):
             trusted_hosts = dm._get_trusted_hosts()
         else:
-            raw_hosts = getattr(
-                getattr(dm, "_settings", None), "TRUSTED_MODEL_HOSTS", None
+            trusted_hosts = _resolve_trusted_hosts(
+                getattr(dm, "_settings", None),
+                default_hosts=ALLOWED_MODEL_HOSTS,
             )
-            if raw_hosts is None:
-                try:
-                    from app.config import AppSettings
-
-                    raw_hosts = AppSettings().TRUSTED_MODEL_HOSTS
-                except (OSError, ValueError, RuntimeError):
-                    raw_hosts = None
-            trusted_hosts = _normalize_trusted_model_hosts(raw_hosts)
 
         # Validate primary URL and derived bundle URLs before security advisory check or sandbox unblocking
         try:
@@ -908,19 +774,7 @@ def run_background_download(
                 def get_current_opener():
                     if dm is not None:
                         return dm.get_opener(proxy)
-                    p_str = (proxy or "").strip()
-                    if p_str and "<DECRYPTION_FAILED>" in p_str:
-                        raise NetworkError(
-                            "Invalid proxy configuration: decryption failed."
-                        )
-                    handlers = []
-                    if p_str:
-                        handlers.append(
-                            urllib.request.ProxyHandler({"http": p_str, "https": p_str})
-                        )
-                    else:
-                        handlers.append(urllib.request.ProxyHandler({}))
-                    return urllib.request.build_opener(*handlers)
+                    return _build_proxy_opener(proxy, error_cls=NetworkError)
 
                 os.makedirs(parent_dir, exist_ok=True)
                 staging_dir = tempfile.mkdtemp(prefix=".model_staging_", dir=parent_dir)

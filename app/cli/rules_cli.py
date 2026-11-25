@@ -238,9 +238,24 @@ def _print_human_import_report(
         for pol in result.policies:
             p_type = pol.get("type", "keyword")
             act = pol.get("action")
-            badge = f" [{act}]" if act else ""
+            badges: list[str] = []
+            if act:
+                badges.append(str(act))
+            conds = pol.get("conditions")
+            if isinstance(conds, list) and conds:
+                badges.append(f"mode={pol.get('match_mode', 'all')}")
+                badges.append(f"{len(conds)} clauses")
+            elif pol.get("match_mode"):
+                badges.append(f"mode={pol['match_mode']}")
+            if pol.get("negate"):
+                badges.append("negate")
+            if pol.get("regex"):
+                badges.append("regex")
+            if pol.get("case_sensitive"):
+                badges.append("case-sensitive")
+            badge_str = "".join(f" [{b}]" for b in badges)
             print(
-                f"    - ({p_type}{badge}) {pol.get('expression', '')} -> "
+                f"    - ({p_type}{badge_str}) {pol.get('expression', '')} -> "
                 f"{pol.get('target_path', '')} [priority={pol.get('priority', 75)}]"
             )
 

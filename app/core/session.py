@@ -179,28 +179,6 @@ class AppSession:
             self._service_lease.close()
             raise
 
-    async def process_items_async(
-        self, items_to_sort, cancel_check, progress_callback=None
-    ):
-        """Build corpus asynchronous generator for files, yielded file-by-file sequentially."""
-        effective_base_dir = self.base_dir or (
-            self.source_dirs[0] if self.source_dirs else None
-        )
-        if not effective_base_dir:
-            return
-        from app.core.extractor import build_corpus_generator_async
-
-        async for item, text, file_hash, was_skipped in build_corpus_generator_async(
-            effective_base_dir,
-            items_to_sort,
-            db=self.db,
-            cancel_check=cancel_check,
-            settings=self.settings,
-            progress_callback=progress_callback,
-            source_dirs=self.source_dirs,
-        ):
-            yield item, text, file_hash, was_skipped
-
     def transition_to(
         self,
         target_state: Any,
@@ -446,7 +424,6 @@ class AppSession:
                     resume=resume,
                     cancel_check=cancel_check,
                     progress_callback=progress_callback,
-                    source_dirs=self.source_dirs,
                     pipeline=effective_pipeline,
                     **move_kwargs,
                 )
@@ -467,26 +444,6 @@ class AppSession:
                     with contextlib.suppress(Exception):
                         _transition_exec_state(PipelineLifecycleState.FAILED)
                 raise
-
-    def retry_failed_moves(self, failed_items, progress_callback=None, **kwargs):
-        """Re-attempt move operations for failed items."""
-        effective_base_dir = self.base_dir or (
-            self.source_dirs[0] if self.source_dirs else None
-        )
-        if not effective_base_dir:
-            return {}
-        from app.core.mover import retry_failed_moves
-
-        with self._lock_folders():
-            return retry_failed_moves(
-                effective_base_dir,
-                failed_items,
-                db=self.db,
-                history_manager=self.history_manager,
-                runtime_settings=self.settings,
-                progress_callback=progress_callback,
-                **kwargs,
-            )
 
     @staticmethod
     def lock_folders(
@@ -531,53 +488,3 @@ class AppSession:
                 from app.core.resilient_file_ops import resilient_rmtree
 
                 resilient_rmtree(self.session_dir, ignore_errors=True)
-
-
-def split_plan_phases(plan: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Split plan items into Phase 1 (deterministic/fast path) and Phase 2 (AI/clustering/slow path)."""
-    fast_plan: dict[str, Any] = {}
-    slow_plan: dict[str, Any] = {}
-
-    FAST_ROUTES = {
-        "keyword",
-        "override",
-        "rule",
-        "extension",
-        "jev_classifier",
-        "preset",
-        "compliance",
-        "action",
-        "unarchive",
-        "pattern",
-        "regex",
-    }
-
-    def process_node(
-        node: Any, fast_target: dict[str, Any], slow_target: dict[str, Any]
-    ):
-        if not isinstance(node, dict):
-            return
-        for key, val in node.items():
-            if (
-                isinstance(val, dict)
-                and "__type__" in val
-                and val["__type__"] == "file"
-            ):
-                routed_by = val.get("routed_by")
-                if routed_by in FAST_ROUTES or bool(val.get("policy_action")):
-                    fast_target[key] = val
-                else:
-                    slow_target[key] = val
-            elif isinstance(val, dict):
-                sub_fast: dict[str, Any] = {}
-                sub_slow: dict[str, Any] = {}
-                process_node(val, sub_fast, sub_slow)
-                if sub_fast:
-                    fast_target[key] = sub_fast
-                if sub_slow:
-                    slow_target[key] = sub_slow
-            else:
-                slow_target[key] = val
-
-    process_node(plan, fast_plan, slow_plan)
-    return fast_plan, slow_plan

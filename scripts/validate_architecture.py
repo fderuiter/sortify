@@ -95,7 +95,7 @@ IMPORT_LAYER_EXEMPT: set[str] = set()
 
 
 def compute_normalized_ast_hash(node: ast.AST) -> str:
-    """Compute SHA256 hash of a function AST node using read-only serialization after normalizing docstrings, type annotations, and local variable names."""
+    """Compute SHA256 hash of a function AST node using read-only serialization after normalizing function names, docstrings, type annotations, and local variable names."""
     is_root_func = isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     root_args = node.args if is_root_func else None
     top_arg_ids: set[int] = set()
@@ -180,8 +180,10 @@ def compute_normalized_ast_hash(node: ast.AST) -> str:
             keywords = False
             is_root = val is node and is_root_func
             for fname in val._fields:
-                if is_root and fname == "body":
-                    fval: object = root_body
+                if is_root and fname == "name":
+                    fval: object = ""
+                elif is_root and fname == "body":
+                    fval = root_body
                 elif is_root and fname in ("returns", "type_comment"):
                     fval = None
                 else:
@@ -455,17 +457,27 @@ def validate_codebase_duplication(
     for _h, locs in function_hashes.items():
         if len(locs) > 1:
             if target_files is None:
-                primary_file, primary_line, primary_name = locs[0]
-                for dup_file, dup_line, dup_name in locs[1:]:
-                    errors.append(
-                        f"{dup_file}:{dup_line}: Duplicate function body found for '{dup_name}'. "
-                        f"Structurally identical to function '{primary_name}' in {primary_file}:{primary_line}. "
-                        "Consolidate logic into a shared module or helper."
-                    )
+                for idx, (dup_file, dup_line, dup_name) in enumerate(locs):
+                    prior_matches = [
+                        loc
+                        for loc in locs[:idx]
+                        if loc[0] != dup_file or loc[2] == dup_name
+                    ]
+                    if prior_matches:
+                        primary_file, primary_line, primary_name = prior_matches[0]
+                        errors.append(
+                            f"{dup_file}:{dup_line}: Duplicate function body found for '{dup_name}'. "
+                            f"Structurally identical to function '{primary_name}' in {primary_file}:{primary_line}. "
+                            "Consolidate logic into a shared module or helper."
+                        )
             else:
                 for idx, (curr_file, curr_line, curr_name) in enumerate(locs):
                     if curr_file in target_files:
-                        other_locs = [loc for j, loc in enumerate(locs) if j != idx]
+                        other_locs = [
+                            loc
+                            for j, loc in enumerate(locs)
+                            if j != idx and (loc[0] != curr_file or loc[2] == curr_name)
+                        ]
                         if other_locs:
                             other_file, other_line, other_name = other_locs[0]
                             errors.append(

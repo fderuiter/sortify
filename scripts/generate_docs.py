@@ -28,11 +28,6 @@ def _resolve_output_path(rel_path: str) -> str:
     return rel_path
 
 
-def get_python_executable():
-    """Dynamically determine the best Python command/executable."""
-    return sys.executable
-
-
 def generate_tutorial_docs():
     """Ensure tutorial documentation directory exists."""
     tutorials_dir = Path(_resolve_output_path(os.path.join("docs", "tutorials")))
@@ -1008,8 +1003,11 @@ def audit_model_hosts(
     if allowed_hosts is None:
         try:
             from app.core.downloader import ALLOWED_MODEL_HOSTS
+            from app.core.security_advisory import ALLOWED_ADVISORY_HOSTS
 
-            allowed_hosts = ALLOWED_MODEL_HOSTS
+            allowed_hosts = frozenset(ALLOWED_MODEL_HOSTS) | frozenset(
+                ALLOWED_ADVISORY_HOSTS
+            )
         except Exception:
             allowed_hosts = frozenset({"huggingface.co", "hf.co"})
 
@@ -1074,10 +1072,6 @@ def audit_model_hosts(
             )
 
     return errors
-
-
-audit_model_host_docs = audit_model_hosts
-validate_model_hosts = audit_model_hosts
 
 
 REQUIRED_PRIVACY_HOST_TOKENS = (

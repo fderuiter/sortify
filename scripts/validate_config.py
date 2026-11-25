@@ -139,6 +139,11 @@ def validate_schema_completeness(schema: dict) -> None:
         "detect_original_by",
         "post_unarchive_action",
         "rename_pattern",
+        "match_mode",
+        "conditions",
+        "negate",
+        "regex",
+        "case_sensitive",
     }
     missing_optional = expected_optional - set(item_props.keys())
     if missing_optional:
