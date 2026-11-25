@@ -1391,6 +1391,16 @@ class AutoSorterTUI(
                     ]
                 if "CONFLICT_POLICY" in res:
                     self.settings.CONFLICT_POLICY = res["CONFLICT_POLICY"]
+                if "DUPLICATE_ACTION" in res:
+                    try:
+                        self.settings.DUPLICATE_ACTION = res["DUPLICATE_ACTION"]
+                    except Exception:
+                        pass
+                if "DETECT_ORIGINAL_BY" in res:
+                    try:
+                        self.settings.DETECT_ORIGINAL_BY = res["DETECT_ORIGINAL_BY"]
+                    except Exception:
+                        pass
                 if "CLEANUP_EMPTY_FOLDERS" in res:
                     try:
                         self.settings.CLEANUP_EMPTY_FOLDERS = res[
@@ -1805,9 +1815,10 @@ class AutoSorterTUI(
         target_sess = None
         last_drop_sid = getattr(self, "_last_drop_session_id", None)
         for s in sessions:
-            if (
-                str(s.get("status", "")).lower() != "completed"
-                or int(s.get("step_count") or 0) <= 0
+            step_cnt = int(s.get("step_count") or 0)
+            trashed_cnt = int(s.get("trashed_count") or 0)
+            if str(s.get("status", "")).lower() != "completed" or (
+                step_cnt <= 0 and trashed_cnt <= 0
             ):
                 continue
             if last_drop_sid and s.get("session_id") == last_drop_sid:
@@ -1827,6 +1838,13 @@ class AutoSorterTUI(
 
         if not target_sess:
             self.announce("No completed sorting session available to undo.")
+            return
+
+        if (
+            int(target_sess.get("step_count") or 0) <= 0
+            and int(target_sess.get("trashed_count") or 0) > 0
+        ):
+            self.run_undo_worker(target_sess["session_id"], False, None)
             return
 
         def handle_confirm_result(result: Optional[dict[str, Any]]) -> None:
@@ -1874,11 +1892,21 @@ class AutoSorterTUI(
             restored_count = int(
                 undo_result.summary.get("restored", len(undo_result.moved))
             )
+            trashed_remaining = int(
+                undo_result.summary.get("trashed_unrestorable")
+                or len(undo_result.trashed)
+                or 0
+            )
 
             if hasattr(self, "call_from_thread"):
-                self.call_from_thread(self._on_undo_success, session_id, restored_count)
+                self.call_from_thread(
+                    self._on_undo_success,
+                    session_id,
+                    restored_count,
+                    trashed_remaining,
+                )
             else:
-                self._on_undo_success(session_id, restored_count)
+                self._on_undo_success(session_id, restored_count, trashed_remaining)
         except Exception as err:
             logger.error(f"Error rolling back session {session_id}: {err}")
             if hasattr(self, "call_from_thread"):
@@ -1886,14 +1914,34 @@ class AutoSorterTUI(
             else:
                 self._on_undo_failure(session_id, err)
 
-    def _on_undo_success(self, session_id: str, restored_count: int) -> None:
+    def _on_undo_success(
+        self, session_id: str, restored_count: int, trashed_remaining: int = 0
+    ) -> None:
         """Handle successful session rollback completion on main thread."""
-        msg = f"Session {session_id[:8]}... successfully rolled back ({restored_count} file(s) restored)."
+        noun = "copy" if trashed_remaining == 1 else "copies"
+        verb_rem = "remains" if trashed_remaining == 1 else "remain"
+        if restored_count == 0 and trashed_remaining > 0:
+            msg = (
+                f"No reversible moves in session {session_id[:8]}...; "
+                f"{trashed_remaining} duplicate {noun} {verb_rem} in OS Trash "
+                "(cannot be restored automatically)."
+            )
+            notif_type = "warning"
+        elif trashed_remaining > 0:
+            msg = (
+                f"Session {session_id[:8]}... rolled back ({restored_count} file(s) restored). "
+                f"Warning: {trashed_remaining} duplicate {noun} {verb_rem} in OS Trash "
+                "(cannot be restored automatically)."
+            )
+            notif_type = "warning"
+        else:
+            msg = f"Session {session_id[:8]}... successfully rolled back ({restored_count} file(s) restored)."
+            notif_type = "info"
         self.announce(msg)
         try:
             from app.ui.notifications import notify
 
-            notify(msg, type="info")
+            notify(msg, type=notif_type)
         except Exception:
             pass
         self._clear_manual_plan_edits()

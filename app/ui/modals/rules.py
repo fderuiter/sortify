@@ -1419,7 +1419,15 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
                 norm_kind = "policy"
             if policy_type == "keyword" and legacy_rt:
                 policy_type = legacy_rt
-        if self.initial_policy is not None and norm_kind in ("", "keyword"):
+        eff_action = (
+            action
+            or rule_action
+            or (self.initial_policy.get("action") if self.initial_policy else "")
+            or ""
+        )
+        if norm_kind in ("", "keyword") and (
+            self.initial_policy is not None or bool(str(eff_action).strip())
+        ):
             norm_kind = "policy"
         self.initial_kind = (
             norm_kind if norm_kind in ("keyword", "policy", "learned") else "keyword"
@@ -1443,12 +1451,6 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
                 if self.initial_policy
                 else False
             )
-        )
-        eff_action = (
-            action
-            or rule_action
-            or (self.initial_policy.get("action") if self.initial_policy else "")
-            or ""
         )
         self.initial_action = str(eff_action).strip()
         eff_rename = (
@@ -1641,12 +1643,10 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
                 yield Label("Target Folder:", classes="field-label")
                 inp_target = Input(
                     value=self.initial_target,
-                    placeholder="e.g. Finances/Invoices or Archive/{year}/{month}",
+                    placeholder="e.g. Finances/Invoices (optional for trash / duplicate policies)",
                     id="input-rule-target",
                 )
-                inp_target.tooltip = (
-                    "Relative destination folder inside the active workspace"
-                )
+                inp_target.tooltip = "Relative destination folder inside the active workspace (leave blank for trash or duplicate policies)"
                 yield inp_target
 
                 yield Label("Rename Template (optional):", classes="field-label")
@@ -2366,7 +2366,7 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
             kind == "policy"
             or is_compound
             or has_policy_flags
-            or (kind in ("keyword", "learned") and rename_pat)
+            or (kind in ("keyword", "learned") and (rename_pat or draft["action"]))
         )
 
         if not wants_policy:
@@ -2421,7 +2421,7 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
 
         # Policy validation (explicit Policy Rule category or promoted via compound/flags/rename_pattern)
         pol_type = draft["policy_type"] if kind == "policy" else "keyword"
-        action_raw = draft["action"] if kind == "policy" else ""
+        action_raw = draft["action"]
 
         try:
             if (
@@ -2906,7 +2906,9 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
         super().on_mount()
         table = self.query_one("#rules-table", DataTable)
         table.cursor_type = "row"
-        table.add_columns("Status", "Type", "Pattern", "Target Folder", "Priority")
+        table.add_columns(
+            "Status", "Type", "Action", "Pattern", "Target Folder", "Priority"
+        )
         self._refresh_table()
         table.focus()
         masked_rows = [r for r in self._rules_data if r.get("masked_by")]
@@ -2930,6 +2932,7 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
                     "status": "Active",
                     "enabled": True,
                     "type": "keyword",
+                    "action": "move",
                     "pattern": str(kw),
                     "target_folder": str(target),
                     "priority": 0,
@@ -2945,6 +2948,7 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
                     "status": "Disabled",
                     "enabled": False,
                     "type": "keyword",
+                    "action": "move",
                     "pattern": str(kw),
                     "target_folder": str(target),
                     "priority": 0,
@@ -2960,6 +2964,7 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
                     "status": "Active",
                     "enabled": True,
                     "type": "learned",
+                    "action": "move",
                     "pattern": str(kw),
                     "target_folder": str(target),
                     "priority": 0,
@@ -2997,6 +3002,18 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
                     status_str = f"⚠ Masked by '{masker}'"
                 else:
                     status_str = "Active"
+                pol_type_raw = str(pol.get("type", "policy"))
+                raw_action = str(pol.get("action") or "").strip()
+                display_action = raw_action or (
+                    "unarchive"
+                    if pol_type_raw.lower() == "unarchive"
+                    else (
+                        "trash"
+                        if pol_type_raw.lower() == "duplicate"
+                        and not str(pol.get("target_path", ""))
+                        else "move"
+                    )
+                )
                 rules.append(
                     {
                         "kind": "policy",
@@ -3009,7 +3026,7 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
                         "rename_pattern": str(pol.get("rename_pattern", "") or ""),
                         "priority": pol.get("priority", 0),
                         "halting": bool(pol.get("halting", False)),
-                        "action": str(pol.get("action") or ""),
+                        "action": display_action,
                         "policy_idx": idx,
                         "original": copy.deepcopy(pol),
                     }
@@ -3029,6 +3046,7 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
             table.add_row(
                 r["status"],
                 r["type"],
+                r.get("action", "move"),
                 r["pattern"],
                 r["target_folder"],
                 str(r["priority"]),

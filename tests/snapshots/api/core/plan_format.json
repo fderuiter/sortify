@@ -1,9 +1,22 @@
 {
   "_metadata": {
-    "checksum": "891e417763f3c3fc7ab977c9c5ce8d96d4910fa2c43491254a808977df779ded"
+    "checksum": "a85dc52029ab99725a19bc5d4dd3dee7e319c8c4487d1ccd1a00bbc9bec56601"
   },
   "classes": [],
   "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "count_plan_actions",
+      "parameters": [
+        {
+          "annotation": "dict",
+          "default": null,
+          "name": "plan"
+        }
+      ],
+      "returns": "dict[str, int]"
+    },
     {
       "async": false,
       "decorators": [],

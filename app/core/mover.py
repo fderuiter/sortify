@@ -2655,27 +2655,37 @@ def _prepare_disposal_item(
             )
             return None
 
+        src_root = str(_get_val(content, "source_root") or base_dir)
         dup_of_str = str(dup_of)
         if os.path.isabs(dup_of_str) and "::" not in dup_of_str:
             primary_orig_abs = os.path.normpath(dup_of_str)
         else:
-            p_root, p_rel = parse_item_identifier(dup_of_str, base_dir)
+            p_root, p_rel = parse_item_identifier(dup_of_str, src_root)
             primary_orig_abs = os.path.normpath(
                 os.path.abspath(os.path.join(p_root, p_rel))
             )
         norm_primary_orig = os.path.normcase(os.path.abspath(primary_orig_abs))
+        cand_norms = {norm_primary_orig}
+        if src_root != base_dir and not os.path.isabs(dup_of_str):
+            alt_root, alt_rel = parse_item_identifier(dup_of_str, base_dir)
+            cand_norms.add(
+                os.path.normcase(os.path.abspath(os.path.join(alt_root, alt_rel)))
+            )
 
         verified_primary_path: str | None = None
         primary_moved_in_ledger = False
         if moves is not None and session_id:
             if moves_by_src is not None:
-                matching_rows = moves_by_src.get(norm_primary_orig, [])
+                matching_rows = [
+                    m for cand_key in cand_norms for m in moves_by_src.get(cand_key, [])
+                ]
+                matching_rows.sort(key=lambda m: m.seq)
             else:
                 session_moves = moves.list_moves(session_id)
                 matching_rows = [
                     m
                     for m in session_moves
-                    if os.path.normcase(os.path.abspath(m.src)) == norm_primary_orig
+                    if os.path.normcase(os.path.abspath(m.src)) in cand_norms
                 ]
             if matching_rows:
                 primary_moved_in_ledger = True
@@ -2692,7 +2702,10 @@ def _prepare_disposal_item(
                 )
                 return None
         else:
-            cand_dst = path_map.get(norm_primary_orig) or primary_orig_abs
+            cand_dst = (
+                next((path_map[k] for k in cand_norms if k in path_map), None)
+                or primary_orig_abs
+            )
             if moves is not None and not _is_same_path(cand_dst, primary_orig_abs):
                 if not os.path.isfile(cand_dst):
                     logging.warning(

@@ -1562,56 +1562,186 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
     def _confirm_pending_drop(self) -> None:
         """Show what the drop would do, including collision warnings and overrides, and wait for go-ahead."""
         from app.core.domain_contracts import _make_json_serializable
-        from app.core.plan_format import format_plan_tree
+        from app.core.plan_format import count_plan_actions, format_plan_tree
+        from app.core.verifier import VerificationEngine
+        from app.ui.modals.edit import DuplicateReviewModal
 
         batch_plan = getattr(self, "_pending_batch_plan", None)
         coordinator = getattr(self, "_coordinator", None)
 
+        dup_mode = (
+            str(getattr(self.settings, "DUPLICATE_ACTION", "off") or "off")
+            .strip()
+            .lower()
+        )
+        detect_original_by = str(
+            getattr(self.settings, "DETECT_ORIGINAL_BY", "first_seen") or "first_seen"
+        )
+
+        if dup_mode == "review" and not getattr(
+            self, "_drop_duplicates_reviewed", False
+        ):
+            self._pending_drop_flush_trash = False
+            dup_groups: list[dict[str, Any]] = []
+            plan_targets: list[tuple[str, dict[str, Any]]] = []
+            if batch_plan is not None:
+                if batch_plan.resolved_dest and batch_plan.unified_plan is not None:
+                    plan_targets.append(
+                        (batch_plan.resolved_dest, batch_plan.unified_plan)
+                    )
+                else:
+                    for grp in batch_plan.groups:
+                        plan_targets.append((grp.source_root, grp.plan))
+            else:
+                for item in self._pending_drop:
+                    if isinstance(item.get("plan"), dict):
+                        plan_targets.append((item["session"].base_dir, item["plan"]))
+
+            seen_gids: set[str] = set()
+            for p_base, p_dict in plan_targets:
+                for dg in VerificationEngine.get_duplicate_groups(
+                    p_base,
+                    p_dict,
+                    detect_original_by=detect_original_by,
+                ):
+                    gid = str(dg.get("group_id") or "")
+                    if gid and gid not in seen_gids:
+                        seen_gids.add(gid)
+                        dup_groups.append(dg)
+
+            if dup_groups:
+
+                def _on_dup_review(selections: Optional[dict[str, str]]) -> None:
+                    if selections is None:
+                        self._drop_duplicates_reviewed = False
+                        self._pending_drop_flush_trash = False
+                        self._close_pending_drop()
+                        self.update_status_msg(
+                            "Cancelled duplicate review. No files were moved."
+                        )
+                        return
+
+                    self._drop_duplicates_reviewed = True
+                    self._pending_drop_flush_trash = any(
+                        val == "trash" for val in selections.values()
+                    )
+                    for p_base, p_dict in plan_targets:
+                        local_groups = VerificationEngine.get_duplicate_groups(
+                            p_base,
+                            p_dict,
+                            detect_original_by=detect_original_by,
+                        )
+                        if local_groups:
+                            VerificationEngine.apply_deduplication_selections(
+                                p_base,
+                                p_dict,
+                                selections,
+                                groups=local_groups,
+                                detect_original_by=detect_original_by,
+                            )
+                    if batch_plan is not None and batch_plan.unified_plan is not None:
+                        for grp in batch_plan.groups:
+                            grp_groups = VerificationEngine.get_duplicate_groups(
+                                batch_plan.resolved_dest or grp.source_root,
+                                grp.plan,
+                                detect_original_by=detect_original_by,
+                            )
+                            if grp_groups:
+                                VerificationEngine.apply_deduplication_selections(
+                                    batch_plan.resolved_dest or grp.source_root,
+                                    grp.plan,
+                                    selections,
+                                    groups=grp_groups,
+                                    detect_original_by=detect_original_by,
+                                )
+                    if batch_plan is not None and coordinator is not None:
+                        coordinator.refresh_verification(batch_plan)
+                    self._confirm_pending_drop()
+
+                self.app.push_screen(
+                    DuplicateReviewModal(duplicate_groups=dup_groups),
+                    _on_dup_review,
+                )
+                return
+        elif not getattr(self, "_drop_duplicates_reviewed", False):
+            self._pending_drop_flush_trash = dup_mode == "trash"
+
         lines: list[str] = []
-        total_files = total_folders = 0
+        total_files = total_folders = total_staged = total_trashed = 0
         for item in self._pending_drop:
             plan = _make_json_serializable(item["plan"])
             tree, n_files, n_folders = format_plan_tree(plan)
-            if not n_files:
+            p_counts = count_plan_actions(plan)
+            item_staged = p_counts["staged"]
+            item_trashed = p_counts["trashed"]
+            if not (n_files or item_staged or item_trashed):
                 continue
             total_files += n_files
             total_folders += n_folders
+            total_staged += item_staged
+            total_trashed += item_trashed
             lines.append(f"In {item['session'].base_dir}:")
             lines.extend(f"  {line}" for line in tree)
 
         if batch_plan is not None and batch_plan.plan_lines and not lines:
             lines = list(batch_plan.plan_lines)
-            total_files = sum(
-                1 for it in batch_plan.items if not getattr(it, "is_excluded", False)
-            )
+            for it in batch_plan.items:
+                if getattr(it, "is_excluded", False):
+                    continue
+                dup_act = str(it.node_ref.get("duplicate_action") or "").strip().lower()
+                pol_act = str(it.node_ref.get("policy_action") or "").strip().lower()
+                if dup_act == "trash" or pol_act == "trash":
+                    total_trashed += 1
+                elif dup_act == "stage":
+                    total_staged += 1
+                else:
+                    total_files += 1
             total_folders = len(
                 {
                     (it.dest_base_dir, it.target_folder)
                     for it in batch_plan.items
                     if not getattr(it, "is_excluded", False)
+                    and str(it.node_ref.get("duplicate_action") or "").strip().lower()
+                    not in ("stage", "trash")
+                    and str(it.node_ref.get("policy_action") or "").strip().lower()
+                    != "trash"
                 }
             )
 
-        if not total_files:
+        if not (total_files or total_staged or total_trashed):
+            self._drop_duplicates_reviewed = False
+            self._pending_drop_flush_trash = False
             self._close_pending_drop()
             self.update_status_msg("Nothing to sort: no files could be classified.")
             return
 
         warnings = list(getattr(batch_plan, "warnings", None) or [])
         warn_suffix = f" ({len(warnings)} warning(s) detected)" if warnings else ""
+        dup_parts: list[str] = []
+        if total_staged > 0:
+            dup_parts.append(f"{total_staged} staged")
+        if total_trashed > 0:
+            dup_parts.append(
+                f"{total_trashed} trashed"
+                if getattr(self, "_pending_drop_flush_trash", False)
+                else f"{total_trashed} staged for trash"
+            )
+        dup_note = f" ({', '.join(dup_parts)})" if dup_parts else ""
         summary = (
-            f"Move {total_files} file(s) into {total_folders} folder(s)?{warn_suffix} "
+            f"Move {total_files} file(s) into {total_folders} folder(s){dup_note}?{warn_suffix} "
             "Nothing has been moved yet."
         )
         self.update_status_msg(f"Review the plan: {summary}")
 
         def _on_answer(confirmed: Optional[bool]) -> None:
+            self._drop_duplicates_reviewed = False
             if confirmed:
                 self.update_status_msg(
                     "Relocating items according to generated sorting plan..."
                 )
                 self.run_drop_execute_worker()
             else:
+                self._pending_drop_flush_trash = False
                 self._close_pending_drop()
                 self.update_status_msg("Cancelled. No files were moved.")
 
@@ -1632,19 +1762,34 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         app_ref = getattr(self, "_app_ref", None)
         batch_plan = getattr(self, "_pending_batch_plan", None)
         coordinator = getattr(self, "_coordinator", None)
+        flush_trash = bool(getattr(self, "_pending_drop_flush_trash", False))
+        self._pending_drop_flush_trash = False
+        self._drop_duplicates_reviewed = False
 
         if batch_plan is not None and coordinator is not None:
             self._pending_batch_plan = None
             self._pending_drop = []
             try:
-                batch_result = coordinator.execute_batch(batch_plan)
+                batch_result = coordinator.execute_batch(
+                    batch_plan,
+                    flush_trash=flush_trash,
+                    flush_trashed_only=flush_trash,
+                )
                 active_items = [
                     it
                     for it in batch_plan.items
                     if not getattr(it, "is_excluded", False)
                 ]
-                succeeded_files = batch_result.moved_count or (
-                    len(active_items) if batch_result.failed_count == 0 else 0
+                handled_total = (
+                    batch_result.moved_count
+                    + batch_result.staged_count
+                    + batch_result.trashed_count
+                )
+                succeeded_files = handled_total or (
+                    len(active_items)
+                    if batch_result.failed_count == 0
+                    and batch_result.skipped_count == 0
+                    else 0
                 )
                 failed_files = batch_result.failed_count
                 processed_items = [
@@ -1656,16 +1801,31 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
                     }
                     for grp, tr in zip(batch_plan.groups, batch_result.target_results)
                 ]
+                count_parts = [f"{batch_result.moved_count} moved"]
+                if batch_result.staged_count > 0:
+                    count_parts.append(f"{batch_result.staged_count} staged")
+                if batch_result.trashed_count > 0:
+                    count_parts.append(f"{batch_result.trashed_count} trashed")
+                counts_detail = ", ".join(count_parts)
+                trash_errors = dict(
+                    (batch_result.trash_handoff or {}).get("errors") or {}
+                )
+                err_note = (
+                    f" Warning: OS Trash handoff failed for {len(trash_errors)} item(s) (kept staged)."
+                    if trash_errors
+                    else ""
+                )
                 if failed_files == 0:
                     status = "success"
                     final_msg = (
-                        f"Completed triage of {succeeded_files} dropped item(s)."
+                        f"Completed triage of {succeeded_files} dropped item(s) "
+                        f"({counts_detail}).{err_note}"
                     )
                 elif succeeded_files > 0:
                     status = "partial"
                     final_msg = (
                         f"Completed triage of {succeeded_files} item(s) "
-                        f"({failed_files} failed)."
+                        f"({counts_detail}, {failed_files} failed).{err_note}"
                     )
                 else:
                     status = "failed"
@@ -1673,12 +1833,22 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
 
                 if app_ref:
                     app_ref.call_from_thread(self.update_status_msg, final_msg)
+                    if trash_errors:
+                        from app.ui.notifications import notify
+
+                        app_ref.call_from_thread(
+                            lambda: notify(err_note.strip(), type="warning")
+                        )
 
                 result_dict = {
                     "status": status,
                     "session_id": batch_result.session_id,
                     "destination_dir": batch_result.resolved_dest,
                     "processed_count": succeeded_files,
+                    "moved_count": batch_result.moved_count,
+                    "staged_count": batch_result.staged_count,
+                    "trashed_count": batch_result.trashed_count,
+                    "trash_handoff": batch_result.trash_handoff,
                     "failed_files": failed_files,
                     "items": processed_items,
                     "failed_items": [],
@@ -1715,7 +1885,11 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
                 try:
                     src_dir = item.get("path")
                     src_dir_was_dir = bool(src_dir and os.path.isdir(src_dir))
-                    outcome = SortPipeline(item["session"]).execute(item["plan"])
+                    outcome = SortPipeline(item["session"]).execute(
+                        item["plan"],
+                        flush_trash=flush_trash,
+                        flush_trashed_only=flush_trash,
+                    )
                     restore_rerooted_source_dir(
                         src_dir,
                         was_dir=src_dir_was_dir,
@@ -1758,11 +1932,23 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
             )
             total_items = len(pending)
 
+            fallback_trash_errors: dict[str, str] = {}
+            for o in outcomes:
+                th = (o.summary or {}).get("trash_handoff") if o.summary else None
+                if isinstance(th, dict):
+                    fallback_trash_errors.update(th.get("errors") or {})
+            fb_err_note = (
+                f" Warning: OS Trash handoff failed for {len(fallback_trash_errors)} item(s) (kept staged)."
+                if fallback_trash_errors
+                else ""
+            )
+
             if not failed_items:
                 status = "success"
                 final_msg = (
                     f"Completed triage of {succeeded_files} dropped item(s): "
                     + " ".join(o.describe() for o in outcomes)
+                    + fb_err_note
                 )
             elif processed_items:
                 status = "partial"
@@ -1773,7 +1959,7 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
                 final_msg = (
                     f"Completed triage of {succeeded_files} item(s) "
                     f"({len(processed_items)} succeeded, {len(failed_items)} failed): "
-                    f"{descriptions} Errors: {err_summary}"
+                    f"{descriptions} Errors: {err_summary}{fb_err_note}"
                 )
             else:
                 status = "failed"
@@ -1784,6 +1970,12 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
 
             if app_ref:
                 app_ref.call_from_thread(self.update_status_msg, final_msg)
+                if fallback_trash_errors:
+                    from app.ui.notifications import notify
+
+                    app_ref.call_from_thread(
+                        lambda: notify(fb_err_note.strip(), type="warning")
+                    )
 
             result_dict = {
                 "status": status,

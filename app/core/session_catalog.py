@@ -41,9 +41,10 @@ def list_sessions(store=None) -> list:
             "status": status,
             "step_count": step_count,
             "file_count": file_count,
+            "trashed_count": trashed_count,
             "history_db_path": str(store.path),
         }
-        for sid, ts, base_dir, status, step_count, file_count in rows
+        for sid, ts, base_dir, status, step_count, file_count, trashed_count in rows
     ]
 
 
