@@ -665,12 +665,25 @@ def test_precommit_hooks_full_repo_readonly_parity():
         "validate-docs",
         "validate-diagram-artifacts",
         "validate-config-schema",
-        "validate-signatures",
-        "validate-architecture",
     ):
         assert hooks[hook_id].get("pass_filenames") is False, (
             f"{hook_id} must set pass_filenames: false"
         )
+
+    for hook_id in (
+        "validate-signatures",
+        "validate-architecture",
+    ):
+        assert hooks[hook_id].get("pass_filenames", True) is True, (
+            f"{hook_id} must enable pass_filenames"
+        )
+        assert hooks[hook_id].get("pass_filenames") is True, (
+            f"{hook_id} must explicitly set pass_filenames: true"
+        )
+
+    assert hooks["deptry"].get("pass_filenames") is False, (
+        "deptry must set pass_filenames: false"
+    )
 
     assert "--check" in hooks["validate-config-schema"]["entry"]
 
@@ -689,14 +702,39 @@ def test_precommit_hooks_full_repo_readonly_parity():
 
     for path in (
         "app/main.py",
+        "app/config.py",
+        "app/cli/ledger_cli.py",
+        "app/core/analyzer.py",
+        "app/plugins/clinical_compliance/plugin.py",
+        "app/ui/protocols.py",
+        "sandbox_cli.py",
         "tests/snapshots/api/core/orphan.json",
+        "tests/test_visual_snapshots.py",
         "pyproject.toml",
         "uv.lock",
     ):
         assert re.search(hooks["validate-signatures"]["files"], path)
 
+    for ignored_sig_path in (
+        "tests/test_analyzer.py",
+        "app/ui/tui.py",
+    ):
+        assert not re.search(hooks["validate-signatures"]["files"], ignored_sig_path)
+
+    for path in (
+        "app/main.py",
+        "scripts/validate_architecture.py",
+        "sandbox_cli.py",
+        "pyproject.toml",
+        "uv.lock",
+    ):
+        assert re.search(hooks["deptry"]["files"], path)
+
+    assert not re.search(hooks["deptry"]["files"], "tests/test_analyzer.py")
+
     for path in (
         "app/config.py",
+        "scripts/validate_architecture.py",
         "scripts/diagram_schema.py",
         "docs/assets/diagrams/core_architecture.svg",
         "pyproject.toml",

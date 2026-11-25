@@ -399,3 +399,63 @@ def sample(beta, *vals, toggle=True, **kw):
 
     assert compute_normalized_ast_hash(node1) == compute_normalized_ast_hash(node2)
     assert ast.dump(node1, include_attributes=True) == before_dump
+
+
+def test_nested_closures_skip_hash_while_canonical_registry_checks_all_depths(
+    monkeypatch,
+):
+    """Verify UtilityAntiDuplicationVisitor skips hashing nested closures but enforces canonical registry at all depths."""
+    from scripts import validate_architecture
+
+    real_hash = validate_architecture.compute_normalized_ast_hash
+    hashed_names: list[str] = []
+
+    def tracking_hash(node: ast.AST) -> str:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            hashed_names.append(node.name)
+        return real_hash(node)
+
+    monkeypatch.setattr(
+        validate_architecture, "compute_normalized_ast_hash", tracking_hash
+    )
+
+    nested_code = """
+def outer_pipeline(items):
+    def inner_closure(x):
+        def deeply_nested(y):
+            step = y + 1
+            return step * 2
+        val = deeply_nested(x)
+        return val + 3
+    result = [inner_closure(i) for i in items]
+    return result
+"""
+    errors: list[str] = []
+    hashes: dict = {}
+    visitor = UtilityAntiDuplicationVisitor("app/core/sample.py", errors, hashes)
+    visitor.visit(ast.parse(nested_code))
+
+    assert errors == []
+    assert hashed_names == ["outer_pipeline"]
+
+    canonical_nested_code = """
+def outer_wrapper():
+    def _set_posix_mode(path, mode):
+        return (path, mode)
+
+    def deeper_wrapper():
+        class DictCompatMixin:
+            pass
+        return DictCompatMixin
+    return _set_posix_mode, deeper_wrapper
+"""
+    canon_errors: list[str] = []
+    canon_hashes: dict = {}
+    canon_visitor = UtilityAntiDuplicationVisitor(
+        "app/ui/custom_widget.py", canon_errors, canon_hashes
+    )
+    canon_visitor.visit(ast.parse(canonical_nested_code))
+
+    assert len(canon_errors) == 2
+    assert any("_set_posix_mode" in e for e in canon_errors)
+    assert any("DictCompatMixin" in e for e in canon_errors)

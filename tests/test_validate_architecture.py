@@ -647,3 +647,184 @@ def test_validate_architecture_single_app_walk_and_zero_deepcopy(monkeypatch):
     assert exc_info.value.code == 0
     assert app_walk_calls == 1
     assert len(parsed_files) == len(set(parsed_files))
+
+
+def test_validate_architecture_full_scan_visits_each_ast_once_without_ast_walk(
+    monkeypatch,
+):
+    """Verify full scan visits each parsed app/ Module AST once and never calls ast.walk."""
+    import ast
+
+    real_parse = ast.parse
+    parsed_paths: list[str] = []
+
+    def tracking_parse(source, filename="<unknown>", *args, **kwargs):
+        parsed_paths.append(str(filename).replace("\\", "/"))
+        return real_parse(source, filename, *args, **kwargs)
+
+    real_visit = ast.NodeVisitor.visit
+    visited_module_ids: list[int] = []
+
+    def tracking_visit(self, node):
+        if isinstance(node, ast.Module):
+            visited_module_ids.append(id(node))
+        return real_visit(self, node)
+
+    monkeypatch.setattr(ast, "parse", tracking_parse)
+    monkeypatch.setattr(ast.NodeVisitor, "visit", tracking_visit)
+    monkeypatch.setattr(
+        ast,
+        "walk",
+        lambda *_a, **_kw: (_ for _ in ()).throw(
+            AssertionError("ast.walk must not be called during validate_architecture")
+        ),
+    )
+    monkeypatch.setattr(sys, "argv", ["validate_architecture.py"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+    app_parses = [p for p in parsed_paths if p.startswith("app/") or "/app/" in p]
+    assert app_parses
+    assert len(app_parses) == len(set(app_parses))
+    assert len(visited_module_ids) == len(app_parses)
+    assert len(visited_module_ids) == len(set(visited_module_ids))
+
+
+def test_validate_architecture_drifted_diagram_inputs_fail_without_parsing_app(
+    monkeypatch, tmp_path
+):
+    """Passing drifted diagram asset or diagram_schema.py runs diagram validation without parsing app/."""
+    import ast
+
+    diagrams_dir = tmp_path / "docs" / "assets" / "diagrams"
+    diagrams_dir.mkdir(parents=True)
+    (diagrams_dir / "core_architecture.mmd").write_text(
+        "flowchart TD\n    DRIFTED[stale]\n", encoding="utf-8"
+    )
+    (diagrams_dir / "core_architecture.svg").write_text("<svg/>", encoding="utf-8")
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "diagram_schema.py").write_text(
+        "# stub\n", encoding="utf-8"
+    )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        ast,
+        "parse",
+        lambda *_a, **_kw: (_ for _ in ()).throw(
+            AssertionError("app/ ASTs must not be parsed for diagram-only inputs")
+        ),
+    )
+
+    for cli_arg in (
+        "docs/assets/diagrams/core_architecture.mmd",
+        "scripts/diagram_schema.py",
+    ):
+        monkeypatch.setattr(sys, "argv", ["validate_architecture.py", cli_arg])
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 1
+
+
+def test_validate_architecture_targeted_diagram_hydrates_single_spec(monkeypatch):
+    """Passing a single diagram asset hydrates only that spec key in LazyDiagramSpecsDict."""
+    import ast
+
+    from scripts import diagram_schema
+
+    saved_specs = dict(diagram_schema._INSTANTIATED_SPECS)
+    diagram_schema._INSTANTIATED_SPECS.clear()
+    try:
+        monkeypatch.setattr(
+            ast,
+            "parse",
+            lambda *_a, **_kw: (_ for _ in ()).throw(
+                AssertionError("app/ ASTs must not be parsed for diagram asset checks")
+            ),
+        )
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["validate_architecture.py", "docs/assets/diagrams/setup_wizard_flow.mmd"],
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 0
+        assert set(diagram_schema._INSTANTIATED_SPECS.keys()) == {"setup_wizard_flow"}
+    finally:
+        diagram_schema._INSTANTIATED_SPECS.clear()
+        diagram_schema._INSTANTIATED_SPECS.update(saved_specs)
+
+
+def test_validate_architecture_non_core_edit_defers_diagram_schema_import(monkeypatch):
+    """Non-core app/ edits do not import scripts.diagram_schema."""
+    monkeypatch.setitem(sys.modules, "scripts.diagram_schema", None)
+    monkeypatch.setattr(sys, "argv", ["validate_architecture.py", "app/main.py"])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+
+
+def test_validate_architecture_config_and_pyproject_escalate_to_full_scan(
+    monkeypatch, tmp_path
+):
+    """Passing pyproject.toml or app/config.py runs full Settings and architecture validation."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 'test'\n", encoding="utf-8"
+    )
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    (app_dir / "config.py").write_text(
+        "class Settings:\n    DECLARED_KEY: int = 1\n", encoding="utf-8"
+    )
+    (app_dir / "reader.py").write_text(
+        'val = getattr(settings, "UNDECLARED_KEY", 0)\n', encoding="utf-8"
+    )
+
+    for trigger in ("pyproject.toml", "app/config.py"):
+        monkeypatch.setattr(sys, "argv", ["validate_architecture.py", trigger])
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 1
+
+
+def test_validate_architecture_unrelated_paths_do_not_parse_app(monkeypatch):
+    """Unrelated CLI paths exit 0 immediately without walking or parsing app/."""
+    import ast
+    import os
+
+    monkeypatch.setattr(
+        os,
+        "walk",
+        lambda *_a, **_kw: (_ for _ in ()).throw(
+            AssertionError("os.walk must not run on unrelated paths")
+        ),
+    )
+    monkeypatch.setattr(
+        ast,
+        "parse",
+        lambda *_a, **_kw: (_ for _ in ()).throw(
+            AssertionError("ast.parse must not run on unrelated paths")
+        ),
+    )
+    monkeypatch.setattr(
+        sys, "argv", ["validate_architecture.py", "README.md", "tests/test_foo.py"]
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+
+
+def test_writer_construction_catches_alias_imported_after_call():
+    """Verify single-pass service ownership check catches aliases imported later in module."""
+    import ast
+
+    from scripts.validate_architecture import validate_service_ownership
+
+    source = "def build():\n    return Writer()\n\nfrom app.core.db_worker import DBWorker as Writer\n"
+    errors: list[str] = []
+    validate_service_ownership(errors, "app/ui/example.py", ast.parse(source))
+    assert len(errors) == 1
+    assert "DBWorker" in errors[0]

@@ -11,6 +11,7 @@ import difflib
 import json
 import os
 import sys
+from typing import Any
 
 from scripts.snapshot_utils import (
     compute_payload_checksum,
@@ -265,16 +266,8 @@ def extract_module_signatures(file_path):
     return _extract_module_signatures_from_tree(tree)
 
 
-def extract_protocols(file_path):
-    """Statically parse a Python file and extract classes that inherit from Protocol."""
-    if not os.path.exists(file_path):
-        print(f"Error: Protocol source file not found: {file_path}", file=sys.stderr)
-        return {}
-
-    with open(file_path, encoding="utf-8") as f:
-        source = f.read()
-
-    tree = ast.parse(source, filename=file_path)
+def _extract_protocols_from_tree(tree: ast.Module) -> dict:
+    """Extract classes inheriting from Protocol from a parsed module AST."""
     protocols = {}
 
     for node in ast.walk(tree):
@@ -301,6 +294,19 @@ def extract_protocols(file_path):
                 }
 
     return protocols
+
+
+def extract_protocols(file_path):
+    """Statically parse a Python file and extract classes that inherit from Protocol."""
+    if not os.path.exists(file_path):
+        print(f"Error: Protocol source file not found: {file_path}", file=sys.stderr)
+        return {}
+
+    with open(file_path, encoding="utf-8") as f:
+        source = f.read()
+
+    tree = ast.parse(source, filename=file_path)
+    return _extract_protocols_from_tree(tree)
 
 
 def _extract_cli_from_tree(tree: ast.AST) -> list:
@@ -348,16 +354,16 @@ def extract_cli(file_path):
     return _extract_cli_from_tree(tree)
 
 
-def collect_cli_definitions(cli_dir=None):
-    """Dynamically scan CLI package modules and main entry points to extract CLI call nodes."""
+def _discover_cli_files(cli_dir=None) -> list[tuple[str, str, bool]]:
+    """Return sorted (source_rel, source_abs, is_entrypoint) entries for CLI modules without parsing ASTs."""
     if cli_dir is None:
         cli_dir = os.path.join(BASE_DIR, "app", "cli")
 
-    cli_data = {}
+    entries: dict[str, tuple[str, bool]] = {}
     if os.path.exists(MAIN_CLI_PATH):
-        cli_data["app/main.py"] = extract_cli(MAIN_CLI_PATH)
+        entries["app/main.py"] = (MAIN_CLI_PATH, True)
     if os.path.exists(SANDBOX_CLI_PATH):
-        cli_data["sandbox_cli.py"] = extract_cli(SANDBOX_CLI_PATH)
+        entries["sandbox_cli.py"] = (SANDBOX_CLI_PATH, True)
 
     if os.path.exists(cli_dir):
         for root, dirs, files in os.walk(cli_dir):
@@ -371,34 +377,53 @@ def collect_cli_definitions(cli_dir=None):
                 ):
                     full_path = os.path.join(root, file)
                     rel_path = safe_relpath(full_path, BASE_DIR).replace("\\", "/")
-                    try:
-                        with open(full_path, encoding="utf-8") as f:
-                            source = f.read()
-                        tree = ast.parse(source, filename=full_path)
-                        sigs = _extract_module_signatures_from_tree(tree)
-                        cli_calls = _extract_cli_from_tree(tree)
-                    except Exception as e:
-                        print(
-                            f"Warning: Failed to parse AST for {full_path}: {e}",
-                            file=sys.stderr,
-                        )
-                        sigs = {"classes": [], "functions": []}
-                        cli_calls = []
-                    cli_data[rel_path] = {
-                        "classes": sigs["classes"],
-                        "functions": sigs["functions"],
-                        "cli": cli_calls,
-                    }
+                    entries[rel_path] = (full_path, False)
 
-    return dict(sorted(cli_data.items()))
+    return [
+        (rel, full_path, is_entry)
+        for rel, (full_path, is_entry) in sorted(entries.items())
+    ]
 
 
-def collect_core_definitions(core_dir=None):
-    """Dynamically scan core package modules and extract public definitions."""
+def _extract_cli_module_payload(full_path: str) -> dict:
+    """Parse an app/cli/*.py module once to extract signatures and CLI calls."""
+    try:
+        with open(full_path, encoding="utf-8") as f:
+            source = f.read()
+        tree = ast.parse(source, filename=full_path)
+        sigs = _extract_module_signatures_from_tree(tree)
+        cli_calls = _extract_cli_from_tree(tree)
+    except Exception as e:
+        print(
+            f"Warning: Failed to parse AST for {full_path}: {e}",
+            file=sys.stderr,
+        )
+        sigs = {"classes": [], "functions": []}
+        cli_calls = []
+    return {
+        "classes": sigs["classes"],
+        "functions": sigs["functions"],
+        "cli": cli_calls,
+    }
+
+
+def collect_cli_definitions(cli_dir=None):
+    """Dynamically scan CLI package modules and main entry points to extract CLI call nodes."""
+    cli_data = {}
+    for rel_path, full_path, is_entry in _discover_cli_files(cli_dir=cli_dir):
+        if is_entry:
+            cli_data[rel_path] = extract_cli(full_path)
+        else:
+            cli_data[rel_path] = _extract_cli_module_payload(full_path)
+    return cli_data
+
+
+def _discover_core_files(core_dir=None) -> list[tuple[str, str]]:
+    """Return sorted (source_rel, source_abs) entries for core modules without parsing ASTs."""
     if core_dir is None:
         core_dir = os.path.join(BASE_DIR, "app", "core")
 
-    core_data = {}
+    entries: dict[str, str] = {}
     if os.path.exists(core_dir):
         for root, dirs, files in os.walk(core_dir):
             dirs.sort()
@@ -407,17 +432,24 @@ def collect_core_definitions(core_dir=None):
                 if file.endswith(".py") and not file.startswith("."):
                     full_path = os.path.join(root, file)
                     rel_path = safe_relpath(full_path, BASE_DIR).replace("\\", "/")
-                    core_data[rel_path] = extract_module_signatures(full_path)
+                    entries[rel_path] = full_path
+    return sorted(entries.items())
 
-    return dict(sorted(core_data.items()))
+
+def collect_core_definitions(core_dir=None):
+    """Dynamically scan core package modules and extract public definitions."""
+    return {
+        rel_path: extract_module_signatures(full_path)
+        for rel_path, full_path in _discover_core_files(core_dir=core_dir)
+    }
 
 
-def collect_plugins_definitions(plugins_dir=None):
-    """Dynamically scan plugins package modules recursively and extract public definitions."""
+def _discover_plugin_files(plugins_dir=None) -> list[tuple[str, str]]:
+    """Return sorted (source_rel, source_abs) entries for plugin modules without parsing ASTs."""
     if plugins_dir is None:
         plugins_dir = PLUGINS_DIR
 
-    plugins_data = {}
+    entries: dict[str, str] = {}
     if os.path.exists(plugins_dir):
         for root, dirs, files in os.walk(plugins_dir):
             dirs.sort()
@@ -449,9 +481,36 @@ def collect_plugins_definitions(plugins_dir=None):
 
                 full_path = os.path.join(root, file)
                 rel_path = safe_relpath(full_path, BASE_DIR).replace("\\", "/")
-                plugins_data[rel_path] = extract_module_signatures(full_path)
+                entries[rel_path] = full_path
+    return sorted(entries.items())
 
-    return dict(sorted(plugins_data.items()))
+
+def collect_plugins_definitions(plugins_dir=None):
+    """Dynamically scan plugins package modules recursively and extract public definitions."""
+    return {
+        rel_path: extract_module_signatures(full_path)
+        for rel_path, full_path in _discover_plugin_files(plugins_dir=plugins_dir)
+    }
+
+
+def _extract_ui_protocols_payload(ui_protocols_path: str) -> dict:
+    """Parse app/ui/protocols.py once to extract module signatures and Protocol contracts."""
+    if not os.path.exists(ui_protocols_path):
+        return {"classes": [], "functions": [], "protocols": {}}
+    try:
+        with open(ui_protocols_path, encoding="utf-8") as f:
+            source = f.read()
+        tree = ast.parse(source, filename=ui_protocols_path)
+        return {
+            **_extract_module_signatures_from_tree(tree),
+            "protocols": _extract_protocols_from_tree(tree),
+        }
+    except Exception as e:
+        print(
+            f"Warning: Failed to parse AST for {ui_protocols_path}: {e}",
+            file=sys.stderr,
+        )
+        return {"classes": [], "functions": [], "protocols": {}}
 
 
 def collect_config_definitions(config_path=None):
@@ -475,12 +534,90 @@ def collect_ui_protocol_definitions(ui_protocols_path=None):
     ui_data = {}
     if os.path.exists(ui_protocols_path):
         rel_path = safe_relpath(ui_protocols_path, BASE_DIR).replace("\\", "/")
-        ui_data[rel_path] = {
-            **extract_module_signatures(ui_protocols_path),
-            "protocols": extract_protocols(ui_protocols_path),
-        }
+        ui_data[rel_path] = _extract_ui_protocols_payload(ui_protocols_path)
 
     return dict(sorted(ui_data.items()))
+
+
+def discover_monitored_modules(
+    cli_dir=None,
+    core_dir=None,
+    plugins_dir=None,
+    config_path=None,
+    ui_protocols_path=None,
+) -> list[dict[str, Any]]:
+    """Discover all monitored source files and snapshot paths without parsing ASTs."""
+    specs: list[dict[str, Any]] = []
+
+    for rel_path, full_path, is_entry in _discover_cli_files(cli_dir=cli_dir):
+        specs.append(
+            {
+                "category": "cli",
+                "source_rel": rel_path,
+                "source_abs": full_path,
+                "snapshot_path": source_path_to_snapshot_path(rel_path),
+                "is_cli_entry": is_entry,
+            }
+        )
+
+    for rel_path, full_path in _discover_core_files(core_dir=core_dir):
+        specs.append(
+            {
+                "category": "core",
+                "source_rel": rel_path,
+                "source_abs": full_path,
+                "snapshot_path": source_path_to_snapshot_path(rel_path),
+            }
+        )
+
+    for rel_path, full_path in _discover_plugin_files(plugins_dir=plugins_dir):
+        specs.append(
+            {
+                "category": "plugins",
+                "source_rel": rel_path,
+                "source_abs": full_path,
+                "snapshot_path": source_path_to_snapshot_path(rel_path),
+            }
+        )
+
+    cfg_path = CONFIG_PATH if config_path is None else config_path
+    if os.path.exists(cfg_path):
+        rel_cfg = safe_relpath(cfg_path, BASE_DIR).replace("\\", "/")
+        specs.append(
+            {
+                "category": "config",
+                "source_rel": rel_cfg,
+                "source_abs": cfg_path,
+                "snapshot_path": source_path_to_snapshot_path(rel_cfg),
+            }
+        )
+
+    ui_path = UI_PROTOCOLS_PATH if ui_protocols_path is None else ui_protocols_path
+    if os.path.exists(ui_path):
+        rel_ui = safe_relpath(ui_path, BASE_DIR).replace("\\", "/")
+        specs.append(
+            {
+                "category": "ui",
+                "source_rel": rel_ui,
+                "source_abs": ui_path,
+                "snapshot_path": source_path_to_snapshot_path(rel_ui),
+            }
+        )
+
+    return specs
+
+
+def extract_module_payload(module_spec: dict[str, Any]) -> dict[str, Any]:
+    """Parse a single monitored module spec and return its snapshot payload dictionary."""
+    category = module_spec["category"]
+    full_path = module_spec["source_abs"]
+    if category == "cli":
+        if module_spec.get("is_cli_entry"):
+            return {"cli": extract_cli(full_path)}
+        return _extract_cli_module_payload(full_path)
+    if category == "ui":
+        return _extract_ui_protocols_payload(full_path)
+    return extract_module_signatures(full_path)
 
 
 def collect_current_definitions(
@@ -574,6 +711,13 @@ def verify_snapshot_integrity(
 def matches_target(source_rel: str, snapshot_abs: str, target_arg: str) -> bool:
     """Check if target_arg matches the given source or snapshot path."""
     norm_target = target_arg.replace("\\", "/").strip()
+    while norm_target.startswith("./"):
+        norm_target = norm_target[2:]
+    if os.path.isabs(target_arg):
+        rel_to_base = safe_relpath(target_arg, BASE_DIR).replace("\\", "/")
+        if not rel_to_base.startswith(".."):
+            norm_target = rel_to_base
+
     norm_source = source_rel.replace("\\", "/")
     norm_snap = safe_relpath(snapshot_abs, BASE_DIR).replace("\\", "/")
     rel_snap = safe_relpath(snapshot_abs, SNAPSHOT_DIR).replace("\\", "/")
@@ -597,6 +741,9 @@ def matches_target(source_rel: str, snapshot_abs: str, target_arg: str) -> bool:
     ):
         return True
     return False
+
+
+_DEFAULT_COLLECT_CURRENT_DEFINITIONS = collect_current_definitions
 
 
 def collect_modules_and_payloads():
@@ -680,6 +827,16 @@ def collect_modules_and_payloads():
     return modules
 
 
+_DEFAULT_COLLECT_MODULES_AND_PAYLOADS = collect_modules_and_payloads
+
+
+def _with_extracted_payload(module_spec: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of module_spec with its extracted AST payload attached."""
+    entry: dict[str, Any] = dict(module_spec)
+    entry["payload"] = extract_module_payload(module_spec)
+    return entry
+
+
 def main():
     """Run CLI snapshot validation engine."""
     parser = argparse.ArgumentParser(
@@ -701,32 +858,61 @@ def main():
     args = parser.parse_args()
 
     is_ci = os.environ.get("CI", "").lower() in ("true", "1")
-    all_modules = collect_modules_and_payloads()
-
     global_config_files = {"pyproject.toml", "uv.lock"}
     is_global_config_changed = any(
         os.path.basename(t) in global_config_files for t in args.module_paths
     )
 
-    if is_global_config_changed:
-        target_modules = all_modules
-    elif args.module_paths:
-        target_modules = [
-            m
-            for m in all_modules
-            if any(
-                matches_target(m["source_rel"], m["snapshot_path"], t)
-                for t in args.module_paths
-            )
+    use_lazy_discovery = (
+        collect_current_definitions is _DEFAULT_COLLECT_CURRENT_DEFINITIONS
+        and collect_modules_and_payloads is _DEFAULT_COLLECT_MODULES_AND_PAYLOADS
+    )
+
+    if use_lazy_discovery:
+        all_module_specs = discover_monitored_modules()
+        if is_global_config_changed or not args.module_paths:
+            target_specs = all_module_specs
+        else:
+            target_specs = [
+                m
+                for m in all_module_specs
+                if any(
+                    matches_target(m["source_rel"], m["snapshot_path"], t)
+                    for t in args.module_paths
+                )
+            ]
+            if not target_specs:
+                print(
+                    f"No signature-monitored modules to validate among specified path(s): {', '.join(args.module_paths)}"
+                )
+                if args.regenerate:
+                    sys.exit(0)
+        target_modules: list[dict[str, Any]] = [
+            _with_extracted_payload(m) for m in target_specs
         ]
-        if not target_modules:
-            print(
-                f"No signature-monitored modules to validate among specified path(s): {', '.join(args.module_paths)}"
-            )
-            if args.regenerate:
-                sys.exit(0)
+        all_snapshot_entries = all_module_specs
     else:
-        target_modules = all_modules
+        all_modules = collect_modules_and_payloads()
+        if is_global_config_changed:
+            target_modules = all_modules
+        elif args.module_paths:
+            target_modules = [
+                m
+                for m in all_modules
+                if any(
+                    matches_target(m["source_rel"], m["snapshot_path"], t)
+                    for t in args.module_paths
+                )
+            ]
+            if not target_modules:
+                print(
+                    f"No signature-monitored modules to validate among specified path(s): {', '.join(args.module_paths)}"
+                )
+                if args.regenerate:
+                    sys.exit(0)
+        else:
+            target_modules = all_modules
+        all_snapshot_entries = all_modules
 
     if args.regenerate:
         if is_ci:
@@ -773,7 +959,7 @@ def main():
         snap_root = get_snapshot_root_dir()
         if not args.module_paths and os.path.exists(snap_root):
             valid_snap_paths = {
-                os.path.realpath(m["snapshot_path"]) for m in all_modules
+                os.path.realpath(m["snapshot_path"]) for m in all_snapshot_entries
             }
             valid_snap_paths.update(collect_tui_svg_snapshots())
             for root, _, files in os.walk(snap_root):
@@ -862,7 +1048,7 @@ def main():
     snap_root = get_snapshot_root_dir()
     if os.path.exists(snap_root):
         all_valid_snap_paths = {
-            os.path.realpath(m["snapshot_path"]) for m in all_modules
+            os.path.realpath(m["snapshot_path"]) for m in all_snapshot_entries
         }
         all_valid_snap_paths.update(collect_tui_svg_snapshots())
         for root, _, files in os.walk(snap_root):
