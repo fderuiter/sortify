@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "2d400661e07fd2340f11cad0269259b753cb8b16d734b732b6be8bb93acd49b4"
+    "checksum": "74a8f6a44391f39cc4af2fd8f2a45aaeab4ff8b3fbdd6bf4f0573e244f33da4f"
   },
   "classes": [
     {
@@ -214,11 +214,6 @@
               "name": "session_id"
             },
             {
-              "annotation": "bool",
-              "default": "False",
-              "name": "ignore_missing"
-            },
-            {
               "annotation": "Collection[int | str] | None",
               "default": "None",
               "name": "selected_step_ids"
@@ -343,29 +338,6 @@
             }
           ],
           "returns": "None"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "get_audit_events",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str | None",
-              "default": "None",
-              "name": "session_id"
-            },
-            {
-              "annotation": null,
-              "default": "None",
-              "name": "conn"
-            }
-          ],
-          "returns": "list[dict[str, Any]]"
         },
         {
           "async": false,

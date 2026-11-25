@@ -132,6 +132,8 @@ class ModalBox(Vertical):
         bool
             True if scrolling was scheduled or performed.
         """
+        if kwargs.get("animate") is False and "immediate" not in kwargs:
+            kwargs["immediate"] = True
         target = self._body_scroll_target(widget)
         if target is not None:
             return target.scroll_to_widget(widget, *args, **kwargs)
@@ -147,6 +149,8 @@ class ModalBox(Vertical):
         **kwargs : Any
             Keyword arguments forwarded to ``Widget.scroll_home``.
         """
+        if kwargs.get("animate") is False and "immediate" not in kwargs:
+            kwargs["immediate"] = True
         bodies = list(self.query(".modal-body"))
         if self.max_scroll_y <= 0 and bodies:
             for body in bodies:

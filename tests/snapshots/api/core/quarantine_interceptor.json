@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "d9efe7e2079a69a917e3526c04f03548aa4b48d2fadf4503cf3b719b93e1262c"
+    "checksum": "5a6f1324defb98e7c509f3a141c568ed06ef5e47cdc11deb233e3390cd8cb4b1"
   },
   "classes": [
     {
@@ -113,24 +113,6 @@
             }
           ],
           "returns": "QuarantineRecordModel"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "recover_orphaned_jobs",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "float | None",
-              "default": "None",
-              "name": "timeout_seconds"
-            }
-          ],
-          "returns": "list[str]"
         },
         {
           "async": false,

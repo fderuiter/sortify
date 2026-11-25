@@ -114,26 +114,6 @@ def secure_delete_file(file_path: Path):
             )
 
 
-def secure_delete_dir(dir_path: Path):
-    """Recursively secure delete files in a directory and then delete the directory."""
-    if not dir_path.exists():
-        return
-    try:
-        for item in list(dir_path.iterdir()):
-            if item.is_file():
-                secure_delete_file(item)
-            elif item.is_dir():
-                secure_delete_dir(item)
-        dir_path.rmdir()
-    except OSError as e:
-        logger.warning(
-            f"Failed to securely delete directory '{dir_path}', using rmtree fallback: {e}"
-        )
-        from app.core.resilient_file_ops import resilient_rmtree
-
-        resilient_rmtree(dir_path, ignore_errors=True)
-
-
 def _norm_cache_path(path: Path | str) -> str:
     """Normalize a filesystem path string for case-aware cache lookups."""
     return os.path.normcase(str(Path(os.path.abspath(os.fspath(path)))))
@@ -375,11 +355,6 @@ class CryptoManager:
         db_path_obj = Path(os.path.abspath(db_path))
         db_hash = CryptoManager.derive_db_hash(db_path_obj, algorithm=algo)
         return get_fallback_keys_dir() / f"{db_path_obj.name}_{db_hash}.key"
-
-    @staticmethod
-    def generate_bootstrap_key() -> str:
-        """Generate a random high-entropy key for ephemeral pre-flight checks."""
-        return Fernet.generate_key().decode("utf-8")
 
     @staticmethod
     def is_encrypted_proxy(proxy_str: str) -> bool:

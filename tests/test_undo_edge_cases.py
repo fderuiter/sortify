@@ -113,7 +113,7 @@ def test_undo_never_destroys_a_file_that_blocks_a_folder_it_must_restore(
     session_id = _sort_then_block_folder(base_dir, db, history_manager)
 
     try:
-        history_manager.rollback(session_id, ignore_missing=True)
+        history_manager.rollback(session_id)
     except (PermissionError, ValueError):
         pass
 
@@ -126,7 +126,7 @@ def test_undo_moves_a_blocking_file_aside_and_restores_the_folder(
     base_dir, db, _cache, history_manager, _worker = test_history_env
     session_id = _sort_then_block_folder(base_dir, db, history_manager)
 
-    history_manager.rollback(session_id, ignore_missing=True)
+    history_manager.rollback(session_id)
 
     assert _read(os.path.join(base_dir, "a", "report.txt")) == "report"
     assert _contents(base_dir) == ["report", "user's new file"]
@@ -146,7 +146,7 @@ def test_undo_never_loses_edits_made_to_a_sorted_file(test_history_env):
     _write(os.path.join(base_dir, "Docs", "notes.txt"), "draft plus edits")
 
     with pytest.raises(ValueError, match="hash mismatch"):
-        history_manager.rollback(session_id, ignore_missing=True)
+        history_manager.rollback(session_id)
 
     assert _read(os.path.join(base_dir, "Docs", "notes.txt")) == "draft plus edits"
     assert _contents(base_dir) == ["draft plus edits"]
@@ -201,7 +201,7 @@ def test_forced_undo_with_a_deleted_sorted_file_keeps_the_rest(test_history_env)
     session_id = _sort_two_then_delete_one(base_dir, db, history_manager)
 
     try:
-        history_manager.rollback(session_id, ignore_missing=True)
+        history_manager.rollback(session_id)
     except ValueError:
         pass
 
@@ -212,7 +212,7 @@ def test_forced_undo_with_a_deleted_sorted_file_succeeds(test_history_env):
     base_dir, db, _cache, history_manager, _worker = test_history_env
     session_id = _sort_two_then_delete_one(base_dir, db, history_manager)
 
-    history_manager.rollback(session_id, ignore_missing=True)
+    history_manager.rollback(session_id)
 
     assert _read(os.path.join(base_dir, "keep.txt")) == "keep"
     assert not os.path.exists(os.path.join(base_dir, "gone.txt"))

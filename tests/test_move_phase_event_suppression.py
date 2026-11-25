@@ -185,7 +185,7 @@ def test_end_to_end_move_execution_suppresses_cancellation(tmp_path):
             mock.patch(
                 "app.core.daemon.get_files_recursively", return_value=["doc.pdf"]
             ),
-            mock.patch("app.core.daemon.MetadataPass.run", return_value=[]),
+            mock.patch("app.core.metadata.MetadataPass.run", return_value=[]),
         ):
             cancel_event = threading.Event()
             daemon._run_sorting_sync(cancel_event)
@@ -263,6 +263,44 @@ def test_exit_move_phase_without_external_events_no_recalculation(tmp_path):
 
         assert daemon.pending_dirty is False
         assert daemon._debounce_timer is None
+    finally:
+        daemon.stop()
+        clear_connection_cache(only_current_and_inactive=False)
+
+
+def test_directory_and_readonly_events_ignored_during_and_outside_move_phase(tmp_path):
+    from typing import TYPE_CHECKING, cast
+
+    from watchdog.events import (
+        DirModifiedEvent,
+        FileClosedNoWriteEvent,
+        FileOpenedEvent,
+    )
+
+    if TYPE_CHECKING:
+        from app.config import AppSettings
+
+    settings = cast("AppSettings", DummySettings())
+    daemon = ContinuousWatchdogDaemon(settings, str(tmp_path))
+    daemon._is_running = True
+    event_queue: asyncio.PriorityQueue = asyncio.PriorityQueue()
+    daemon._event_queue = event_queue
+    handler = DaemonFolderHandler(daemon)
+    other_file = str(tmp_path / "other.txt")
+
+    try:
+        with daemon.scoped_move_phase(plan={"doc.pdf": "sorted/doc.pdf"}):
+            handler.on_any_event(DirModifiedEvent(str(tmp_path)))
+            handler.on_any_event(FileOpenedEvent(other_file))
+            handler.on_any_event(FileClosedNoWriteEvent(other_file))
+            assert daemon.pending_dirty is False
+
+        assert daemon._debounce_timer is None
+
+        handler.on_any_event(DirModifiedEvent(str(tmp_path)))
+        handler.on_any_event(FileOpenedEvent(other_file))
+        handler.on_any_event(FileClosedNoWriteEvent(other_file))
+        assert event_queue.qsize() == 0
     finally:
         daemon.stop()
         clear_connection_cache(only_current_and_inactive=False)

@@ -215,7 +215,6 @@ def execute_undo_command(
     export_format = getattr(args, "format", None)
     ledger_db_path = getattr(args, "ledger_db", None)
     session_id_arg = getattr(args, "session_id", None)
-    force_flag = getattr(args, "force", False)
     json_output = getattr(args, "json", False)
     quiet = getattr(args, "quiet", False)
     raw_step_ids: list[int] = list(getattr(args, "step_ids", None) or [])
@@ -449,7 +448,7 @@ def execute_undo_command(
         preview = preview_session_rollback(
             target_session_id,
             selected_step_ids=selected_step_ids,
-            ignore_missing=force_flag,
+            ignore_missing=bool(getattr(args, "force", False)),
         )
         preview["status"] = "success"
         preview["dry_run"] = True
@@ -482,7 +481,6 @@ def execute_undo_command(
         undo_result = SortPipeline(None, settings=settings).undo(
             target_session_id,
             selected_step_ids=selected_step_ids,
-            ignore_missing=force_flag,
         )
         if "error" in undo_result.summary:
             raise RuntimeError(str(undo_result.summary["error"]))

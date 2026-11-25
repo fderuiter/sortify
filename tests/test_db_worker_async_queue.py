@@ -40,7 +40,7 @@ def test_async_rating_write_is_visible_after_the_queue_drains(test_history_env):
     db.set_document_rating(base_dir, "a.txt", "good")
     worker.execute_write(lambda: None)
 
-    assert db.get_document_rating(base_dir, "a.txt") == "good"
+    assert db.get_all_document_ratings(base_dir).get("a.txt") == "good"
 
 
 def test_sort_then_undo_with_real_async_queue(test_history_env):

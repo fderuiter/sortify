@@ -76,3 +76,26 @@ def test_verify_svg_snapshot_first_time_generation_and_crlf_normalization(
     # Subsequent comparison with CRLF baseline on disk passes cleanly
     svg_path.write_bytes(stored.replace("\n", "\r\n").encode("utf-8"))
     verify_svg_snapshot(snap_id, sanitize_svg(raw_crlf_svg), snapshot_dir=tmp_path)
+
+
+def test_sanitize_svg_normalizes_windows_dummy_drive_text_length_and_row_rects() -> (
+    None
+):
+    """Verify stripping Windows drive prefixes on /dummy paths updates textLength and row rects."""
+    posix_svg = (
+        '<svg id="terminal-111-root">\n'
+        '  <clipPath id="terminal-111-line-9"><rect x="0" y="221.1" width="1220" height="24.65"/></clipPath>\n'
+        '  <rect fill="#242f38" x="170.8" y="221.1" width="207.4" height="24.65" shape-rendering="crispEdges"/>'
+        '<rect fill="#242f38" x="378.2" y="221.1" width="671" height="24.65" shape-rendering="crispEdges"/>\n'
+        '  <text class="terminal-111-r1" x="170.8" y="239.6" textLength="207.4" clip-path="url(#terminal-111-line-9)">•&#160;/dummy/projects</text>\n'
+        "</svg>\n"
+    )
+    windows_svg = (
+        '<svg id="terminal-222-root">\n'
+        '  <clipPath id="terminal-222-line-9"><rect x="0" y="221.1" width="1220" height="24.65"/></clipPath>\n'
+        '  <rect fill="#242f38" x="170.8" y="221.1" width="231.8" height="24.65" shape-rendering="crispEdges"/>'
+        '<rect fill="#242f38" x="402.6" y="221.1" width="646.6" height="24.65" shape-rendering="crispEdges"/>\n'
+        '  <text class="terminal-222-r1" x="170.8" y="239.6" textLength="231.8" clip-path="url(#terminal-222-line-9)">•&#160;D:\\dummy\\projects</text>\n'
+        "</svg>\n"
+    )
+    assert sanitize_svg(windows_svg) == sanitize_svg(posix_svg)

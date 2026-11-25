@@ -129,14 +129,41 @@ def acquire_services(
 
             def build():
                 if db_path is not None:
+                    from app.core.cache import CacheManager
+                    from app.core.db import MAIN_DB_MIGRATIONS, Database
                     from app.core.db_conn import get_db_connection
-                    from app.core.store import _store_initial
+                    from app.core.history import HistoryManager
+                    from app.core.ledger import _create_key_audit_ledger_schema
+                    from app.core.migrations import schema_version
+                    from app.core.moves import migrate_moves_exported_to_trash
+                    from app.core.store import STORE_MIGRATIONS, _store_initial
 
                     path.parent.mkdir(parents=True, exist_ok=True)
                     conn = get_db_connection(str(path))
+                    current_ver = schema_version(conn)
+                    custom_store = Store(path.parent, path)
+                    if (
+                        STORE_MIGRATIONS[-1].version
+                        < current_ver
+                        <= MAIN_DB_MIGRATIONS[-1].version
+                    ):
+                        with conn:
+                            _store_initial(conn)
+                            migrate_moves_exported_to_trash(conn)
+                            _create_key_audit_ledger_schema(conn)
+                        db = Database(path, worker, migrations=MAIN_DB_MIGRATIONS)
+                        cache = CacheManager(
+                            str(path), worker, migrations=MAIN_DB_MIGRATIONS
+                        )
+                        history = HistoryManager(
+                            db,
+                            cache,
+                            db_path=str(path),
+                            migrations=MAIN_DB_MIGRATIONS,
+                        )
+                        return _Services(custom_store, worker, db, cache, history)
                     with conn:
                         _store_initial(conn)
-                    custom_store = Store(path.parent, path)
                     db = custom_store.database(worker)
                     cache = custom_store.cache(worker)
                     return _Services(

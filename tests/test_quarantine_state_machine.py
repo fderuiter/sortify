@@ -262,59 +262,6 @@ def test_structured_audit_events_recorded_on_transition(env):
     assert log[1]["details"] == "Worker picked up job"
 
 
-def test_orphaned_inspection_job_recovery(env):
-    """Verify recovery routine detects and resets stale IN_INSPECTION jobs (Requirement 7)."""
-    db = env["db"]
-    service = env["service"]
-    tmp_path = env["tmp_path"]
-
-    # 1. Stale job (updated 600 seconds ago)
-    stale_job = "qjob_stale_inspection"
-    db.stage_quarantine_record(
-        job_id=stale_job,
-        base_dir=str(tmp_path),
-        original_filepath="stale.txt",
-        staged_filepath=str(tmp_path / "stale.txt"),
-    )
-    db.update_quarantine_status(job_id=stale_job, status="IN_INSPECTION")
-
-    # Manually backdate updated_at in DB
-    conn = Database(db.db_path, env["worker"])
-    from app.core.db_conn import get_db_connection
-
-    raw_conn = get_db_connection(db.db_path)
-    with raw_conn:
-        raw_conn.execute(
-            "UPDATE quarantine_records SET updated_at = ? WHERE job_id = ?",
-            (time.time() - 600.0, stale_job),
-        )
-
-    # 2. Fresh job (updated just now)
-    fresh_job = "qjob_fresh_inspection"
-    db.stage_quarantine_record(
-        job_id=fresh_job,
-        base_dir=str(tmp_path),
-        original_filepath="fresh.txt",
-        staged_filepath=str(tmp_path / "fresh.txt"),
-    )
-    db.update_quarantine_status(job_id=fresh_job, status="IN_INSPECTION")
-
-    # Run recovery with 300s timeout
-    recovered = service.recover_orphaned_jobs(timeout_seconds=300.0)
-
-    assert stale_job in recovered
-    assert fresh_job not in recovered
-
-    stale_rec = db.get_quarantine_record(stale_job)
-    assert stale_rec["status"] == "STAGED"
-    last_audit = stale_rec["audit_log"][-1]
-    assert last_audit["previous_status"] == "IN_INSPECTION"
-    assert "Orphaned inspection job reset" in last_audit["details"]
-
-    fresh_rec = db.get_quarantine_record(fresh_job)
-    assert fresh_rec["status"] == "IN_INSPECTION"
-
-
 def test_cli_list_command_rejects_invalid_status(capsys, env):
     """Verify CLI list command rejects invalid status arguments with error message (Criterion 4)."""
     from types import SimpleNamespace

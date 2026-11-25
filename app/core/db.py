@@ -1096,31 +1096,6 @@ class Database:
             (base_dir, new_filepath),
         )
 
-    def remove_document(self, base_dir, filepath):
-        """Remove a document and its historical assignments when deleted."""
-        filepath = filepath.replace("\\", "/")
-        self.invalidate_cache()
-
-        def _write():
-            conn = get_db_connection(self.db_path)
-            with conn:
-                cursor = conn.execute(
-                    "SELECT 1 FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ? LIMIT 1",
-                    (base_dir, filepath),
-                )
-                was_in = cursor.fetchone() is not None
-                if was_in:
-                    self._update_tfidf_for_document_conn(
-                        conn, base_dir, filepath, None, False
-                    )
-                conn.execute(
-                    "DELETE FROM documents WHERE base_dir = ? AND filepath = ?",
-                    (base_dir, filepath),
-                )
-            self.invalidate_cache()
-
-        self.worker.execute_write(_write)
-
     def update_document_path(
         self,
         base_dir,
@@ -1274,36 +1249,6 @@ class Database:
                             )
 
         self.worker.execute_write_async(_write)
-
-    def get_user_verified_target_path(self, base_dir, filepath) -> str | None:
-        """Retrieve the historical user-verified target path for a specific document."""
-        filepath = filepath.replace("\\", "/")
-        self._populate_cache_if_needed(base_dir)
-        with self._cache_lock:
-            if self._cached_base_dir == base_dir and self._cached_documents is not None:
-                if hasattr(self._cached_documents, "get") and not isinstance(
-                    self._cached_documents, list
-                ):
-                    row = self._cached_documents.get(
-                        filepath
-                    ) or self._cached_documents.get(filepath.replace("/", "\\"))
-                    if row is not None and len(row) > 3:
-                        return row[3]
-                elif isinstance(self._cached_documents, list):
-                    for row in self._cached_documents:
-                        if (
-                            row[0] == filepath or row[0].replace("\\", "/") == filepath
-                        ) and len(row) > 3:
-                            return row[3]
-
-        conn = get_db_connection(self.db_path)
-        with conn:
-            cur = conn.execute(
-                "SELECT user_verified_target_path FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                (base_dir, filepath, filepath),
-            )
-            row = cur.fetchone()
-            return row[0] if row else None
 
     def get_user_verified_target_name(self, base_dir: str, filepath: str) -> str | None:
         """Retrieve the persisted user-verified target filename for a specific document."""
@@ -1637,18 +1582,6 @@ class Database:
                 (base_dir,),
             )
             return {row[0].replace("\\", "/"): row[1] for row in cursor.fetchall()}
-
-    def get_document_rating(self, base_dir: str, filepath: str) -> str | None:
-        """Retrieve feedback rating for a specific document path."""
-        filepath = filepath.replace("\\", "/")
-        conn = get_db_connection(self.db_path)
-        with conn:
-            cursor = conn.execute(
-                "SELECT rating FROM documents WHERE base_dir = ? AND filepath = ?",
-                (base_dir, filepath),
-            )
-            row = cursor.fetchone()
-            return row[0] if row else None
 
     def _apply_batch_updates_on_conn(self, conn, updates, precomputed_updates_map=None):
         if precomputed_updates_map is None:
@@ -2659,60 +2592,6 @@ class Database:
                         job_id,
                     ),
                 )
-
-        return self.worker.execute_write(_write)
-
-    def recover_orphaned_quarantine_jobs(
-        self, timeout_seconds: float = 300.0
-    ) -> list[str]:
-        """Detect and reset orphaned inspection jobs exceeding configured timeouts back to STAGED."""
-        import json
-        import time
-
-        now = time.time()
-        cutoff_time = now - timeout_seconds
-
-        def _write():
-            conn = get_db_connection(self.db_path)
-            with conn:
-                cursor = conn.execute(
-                    """
-                    SELECT job_id, updated_at, audit_log, policy_action
-                    FROM quarantine_records
-                    WHERE status = 'IN_INSPECTION' AND updated_at <= ?
-                    """,
-                    (cutoff_time,),
-                )
-                orphaned_rows = cursor.fetchall()
-                recovered_ids = []
-                for j_id, upd_at, a_log, pol_act in orphaned_rows:
-                    log_entries = []
-                    if a_log:
-                        try:
-                            log_entries = json.loads(a_log)
-                        except Exception:
-                            log_entries = []
-                    log_entries.append(
-                        {
-                            "timestamp": now,
-                            "status": "STAGED",
-                            "previous_status": "IN_INSPECTION",
-                            "details": (
-                                f"Orphaned inspection job reset to STAGED after exceeding "
-                                f"timeout of {timeout_seconds}s (elapsed: {now - (upd_at or now):.1f}s)"
-                            ),
-                        }
-                    )
-                    conn.execute(
-                        """
-                        UPDATE quarantine_records
-                        SET status = 'STAGED', updated_at = ?, audit_log = ?
-                        WHERE job_id = ?
-                        """,
-                        (now, json.dumps(log_entries), j_id),
-                    )
-                    recovered_ids.append(j_id)
-                return recovered_ids
 
         return self.worker.execute_write(_write)
 

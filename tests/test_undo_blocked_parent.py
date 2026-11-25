@@ -40,7 +40,7 @@ def test_undo_moves_aside_a_file_blocking_a_restored_folder(test_history_env):
     with open(blocker, "w") as fh:
         fh.write("user file")
 
-    history_manager.rollback(session_id, ignore_missing=True)
+    history_manager.rollback(session_id)
 
     assert _read(os.path.join(base_dir, "a", "report.txt")) == "report"
     assert _read(os.path.join(base_dir, "a_1")) == "user file"

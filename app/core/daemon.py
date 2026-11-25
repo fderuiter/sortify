@@ -23,7 +23,6 @@ from app.core.domain_contracts import (
     validate_quarantine_record,
 )
 from app.core.lifecycle import LifecycleTelemetryMixin
-from app.core.metadata import MetadataPass as MetadataPass
 from app.core.mover import is_subpath_or_equal
 from app.core.path_utils import safe_relpath
 from app.core.pipeline import SortPipeline, drop_scope, validate_drop_paths
@@ -145,6 +144,13 @@ class DaemonFolderHandler(FileSystemEventHandler):
 
     def on_any_event(self, event):
         """Handle any file system event, publish FileChangeEvent to queue and trigger recalculation if valid."""
+        if getattr(event, "is_directory", False) is True:
+            return
+
+        event_type = getattr(event, "event_type", "modified")
+        if event_type in ("opened", "closed_no_write"):
+            return
+
         src_path = getattr(event, "src_path", "")
         dest_path = getattr(event, "dest_path", None)
 
@@ -162,7 +168,6 @@ class DaemonFolderHandler(FileSystemEventHandler):
                 self.daemon.mark_pending_dirty()
                 return
 
-        event_type = getattr(event, "event_type", "modified")
         change_event = FileChangeEvent(
             event_type=event_type,
             file_path=src_path,
@@ -341,12 +346,6 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             else:
                 if self._state == DaemonState.PAUSED:
                     self._transition_to(DaemonState.RUNNING)
-
-    @property
-    def scoped_run_token(self) -> threading.Event | None:
-        """Get the current scoped recalculation cancellation token, if active."""
-        with self._lock:
-            return self._scoped_run_token
 
     def _is_cancelled(self, token: threading.Event | None = None) -> bool:
         """Cooperatively check if lifecycle token or scoped run token is cancelled."""
@@ -1569,9 +1568,9 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
                 )
                 return
 
-            self._spawn_sorting_process(cancel_event)
+            self._spawn_sorting_process()
 
-    def _spawn_sorting_process(self, cancel_event=None):
+    def _spawn_sorting_process(self):
         """Spawn a process-isolated worker subprocess to execute the sorting routine."""
         with self._lock:
             if not self.is_running:

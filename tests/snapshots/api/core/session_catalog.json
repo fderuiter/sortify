@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "bb0260e97ae432a6b534693426257af19e955793de2cd1ee8484ad94fb1b55cb"
+    "checksum": "5582198f0d4f585ced4c94723544d36d9d7ef8102887a2277e33bd9d057912b7"
   },
   "classes": [],
   "functions": [
@@ -31,11 +31,6 @@
           "annotation": null,
           "default": "None",
           "name": "store"
-        },
-        {
-          "annotation": "Path | None",
-          "default": "None",
-          "name": "session_root"
         }
       ],
       "returns": "list"

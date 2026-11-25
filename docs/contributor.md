@@ -55,7 +55,7 @@ Shared path and packaging helpers live in `app.core.path_utils`, cryptography in
 * **`is_subpath_or_equal(child: str, parent: str) -> bool`** (in `app.core.mover`, not `path_utils`): Cross-platform check that a candidate path is inside a parent directory.
 * **`setup_session_directory(session_id: str | None = None) -> tuple[str, Path]`**: Creates the session directory under `$AUTOSORTER_APP_DIR/sessions`, or in the OS temp folder when that variable is unset.
 * **`resolve_db_crypto(db_path: Path | str) -> SessionCrypto`**: Standard cached lookup function for session encryption keys and database decrypters (reusing resolved keys across worker threads and honoring `SORTIFY_KEYS_DIR` for isolated sandboxes).
-* **`CryptoManager`**: Centralized facade (`app.core.crypto`) providing static methods for key derivation (`derive_db_hash`, `derive_keyring_account`, `derive_isolated_key_path`), envelope encryption (`encrypt_proxy_setting`, `decrypt_proxy_setting`), and pre-flight key generation (`generate_bootstrap_key`).
+* **`CryptoManager`**: Centralized facade (`app.core.crypto`) providing static methods for key derivation (`derive_db_hash`, `derive_keyring_account`, `derive_isolated_key_path`) and envelope encryption (`encrypt_proxy_setting`, `decrypt_proxy_setting`).
 * **`sanitize_secret_patterns(text: str, replacement: str = "") -> str`**: Centralized secret scrubbing delegate (`app.core.text_utils`) that redacts API keys, JWTs, Bearer tokens, private keys, and high-entropy secret payloads across text streams and logging filters.
 
 ### 2. Architectural Decisions & Rules

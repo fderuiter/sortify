@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 import weakref
+from typing import Any, cast
 
 import numpy as np
 
@@ -664,14 +665,17 @@ class SemanticEmbeddingManager:
 
                     # Cache tokenizer in the shared registry to avoid heavy disk loads per text
                     tokenizer_key = f"tokenizer_{tokenizer_path}"
-                    tokenizer = registry._models.get(tokenizer_key)
+                    tokenizer: Any = registry._models.get(tokenizer_key)
 
                     if tokenizer is None:
                         with block_external_network(reason="tokenizer initialization"):
                             from transformers import AutoTokenizer
 
-                            tokenizer = AutoTokenizer.from_pretrained(
-                                tokenizer_path, local_files_only=True
+                            tokenizer = cast(
+                                Any,
+                                AutoTokenizer.from_pretrained(
+                                    tokenizer_path, local_files_only=True
+                                ),
                             )
                         registry._models[tokenizer_key] = tokenizer
 

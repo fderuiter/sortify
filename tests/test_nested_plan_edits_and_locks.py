@@ -42,6 +42,15 @@ def _make_settings(tmp_path: Path, **overrides: Any) -> AppSettings:
     return settings
 
 
+def _verified_target_path(db: Any, base_dir: str, relpath: str) -> str | None:
+    norm_rel = relpath.replace("\\", "/")
+    return {
+        str(doc[0]).replace("\\", "/"): doc[3]
+        for doc in db.get_all_documents(base_dir)
+        if len(doc) > 3
+    }.get(norm_rel)
+
+
 def _find_tree_node(
     node: Any,
     *,
@@ -189,10 +198,7 @@ def test_migrations_add_user_verified_target_name_and_preserve_folder_only_seman
             "Financial/Invoices",
             target_name="2025_Acme_Invoice.pdf",
         )
-        assert (
-            db.get_user_verified_target_path(str(ws), "invoice.pdf")
-            == "Financial/Invoices"
-        )
+        assert _verified_target_path(db, str(ws), "invoice.pdf") == "Financial/Invoices"
         assert (
             db.get_user_verified_target_name(str(ws), "invoice.pdf")
             == "2025_Acme_Invoice.pdf"
@@ -200,7 +206,7 @@ def test_migrations_add_user_verified_target_name_and_preserve_folder_only_seman
 
         # Reassigning folder without target_name preserves user_verified_target_name
         db.set_user_verified_target_path(str(ws), "invoice.pdf", "Taxes/2025")
-        assert db.get_user_verified_target_path(str(ws), "invoice.pdf") == "Taxes/2025"
+        assert _verified_target_path(db, str(ws), "invoice.pdf") == "Taxes/2025"
         assert (
             db.get_user_verified_target_name(str(ws), "invoice.pdf")
             == "2025_Acme_Invoice.pdf"
@@ -213,7 +219,7 @@ def test_migrations_add_user_verified_target_name_and_preserve_folder_only_seman
             "",
             target_name="Root_Renamed.pdf",
         )
-        assert db.get_user_verified_target_path(str(ws), "invoice.pdf") is None
+        assert _verified_target_path(db, str(ws), "invoice.pdf") is None
         assert (
             db.get_user_verified_target_name(str(ws), "invoice.pdf")
             == "Root_Renamed.pdf"
@@ -221,7 +227,7 @@ def test_migrations_add_user_verified_target_name_and_preserve_folder_only_seman
 
         # Unlocking clears both target_path and target_name
         db.set_user_verified_target_path(str(ws), "invoice.pdf", None)
-        assert db.get_user_verified_target_path(str(ws), "invoice.pdf") is None
+        assert _verified_target_path(db, str(ws), "invoice.pdf") is None
         assert db.get_user_verified_target_name(str(ws), "invoice.pdf") is None
 
         # Moving file on disk clears user_verified_target_name so rescan won't double-rename
@@ -322,7 +328,7 @@ def test_nested_reassign_and_folder_rename_update_tree_db_and_avoid_false_duplic
                 assert "inv_01.pdf" in app.plan["Taxes"]["Returns"]
                 assert "return_2024.pdf" in app.plan["Taxes"]["Returns"]
                 assert (
-                    session.db.get_user_verified_target_path(str(ws), "inv_01.pdf")
+                    _verified_target_path(session.db, str(ws), "inv_01.pdf")
                     == "Taxes/Returns"
                 )
 
@@ -357,11 +363,11 @@ def test_nested_reassign_and_folder_rename_update_tree_db_and_avoid_false_duplic
                 assert "inv_01.pdf" in app.plan["Archive"]["TaxFilings"]
                 assert "return_2024.pdf" in app.plan["Archive"]["TaxFilings"]
                 assert (
-                    session.db.get_user_verified_target_path(str(ws), "inv_01.pdf")
+                    _verified_target_path(session.db, str(ws), "inv_01.pdf")
                     == "Archive/TaxFilings"
                 )
                 assert (
-                    session.db.get_user_verified_target_path(str(ws), "return_2024.pdf")
+                    _verified_target_path(session.db, str(ws), "return_2024.pdf")
                     == "Archive/TaxFilings"
                 )
         finally:
@@ -579,8 +585,8 @@ def test_f2_single_and_batch_renames_persist_in_sqlite_across_fresh_sessions(
                 await pilot.pause()
 
                 assert app.app_session is not None
-                stored_folder = app.app_session.db.get_user_verified_target_path(
-                    str(ws), "scan_001.txt"
+                stored_folder = _verified_target_path(
+                    app.app_session.db, str(ws), "scan_001.txt"
                 )
                 stored_name = app.app_session.db.get_user_verified_target_name(
                     str(ws), "scan_001.txt"
@@ -633,15 +639,11 @@ def test_f2_single_and_batch_renames_persist_in_sqlite_across_fresh_sessions(
                 await pilot.pause()
 
                 assert (
-                    app.app_session.db.get_user_verified_target_path(
-                        str(ws), "scan_001.txt"
-                    )
+                    _verified_target_path(app.app_session.db, str(ws), "scan_001.txt")
                     == "Archive/2025/Invoices"
                 )
                 assert (
-                    app.app_session.db.get_user_verified_target_path(
-                        str(ws), "scan_002.txt"
-                    )
+                    _verified_target_path(app.app_session.db, str(ws), "scan_002.txt")
                     == "Archive/2025/Invoices"
                 )
                 name_1 = app.app_session.db.get_user_verified_target_name(
@@ -674,7 +676,7 @@ def test_f2_single_and_batch_renames_persist_in_sqlite_across_fresh_sessions(
             assert restored_node["source_path"] in {"scan_001.txt", "scan_002.txt"}
         # Verify folder column in SQLite was never polluted with filename
         assert (
-            fresh_session.db.get_user_verified_target_path(str(ws), "scan_001.txt")
+            _verified_target_path(fresh_session.db, str(ws), "scan_001.txt")
             == "Archive/2025/Invoices"
         )
     finally:

@@ -103,8 +103,8 @@ def test_cache_invalidation_on_other_writes(cache_test_env):
     # Populate cache
     db.get_all_documents(base_dir)
 
-    # Test remove_document invalidates cache
-    db.remove_document(base_dir, "doc1.txt")
+    # Test clear invalidates cache
+    db.clear(base_dir)
     with patch.object(
         db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text
     ) as mock_decrypt:
