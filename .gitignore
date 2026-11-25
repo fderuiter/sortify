@@ -17,6 +17,9 @@ site/
 dist/
 settings.json
 !.claude/settings.json
+.env
+.env.*
+!.env.example
 sandbox/dataset/
 sandbox/pipeline-state/
 sandbox/*.db*

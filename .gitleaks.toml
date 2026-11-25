@@ -119,6 +119,18 @@ id = "generic-api-key"
         '''^invoice_q4\.pdf$''',
     ]
 
+    [[rules.allowlists]]
+    description = "Document filename identifiers assigned to node_key/file_key/dest_key/item_key/scoped_key/row_key in app, scripts, and tests"
+    condition = "AND"
+    paths = [
+        '''(?:^|/)(?:app|tests|scripts)/.*\.py$''',
+        '''^sandbox_cli\.py$''',
+    ]
+    regexTarget = "match"
+    regexes = [
+        '''(?i)^['"]?(?:node_key|file_key|dest_key|item_key|scoped_key|row_key)['"]?\s*[:=]\s*['"][^'"]+\.(?:pdf|docx?|txt|csv|xlsx?|pptx?|png|jpe?g|md|json|mp3|wav)['"]?$''',
+    ]
+
 [[rules]]
 id = "stripe-access-token"
 

@@ -1,7 +1,7 @@
 flowchart TD
     A["Clone Repository"]
     B["Sync Environment: uv sync"]
-    C["Install Hooks: uv run pre-commit install"]
+    C["Install Hooks: uv run python scripts/install_git_hooks.py"]
     D["Run Test Suite: uv run pytest"]
     E["Run CLI Demo: uv run smart-autosorter --demo"]
     F["Run Docs Check: uv run python scripts/generate_docs.py --check"]

@@ -63,7 +63,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks and pull request conven
 
 ```bash
 uv sync --all-groups
-uv run pre-commit install
+uv run python scripts/install_git_hooks.py
 uv run pytest -m "not slow"
 ```
 

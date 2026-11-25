@@ -644,31 +644,29 @@ def test_precommit_hooks_full_repo_readonly_parity():
     precommit_cfg = yaml.safe_load(
         (repo_root / ".pre-commit-config.yaml").read_text(encoding="utf-8")
     )
-    gitleaks_repo = next(
-        r
-        for r in precommit_cfg["repos"]
-        if r["repo"] == "https://github.com/gitleaks/gitleaks"
-    )
-    assert gitleaks_repo["rev"] == "v8.24.0"
-    gitleaks_hooks = {h.get("alias", h["id"]): h for h in gitleaks_repo["hooks"]}
-    assert "gitleaks" in gitleaks_hooks
-    assert gitleaks_hooks["gitleaks"].get("args") == ["--config", ".gitleaks.toml"]
-    assert "gitleaks-dir" in gitleaks_hooks
-    gitleaks_dir_hook = gitleaks_hooks["gitleaks-dir"]
-    assert gitleaks_dir_hook["id"] == "gitleaks"
+    assert [r["repo"] for r in precommit_cfg["repos"]] == ["local"]
+    local_repo = precommit_cfg["repos"][0]
+    hooks = {h["id"]: h for h in local_repo["hooks"]}
+
+    assert "gitleaks" in hooks
+    assert "scripts/run_secret_scan.py --mode staged" in hooks["gitleaks"]["entry"]
+    assert hooks["gitleaks"].get("args") == ["--config", ".gitleaks.toml"]
+    assert hooks["gitleaks"].get("pass_filenames") is False
+
+    assert "gitleaks-dir" in hooks
+    gitleaks_dir_hook = hooks["gitleaks-dir"]
     assert gitleaks_dir_hook.get("pass_filenames") is False, (
         "gitleaks-dir must set pass_filenames: false"
     )
-    assert "gitleaks dir ." in gitleaks_dir_hook.get("entry", "")
+    assert "scripts/run_secret_scan.py --mode working-tree" in gitleaks_dir_hook.get(
+        "entry", ""
+    )
     assert gitleaks_dir_hook.get("args") == ["--config", ".gitleaks.toml"]
 
     gitleaks_cfg = tomllib.loads(
         (repo_root / ".gitleaks.toml").read_text(encoding="utf-8")
     )
     _validate_gitleaks_config(gitleaks_cfg)
-
-    local_repo = next(r for r in precommit_cfg["repos"] if r["repo"] == "local")
-    hooks = {h["id"]: h for h in local_repo["hooks"]}
 
     for hook_id in (
         "validate-docs",
@@ -1012,12 +1010,9 @@ def test_precommit_check_yaml_does_not_enable_global_unsafe_mode():
     precommit_cfg = yaml.safe_load(
         Path(".pre-commit-config.yaml").read_text(encoding="utf-8")
     )
-    hooks_repo = next(
-        r
-        for r in precommit_cfg["repos"]
-        if "pre-commit-hooks" in str(r.get("repo", ""))
-    )
-    check_yaml = next(h for h in hooks_repo["hooks"] if h.get("id") == "check-yaml")
+    local_repo = next(r for r in precommit_cfg["repos"] if r["repo"] == "local")
+    check_yaml = next(h for h in local_repo["hooks"] if h.get("id") == "check-yaml")
+    assert "check-yaml" in check_yaml.get("entry", "")
     assert "--unsafe" not in (check_yaml.get("args") or []), (
         "check-yaml must not pass --unsafe globally"
     )
@@ -1025,7 +1020,6 @@ def test_precommit_check_yaml_does_not_enable_global_unsafe_mode():
     assert exclude_re and re.search(exclude_re, "mkdocs.yml")
     assert not re.search(exclude_re, ".github/workflows/ci.yml")
 
-    local_repo = next(r for r in precommit_cfg["repos"] if r["repo"] == "local")
     validate_docs = next(
         h for h in local_repo["hooks"] if h.get("id") == "validate-docs"
     )
