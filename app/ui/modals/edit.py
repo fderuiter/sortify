@@ -1579,6 +1579,17 @@ class _BaseGroupSelectionModal(ResponsiveModalScreen[dict[str, str] | None]):
     #duplicate-groups-list {
         height: auto;
     }
+    .trash-warning-banner {
+        color: $warning;
+        background: $boost;
+        border: dashed $warning;
+        padding: 0 1;
+        margin-bottom: 1;
+        text-style: bold;
+    }
+    .trash-warning-banner.hidden {
+        display: none;
+    }
     .button-row {
         min-height: 3;
     }
@@ -1592,6 +1603,9 @@ class _BaseGroupSelectionModal(ResponsiveModalScreen[dict[str, str] | None]):
     InteractiveCollisionResolverModal, DuplicateReviewModal {
         background: rgba(0, 0, 0, 0.65);
         &.compact .modal-subtitle {
+            margin-bottom: 0;
+        }
+        &.compact .trash-warning-banner {
             margin-bottom: 0;
         }
         &.compact .batch-bar {
@@ -1907,12 +1921,26 @@ class DuplicateReviewModal(_BaseGroupSelectionModal):
 
     def compose(self) -> ComposeResult:
         """Compose byte-verified duplicate cluster review dialog widgets."""
+        from rich.markup import escape as rich_escape
+
+        upper_tag_re = re.compile(r"(\\*)\[([A-Z][^[]*?)\]")
+
+        def escape_markup(value: str) -> str:
+            escaped = rich_escape(str(value))
+            return upper_tag_re.sub(lambda m: f"{m.group(1)}\\[{m.group(2)}]", escaped)
+
         valid_values = {opt[1] for opt in self.DUPLICATE_OPTIONS}
         initial_batch = "stage"
         if self.duplicate_groups:
             first_def = self.duplicate_groups[0].get("default_action")
             if first_def in valid_values:
                 initial_batch = str(first_def)
+        has_initial_trash = any(val == "trash" for val in self.user_selections.values())
+        warn_cls = (
+            "trash-warning-banner"
+            if has_initial_trash
+            else "trash-warning-banner hidden"
+        )
 
         with ModalBox(classes="modal-box"):
             with Vertical(classes="modal-body"):
@@ -1954,10 +1982,17 @@ class DuplicateReviewModal(_BaseGroupSelectionModal):
                     )
                     yield btn_apply
 
+                yield Label(
+                    "Warning: Exporting duplicate copies to the OS Trash cannot be undone automatically by Sortify.",
+                    id="lbl-trash-warning",
+                    classes=warn_cls,
+                )
+
                 with Vertical(id="duplicate-groups-list"):
                     for group in self.duplicate_groups:
                         gid = group["group_id"]
-                        tf_name = group.get("target_filename", "Duplicate")
+                        tf_name = str(group.get("target_filename", "Duplicate"))
+                        tf_escaped = escape_markup(tf_name)
                         items = group.get("items", [])
                         raw_default = group.get("default_action", "stage")
                         default_action = (
@@ -1965,19 +2000,23 @@ class DuplicateReviewModal(_BaseGroupSelectionModal):
                         )
                         byte_size = group.get("byte_size")
                         sha_val = str(group.get("sha256") or "")
-                        sel_mode = group.get("detect_original_by") or "first_seen"
+                        sel_mode = escape_markup(
+                            str(group.get("detect_original_by") or "first_seen")
+                        )
                         meta_parts: list[str] = []
                         if isinstance(byte_size, int) and byte_size >= 0:
                             meta_parts.append(_format_file_size(byte_size))
                         if sha_val:
                             meta_parts.append(f"sha256:{sha_val[:12]}")
                         meta_suffix = (
-                            f" ({', '.join(meta_parts)})" if meta_parts else ""
+                            escape_markup(f" ({', '.join(meta_parts)})")
+                            if meta_parts
+                            else ""
                         )
 
                         with Vertical(classes="duplicate-card", id=f"card-{gid}"):
                             yield Label(
-                                f"Duplicate Cluster: {tf_name}{meta_suffix}",
+                                f"Duplicate Cluster: {tf_escaped}{meta_suffix}",
                                 classes="card-title",
                             )
                             yield Label(
@@ -1987,16 +2026,21 @@ class DuplicateReviewModal(_BaseGroupSelectionModal):
                             if group.get("existing_file_on_disk") and group.get(
                                 "primary_source_path"
                             ):
+                                disk_src_escaped = escape_markup(
+                                    str(group["primary_source_path"])
+                                )
+                                orig_disk_tag = escape_markup("[Original on Disk]")
                                 yield Label(
-                                    f"• [Original on Disk] {group['primary_source_path']}",
+                                    f"• {orig_disk_tag} {disk_src_escaped}",
                                     classes="source-item",
                                 )
                             for idx, item in enumerate(items):
-                                rel_src = item.get("relative_source") or item.get(
-                                    "source_path", ""
+                                rel_src = str(
+                                    item.get("relative_source")
+                                    or item.get("source_path", "")
                                 )
                                 src_p = item.get("source_path", "")
-                                role_tag = (
+                                role_tag = escape_markup(
                                     "[Original]"
                                     if (
                                         not group.get("existing_file_on_disk")
@@ -2016,7 +2060,7 @@ class DuplicateReviewModal(_BaseGroupSelectionModal):
                                     except OSError:
                                         pass
                                 yield Label(
-                                    f"• {role_tag} {rel_src}{size_info}",
+                                    f"• {role_tag} {escape_markup(rel_src)}{escape_markup(size_info)}",
                                     classes="source-item",
                                 )
 
@@ -2061,6 +2105,31 @@ class DuplicateReviewModal(_BaseGroupSelectionModal):
                     "Cancel duplicate review and abort execution",
                 )
                 yield btn_cancel
+
+    def _sync_trash_warning(self, announce_warning: bool = False) -> None:
+        """Toggle the OS Trash irreversibility warning banner and optionally announce it."""
+        has_trash = any(val == "trash" for val in self.user_selections.values())
+        with contextlib.suppress(LookupError, AttributeError):
+            warn_lbl = self.query_one("#lbl-trash-warning", Label)
+            if has_trash:
+                warn_lbl.remove_class("hidden")
+            else:
+                warn_lbl.add_class("hidden")
+        if has_trash and announce_warning:
+            self.announce(
+                "Warning: Exporting duplicate copies to the OS Trash cannot be undone automatically by Sortify."
+            )
+
+    def action_apply_to_all(self) -> None:
+        """Apply the selected batch action to all duplicate clusters and update trash warning."""
+        super().action_apply_to_all()
+        self._sync_trash_warning(announce_warning=True)
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        """Record cluster selection changes and warn when OS Trash disposal is chosen."""
+        super().on_select_changed(event)
+        if event.select.id and event.select.id.startswith("select-action-"):
+            self._sync_trash_warning(announce_warning=(str(event.value) == "trash"))
 
 
 DirectoryModal = DirectorySelectModal

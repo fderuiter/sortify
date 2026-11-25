@@ -25,6 +25,7 @@ from app.core.moves import (
     import_transaction_ledger,
     migrate_add_moves,
     migrate_import_legacy_moves,
+    migrate_moves_exported_to_trash,
 )
 
 STORE_FILENAME = "sortify.db"
@@ -54,6 +55,7 @@ STORE_MIGRATIONS = (
     Migration(1, "initial", _store_initial),
     Migration(2, "moves", migrate_add_moves),
     Migration(3, "legacy_moves", migrate_import_legacy_moves),
+    Migration(4, "moves_exported_to_trash", migrate_moves_exported_to_trash),
 )
 
 

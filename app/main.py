@@ -17,7 +17,12 @@ from app.config import AppSettings
 from app.core.domain_contracts import _make_json_serializable
 from app.core.path_utils import is_packaged
 from app.core.pipeline import reroot_plan
-from app.core.plan_format import format_plan_tree
+from app.core.plan_format import (
+    count_plan_actions,
+    format_plan_tree,
+    format_trashed_unrestorable_warning,
+    validate_duplicate_mode_for_headless,
+)
 from app.core.session_catalog import list_sessions
 from app.frozen_runtime import prepare_frozen_windows_runtime
 from app.log_filter import LogScrubbingFilter
@@ -605,18 +610,48 @@ def _print_plan_for_humans(
 ) -> None:
     """Print the plan tree to stdout and a one-line summary to stderr."""
     lines, n_files, n_folders = format_plan_tree(plan)
+    plan_counts = count_plan_actions(plan)
     if not lines:
         print(f"Nothing to sort in '{target_path}'.", file=sys.stderr)
+        if not quiet and plan_counts["skipped"] > 0:
+            print(
+                f"0 moved, {plan_counts['skipped']} skipped.",
+                file=sys.stderr,
+            )
         return
     if not quiet:
+        dup_parts: list[str] = []
+        if plan_counts["staged"] > 0:
+            dup_parts.append(f"{plan_counts['staged']} staged")
+        if plan_counts["trashed"] > 0:
+            dup_parts.append(f"{plan_counts['trashed']} staged for trash")
+        if plan_counts["skipped"] > 0:
+            dup_parts.append(f"{plan_counts['skipped']} skipped")
+        dup_note = f" ({', '.join(dup_parts)})" if dup_parts else ""
         print(
-            f"{verb} {n_files} file(s) into {n_folders} folder(s) in '{target_path}':",
+            f"{verb} {n_files} file(s) into {n_folders} folder(s){dup_note} in '{target_path}':",
             file=sys.stderr,
         )
     print("\n".join(lines))
 
 
 _reroot_plan = reroot_plan
+
+
+def _validate_headless_duplicate_mode(
+    args: argparse.Namespace, settings: AppSettings
+) -> None:
+    """Reject ``--duplicates review`` (or configured ``review``) in headless CLI execution."""
+    err_msg = validate_duplicate_mode_for_headless(
+        getattr(settings, "DUPLICATE_ACTION", "off"),
+        is_tui=False,
+    )
+    if err_msg:
+        emit_cli_error(
+            err_msg,
+            json_mode=bool(getattr(args, "json", False)),
+            exit_code=2,
+        )
 
 
 def _maybe_launch_tui(
@@ -630,6 +665,17 @@ def _maybe_launch_tui(
 ) -> None:
     """Launch the interactive TUI and exit when ``--tui`` or ``--interactive`` is set."""
     if getattr(args, "tui", False) or getattr(args, "interactive", False):
+        err_msg = validate_duplicate_mode_for_headless(
+            getattr(settings, "DUPLICATE_ACTION", "off"),
+            is_tui=True,
+            non_interactive=_extract_bool_arg(args, "non_interactive"),
+        )
+        if err_msg:
+            emit_cli_error(
+                err_msg,
+                json_mode=bool(getattr(args, "json", False)),
+                exit_code=2,
+            )
         from app.ui.tui import run_tui
 
         tui_kwargs: dict[str, Any] = {
@@ -677,6 +723,7 @@ def _prepare_cli_target_directory(
                 )
 
     _maybe_launch_tui(args, settings, getattr(args, "directory", None))
+    _validate_headless_duplicate_mode(args, settings)
 
     is_json = getattr(args, "json", False)
     try:
@@ -772,6 +819,11 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
         else:
             flush_trash = bool(getattr(args, "flush_trash", False))
             outcome = pipeline.execute(plan, flush_trash=flush_trash)
+            moved_count = len(outcome.moved) + len(outcome.quarantined)
+            staged_count = len(outcome.staged)
+            trashed_count = len(outcome.trashed)
+            trash_handoff = (outcome.summary or {}).get("trash_handoff") or {}
+            trash_errors = dict(trash_handoff.get("errors") or {})
             result = {
                 "status": "success",
                 "dry_run": False,
@@ -779,9 +831,16 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
                 "destination_directory": (
                     str(Path(dest_dir).resolve()) if dest_dir else str(target_path)
                 ),
+                "moved_count": moved_count,
+                "staged_count": staged_count,
+                "trashed_count": trashed_count,
+                "staged": list(outcome.staged),
+                "trashed": list(outcome.trashed),
                 "plan": serializable_plan,
                 "summary": outcome.summary,
             }
+            if trash_errors:
+                result["trash_errors"] = trash_errors
 
         quiet = getattr(args, "quiet", False)
         if json_output:
@@ -802,8 +861,9 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
                         file=sys.stderr,
                     )
             else:
-                moved_count = len(outcome.moved) + len(outcome.quarantined)
-                if moved_count == 0 and not outcome.failed:
+                reversible_count = moved_count + staged_count
+                total_handled = moved_count + staged_count + trashed_count
+                if total_handled == 0 and not outcome.failed:
                     print(
                         f"Nothing to sort in '{target_path}'.",
                         file=sys.stderr,
@@ -814,12 +874,20 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
                     lines, _n_files, n_folders = format_plan_tree(serializable_plan)
                     if lines:
                         if not quiet:
+                            extra_counts: list[str] = []
+                            if staged_count > 0:
+                                extra_counts.append(f"{staged_count} staged")
+                            if trashed_count > 0:
+                                extra_counts.append(f"{trashed_count} trashed")
+                            extra_note = (
+                                f" ({', '.join(extra_counts)})" if extra_counts else ""
+                            )
                             print(
-                                f"Moved {moved_count} file(s) into {n_folders} folder(s) in '{target_path}':",
+                                f"Moved {moved_count} file(s) into {n_folders} folder(s){extra_note} in '{target_path}':",
                                 file=sys.stderr,
                             )
                         print("\n".join(lines))
-                    elif moved_count == 0:
+                    elif total_handled == 0:
                         print(
                             f"Nothing to sort in '{target_path}'.",
                             file=sys.stderr,
@@ -828,11 +896,16 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
                         print(outcome.describe(), file=sys.stderr)
                         for source, reason in outcome.failed:
                             print(f"  Failed: {source}: {reason}", file=sys.stderr)
-                        if moved_count > 0 and outcome.session_id:
-                            print(
-                                "To undo this sort, run: smart-autosorter undo --latest",
-                                file=sys.stderr,
-                            )
+                    for staged_p, err_msg in trash_errors.items():
+                        print(
+                            f"Warning: OS Trash handoff failed for '{staged_p}': {err_msg} (kept in reversible staging).",
+                            file=sys.stderr,
+                        )
+                    if not quiet and reversible_count > 0 and outcome.session_id:
+                        print(
+                            "To undo this sort, run: smart-autosorter undo --latest",
+                            file=sys.stderr,
+                        )
 
         sys.exit(0)
     except Exception as e:
@@ -1035,6 +1108,7 @@ def handle_daemon_command(args: argparse.Namespace, settings: AppSettings):
     target_path = Path(target_dir).resolve()
 
     if action == "start":
+        _validate_headless_duplicate_mode(args, settings)
         if not target_path.exists() or not target_path.is_dir():
             emit_cli_error(
                 f"Error: Target directory '{target_dir}' does not exist or is not a directory.",
@@ -1171,12 +1245,15 @@ def handle_undo_command(args: argparse.Namespace, settings: AppSettings):
                 "base_dir": None,
             }
     elif latest_flag:
-        # Skip sorts already undone or empty, so running `undo --latest` reaches the latest real sort.
+        # Skip sorts already undone or empty, while still catching trash-only completed sessions.
         undoable = [
             s
             for s in all_sessions
             if str(s.get("status", "")).lower() not in ("rolled_back", "abandoned")
-            and int(s.get("step_count") or 0) > 0
+            and (
+                int(s.get("step_count") or 0) > 0
+                or int(s.get("trashed_count") or 0) > 0
+            )
         ]
         if undoable:
             target_session = undoable[0]
@@ -1200,22 +1277,48 @@ def handle_undo_command(args: argparse.Namespace, settings: AppSettings):
         if "error" in undo_result.summary:
             raise RuntimeError(str(undo_result.summary["error"]))
 
-        result = {
+        restored_count = len(undo_result.moved)
+        trashed_remaining = int(
+            undo_result.summary.get("trashed_unrestorable")
+            or len(undo_result.trashed)
+            or 0
+        )
+        trash_warning = format_trashed_unrestorable_warning(
+            trashed_remaining, session_id=target_session_id
+        )
+
+        if restored_count == 0 and trashed_remaining > 0:
+            noun = "copy" if trashed_remaining == 1 else "copies"
+            verb_rem = "remains" if trashed_remaining == 1 else "remain"
+            msg = (
+                f"No reversible moves in session '{target_session_id}'; "
+                f"{trashed_remaining} duplicate {noun} {verb_rem} in OS Trash."
+            )
+        else:
+            msg = f"Successfully rolled back sorting session '{target_session_id}'."
+
+        result: dict[str, Any] = {
             "status": "success",
             "session_id": target_session_id,
-            "message": f"Successfully rolled back sorting session '{target_session_id}'.",
+            "restored_count": restored_count,
+            "trashed_remaining": trashed_remaining,
+            "message": msg,
         }
+        if trash_warning:
+            result["warnings"] = [trash_warning]
 
         if json_output:
             sys.stdout.write(json.dumps(result, indent=2) + "\n")
             sys.stdout.flush()
         else:
             quiet = getattr(args, "quiet", False)
-            if not quiet:
+            if not (restored_count == 0 and trashed_remaining > 0) and not quiet:
                 print(
                     f"Rollback completed successfully for session '{target_session_id}'.",
                     file=sys.stderr,
                 )
+            if trash_warning:
+                print(trash_warning, file=sys.stderr)
 
         sys.exit(0)
     except Exception as ex:
@@ -1264,6 +1367,7 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
         initial_drop_paths=list(raw_p) if raw_p else [],
         initial_dest_dir=resolved_dest_arg,
     )
+    _validate_headless_duplicate_mode(args, settings)
 
     if getattr(args, "preset", None):
         print(
@@ -1338,29 +1442,50 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
         )
 
     dry_run = getattr(args, "dry_run", False)
+    flush_trash = bool(getattr(args, "flush_trash", False))
     quiet = getattr(args, "quiet", False)
 
     batch_plan = coordinator.plan_batch(validated_paths, dest_dir=resolved_dest)
-    batch_result = coordinator.execute_batch(batch_plan, dry_run=dry_run)
+    batch_result = coordinator.execute_batch(
+        batch_plan, dry_run=dry_run, flush_trash=flush_trash
+    )
     processed_results = batch_result.target_results
+    drop_trash_errors = dict((batch_result.trash_handoff or {}).get("errors") or {})
 
-    result = {
+    result: dict[str, Any] = {
         "status": "success",
         "command": "drop",
         "dry_run": dry_run,
         "session_id": batch_result.session_id,
         "destination_dir": batch_result.resolved_dest,
         "processed_count": len(processed_results),
+        "moved_count": batch_result.moved_count,
+        "staged_count": batch_result.staged_count,
+        "trashed_count": batch_result.trashed_count,
         "results": processed_results,
     }
+    if batch_result.trash_handoff:
+        result["trash_handoff"] = batch_result.trash_handoff
+    if drop_trash_errors:
+        result["trash_errors"] = drop_trash_errors
 
     if json_output:
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         sys.stdout.flush()
     else:
         if not quiet:
+            count_parts = [f"{batch_result.moved_count} moved"]
+            if batch_result.staged_count > 0:
+                count_parts.append(f"{batch_result.staged_count} staged")
+            if batch_result.trashed_count > 0:
+                count_parts.append(f"{batch_result.trashed_count} trashed")
             print(
-                f"Drop triage completed successfully for {len(processed_results)} target item(s).",
+                f"Drop triage completed successfully for {len(processed_results)} target item(s) ({', '.join(count_parts)}).",
+                file=sys.stderr,
+            )
+        for staged_p, err_msg in drop_trash_errors.items():
+            print(
+                f"Warning: OS Trash handoff failed for '{staged_p}': {err_msg} (kept in reversible staging).",
                 file=sys.stderr,
             )
         print(json.dumps(_make_json_serializable(result), indent=2))
@@ -1531,6 +1656,29 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         default=False,
         help="Run in non-interactive mode and bypass interactive modal dialogs",
     )
+    parser.add_argument(
+        "--duplicates",
+        type=str,
+        choices=["off", "review", "skip", "stage", "trash"],
+        default=None,
+        help="Byte-identical duplicate handling mode (off, review, skip, stage, trash; review requires --tui or --interactive)",
+    )
+    parser.add_argument(
+        "--detect-original-by",
+        type=str,
+        choices=[
+            "first_seen",
+            "-first_seen",
+            "name",
+            "-name",
+            "created",
+            "-created",
+            "lastmodified",
+            "-lastmodified",
+        ],
+        default=None,
+        help="Criterion used to select the surviving original in duplicate clusters",
+    )
 
     subparsers = parser.add_subparsers(dest="subcommand", help="Available subcommands")
 
@@ -1573,9 +1721,9 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         subparser.add_argument(
             "--duplicates",
             type=str,
-            choices=["off", "skip", "stage", "trash"],
+            choices=["off", "review", "skip", "stage", "trash"],
             default=None,
-            help="Byte-identical duplicate handling mode (off, skip, stage, trash)",
+            help="Byte-identical duplicate handling mode (off, review, skip, stage, trash; review requires --tui or --interactive)",
         )
         subparser.add_argument(
             "--detect-original-by",
@@ -1822,6 +1970,12 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         "--dry-run",
         action="store_true",
         help="Perform dry run analysis without executing physical moves",
+    )
+    parser_drop.add_argument(
+        "--flush-trash",
+        action="store_true",
+        default=False,
+        help="Export staged duplicate copies to the OS Trash after move verification",
     )
     parser_drop.add_argument(
         "--json",
@@ -2092,6 +2246,7 @@ def _run_configured_main(args: Any, parser: Any, settings: AppSettings) -> None:
         )
 
     if getattr(args, "daemon", False) is True:
+        _validate_headless_duplicate_mode(args, settings)
         from app.core.daemon import start_daemon
 
         start_daemon(settings, args.directory)
