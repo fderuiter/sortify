@@ -90,15 +90,25 @@ def test_model_status_and_verify_missing_vs_verified_vs_corrupt(tmp_path, capsys
     assert verify_missing_err["status"] == "error"
     assert "missing" in verify_missing_err["message"].lower()
 
-    # 2. Populate valid bundle: status and verify both succeed (exit 0)
+    # 2. Populate valid bundle: without onnxruntime -> [AI: Fallback], with onnxruntime -> [AI: Active]
     model_dir = get_app_dir() / "model"
     _populate_verified_bundle(model_dir)
 
-    assert _invoke_model_cmd(args_status, settings) == 0
-    ok_status = json.loads(capsys.readouterr().out)
-    assert ok_status["bundle_status"] == "valid"
-    assert ok_status["verified"] is True
-    assert ok_status["badge"] == "[AI: Active]"
+    with patch("app.core.downloader.is_onnxruntime_available", return_value=False):
+        assert _invoke_model_cmd(args_status, settings) == 0
+        fallback_status = json.loads(capsys.readouterr().out)
+        assert fallback_status["bundle_status"] == "valid"
+        assert fallback_status["verified"] is True
+        assert fallback_status["onnxruntime_available"] is False
+        assert fallback_status["badge"] == "[AI: Fallback]"
+
+    with patch("app.core.downloader.is_onnxruntime_available", return_value=True):
+        assert _invoke_model_cmd(args_status, settings) == 0
+        ok_status = json.loads(capsys.readouterr().out)
+        assert ok_status["bundle_status"] == "valid"
+        assert ok_status["verified"] is True
+        assert ok_status["onnxruntime_available"] is True
+        assert ok_status["badge"] == "[AI: Active]"
 
     assert _invoke_model_cmd(args_verify, settings) == 0
     ok_verify = json.loads(capsys.readouterr().out)
@@ -114,6 +124,69 @@ def test_model_status_and_verify_missing_vs_verified_vs_corrupt(tmp_path, capsys
         "corrupted" in corrupt_err["message"].lower()
         or "sha-256" in corrupt_err["message"].lower()
     )
+
+
+def test_model_status_human_output_onnx_without_torch_and_fallback_without_onnx(
+    tmp_path, capsys, monkeypatch
+):
+    """AC 3 & AC 4: `model status` reports [AI: Fallback] without onnxruntime, and ONNX Runtime: Available + [AI: Active] with onnxruntime and no torch."""
+    import importlib.machinery
+    import importlib.util
+    import sys
+
+    from app.core.downloader import DownloadManager, get_ai_runtime_state
+
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    settings.AI_CONSENT_GRANTED = True
+    parser = build_parser()
+
+    model_dir = get_app_dir() / "model"
+    _populate_verified_bundle(model_dir)
+    args_human = parser.parse_args(["model", "status"])
+
+    real_find_spec = importlib.util.find_spec
+
+    # Case A: Neither onnxruntime nor torch installed -> [AI: Fallback], onnxruntime_available: False
+    def _find_spec_no_onnx(name, package=None):
+        if name in ("onnxruntime", "torch"):
+            return None
+        return real_find_spec(name, package)
+
+    monkeypatch.delitem(sys.modules, "onnxruntime", raising=False)
+    monkeypatch.delitem(sys.modules, "torch", raising=False)
+    monkeypatch.setattr(importlib.util, "find_spec", _find_spec_no_onnx)
+    DownloadManager.reset_instance()
+
+    rt_no_onnx = get_ai_runtime_state(settings, model_dir=str(model_dir))
+    assert rt_no_onnx["state"] == "fallback"
+    assert rt_no_onnx["badge"] == "[AI: Fallback]"
+    assert rt_no_onnx["onnxruntime_available"] is False
+
+    assert _invoke_model_cmd(args_human, settings) == 0
+    out_no_onnx = capsys.readouterr().out
+    assert "[AI: Fallback]" in out_no_onnx
+    assert "Not installed — install smart-autosorter[ml]" in out_no_onnx
+
+    # Case B: onnxruntime installed and NO torch -> ONNX Runtime: Available and [AI: Active]
+    def _find_spec_onnx_only(name, package=None):
+        if name == "onnxruntime":
+            return importlib.machinery.ModuleSpec("onnxruntime", loader=None)
+        if name == "torch":
+            return None
+        return real_find_spec(name, package)
+
+    monkeypatch.setattr(importlib.util, "find_spec", _find_spec_onnx_only)
+    DownloadManager.reset_instance()
+
+    rt_onnx_only = get_ai_runtime_state(settings, model_dir=str(model_dir))
+    assert rt_onnx_only["state"] == "active"
+    assert rt_onnx_only["badge"] == "[AI: Active]"
+    assert rt_onnx_only["onnxruntime_available"] is True
+
+    assert _invoke_model_cmd(args_human, settings) == 0
+    out_onnx = capsys.readouterr().out
+    assert "ONNX Runtime:      Available" in out_onnx
+    assert "[AI: Active]" in out_onnx
 
 
 def test_model_download_saves_proxy_and_handles_failures(tmp_path, capsys):

@@ -16,9 +16,89 @@ from app.core.downloader import (
     remove_local_model_bundle,
 )
 from app.core.exceptions import DownloaderError
-from app.core.verifier import is_ml_available
 
 logger = logging.getLogger(__name__)
+
+_DAEMON_IPC_CONTROL_ACTIONS: frozenset[str] = frozenset(
+    {"status", "stop", "pause", "resume", "health", "metrics"}
+)
+
+
+def _flag_enabled(args: argparse.Namespace, attr_name: str) -> bool:
+    """Return True only when an explicit boolean CLI flag attribute is True."""
+    return getattr(args, attr_name, False) is True
+
+
+def add_model_provisioning_args(
+    parser: argparse.ArgumentParser,
+    *,
+    suppress_default: bool = False,
+) -> None:
+    """Register ``--defer-model-download`` on top-level or subcommand CLI parsers."""
+    default_val: object = argparse.SUPPRESS if suppress_default else False
+    parser.add_argument(
+        "--defer-model-download",
+        action="store_true",
+        default=default_val,
+        help="Skip automatic AI model download and use local keyword/TF-IDF fallback",
+    )
+
+
+def maybe_provision_model_for_cli_consent(
+    args: argparse.Namespace, settings: AppSettings
+) -> None:
+    """Verify or download model weights on CLI ``--accept-ai-consent`` operational runs."""
+    if not _flag_enabled(args, "accept_ai_consent"):
+        return
+    subcommand = getattr(args, "subcommand", None)
+    if subcommand not in (None, "scan", "sort", "drop", "daemon"):
+        return
+    if subcommand == "daemon":
+        daemon_action = str(getattr(args, "action", "") or "").strip().lower()
+        if (
+            daemon_action in _DAEMON_IPC_CONTROL_ACTIONS
+            and getattr(args, "directory", None) is None
+        ):
+            return
+    if (
+        _flag_enabled(args, "defer_model_download")
+        or _flag_enabled(args, "tui")
+        or _flag_enabled(args, "interactive")
+    ):
+        return
+    if getattr(args, "_cli_consent_model_checked", False):
+        return
+    object.__setattr__(args, "_cli_consent_model_checked", True)
+
+    from app.core.downloader import provision_model_cli as run_provision_model_cli
+
+    quiet = bool(getattr(args, "quiet", False))
+    proxy = str(getattr(settings, "PROXY", "") or "").strip()
+    try:
+        run_provision_model_cli(proxy=proxy, quiet=quiet, stream=sys.stderr)
+    except DownloaderError as exc:
+        logger.warning(
+            "Could not download AI model weights (%s); proceeding with local keyword/TF-IDF fallback.",
+            exc,
+        )
+        if not quiet:
+            print(
+                f"Warning: Could not download AI model weights ({exc}). "
+                "Proceeding with local keyword/TF-IDF fallback. "
+                "Retry anytime with 'smart-autosorter model download'.",
+                file=sys.stderr,
+            )
+    except (OSError, ValueError, RuntimeError, TypeError) as exc:
+        logger.warning(
+            "Model provisioning check encountered an error (%s); proceeding with local keyword/TF-IDF fallback.",
+            exc,
+        )
+        if not quiet:
+            print(
+                f"Warning: Model provisioning check encountered an error ({exc}). "
+                "Proceeding with local keyword/TF-IDF fallback.",
+                file=sys.stderr,
+            )
 
 
 def register_subparser(subparsers: argparse._SubParsersAction) -> None:
@@ -145,7 +225,7 @@ def handle_model_command(args: argparse.Namespace, settings: AppSettings) -> boo
 
     if action == "status":
         runtime = get_ai_runtime_state(settings=settings, model_dir=model_dir)
-        ml_ready = is_ml_available()
+        onnx_ready = bool(runtime["onnxruntime_available"])
         payload = {
             "status": "ok",
             "ai_state": runtime["state"],
@@ -156,7 +236,7 @@ def handle_model_command(args: argparse.Namespace, settings: AppSettings) -> boo
             "detail": runtime["detail"],
             "model_dir": runtime["model_dir"],
             "size_bytes": runtime["size_bytes"],
-            "onnxruntime_available": ml_ready,
+            "onnxruntime_available": onnx_ready,
             "proxy_configured": bool(getattr(settings, "PROXY", "")),
             "files": runtime["files"],
         }
@@ -173,9 +253,12 @@ def handle_model_command(args: argparse.Namespace, settings: AppSettings) -> boo
                 f"Bundle Integrity:  {runtime['bundle_status']} ({runtime['detail']})"
             )
             print(f"Size on Disk:      {size_mb:.2f} MB")
-            print(
-                f"ONNX Runtime:      {'Available' if ml_ready else 'Not installed (offline TF-IDF fallback)'}"
+            onnx_text = (
+                "Available"
+                if onnx_ready
+                else "Not installed — install smart-autosorter[ml] (offline TF-IDF fallback)"
             )
+            print(f"ONNX Runtime:      {onnx_text}")
         sys.exit(0)
 
     if action == "download":

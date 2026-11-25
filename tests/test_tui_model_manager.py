@@ -473,4 +473,40 @@ def test_model_manager_ml_guidance_and_80x24_button_containment(
                         f"{btn_id} bottom {btn_region.bottom} overflows modal {box_region.bottom}"
                     )
 
+                # Populate verified weights without onnxruntime -> literal ([AI: Fallback]) suffix renders intact
+                import hashlib
+
+                from app.core.downloader import _VERIFICATION_CACHE
+                from app.core.shared_registry import SharedModelRegistry
+
+                model_dir = os.path.join(app_dir, "model")
+                os.makedirs(model_dir, exist_ok=True)
+                bundle_payloads = {
+                    "model.onnx": b"onnx-bytes",
+                    "config.json": b'{"model_type": "bert"}',
+                    "tokenizer.json": b'{"version": "1.0"}',
+                    "tokenizer_config.json": b'{"do_lower_case": true}',
+                    "special_tokens_map.json": b'{"cls_token": "[CLS]"}',
+                    "vocab.txt": b"[PAD]\n[CLS]\n",
+                    "version.txt": b"1.0.0",
+                }
+                expected_hashes = {}
+                for fname, payload in bundle_payloads.items():
+                    with open(os.path.join(model_dir, fname), "wb") as fh:
+                        fh.write(payload)
+                    expected_hashes[fname] = hashlib.sha256(payload).hexdigest()
+                SharedModelRegistry.get_instance().register_expected_hashes(
+                    "model_download", expected_hashes
+                )
+                _VERIFICATION_CACHE.clear()
+                modal._refresh_ui_state()
+                await pilot.pause(0.05)
+
+                rendered_status = str(
+                    modal.query_one("#lbl-model-status", Label).render()
+                )
+                assert (
+                    "Status: Downloaded & Present ([AI: Fallback])" in rendered_status
+                )
+
     asyncio.run(_test())
