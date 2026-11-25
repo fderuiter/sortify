@@ -11,6 +11,7 @@ Vulnerability database and package index endpoints used for dependency auditing:
 
 import argparse
 import ast
+import calendar
 import os
 import platform
 import re
@@ -23,6 +24,8 @@ import zipfile
 from pathlib import Path
 
 PYTORCH_CPU_INDEX_URL = "https://download.pytorch.org/whl/cpu"
+NORMALIZED_ARCHIVE_DATE_TIME = (2020, 1, 1, 0, 0, 0)
+NORMALIZED_ARCHIVE_EPOCH = calendar.timegm(NORMALIZED_ARCHIVE_DATE_TIME)
 
 
 def _normalize_pkg_name(name: str) -> str:
@@ -558,6 +561,45 @@ def _download_sdist_build_wheels(pip_path: str, wheels_dir: Path) -> None:
     )
 
 
+def _normalize_archive_timestamps(
+    wheels_dir: Path, zip_path: Path | None = None
+) -> None:
+    """Normalize downloaded wheel/sdist mtimes and offline_bundle.zip member timestamps."""
+    if os.path.isdir(wheels_dir):
+        for entry in sorted(os.scandir(wheels_dir), key=lambda e: e.name):
+            if entry.is_file(follow_symlinks=False):
+                os.utime(
+                    entry.path,
+                    (NORMALIZED_ARCHIVE_EPOCH, NORMALIZED_ARCHIVE_EPOCH),
+                )
+
+    if zip_path is not None and os.path.isfile(zip_path):
+        tmp_zip = zip_path.with_suffix(".zip.tmp")
+        try:
+            with (
+                zipfile.ZipFile(zip_path, "r") as src_zf,
+                zipfile.ZipFile(tmp_zip, "w") as dst_zf,
+            ):
+                for info in sorted(src_zf.infolist(), key=lambda m: m.filename):
+                    payload = src_zf.read(info.filename)
+                    norm_info = zipfile.ZipInfo(
+                        filename=info.filename,
+                        date_time=NORMALIZED_ARCHIVE_DATE_TIME,
+                    )
+                    norm_info.compress_type = info.compress_type
+                    norm_info.external_attr = info.external_attr
+                    norm_info.create_system = info.create_system
+                    dst_zf.writestr(norm_info, payload)
+            os.replace(tmp_zip, zip_path)
+            os.utime(zip_path, (NORMALIZED_ARCHIVE_EPOCH, NORMALIZED_ARCHIVE_EPOCH))
+        finally:
+            if os.path.exists(tmp_zip):
+                try:
+                    os.unlink(tmp_zip)
+                except OSError:
+                    pass
+
+
 def main():
     """Prepare an offline bundle by downloading dependencies and model weights."""
     parser = argparse.ArgumentParser(
@@ -699,9 +741,11 @@ def main():
             "Validation complete: Only CPU-specific PyTorch wheels are present in the offline bundle."
         )
 
-    # 5. Package bundle
+    # 5. Normalize archive timestamps and package bundle
+    _normalize_archive_timestamps(wheels_dir)
     print("Zipping bundle...")
     shutil.make_archive("offline_bundle", "zip", "offline_bundle")
+    _normalize_archive_timestamps(wheels_dir, zip_output)
 
     print("Done! Transfer offline_bundle.zip to the isolated environment.")
 

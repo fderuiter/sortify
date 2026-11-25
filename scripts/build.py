@@ -577,22 +577,24 @@ def main(argv=None):
 
         if not is_lite:
             verify_scientific_binaries(dist_dir)
+
+        if sys.platform == "win32":
+            from pathlib import Path
+
+            if Path(dist_dir).is_dir():
+                print("Executing post-build PE binary dependency verification...")
+                from scripts.verify_pe_dependencies import verify_pe_dependencies
+
+                pe_success, _ = verify_pe_dependencies(
+                    Path(dist_dir), allow_empty=False
+                )
+                if not pe_success:
+                    print("Error: Post-build PE binary dependency verification failed!")
+                    sys.exit(1)
     else:
         print(
             f"Warning: Standalone bundle directory {dist_dir} not found for post-build verification."
         )
-
-    print("Executing post-build PE binary dependency verification...")
-    from pathlib import Path
-
-    from scripts.verify_pe_dependencies import verify_pe_dependencies
-
-    pe_success, _ = verify_pe_dependencies(
-        Path("dist") / "smart-autosorter", allow_empty=True
-    )
-    if not pe_success:
-        print("Error: Post-build PE binary dependency verification failed!")
-        sys.exit(1)
 
     if is_cpu:
         print("Scanning standalone package for GPU/CUDA/cuDNN binaries...")

@@ -104,3 +104,61 @@ def test_verify_pe_dependencies_flag_missing_crt(tmp_path: Path):
         missing_dlls = {m[1] for m in missing}
         assert "vcruntime140.dll" in missing_dlls
         assert "msvcp140.dll" in missing_dlls
+
+
+def test_build_script_runs_pe_verification_only_on_windows_strict(
+    tmp_path: Path, monkeypatch
+):
+    """Verify scripts/build.py skips PE checks on non-Windows and calls verify_pe_dependencies(allow_empty=False) on Windows."""
+    import sys
+
+    from scripts.build import main as build_main
+
+    dist_dir = tmp_path / "dist" / "smart-autosorter"
+    dist_dir.mkdir(parents=True)
+    (tmp_path / "LICENSE").write_text("GPL\n", encoding="utf-8")
+    docs_dist = dist_dir / "docs"
+    docs_dist.mkdir()
+    for doc in (
+        "user_guide.md",
+        "admin_guide.md",
+        "architecture.md",
+        "troubleshooting.md",
+        "keyboard_shortcuts.md",
+    ):
+        (docs_dist / doc).write_text(f"# {doc}\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    mock_pyi = MagicMock()
+    mock_pyi_main = MagicMock()
+    mock_pyi.__main__ = mock_pyi_main
+    monkeypatch.setitem(sys.modules, "PyInstaller", mock_pyi)
+    monkeypatch.setitem(sys.modules, "PyInstaller.__main__", mock_pyi_main)
+
+    mock_spec = MagicMock()
+    mock_spec.submodule_search_locations = ["/mock/sqlcipher3"]
+
+    # 1. Linux/macOS: verify_pe_dependencies is never invoked
+    (dist_dir / "smart-autosorter").write_text("elf", encoding="utf-8")
+    with (
+        patch("sys.platform", "linux"),
+        patch("importlib.util.find_spec", return_value=mock_spec),
+        patch("scripts.verify_pe_dependencies.verify_pe_dependencies") as mock_pe_check,
+    ):
+        build_main(["--lite"])
+        mock_pe_check.assert_not_called()
+
+    # 2. Windows: verify_pe_dependencies is invoked once with allow_empty=False
+    (dist_dir / "smart-autosorter.exe").write_bytes(b"MZ_stub")
+    with (
+        patch("sys.platform", "win32"),
+        patch("importlib.util.find_spec", return_value=mock_spec),
+        patch(
+            "scripts.verify_pe_dependencies.verify_pe_dependencies",
+            return_value=(True, []),
+        ) as mock_pe_check,
+    ):
+        build_main(["--lite"])
+        mock_pe_check.assert_called_once_with(
+            Path("dist") / "smart-autosorter", allow_empty=False
+        )

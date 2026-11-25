@@ -1814,3 +1814,36 @@ updated-dependencies:
         1153, ["risk:high", "automerge:blocked"]
     )
     client_blocked.merge_pull_request.assert_not_called()
+
+
+def test_auto_merge_controller_workflow_gates_before_checkout_and_skips_dev_sync():
+    """Verify auto-merge-controller.yml checks open PRs before checkout and runs with --no-project --with requests."""
+    workflow_path = (
+        Path(__file__).resolve().parents[1]
+        / ".github"
+        / "workflows"
+        / "auto-merge-controller.yml"
+    )
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+    steps = workflow["jobs"]["auto-merge"]["steps"]
+
+    check_step = steps[0]
+    assert check_step.get("id") == "check-queue"
+    assert "actions/github-script@" in check_step.get("uses", "")
+    script = (check_step.get("with") or {}).get("script", "")
+    assert "pulls.list" in script
+    assert "automerge:eligible" in script
+    assert "has_eligible" in script
+
+    checkout_step = next(s for s in steps if "actions/checkout@" in s.get("uses", ""))
+    assert steps.index(check_step) < steps.index(checkout_step)
+
+    for step in steps[1:]:
+        assert step.get("if") == "steps.check-queue.outputs.has_eligible == 'true'"
+        assert "uv sync" not in step.get("run", "")
+
+    run_step = next(s for s in steps if s.get("name") == "Run Auto-Merge Controller")
+    assert (
+        run_step.get("run", "").strip()
+        == "uv run --no-project --with requests python -m scripts.auto_merge_controller"
+    )

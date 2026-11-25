@@ -9,7 +9,7 @@ You need [uv](https://docs.astral.sh/uv/). It reads `.python-version` and instal
 ```bash
 git clone https://github.com/fderuiter/sortify.git
 cd sortify
-uv sync --all-groups      # app + dev, docs, notebooks and build groups
+uv sync --group dev       # app + dev group (add --group docs or --group build when needed)
 uv run pre-commit install # run the hooks on every commit
 ```
 
@@ -22,7 +22,6 @@ Dependency groups (PEP 735, in `pyproject.toml`):
 | `dev` | pytest, ruff, ty, pre-commit and the repo validators |
 | `docs` | MkDocs site build |
 | `build` | PyInstaller executables (`scripts/build.py`) |
-| `notebooks` | Jupyter |
 
 ## Everyday commands
 

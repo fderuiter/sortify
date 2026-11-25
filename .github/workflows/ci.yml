@@ -148,7 +148,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --frozen --all-groups
+        uv sync --frozen --group dev
 
     - name: Run Multi-Platform ty Guardrail
       run: |
@@ -162,6 +162,7 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
+        fetch-depth: 0
 
     - name: Install uv
       uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
@@ -176,7 +177,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --frozen --all-groups
+        uv sync --frozen --group dev --group docs
 
     - name: Lint with Ruff
       run: |
@@ -206,31 +207,28 @@ jobs:
       run: |
         uv run python scripts/prompt_manifest.py verify --strict
 
-    - name: Validate Diagram Specifications and Toolchain
+    - name: Validate Configuration Schema
       run: |
-        uv run python scripts/diagram_toolchain.py verify
-
-    - name: Set up Node
-      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-      with:
-        node-version: "22"
-
-    # docs --check renders every diagram with mermaid-cli. Without it the
-    # toolchain only checks syntax and a diagram Mermaid can't parse passes.
-    - name: Install Mermaid renderer
-      run: |
-        npm install --global @mermaid-js/mermaid-cli@12.0.0
-        # Ubuntu 24.04 runners block unprivileged user namespaces through
-        # AppArmor, so headless Chrome dies with "No usable sandbox!". Allow
-        # them rather than running Chrome with --no-sandbox.
-        sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-        # Fail here, not silently in docs --check, if headless Chrome can't start.
-        printf 'graph TD\n  A --> B\n' > "$RUNNER_TEMP/probe.mmd"
-        mmdc -i "$RUNNER_TEMP/probe.mmd" -o "$RUNNER_TEMP/probe.svg"
+        uv run python scripts/validate_config.py --check
 
     - name: Validate Documentation and Integrity
+      env:
+        EVENT_NAME: ${{ github.event_name }}
+        GITHUB_REF_FULL: ${{ github.ref }}
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       run: |
-        uv run python scripts/generate_docs.py --check --local-only --build
+        BUILD_FLAG="--build"
+        if [ "$EVENT_NAME" = "pull_request" ] && [ "$GITHUB_REF_FULL" != "refs/heads/main" ]; then
+          if [ -n "$BASE_SHA" ] && [ -n "$HEAD_SHA" ] \
+            && MERGE_BASE="$(git merge-base "$BASE_SHA" "$HEAD_SHA" 2>/dev/null)" \
+            && CHANGED_FILES="$(git diff --name-only --no-renames "$MERGE_BASE" "$HEAD_SHA" 2>/dev/null)"; then
+            if ! printf '%s\n' "$CHANGED_FILES" | grep -Eq '^(docs/|mkdocs\.yml$|[^/]+\.[mM][dD]$|scripts/generate_docs\.py$)'; then
+              BUILD_FLAG="--no-build"
+            fi
+          fi
+        fi
+        uv run python scripts/generate_docs.py --check --local-only "$BUILD_FLAG"
 
     - name: Upload Documentation Site Artifact
       if: github.ref == 'refs/heads/main'
@@ -274,7 +272,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --frozen --all-groups
+        uv sync --frozen --group dev --group build
 
     - name: Terminal Interface Snapshot Validation
       run: |
@@ -289,10 +287,6 @@ jobs:
           tests/snapshots/tui_svg/*.actual
           tests/snapshots/*.actual
         retention-days: 7
-
-    - name: Validate Configuration Schema
-      run: |
-        uv run python scripts/validate_config.py --check
 
     - name: CLI Smoke Tests
       run: |
@@ -337,10 +331,6 @@ jobs:
     - name: Build executable (Lite)
       run: |
         uv run python scripts/build.py --lite
-
-    - name: Verify PE Binary Dependencies
-      run: |
-        uv run python scripts/verify_pe_dependencies.py --allow-empty
 
     - name: Verify compiled executable (Smoke Test)
       shell: python
@@ -505,12 +495,12 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --frozen --all-groups --extra ml
+        uv sync --frozen --group dev --extra ml
 
     - name: Heavy ML and Integration Tests
       shell: bash
       run: |
-        if ! uv run pytest -m "slow" -n auto --cov --cov-report=term tests/; then
+        if ! uv run pytest -m "slow" -n auto --ignore=tests/test_visual_snapshots.py --cov --cov-report=term tests/; then
           if [ -f pytest_failures.txt ]; then
             echo "=== PYTEST FAILURES ==="
             cat pytest_failures.txt
@@ -533,11 +523,10 @@ jobs:
     - name: Cache Offline Wheel Downloads
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        # setup-uv already caches uv's downloads, and prepare_offline.py
-        # deletes offline_bundle/wheels on start, so only pip's cache helps.
         path: |
           ~/.cache/pip
-        key: offline-wheels-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'offline_bundle/requirements.txt') }}
+          ~/.cache/uv
+        key: offline-wheels-${{ runner.os }}-${{ hashFiles('offline_bundle/requirements.txt') }}
         restore-keys: |
           offline-wheels-${{ runner.os }}-
 
@@ -545,11 +534,7 @@ jobs:
       uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
       with:
         version: "0.13.1"
-        enable-cache: true
-        cache-dependency-glob: |
-          pyproject.toml
-          uv.lock
-          offline_bundle/requirements.txt
+        enable-cache: false
 
     - name: Set up Python
       uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0

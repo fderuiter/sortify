@@ -2,6 +2,7 @@
 """Offline installation and verification script."""
 
 import argparse
+import calendar
 import os
 import re
 import shutil
@@ -54,9 +55,16 @@ def safe_extract_zip(zip_path, extract_to):
         for member in zip_ref.infolist():
             zip_ref.extract(member, resolved_extract_to)
             target_file = resolved_extract_to / member.filename
-            if member.is_dir() and sys.platform != "win32":
+            if member.is_dir():
+                if sys.platform != "win32":
+                    try:
+                        os.chmod(target_file, 0o700)
+                    except OSError:
+                        pass
+            elif os.path.isfile(target_file):
+                member_epoch = calendar.timegm(member.date_time)
                 try:
-                    os.chmod(target_file, 0o700)
+                    os.utime(target_file, (member_epoch, member_epoch))
                 except OSError:
                     pass
 
