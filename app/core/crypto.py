@@ -35,12 +35,18 @@ except ImportError:
     np = None  # type: ignore[assignment]
 
 try:
-    import sqlite3
+    import sqlite3 as _stdlib_sqlite3
 except ImportError:
-    try:
-        from sqlcipher3 import dbapi2 as sqlite3  # type: ignore[no-redef]
-    except ImportError:
-        sqlite3 = None  # type: ignore[assignment]
+    _stdlib_sqlite3 = None
+
+# Prefer SQLCipher's DB-API driver (matching app.core.db_conn) so unencrypted
+# database guard probes share SQLCipher's in-process POSIX lock table and never
+# mix stdlib libsqlite3 with sqlcipher3 on active WAL -shm files across threads.
+sqlite3: Any
+try:
+    from sqlcipher3 import dbapi2 as sqlite3
+except ImportError:
+    sqlite3 = _stdlib_sqlite3
 
 
 def get_fallback_keys_dir() -> Path:

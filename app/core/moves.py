@@ -443,13 +443,13 @@ class SessionSummaryRow(NamedTuple):
 
 
 def query_session_summaries(db_path: str) -> list[SessionSummaryRow]:
-    """Return ``SessionSummaryRow`` items newest first, separating reversible steps from OS Trash exports."""
+    """Return ``SessionSummaryRow`` items newest first, separating in-ledger steps from OS Trash exports."""
     conn = get_db_connection(db_path)
     query = (
         "SELECT "
         "s.session_id, s.timestamp, s.base_dir, s.status, "
-        "COALESCE(SUM(CASE WHEN m.state IN ('intent', 'done', 'verified') THEN 1 ELSE 0 END), 0) AS step_count, "
-        "COUNT(DISTINCT CASE WHEN m.state IN ('intent', 'done', 'verified') THEN m.src END) AS file_count, "
+        "COALESCE(SUM(CASE WHEN m.id IS NOT NULL AND m.state != 'exported_to_trash' THEN 1 ELSE 0 END), 0) AS step_count, "
+        "COUNT(DISTINCT CASE WHEN m.id IS NOT NULL AND m.state != 'exported_to_trash' THEN m.src END) AS file_count, "
         "COALESCE(SUM(CASE WHEN m.state = 'exported_to_trash' THEN 1 ELSE 0 END), 0) AS trashed_count "
         "FROM sessions s "
         "LEFT JOIN moves m ON s.session_id = m.session_id "
