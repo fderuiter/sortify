@@ -373,8 +373,12 @@ def test_cli_list_command_rejects_invalid_status(capsys, env):
     assert "INVALID_FOO" in out_data["message"]
 
 
+@pytest.mark.benchmark
 def test_transition_validation_sub_millisecond_latency():
     """Verify transition validation executes in well under 1ms (<1ms constraint)."""
+    validate_quarantine_transition("STAGED", "IN_INSPECTION")
+    validate_quarantine_transition("IN_INSPECTION", "RELEASED")
+
     iterations = 2000
     start = time.perf_counter()
     for _ in range(iterations):

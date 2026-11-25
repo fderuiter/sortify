@@ -26,6 +26,7 @@ def test_strategy_singleton_retrieval_and_type():
     assert isinstance(gen_strategy1, GenerativeNamingStrategy)
 
 
+@pytest.mark.inline_clustering
 def test_concurrent_strategy_execution_isolation():
     """Verify that concurrent strategy execution isolates parameters and does not cause cross-contamination."""
     strategy = clustering_registry.get_strategy("default")

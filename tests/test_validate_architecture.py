@@ -385,10 +385,18 @@ def test_test_detection_flags_mock_checks_and_pytest_env():
     assert _detection_errors("import unittest.mock\n")
     assert _detection_errors("from unittest import mock\n")
     assert _detection_errors("from unittest.mock import MagicMock\n")
+    assert _detection_errors("import pytest\n")
+    assert _detection_errors("from _pytest.monkeypatch import MonkeyPatch\n")
     assert _detection_errors("def f(x):\n    return isinstance(x, MagicMock)\n")
+    assert _detection_errors("def f(x):\n    return isinstance(x, Mock)\n")
+    assert _detection_errors("def f(x):\n    return isinstance(x, AsyncMock)\n")
     assert _detection_errors("import unittest\nunittest.mock.NonCallableMock\n")
     assert _detection_errors('import os\nos.environ.get("PYTEST_CURRENT_TEST")\n')
+    assert _detection_errors('import os\nos.environ.get("PYTEST_XDIST_WORKER")\n')
     assert _detection_errors('hasattr(obj, "mock_add_spec")\n')
+    assert _detection_errors("def is_mock(self) -> bool:\n    return False\n")
+    assert _detection_errors("class InMemoryDBMock:\n    pass\n")
+    assert _detection_errors("_disable_pytest_win_fallback = True\n")
 
 
 def test_test_detection_allows_ordinary_code():
@@ -398,12 +406,47 @@ def test_test_detection_allows_ordinary_code():
 
 
 def test_app_has_no_test_detection(parsed_app_files):
-    from scripts.validate_architecture import validate_no_test_detection
+    from scripts.validate_architecture import (
+        _collect_parsed_app_files,
+        validate_no_test_detection,
+    )
 
     errors = []
     for filepath, tree in parsed_app_files:
         validate_no_test_detection(errors, filepath, tree)
+    for filepath, tree in _collect_parsed_app_files("scripts"):
+        validate_no_test_detection(errors, filepath, tree)
     assert errors == []
+
+
+def test_scripts_test_detection_blocked_in_full_and_incremental_scans(
+    monkeypatch, tmp_path
+):
+    monkeypatch.chdir(tmp_path)
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    (app_dir / "config.py").write_text(
+        "class Settings:\n    KEY: int = 1\n", encoding="utf-8"
+    )
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir()
+    bad_script = scripts_dir / "helper_tool.py"
+    bad_script.write_text(
+        'import os\nif os.environ.get("PYTEST_CURRENT_TEST"):\n    pass\n',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(sys, "argv", ["validate_architecture.py"])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+
+    monkeypatch.setattr(
+        sys, "argv", ["validate_architecture.py", "scripts/helper_tool.py"]
+    )
+    with pytest.raises(SystemExit) as exc_info_inc:
+        main()
+    assert exc_info_inc.value.code == 1
 
 
 def _ml_errors(source, filepath="app/core/example.py"):
@@ -718,9 +761,14 @@ def test_validate_architecture_full_scan_visits_each_ast_once_without_ast_walk(
         main()
     assert exc_info.value.code == 0
     app_parses = [p for p in parsed_paths if p.startswith("app/") or "/app/" in p]
+    script_parses = [
+        p for p in parsed_paths if p.startswith("scripts/") or "/scripts/" in p
+    ]
+    scanned_parses = app_parses + script_parses
     assert app_parses
-    assert len(app_parses) == len(set(app_parses))
-    assert len(visited_module_ids) == len(app_parses)
+    assert script_parses
+    assert len(scanned_parses) == len(set(scanned_parses))
+    assert len(visited_module_ids) == len(scanned_parses)
     assert len(visited_module_ids) == len(set(visited_module_ids))
 
 

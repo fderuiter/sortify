@@ -1,12 +1,30 @@
 {
   "_metadata": {
-    "checksum": "8ea6c1f20cea992d7bf1485641364dcbc1e20bd04cd6e37ac8a4a704cb4c8de8"
+    "checksum": "d4cb6a668c5449be2cf6ce0f723ef4a81ce430e58fcbeedb9da027f33a639dcd"
   },
   "classes": [
     {
       "class_name": "AudioExtractor",
       "decorators": [],
       "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "wav_validator"
+            }
+          ],
+          "returns": null
+        },
         {
           "async": false,
           "decorators": [],

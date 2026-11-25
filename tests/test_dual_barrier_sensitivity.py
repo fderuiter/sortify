@@ -70,24 +70,7 @@ def test_upstream_barrier_jev_classification_and_hold():
     staged_info = service.stage_incoming_file(source_path=med_file, base_dir=sample_dir)
     job_id = staged_info["job_id"]
 
-    start_t = time.perf_counter()
     result = service.process_quarantine_job(job_id)
-    elapsed_ms = (time.perf_counter() - start_t) * 1000.0
-
-    # Sub-150ms SLA verification (with tolerance for CI runner overhead)
-    threshold = (
-        1000.0
-        if (
-            "CI" in os.environ
-            or "PYTEST_XDIST_WORKER" in os.environ
-            or os.name == "nt"
-            or os.environ.get("GITHUB_ACTIONS") == "true"
-        )
-        else 150.0
-    )
-    assert elapsed_ms < threshold, (
-        f"Jev classification took {elapsed_ms:.2f}ms (SLA: <{threshold}ms)"
-    )
 
     assert result["status"] == "QUARANTINED"
     assert result["policy_action"] == "sensitivity_hold"
@@ -102,6 +85,49 @@ def test_upstream_barrier_jev_classification_and_hold():
     assert audit_entry["policy_action"] == "sensitivity_hold"
     assert "sensitivity_rating" in audit_entry
     assert audit_entry["sensitivity_rating"] in ("CRITICAL", "HIGH")
+
+
+@pytest.mark.benchmark
+def test_upstream_barrier_jev_classification_latency_benchmark(tmp_path: Path) -> None:
+    """Verify warmed QuarantineInterceptorService Jev classification completes under 150ms SLA."""
+    bench_worker = DBWorker()
+    bench_db = Database(tmp_path / "bench_quarantine.db", bench_worker)
+    sample_dir = tmp_path / "upstream_bench"
+    sample_dir.mkdir(parents=True, exist_ok=True)
+    payload = (
+        "Patient Medical Record: John Doe\n"
+        "Diagnosis: Confidential Clinical Trial Subject Data\n"
+        "Prescription: Regimen 4"
+    )
+    try:
+        service = QuarantineInterceptorService(
+            db=bench_db, auto_quarantine_ratings=["CRITICAL", "HIGH"]
+        )
+        warmup_file = sample_dir / "warmup_chart.txt"
+        warmup_file.write_text(payload, encoding="utf-8")
+        warm_staged = service.stage_incoming_file(
+            source_path=str(warmup_file), base_dir=str(sample_dir)
+        )
+        service.process_quarantine_job(str(warm_staged["job_id"]))
+
+        med_file = sample_dir / "medical_patient_chart.txt"
+        med_file.write_text(payload, encoding="utf-8")
+        staged_info = service.stage_incoming_file(
+            source_path=str(med_file), base_dir=str(sample_dir)
+        )
+        job_id = str(staged_info["job_id"])
+
+        start_t = time.perf_counter()
+        result = service.process_quarantine_job(job_id)
+        elapsed_ms = (time.perf_counter() - start_t) * 1000.0
+
+        assert result["status"] == "QUARANTINED"
+        assert result["policy_action"] == "sensitivity_hold"
+        assert elapsed_ms < 150.0, (
+            f"Jev classification took {elapsed_ms:.2f}ms (SLA: <150.0ms)"
+        )
+    finally:
+        bench_worker.stop()
 
 
 @pytest.mark.anyio

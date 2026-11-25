@@ -1,6 +1,8 @@
 import time
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app.core.analyzer_strategies import GenerativeNamingStrategy
 from app.core.policy_engine import PolicyEngine
 from app.core.quarantine_interceptor import scrub_pii_from_text
@@ -111,6 +113,7 @@ def test_policy_engine_secret_matching():
     assert rule_no_match is None
 
 
+@pytest.mark.benchmark
 def test_secret_sanitization_performance():
     """Verify pattern matching logic runs in under 5ms per title."""
     candidate_titles = [
@@ -120,6 +123,9 @@ def test_secret_sanitization_performance():
         "Medical Records Phase 3",
         "AKIAIOSFODNN7EXAMPLE Data",
     ] * 20  # 100 titles
+
+    for sample in candidate_titles[:5]:
+        sanitize_secret_patterns(sample)
 
     start_time = time.perf_counter()
     for title in candidate_titles:

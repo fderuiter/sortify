@@ -555,9 +555,9 @@ def test_semantic_keyphrase_naming_differs_from_tfidf_and_applies_date_template(
     """Verify AI_ASSISTED_NAMING + AI_CONSENT_GRANTED + active ONNX embeddings rank phrases semantically."""
 
     class FakeActiveOnnxEmbeddingManager:
-        """Deterministic non-mock embedding stub where 'quarterly tax' aligns with the document vector."""
+        """Deterministic non-fallback embedding stub where 'quarterly tax' aligns with the document vector."""
 
-        is_mock = False
+        is_fallback = False
         is_degraded = False
 
         def is_reconstruction_active(self) -> bool:

@@ -48,22 +48,22 @@ def test_mock_state_detection(db, temp_dir):
     Requirement 1: System must detect if the active semantic engine is running in mock state
     without a physical model file.
     """
-    # Case A: model_path is None -> must be mock
+    # Case A: model_path is None -> must be fallback
     manager_none = SemanticEmbeddingManager(db, model_path=None)
-    assert manager_none.is_mock is True
+    assert manager_none.is_fallback is True
 
-    # Case B: model_path is a non-existent path -> must be mock
+    # Case B: model_path is a non-existent path -> must be fallback
     non_existent_path = temp_dir / "non_existent_model"
     manager_non_existent = SemanticEmbeddingManager(
         db, model_path=str(non_existent_path)
     )
-    assert manager_non_existent.is_mock is True
+    assert manager_non_existent.is_fallback is True
 
-    # Case C: model_path exists but is empty (no ONNX file) -> must be mock
+    # Case C: model_path exists but is empty (no ONNX file) -> must be fallback
     empty_model_dir = temp_dir / "empty_model_dir"
     empty_model_dir.mkdir(parents=True, exist_ok=True)
     manager_empty = SemanticEmbeddingManager(db, model_path=str(empty_model_dir))
-    assert manager_empty.is_mock is True
+    assert manager_empty.is_fallback is True
 
 
 def test_statistical_fallback_on_mock(db, temp_dir):
@@ -96,8 +96,8 @@ def test_statistical_fallback_on_mock(db, temp_dir):
         corpus = {"new_space.txt": new_text}
         analyzer.partial_fit(base_dir, corpus)
 
-        # Let's verify analyzer is running on mock
-        assert analyzer.embedding_manager.is_mock is True
+        # Let's verify analyzer is running on fallback
+        assert analyzer.embedding_manager.is_fallback is True
 
         # Spy on generate_embedding and trigger_reconstruction to ensure they aren't called
         with (
@@ -149,7 +149,7 @@ def test_dynamic_transition_to_semantic(db, temp_dir):
     )
 
     try:
-        assert analyzer.embedding_manager.is_mock is True
+        assert analyzer.embedding_manager.is_fallback is True
 
         # Set up some documents
         base_dir = str(temp_dir)
@@ -194,12 +194,12 @@ def test_dynamic_transition_to_semantic(db, temp_dir):
                 side_effect=mock_gen_embedding,
             ) as mock_gen,
         ):
-            # Calling `is_mock` dynamically refreshes and detects that the engine is no longer in mock state
-            assert analyzer.embedding_manager.is_mock is False
+            # Calling `is_fallback` dynamically refreshes and detects that the engine is no longer in fallback state
+            assert analyzer.embedding_manager.is_fallback is False
             assert analyzer.embedding_manager.is_model_valid is True
             assert analyzer.embedding_manager.signature == "valid_mock_signature_abc123"
 
-            # We insert the hist vector in the DB *after* `is_mock` property checks so it doesn't get cleared by the purge
+            # We insert the hist vector in the DB *after* `is_fallback` property checks so it doesn't get cleared by the purge
             db.upsert_document_vectors(
                 base_dir, [("historical_space.txt", dummy_vector_hist)]
             )

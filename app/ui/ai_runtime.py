@@ -126,12 +126,12 @@ def is_mock_or_degraded_session(host: Any) -> bool:
     if session is None and not has_files:
         return False
     if session is not None:
-        if getattr(session, "is_mock", False):
+        if getattr(session, "is_fallback", False):
             return True
         analyzer = getattr(session, "analyzer", None)
         emb = getattr(analyzer, "embedding_manager", None)
         if emb is not None and (
-            getattr(emb, "is_mock", False) or getattr(emb, "is_degraded", False)
+            getattr(emb, "is_fallback", False) or getattr(emb, "is_degraded", False)
         ):
             return True
     model_status = getattr(plan, "model_status", None)

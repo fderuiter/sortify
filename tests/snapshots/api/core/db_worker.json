@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "01a2342a2445bf3aefa293a23a59b535946a1ec8c51ff3b471d3088b90fb9c3f"
+    "checksum": "b174d631de5a382069fd2fb8dbd92314ae51ece4713c9a610ca683e019f0f2b9"
   },
   "classes": [
     {
@@ -75,6 +75,19 @@
             }
           ],
           "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "flush",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
         },
         {
           "async": false,

@@ -86,7 +86,7 @@ def test_per_comparison_hybrid_routing(mocker):
 
     # Mock semantic manager properties
     mocker.patch(
-        "app.core.semantic_embeddings.SemanticEmbeddingManager.is_mock",
+        "app.core.semantic_embeddings.SemanticEmbeddingManager.is_fallback",
         new_callable=mocker.PropertyMock,
         return_value=False,
     )
@@ -150,7 +150,7 @@ def test_similarity_score_merging_range(mocker):
     )
 
     mocker.patch(
-        "app.core.semantic_embeddings.SemanticEmbeddingManager.is_mock",
+        "app.core.semantic_embeddings.SemanticEmbeddingManager.is_fallback",
         new_callable=mocker.PropertyMock,
         return_value=False,
     )

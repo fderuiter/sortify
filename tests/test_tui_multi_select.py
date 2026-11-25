@@ -333,6 +333,29 @@ def test_verification_engine_skips_excluded():
     assert moves[0][0] == "kept.pdf"
 
 
+def test_collect_and_toggle_large_tree_500_nodes():
+    """Verify collecting and toggling selection state across 500+ file nodes."""
+    settings: object = MockSettings()
+    app = AutoSorterTUI(settings=settings, base_dir="/app/sample")  # type: ignore[arg-type]
+    large_plan = {"LargeCategory": {}}
+    for i in range(500):
+        large_plan["LargeCategory"][f"file_{i}.txt"] = {
+            "__type__": "file",
+            "filepath": f"/app/sample/file_{i}.txt",
+            "target_filename": f"file_{i}.txt",
+            "is_checked": True,
+            "is_excluded": False,
+        }
+    app.plan = large_plan
+    collector = getattr(app, "_collect_file_nodes_from_dict")
+    all_files = collector(app.plan)
+    for f in all_files:
+        f["is_checked"] = False
+    assert len(all_files) == 500
+    assert all(f["is_checked"] is False for f in all_files)
+
+
+@pytest.mark.benchmark
 def test_performance_on_large_tree_500_nodes():
     """Verify rendering and selection toggling performance on trees with 500+ nodes."""
     app = AutoSorterTUI(settings=MockSettings(), base_dir="/app/sample")
@@ -346,6 +369,8 @@ def test_performance_on_large_tree_500_nodes():
             "is_excluded": False,
         }
     app.plan = large_plan
+    collector = getattr(app, "_collect_file_nodes_from_dict")
+    collector(app.plan)
 
     start = time.perf_counter()
     all_files = app._collect_file_nodes_from_dict(app.plan)

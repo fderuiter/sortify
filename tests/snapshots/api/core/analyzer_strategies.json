@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "321e47dc3491ea0eba9eba07e22b0b865284f48d8374be266fcd960ed80873e4"
+    "checksum": "fcaa9ac144e9e09123220214a53fb7481081dfe59b893d65e5c41d0085aa7352"
   },
   "classes": [
     {
@@ -145,6 +145,16 @@
               "annotation": "str | None",
               "default": "None",
               "name": "model_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "generator"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "prompt_runner"
             }
           ],
           "returns": null
@@ -283,7 +293,7 @@
       ]
     },
     {
-      "class_name": "InMemoryDBMock",
+      "class_name": "InMemoryModelMetadataStore",
       "decorators": [],
       "methods": [
         {

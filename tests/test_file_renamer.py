@@ -64,7 +64,7 @@ def test_contextual_renaming_fallback_offline():
         AI_ASSISTED_NAMING=False,
     )
     mock_embedding_manager = MagicMock()
-    mock_embedding_manager.is_mock = True
+    mock_embedding_manager.is_fallback = True
 
     engine = FileRenamerEngine(
         runtime_settings=settings, embedding_manager=mock_embedding_manager
@@ -161,7 +161,7 @@ def test_ai_consent_verification():
         AI_ASSISTED_NAMING=True,
     )
     mock_manager_online = MagicMock()
-    mock_manager_online.is_mock = False
+    mock_manager_online.is_fallback = False
     mock_manager_online.is_reconstruction_active.return_value = False
 
     engine_consent = FileRenamerEngine(

@@ -860,7 +860,7 @@ class IncrementalAnalyzer:
         sims = tfidf_sims
         use_semantic = (
             getattr(self, "embedding_manager", None) is not None
-            and not self.embedding_manager.is_mock
+            and not self.embedding_manager.is_fallback
             and not self.embedding_manager.is_reconstruction_active()
         )
         if use_semantic and base_dir:
@@ -2162,12 +2162,12 @@ class IncrementalAnalyzer:
 
                     from app.core.db_conn import get_db_connection
 
-                    # Check if embedding reconstruction is active or mock state is detected
-                    is_mock = self.embedding_manager.is_mock
+                    # Check if embedding reconstruction is active or fallback state is detected
+                    is_fallback = self.embedding_manager.is_fallback
                     is_reconstruction_active = (
                         self.embedding_manager.is_reconstruction_active()
                     )
-                    use_semantic = not is_mock and not is_reconstruction_active
+                    use_semantic = not is_fallback and not is_reconstruction_active
 
                     # 1. Fetch existing vectors from DB batch-wise (regenerating active on-the-fly if semantic is enabled)
                     hist_filepaths = [doc["filepath"] for doc in historical_docs]
@@ -2499,7 +2499,7 @@ class IncrementalAnalyzer:
             if (
                 active_strategy_name
                 and active_strategy_name != "generative"
-                and self.embedding_manager.is_mock
+                and self.embedding_manager.is_fallback
             ):
                 active_strategy_name = "default"
 
@@ -2521,7 +2521,7 @@ class IncrementalAnalyzer:
                         cast(Any, strategy).db = self.db
                         cast(Any, strategy).base_dir = base_dir
 
-                    use_semantic = not self.embedding_manager.is_mock
+                    use_semantic = not self.embedding_manager.is_fallback
                     pre_fetched_vectors = None
 
                     if use_semantic and ai_filenames:
@@ -3561,7 +3561,7 @@ class IncrementalAnalyzer:
                     self.strategy_name
                     and self.strategy_name != "generative"
                     and getattr(self, "embedding_manager", None)
-                    and self.embedding_manager.is_mock
+                    and self.embedding_manager.is_fallback
                 ):
                     active_strategy_name = "default"
                 if active_strategy_name:

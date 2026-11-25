@@ -14,6 +14,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from app.core.analyzer_strategies import RecursiveKMeansStrategy
 
 
+@pytest.mark.inline_clustering
 def test_imputed_vector_fallback_partial_missing():
     """
     Verify that when up to 90% of documents in a cluster are missing embeddings,
@@ -75,6 +76,7 @@ def test_imputed_vector_fallback_partial_missing():
         assert isinstance(plan, (SortingPlan, dict))
 
 
+@pytest.mark.inline_clustering
 def test_imputed_vector_fallback_100_percent_missing():
     """
     Verify that the system falls back to full TF-IDF clustering

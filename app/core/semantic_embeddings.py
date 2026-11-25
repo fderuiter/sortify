@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 import weakref
+from collections.abc import Callable
 
 import numpy as np
 
@@ -216,9 +217,11 @@ class SemanticEmbeddingManager:
         model_path: str | None = None,
         bypass_validation: bool = False,
         force_validation: bool = False,
+        embedding_fn: Callable[[str], list[float]] | None = None,
     ):
         self.db = db
         self.model_path = model_path
+        self._embedding_fn = embedding_fn
         self._reconstruction_thread = None
         self._reconstruction_active = False
         self._stop_requested = False
@@ -288,8 +291,10 @@ class SemanticEmbeddingManager:
         self.verify_active_model()
 
     @property
-    def is_mock(self) -> bool:
-        """Returns True if the engine is running in mock state (no valid physical model file exists)."""
+    def is_fallback(self) -> bool:
+        """Return True if the engine is operating in deterministic fallback mode (no active ONNX model)."""
+        if getattr(self, "_embedding_fn", None) is not None:
+            return False
         if not self.model_path:
             return True
 
@@ -588,6 +593,10 @@ class SemanticEmbeddingManager:
         if not text or not text.strip():
             return self._generate_fallback_embedding(text)
 
+        embedding_fn = getattr(self, "_embedding_fn", None)
+        if embedding_fn is not None:
+            return list(embedding_fn(text))
+
         # If model_path is provided, we must check local ONNX model
         if self.model_path is not None:
             if not getattr(self, "is_model_valid", True):
@@ -787,7 +796,7 @@ class SemanticEmbeddingManager:
                     raise ModelValidationError(msg) from e
                 return self._generate_fallback_embedding(text)
 
-        # If model_path is None, we run standard deterministic dummy generator (mock/test mode)
+        # When no active ONNX model is configured, emit deterministic fallback vectors
         return self._generate_fallback_embedding(text)
 
     def get_vector(self, base_dir: str, filepath: str) -> list[float] | None:

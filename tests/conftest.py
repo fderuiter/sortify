@@ -4,13 +4,16 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
+os.environ["PYTHON_KEYRING_BACKEND"] = "keyring.backends.fail.Keyring"
+
 import keyring
 import pytest
-from keyring.backend import KeyringBackend
+from keyring.backends.fail import Keyring as FailKeyring
 
-from app.core.db_conn import _connection_cache, clear_connection_cache
-
-os.environ.setdefault("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
+from app.core.db_conn import (
+    _connection_cache,
+    clear_connection_cache,
+)
 
 # Clear pre-loaded standard database modules to prevent library collision
 for mod_name in list(sys.modules.keys()):
@@ -22,41 +25,16 @@ for mod_name in list(sys.modules.keys()):
     ) or mod_name.startswith(("sqlcipher3.", "sqlite3.", "pysqlcipher3.")):
         sys.modules.pop(mod_name, None)
 
-
-class MemoryKeyring(KeyringBackend):
-    priority = 1
-
-    def __init__(self):
-        self.passwords = {}
-
-    def get_password(self, service, username):
-        return self.passwords.get(service, {}).get(username)
-
-    def set_password(self, service, username, password):
-        self.passwords.setdefault(service, {})[username] = password
-
-    def delete_password(self, service, username):
-        if service in self.passwords and username in self.passwords[service]:
-            del self.passwords[service][username]
-
-    def clear(self):
-        self.passwords.clear()
+keyring.set_keyring(FailKeyring())
 
 
-_memory_keyring = MemoryKeyring()
-keyring.set_keyring(_memory_keyring)
-
-
-@pytest.fixture(autouse=True)
-def reset_memory_keyring():
-    pass  # _memory_keyring.clear() removed to preserve session scoped keys in tests
-
-
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def sync_db_worker(request):
-    """Ensure all database writes happen synchronously during tests to prevent race conditions on Windows.
+    """Run all database writes synchronously for white-box tests that explicitly opt in.
 
-    Mark a test ``real_db_worker`` to run it against the real asynchronous write queue.
+    Tests run against the real asynchronous ``DBWorker`` write queue by default;
+    request ``sync_db_worker`` or mark a test ``@pytest.mark.sync_db_worker`` to
+    execute ``execute_write_async`` synchronously.
     """
     from app.core.db_worker import DBWorker
 
@@ -88,17 +66,37 @@ def session_db(tmp_path):
         worker.stop(stop_embeddings=False)
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def inline_clustering(request, monkeypatch):
-    """Cluster in-process so tests can patch and inspect strategy state.
+    """Cluster in-process for white-box tests that patch or inspect strategy state.
 
-    Mark a test ``subprocess_clustering`` to run the spawned child-process path.
+    Tests run ``RecursiveKMeansStrategy`` in its spawned child process by default;
+    request ``inline_clustering`` or mark a test ``@pytest.mark.inline_clustering``
+    to run clustering inline.
     """
     if request.node.get_closest_marker("subprocess_clustering"):
         return
     from app.core.analyzer_strategies import RecursiveKMeansStrategy
 
     monkeypatch.setattr(RecursiveKMeansStrategy, "run_in_subprocess", False)
+
+
+def pytest_collection_modifyitems(items):
+    """Attach opt-in white-box runtime override fixtures when requested via markers."""
+    for item in items:
+        fixturenames = getattr(item, "fixturenames", None)
+        if fixturenames is None:
+            continue
+        if (
+            item.get_closest_marker("inline_clustering") is not None
+            and "inline_clustering" not in fixturenames
+        ):
+            fixturenames.append("inline_clustering")
+        if (
+            item.get_closest_marker("sync_db_worker") is not None
+            and "sync_db_worker" not in fixturenames
+        ):
+            fixturenames.append("sync_db_worker")
 
 
 @pytest.fixture(autouse=True)
@@ -236,7 +234,13 @@ def isolate_test_environment(monkeypatch_session):
     from app.core.resilient_file_ops import resilient_rmtree
 
     temp_dir = tempfile.mkdtemp(prefix="test_autosorter_appdir_")
+    keys_dir = os.path.join(temp_dir, "keys")
+    os.makedirs(keys_dir, mode=0o700, exist_ok=True)
     monkeypatch_session.setenv("AUTOSORTER_APP_DIR", temp_dir)
+    monkeypatch_session.setenv("AUTOSORTER_KEYS_DIR", keys_dir)
+    monkeypatch_session.setenv(
+        "PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring"
+    )
 
     def mock_get_app_dir():
         app_dir = os.environ.get("AUTOSORTER_APP_DIR")
@@ -258,6 +262,19 @@ def isolate_user_home(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.setenv("APPDATA", str(tmp_path))
+    keys_dir_raw = os.environ.get("AUTOSORTER_KEYS_DIR")
+    keys_dir = Path(keys_dir_raw) if keys_dir_raw else None
+    existing_keys = (
+        set(keys_dir.iterdir()) if keys_dir is not None and keys_dir.is_dir() else set()
+    )
+    yield
+    if keys_dir is not None and keys_dir.is_dir():
+        for entry in list(keys_dir.iterdir()):
+            if entry not in existing_keys:
+                try:
+                    entry.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
 
 @pytest.fixture(scope="session")
@@ -326,8 +343,26 @@ def _scrub_failure_text(text: str) -> str:
         return text
 
 
+def _is_xdist_worker_config(config=None) -> bool:
+    """Return True when running inside a pytest-xdist worker process."""
+    if config is not None and hasattr(config, "workerinput"):
+        return True
+    return "PYTEST_XDIST_WORKER" in os.environ
+
+
+def pytest_configure(config):
+    """Truncate pytest_failures.txt once per session on the pytest controller."""
+    if not _is_xdist_worker_config(config):
+        try:
+            Path("pytest_failures.txt").unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def pytest_runtest_logreport(report):
-    """Intercept pytest failures across all phases and output them as GitHub Actions error annotations to capture raw tracebacks."""
+    """Record failed test tracebacks on the pytest controller and emit GitHub Actions error annotations in CI."""
+    if "PYTEST_XDIST_WORKER" in os.environ:
+        return
     if report.failed:
         import sys
 
@@ -335,17 +370,18 @@ def pytest_runtest_logreport(report):
         safe_nodeid = _scrub_failure_text(str(report.nodeid))
         message = f"Test Failed ({report.when}): {safe_nodeid}\n\n{tb}"
 
-        # Write to pytest_failures.txt
+        # Write to pytest_failures.txt on the controller only
         try:
             with open("pytest_failures.txt", "a", encoding="utf-8") as f:
                 f.write(f"=== [{report.when}] {safe_nodeid} ===\n{tb}\n\n")
         except Exception:
             pass
 
-        # Write to uncaptured stdout to bypass pytest buffering
-        try:
-            message_escaped = message.replace("\r", "").replace("\n", "%0A")
-            sys.__stdout__.write(f"\n::error:: {message_escaped}\n")
-            sys.__stdout__.flush()
-        except Exception:
-            pass
+        # Emit GitHub Actions ::error:: annotations only when GITHUB_ACTIONS == "true"
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            try:
+                message_escaped = message.replace("\r", "").replace("\n", "%0A")
+                sys.__stdout__.write(f"\n::error:: {message_escaped}\n")
+                sys.__stdout__.flush()
+            except Exception:
+                pass

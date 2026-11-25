@@ -178,6 +178,7 @@ def test_list_sessions_executes_single_query(store):
     assert sessions[1]["history_db_path"] == str(store.path)
 
 
+@pytest.mark.benchmark
 def test_list_sessions_benchmark_500_sessions(store):
     """Criterion 3: Benchmarks confirm that 500 session records load in under 10 ms."""
     conn = get_db_connection(str(store.path))

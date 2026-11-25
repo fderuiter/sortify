@@ -150,6 +150,28 @@ class DBWorker:
         pool = SharedWorkerPool.get_instance()
         return pool.submit(func, *args, **kwargs)
 
+    def flush(self) -> None:
+        """Block until all queued database write operations have completed."""
+        thread = getattr(self, "thread", None)
+        if thread is None or threading.current_thread() is thread:
+            return
+
+        done = threading.Event()
+        stopped = False
+        with self._lock:
+            if self._stopped:
+                stopped = True
+            else:
+                self.q.put((done.set, (), {}, None, False))
+
+        if stopped:
+            if thread.is_alive():
+                thread.join()
+            return
+
+        if thread.is_alive():
+            done.wait()
+
     def stop(self, stop_embeddings: bool = True):
         """Gracefully stop the worker thread and wait for it to finish.
 

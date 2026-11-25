@@ -1,8 +1,17 @@
 import sys
 import time
+import wave
 from unittest.mock import MagicMock
 
 from app.core.extractor_strategies import AudioExtractor, get_audio_duration
+
+
+def _write_compliant_empty_wav(path) -> None:
+    with wave.open(str(path), "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(16000)
+        wf.writeframes(b"")
 
 
 def test_get_audio_duration_fallbacks(tmp_path):
@@ -25,9 +34,9 @@ def test_get_audio_duration_fallbacks(tmp_path):
 
 
 def test_audio_extractor_real_time_progress_and_cancellation(tmp_path):
-    # Create a dummy audio file
+    # Create a compliant 16kHz 16-bit PCM WAV header with 0 frames (duration 0.0 -> 100.0s fallback)
     dummy_wav = tmp_path / "test.wav"
-    dummy_wav.touch()
+    _write_compliant_empty_wav(dummy_wav)
 
     # Create a mock Whisper python script that simulates Whisper outputting progress
     mock_script = tmp_path / "mock_whisper.py"
@@ -100,7 +109,7 @@ print("[00:15.000 --> 00:20.000] Hello segment 4", flush=True)
 
 def test_audio_extractor_active_cancellation(tmp_path):
     dummy_wav = tmp_path / "test.wav"
-    dummy_wav.touch()
+    _write_compliant_empty_wav(dummy_wav)
 
     mock_script = tmp_path / "mock_whisper_cancel.py"
     with open(mock_script, "w") as f:
@@ -179,7 +188,7 @@ def test_audio_extractor_gpu_device_and_fallback(tmp_path):
     from unittest.mock import patch
 
     dummy_wav = tmp_path / "test.wav"
-    dummy_wav.touch()
+    _write_compliant_empty_wav(dummy_wav)
 
     extractor = AudioExtractor()
     settings = MagicMock()

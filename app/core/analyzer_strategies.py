@@ -45,6 +45,38 @@ def is_prompt_dump_enabled() -> bool:
 ILLEGAL_DUMP_PATH_CHARS = set('<>?*|"\0')
 
 
+@contextmanager
+def _valid_spawn_stderr():
+    """Temporarily replace negative-fd sys.stderr before multiprocessing spawn."""
+    stderr = sys.stderr
+    need_swap = False
+    if stderr is not None:
+        try:
+            fd = stderr.fileno()
+        except (AttributeError, OSError, ValueError):
+            fd = None
+        if isinstance(fd, int) and fd < 0:
+            need_swap = True
+
+    if not need_swap:
+        yield
+        return
+
+    fallback = sys.__stderr__
+    if fallback is not None:
+        try:
+            if fallback.fileno() < 0:
+                fallback = None
+        except (AttributeError, OSError, ValueError):
+            fallback = None
+
+    sys.stderr = fallback
+    try:
+        yield
+    finally:
+        sys.stderr = stderr
+
+
 def _get_canonical_windows_path(p: str | Path) -> str:
     """Normalize and resolve Win32 short 8.3 paths and drive letter casing for Windows path comparison."""
     path_str = str(p)
@@ -224,8 +256,8 @@ def get_decryption_executor():
     return SharedWorkerPool.get_instance()
 
 
-class InMemoryDBMock:
-    """In-memory database mock for querying pre-fetched model metadata in strategy evaluation."""
+class InMemoryModelMetadataStore:
+    """In-memory metadata store for querying pre-fetched model metadata in strategy evaluation."""
 
     def __init__(self, meta: dict | None = None):
         self._meta = meta or {}
@@ -835,7 +867,8 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
             target=recursive_kmeans_worker_main,
             args=(child_conn, session_key),
         )
-        process.start()
+        with _valid_spawn_stderr():
+            process.start()
 
         # Send payload through parent_conn
         parent_conn.send_bytes(encrypted_input)
@@ -1668,7 +1701,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     db, model_path=getattr(self, "model_path", None)
                 )
                 if (
-                    not embedding_manager.is_mock
+                    not embedding_manager.is_fallback
                     and not embedding_manager.is_reconstruction_active()
                 ):
                     fetched = embedding_manager.get_vectors_batch(
@@ -1844,8 +1877,15 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             error,
         )
 
-    def __init__(self, model_path: str | None = None):
-        self._generator = None
+    def __init__(
+        self,
+        model_path: str | None = None,
+        *,
+        generator=None,
+        prompt_runner=None,
+    ):
+        self._generator = generator
+        self._prompt_runner = prompt_runner
         self.task = None
         self.token_biases = {}
 
@@ -2196,6 +2236,17 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
         prompt = scrub_inference_prompt(prompt)
 
+        prompt_runner = getattr(self, "_prompt_runner", None)
+        if prompt_runner is not None:
+            return str(
+                prompt_runner(
+                    prompt,
+                    max_tokens=max_tokens,
+                    grammar=grammar,
+                    stop=stop_seqs,
+                )
+            )
+
         if self._gguf_active and not self._gguf_failed:
             if not self._gguf_process or not self._gguf_process.is_alive():
                 logging.error("GGUF process died unexpectedly")
@@ -2334,12 +2385,12 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                             SemanticEmbeddingManager,
                         )
 
-                        dummy_db = InMemoryDBMock(model_metadata)
+                        metadata_store = InMemoryModelMetadataStore(model_metadata)
                         embedding_manager = SemanticEmbeddingManager(
-                            dummy_db, model_path=self.model_path
+                            metadata_store, model_path=self.model_path
                         )
                         if (
-                            not embedding_manager.is_mock
+                            not embedding_manager.is_fallback
                             and not embedding_manager.is_reconstruction_active()
                         ):
                             use_semantic = True
@@ -2355,7 +2406,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                         db, model_path=getattr(self, "model_path", None)
                     )
                     if (
-                        not embedding_manager.is_mock
+                        not embedding_manager.is_fallback
                         and not embedding_manager.is_reconstruction_active()
                     ):
                         use_semantic = True
@@ -2660,12 +2711,12 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 try:
                     from app.core.semantic_embeddings import SemanticEmbeddingManager
 
-                    dummy_db = InMemoryDBMock(model_metadata)
+                    metadata_store = InMemoryModelMetadataStore(model_metadata)
                     embedding_manager = SemanticEmbeddingManager(
-                        dummy_db, model_path=self.model_path
+                        metadata_store, model_path=self.model_path
                     )
                     if (
-                        not embedding_manager.is_mock
+                        not embedding_manager.is_fallback
                         and not embedding_manager.is_reconstruction_active()
                     ):
                         use_semantic = True
@@ -2878,7 +2929,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     db, model_path=getattr(self, "model_path", None)
                 )
                 if (
-                    not embedding_manager.is_mock
+                    not embedding_manager.is_fallback
                     and not embedding_manager.is_reconstruction_active()
                 ):
                     use_semantic = True

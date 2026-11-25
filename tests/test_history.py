@@ -543,6 +543,7 @@ def test_history_manager_get_sessions_single_query(test_history_env):
     assert isinstance(s1["file_count"], int)
 
 
+@pytest.mark.benchmark
 def test_history_manager_get_sessions_benchmark_500_sessions(test_history_env):
     """Criterion 3: Benchmarks confirm that 500 session records load in under 10 ms."""
     base_dir, db, cache, history_manager, db_worker = test_history_env

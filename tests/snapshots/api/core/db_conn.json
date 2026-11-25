@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "7b818d441b50013d40ef0c97e5a9f89240953ab8b7c4c116a257df46201a43f4"
+    "checksum": "095d5370834f009425fa6c833a3f59d24bb013487fc9a40187eb18f0aa092b29"
   },
   "classes": [],
   "functions": [
@@ -46,6 +46,11 @@
           "annotation": "str",
           "default": null,
           "name": "db_path"
+        },
+        {
+          "annotation": "bool | None",
+          "default": "None",
+          "name": "require_sqlcipher"
         }
       ],
       "returns": null

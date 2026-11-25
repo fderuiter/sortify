@@ -179,6 +179,8 @@ def test_conftest_pytest_runtest_logreport_scrubs_secrets(
 ):
     """Verify failed pytest tracebacks scrub synthetic secrets before writing pytest_failures.txt."""
     monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("PYTEST_XDIST_WORKER", raising=False)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     stripe_secret = make_stripe_key("9876543210abcdef98765432")
     gh_secret = make_github_pat("abcdef1234567890abcdef1234567890abcd")
     pem_secret = make_private_key_pem()

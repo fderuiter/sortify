@@ -172,6 +172,8 @@ def test_conflict_detection():
         "test_conflict_base", "invoice_2025.txt", "hash123", "Some invoice text"
     )
     db.set_user_verified_target("test_conflict_base", "hash123", "Archive")
+    if db is not None:
+        db.worker.flush()
 
     analyzer.partial_fit("test_conflict_base", corpus)
 
@@ -217,6 +219,8 @@ def test_conflict_resolution():
         "test_conflict_res_base", "invoice_2025.txt", "hash123", "Some invoice text"
     )
     db.set_user_verified_target("test_conflict_res_base", "hash123", "Archive")
+    if db is not None:
+        db.worker.flush()
 
     analyzer.partial_fit("test_conflict_res_base", corpus)
 
@@ -251,6 +255,8 @@ def test_document_to_document_similarity_matching():
     hist_text = "This is an invoice for laptop purchase from TechStore. Total amount due is $1200. Please pay by bank transfer."
     db.upsert_document(base_dir, "historical_receipt.txt", "hash_hist_1", hist_text)
     db.set_user_verified_target(base_dir, "hash_hist_1", "Receipts")
+    if db is not None:
+        db.worker.flush()
 
     # Slightly modified unclassified document (no target path initially)
     # The wording is slightly edited, but semantic similarity remains high
@@ -298,6 +304,8 @@ def test_document_similarity_no_dilution():
 
     db.upsert_document(base_dir, "hist_cooking.txt", "hash_c", cooking_text)
     db.set_user_verified_target(base_dir, "hash_c", "SharedFolder")
+    if db is not None:
+        db.worker.flush()
 
     # New file slightly matching cooking_text only
     new_cooking = "cooking and dessert instructions. bake chocolate frosting cake and delicious muffins in the oven with sweet ingredients. extra: cookie."
@@ -412,6 +420,8 @@ def test_empty_files_bypass_incremental_training(mocker):
     # Document in DB with verified target path and normal text
     db.upsert_document(base_dir, "normal_reassigned.txt", "hash_n", "Normal text")
     db.set_user_verified_target(base_dir, "hash_n", "SomeFolder")
+    if db is not None:
+        db.worker.flush()
 
     # Spy on generate_embedding to see which texts are embedded
     mock_generate_embedding = mocker.spy(
@@ -445,6 +455,8 @@ def test_analyzer_no_n_plus_one_queries(mocker):
         base_dir, "historical_1.txt", "hash_hist_1", "Some invoice context"
     )
     db.set_user_verified_target(base_dir, "hash_hist_1", "Receipts")
+    if db is not None:
+        db.worker.flush()
 
     # 2. Active unclassified files
     corpus = {
@@ -458,9 +470,9 @@ def test_analyzer_no_n_plus_one_queries(mocker):
     spy_get_vector = mocker.spy(analyzer.embedding_manager, "get_vector")
     spy_get_vectors_batch = mocker.spy(analyzer.embedding_manager, "get_vectors_batch")
 
-    # Force the semantic path by mocking is_mock and is_model_valid
+    # Force the semantic path by mocking is_fallback and is_model_valid
     mocker.patch(
-        "app.core.semantic_embeddings.SemanticEmbeddingManager.is_mock",
+        "app.core.semantic_embeddings.SemanticEmbeddingManager.is_fallback",
         new_callable=mocker.PropertyMock,
         return_value=False,
     )
@@ -492,6 +504,8 @@ def test_prefetch_deferred_decryption_count(mocker):
         db.upsert_document(base_dir, fp, h, txt)
         db.set_user_verified_target(base_dir, h, f"TargetFolder_{i % 3}")
         db.upsert_document_vectors(base_dir, [(fp, [0.1 * (i % 5)] * vector_dim)])
+    if db is not None:
+        db.worker.flush()
 
     spy_decrypt_text = mocker.spy(db.crypto, "decrypt_text")
     spy_decrypt_vector_parse = mocker.spy(db.crypto, "decrypt_and_parse_vector")
@@ -528,6 +542,8 @@ def test_prefetch_small_batch_shortcut(mocker):
         txt = f"Small batch text {i}"
         db.upsert_document(base_dir, fp, h, txt)
         db.set_user_verified_target(base_dir, h, "FolderA")
+    if db is not None:
+        db.worker.flush()
 
     spy_decrypt_text = mocker.spy(db.crypto, "decrypt_text")
 
@@ -554,6 +570,8 @@ def test_prefetch_corrupt_payload_handling(mocker):
 
     db.upsert_document(base_dir, "corrupt.txt", "hash_c", "Corrupt payload test")
     db.set_user_verified_target(base_dir, "hash_c", "FolderCorrupt")
+    if db is not None:
+        db.worker.flush()
 
     # Mock decrypt_text to raise CryptoError on corrupt input
     mocker.patch.object(
@@ -612,6 +630,8 @@ def test_prefetch_semantic_ranking_order(mocker):
         else:
             v = [0.0, 1.0] + [0.0] * (vector_dim - 2)
         db.upsert_document_vectors(base_dir, [(fp, v)])
+    if db is not None:
+        db.worker.flush()
 
     active_centroid = [[1.0] + [0.0] * (vector_dim - 1)]
     batch = pre_fetch_historical_corpus(
@@ -641,22 +661,22 @@ def test_prefetch_semantic_ranking_order(mocker):
 
 
 def test_in_memory_db_mock():
-    """Verify InMemoryDBMock initialization and get/set metadata operations."""
-    from app.core.analyzer_strategies import InMemoryDBMock
+    """Verify InMemoryModelMetadataStore initialization and get/set metadata operations."""
+    from app.core.analyzer_strategies import InMemoryModelMetadataStore
 
     # 1. Test None metadata fallback
-    db_none = InMemoryDBMock(None)
+    db_none = InMemoryModelMetadataStore(None)
     assert db_none.get_model_metadata("key1") is None
     db_none.set_model_metadata("key1", "val1")
     assert db_none.get_model_metadata("key1") == "val1"
 
     # 2. Test empty metadata dict
-    db_empty = InMemoryDBMock({})
+    db_empty = InMemoryModelMetadataStore({})
     assert db_empty.get_model_metadata("key2") is None
 
     # 3. Test initialized metadata dict
     meta = {"model_name": "test_model", "dim": 384}
-    db_meta = InMemoryDBMock(meta)
+    db_meta = InMemoryModelMetadataStore(meta)
     assert db_meta.get_model_metadata("model_name") == "test_model"
     assert db_meta.get_model_metadata("dim") == 384
     db_meta.set_model_metadata("version", 1)

@@ -156,6 +156,7 @@ def test_run_execute_worker_passes_progress_callback(tmp_path):
                 await worker.wait()
             except Exception:
                 pass
+            await pilot.pause()
 
             assert mock_session.execute_moves.called
             kwargs = mock_session.execute_moves.call_args.kwargs

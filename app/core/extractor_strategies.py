@@ -1211,6 +1211,9 @@ def get_audio_duration(file_path: str) -> float:
 class AudioExtractor:
     """Extractor for transcribing audio files using a local Whisper subprocess."""
 
+    def __init__(self, wav_validator=None):
+        self._wav_validator = wav_validator
+
     def extract(
         self, file_path: str, settings=None, progress_callback=None, cancel_check=None
     ) -> str:
@@ -1265,13 +1268,13 @@ class AudioExtractor:
             spawn_background_process,
         )
 
+        wav_validator = getattr(self, "_wav_validator", None)
+
         def is_compliant_wav(path: str) -> bool:
+            if wav_validator is not None:
+                return bool(wav_validator(path))
             if not path.lower().endswith(".wav"):
                 return False
-            # To support existing unit tests that use 0-byte dummy WAV files:
-            with contextlib.suppress(OSError, ValueError):
-                if os.path.getsize(path) == 0:
-                    return True
             try:
                 with wave.open(path, "rb") as f:
                     return (
@@ -1279,7 +1282,7 @@ class AudioExtractor:
                         and f.getframerate() == 16000
                         and f.getcomptype() == "NONE"
                     )
-            except Exception:
+            except (OSError, EOFError, wave.Error):
                 logging.debug(f"Could not read WAV header of {path}", exc_info=True)
                 return False
 

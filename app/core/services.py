@@ -129,14 +129,34 @@ def acquire_services(
 
             def build():
                 if db_path is not None:
+                    from app.core.cache import CacheManager
+                    from app.core.db import MAIN_DB_MIGRATIONS, Database
                     from app.core.db_conn import get_db_connection
-                    from app.core.store import _store_initial
+                    from app.core.history import HistoryManager
+                    from app.core.migrations import schema_version
+                    from app.core.store import STORE_MIGRATIONS, _store_initial
 
                     path.parent.mkdir(parents=True, exist_ok=True)
                     conn = get_db_connection(str(path))
                     with conn:
                         _store_initial(conn)
                     custom_store = Store(path.parent, path)
+                    if schema_version(conn) > STORE_MIGRATIONS[-1].version:
+                        has_moves = conn.execute(
+                            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='moves'"
+                        ).fetchone()
+                        if not has_moves:
+                            with conn:
+                                for migration in STORE_MIGRATIONS[1:]:
+                                    migration.apply(conn)
+                        db = Database(path, worker, migrations=MAIN_DB_MIGRATIONS)
+                        cache = CacheManager(
+                            str(path), worker, migrations=MAIN_DB_MIGRATIONS
+                        )
+                        history = HistoryManager(
+                            db, cache, db_path=str(path), migrations=MAIN_DB_MIGRATIONS
+                        )
+                        return _Services(custom_store, worker, db, cache, history)
                     db = custom_store.database(worker)
                     cache = custom_store.cache(worker)
                     return _Services(

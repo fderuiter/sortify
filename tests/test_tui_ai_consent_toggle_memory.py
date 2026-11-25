@@ -112,7 +112,7 @@ def test_disabling_consent_prevents_ai_predictions_in_renamer(tmp_path):
     settings.AI_ASSISTED_NAMING = True
 
     mock_embedding_mgr = MagicMock()
-    mock_embedding_mgr.is_mock = False
+    mock_embedding_mgr.is_fallback = False
     mock_embedding_mgr.is_reconstruction_active.return_value = False
 
     renamer = FileRenamerEngine(

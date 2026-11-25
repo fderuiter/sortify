@@ -153,7 +153,7 @@ _path_init_locks = {}
 _path_locks_lock = threading.Lock()
 _opening_paths_lock = threading.Lock()
 _opening_db_paths: set[str] = set()
-_disable_pytest_win_fallback = True
+REQUIRE_SQLCIPHER: bool = True
 
 
 def _is_db_opening(db_path: str | Path) -> bool:
@@ -207,12 +207,19 @@ def clear_connection_cache(only_current_and_inactive: bool = True):
             ]:
                 _raw_key_to_abs.pop(rk, None)
         else:
+            remaining_for_path: dict[Any, int] = {}
+            for k in _connection_cache.keys():
+                p_key = k[0] if isinstance(k, tuple) else k
+                remaining_for_path[p_key] = remaining_for_path.get(p_key, 0) + 1
             for k, conn in _connection_cache.items():
+                p_key = k[0] if isinstance(k, tuple) else k
+                remaining_for_path[p_key] -= 1
                 try:
-                    try:
-                        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-                    except Exception:
-                        pass
+                    if remaining_for_path[p_key] == 0:
+                        try:
+                            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                        except Exception:
+                            pass
                     conn.close()
                 except Exception:
                     pass
@@ -244,7 +251,7 @@ def clear_dead_thread_connections():
             _raw_key_to_abs.pop(rk, None)
 
 
-def get_db_connection(db_path: str):
+def get_db_connection(db_path: str, *, require_sqlcipher: bool | None = None):
     """Create and configure a new database connection with performance parameters."""
     global _connection_cache
     raw_path = os.fspath(db_path)
@@ -279,7 +286,15 @@ def get_db_connection(db_path: str):
                 if is_abs_raw:
                     _raw_key_to_abs[(raw_path, thread_id)] = abs_path
                 return _connection_cache[cache_key]
-        conn = _open_connection(db_path, abs_path, cache_key)
+        if require_sqlcipher is None:
+            conn = _open_connection(db_path, abs_path, cache_key)
+        else:
+            conn = _open_connection(
+                db_path,
+                abs_path,
+                cache_key,
+                require_sqlcipher=require_sqlcipher,
+            )
         if is_abs_raw:
             with _cache_lock:
                 _raw_key_to_abs[(raw_path, thread_id)] = abs_path
@@ -384,26 +399,46 @@ def _rekey_sqlcipher_database(
         clear_connection_cache(only_current_and_inactive=False)
 
 
-def _open_connection(db_path: str, abs_path: str, cache_key):
+def _open_connection(
+    db_path: str,
+    abs_path: str,
+    cache_key,
+    *,
+    require_sqlcipher: bool | None = None,
+):
     """Open, key and configure a connection, then cache it under cache_key."""
     norm_abs = os.path.normcase(abs_path)
     with _opening_paths_lock:
         _opening_db_paths.add(norm_abs)
     try:
-        return _open_connection_unlocked(db_path, abs_path, cache_key)
+        return _open_connection_unlocked(
+            db_path,
+            abs_path,
+            cache_key,
+            require_sqlcipher=require_sqlcipher,
+        )
     finally:
         with _opening_paths_lock:
             _opening_db_paths.discard(norm_abs)
 
 
-def _open_connection_unlocked(db_path: str, abs_path: str, cache_key):
+def _open_connection_unlocked(
+    db_path: str,
+    abs_path: str,
+    cache_key,
+    *,
+    require_sqlcipher: bool | None = None,
+):
     from app.core.path_utils import resolve_db_crypto
 
+    enforce_sqlcipher = (
+        REQUIRE_SQLCIPHER if require_sqlcipher is None else bool(require_sqlcipher)
+    )
     crypto = resolve_db_crypto(db_path)
     raw_key = crypto.get_raw_key()
 
     if not HAS_SQLCIPHER:
-        if _disable_pytest_win_fallback:
+        if enforce_sqlcipher:
             raise RuntimeError(
                 "SQLCipher library is missing, so the encrypted store can't be opened. "
                 "Reinstall Sortify, or run `pip install sqlcipher3-wheels`."
@@ -446,7 +481,7 @@ def _open_connection_unlocked(db_path: str, abs_path: str, cache_key):
                     cursor.execute("PRAGMA cipher_version;")
                     version = cursor.fetchone()
                     if not version or not version[0]:
-                        if _disable_pytest_win_fallback:
+                        if enforce_sqlcipher:
                             raise RuntimeError(
                                 "SQLCipher is not active on this connection context."
                             )
@@ -455,7 +490,7 @@ def _open_connection_unlocked(db_path: str, abs_path: str, cache_key):
                             "Operating in standard SQLite fallback mode."
                         )
             except Exception as cipher_err:
-                if _disable_pytest_win_fallback:
+                if enforce_sqlcipher:
                     raise RuntimeError(
                         "SQLCipher is not active on this connection context."
                     ) from cipher_err

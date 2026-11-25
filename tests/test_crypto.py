@@ -11,12 +11,16 @@ import keyring
 import numpy as np
 import pytest
 from cryptography.fernet import Fernet
+from keyring.backend import KeyringBackend
+from keyring.backends.fail import Keyring as FailKeyring
 
 from app.core.crypto import (
     EphemeralSessionCrypto,
     SessionCrypto,
     VectorBuffer,
+    _clear_session_crypto_cache,
     _json_default,
+    _reset_keyring_probe_cache,
     decrypt_ipc_payload,
     encrypt_ipc_payload,
     get_fallback_keys_dir,
@@ -27,13 +31,47 @@ from app.core.crypto import (
 from app.core.exceptions import CryptoError
 
 
+class _LocalDictKeyring(KeyringBackend):
+    priority = 1
+
+    def __init__(self) -> None:
+        self.passwords: dict[str, dict[str, str]] = {}
+
+    def get_password(self, service: str, username: str) -> str | None:
+        return self.passwords.get(service, {}).get(username)
+
+    def set_password(self, service: str, username: str, password: str) -> None:
+        self.passwords.setdefault(service, {})[username] = password
+
+    def delete_password(self, service: str, username: str) -> None:
+        if service in self.passwords and username in self.passwords[service]:
+            del self.passwords[service][username]
+
+
+@pytest.fixture
+def persistent_keyring(monkeypatch: pytest.MonkeyPatch):
+    """Provide an isolated persistent-keyring double for OS-keyring unit tests."""
+    prev_backend = keyring.get_keyring()
+    backend = _LocalDictKeyring()
+    keyring.set_keyring(backend)
+    monkeypatch.setattr("app.core.crypto._is_persistent_keyring", lambda: True)
+    _reset_keyring_probe_cache()
+    _clear_session_crypto_cache()
+    try:
+        yield backend
+    finally:
+        keyring.set_keyring(prev_backend)
+        _reset_keyring_probe_cache()
+        _clear_session_crypto_cache()
+
+
 def _same_path(p1, p2) -> bool:
     return os.path.normcase(os.path.abspath(str(p1))) == os.path.normcase(
         os.path.abspath(str(p2))
     )
 
 
-def test_key_generation_keyring(tmp_path):
+def test_key_generation_keyring(tmp_path, persistent_keyring):
     key_path = tmp_path / "secret.key"
     db_path = tmp_path / "autosorter.db"
 
@@ -78,7 +116,7 @@ def test_key_generation_fallback(tmp_path, monkeypatch):
         assert (file_stat.st_mode & 0o777) == 0o600
 
 
-def test_legacy_key_migration(tmp_path):
+def test_legacy_key_migration(tmp_path, persistent_keyring):
     key_path = tmp_path / "secret.key"
     db_path = tmp_path / "autosorter.db"
     crypto = SessionCrypto(key_path, db_path)
@@ -143,7 +181,7 @@ def test_missing_key_with_existing_db_and_no_sqlite_driver_fails_closed(
     assert not key_path.exists()
 
 
-def test_missing_key_with_empty_db(tmp_path):
+def test_missing_key_with_empty_db(tmp_path, persistent_keyring):
     key_path = tmp_path / "secret.key"
     db_path = tmp_path / "autosorter.db"
 
@@ -173,7 +211,7 @@ def test_encryption_decryption(tmp_path):
     assert crypto.decrypt_text(enc_text) == original_text
 
 
-def test_invalid_key(tmp_path):
+def test_invalid_key(tmp_path, persistent_keyring):
     key_path = tmp_path / "secret.key"
     db_path = tmp_path / "autosorter.db"
     crypto = SessionCrypto(key_path, db_path)
@@ -376,7 +414,7 @@ def test_standard_sqlite_fallback_rejection(tmp_path, monkeypatch):
     """Verify that standard SQLite fallback connections are completely rejected during initialization."""
     from app.core import db_conn
 
-    monkeypatch.setattr(db_conn, "_disable_pytest_win_fallback", True)
+    monkeypatch.setattr(db_conn, "REQUIRE_SQLCIPHER", True)
     monkeypatch.setattr(db_conn, "HAS_SQLCIPHER", False)
 
     db_path = tmp_path / "autosorter.db"
@@ -388,7 +426,7 @@ def test_missing_cipher_version_rejection(tmp_path, monkeypatch):
     """Verify that if the driver lacks cipher capability or returns empty version, we reject and close."""
     from app.core import db_conn
 
-    monkeypatch.setattr(db_conn, "_disable_pytest_win_fallback", True)
+    monkeypatch.setattr(db_conn, "REQUIRE_SQLCIPHER", True)
     monkeypatch.setattr(db_conn, "HAS_SQLCIPHER", True)
 
     # Mock sqlite3.connect to return a mock connection whose cursor returns empty for cipher_version
@@ -668,7 +706,9 @@ def test_crypto_manager_proxy_setting_envelope(tmp_path):
     assert dec_proxy == raw_proxy
 
 
-def test_session_crypto_legacy_md5_key_resolution_and_migration(tmp_path):
+def test_session_crypto_legacy_md5_key_resolution_and_migration(
+    tmp_path, persistent_keyring
+):
     from app.core.crypto import CryptoManager, SessionCrypto
 
     db_path = tmp_path / "legacy_app.db"
@@ -697,6 +737,9 @@ def test_session_crypto_legacy_md5_key_resolution_and_migration(tmp_path):
 def test_get_fallback_keys_dir_windows_and_posix(monkeypatch):
     """Verify fallback key store directory resolution for Windows and POSIX environments."""
     import pathlib
+
+    monkeypatch.delenv("SORTIFY_KEYS_DIR", raising=False)
+    monkeypatch.delenv("AUTOSORTER_KEYS_DIR", raising=False)
 
     # Use PurePath for cross-platform os.name mocking
     monkeypatch.setattr("app.core.crypto.Path", pathlib.PurePath)
@@ -1390,3 +1433,92 @@ def test_concurrent_key_lookup_and_generation(tmp_path):
 
     assert len(results) == 10
     assert len(set(results)) == 1
+
+
+def test_default_test_runtime_uses_fail_keyring_and_isolated_keys_dir(tmp_path: Path):
+    """Verify default test runtime enforces FailKeyring and routes fallback keys to AUTOSORTER_KEYS_DIR."""
+    assert os.environ.get("PYTHON_KEYRING_BACKEND") == "keyring.backends.fail.Keyring"
+    assert isinstance(keyring.get_keyring(), FailKeyring)
+
+    keys_dir_env = os.environ.get("AUTOSORTER_KEYS_DIR")
+    app_dir_env = os.environ.get("AUTOSORTER_APP_DIR")
+    assert keys_dir_env is not None
+    assert app_dir_env is not None
+    assert Path(keys_dir_env).resolve().is_relative_to(Path(app_dir_env).resolve())
+
+    crypto = SessionCrypto(tmp_path / "secret.key", tmp_path / "runtime_default.db")
+    cipher = crypto.get_cipher()
+    assert cipher is not None
+    assert crypto.isolated_dir.resolve() == Path(keys_dir_env).resolve()
+    assert crypto.isolated_key_path.is_file()
+    if os.name != "nt":
+        assert (os.stat(crypto.isolated_dir).st_mode & 0o777) == 0o700
+        assert (os.stat(crypto.isolated_key_path).st_mode & 0o777) == 0o600
+
+
+def test_non_persistent_keyring_mirrors_key_for_sqlcipher_child_process(
+    tmp_path: Path,
+):
+    """Verify non-persistent keyrings mirror keys to isolated_key_path so spawned SQLCipher child processes succeed."""
+    import subprocess
+    import sys
+
+    from app.core import db_conn
+    from app.core.path_utils import resolve_db_crypto
+
+    if not db_conn.HAS_SQLCIPHER:
+        pytest.skip("SQLCipher driver unavailable")
+
+    prev_backend = keyring.get_keyring()
+    ephemeral_backend = _LocalDictKeyring()
+    keyring.set_keyring(ephemeral_backend)
+    _reset_keyring_probe_cache()
+    _clear_session_crypto_cache()
+
+    db_path = tmp_path / "spawned_child_sqlcipher.db"
+    try:
+        conn = db_conn.get_db_connection(str(db_path))
+        with closing(conn.cursor()) as cur:
+            cur.execute("CREATE TABLE child_probe (id INTEGER PRIMARY KEY, val TEXT)")
+            cur.execute("INSERT INTO child_probe (val) VALUES ('shared_across_spawn')")
+        conn.commit()
+        db_conn.clear_connection_cache(only_current_and_inactive=False)
+
+        crypto = resolve_db_crypto(db_path)
+        assert crypto.isolated_key_path.is_file()
+        if os.name != "nt":
+            assert (os.stat(crypto.isolated_key_path).st_mode & 0o777) == 0o600
+
+        repo_root = str(Path(__file__).resolve().parent.parent)
+        child_env = dict(os.environ)
+        child_env["PYTHON_KEYRING_BACKEND"] = "keyring.backends.fail.Keyring"
+        child_env["PYTHONPATH"] = repo_root + os.pathsep + os.pathsep.join(sys.path)
+
+        child_code = (
+            "from contextlib import closing\n"
+            "from app.core.db_conn import clear_connection_cache, get_db_connection\n"
+            f"conn = get_db_connection({str(db_path)!r})\n"
+            "try:\n"
+            "    with closing(conn.cursor()) as cur:\n"
+            "        cur.execute('SELECT val FROM child_probe WHERE id = 1')\n"
+            "        row = cur.fetchone()\n"
+            "        assert row == ('shared_across_spawn',), f'Unexpected row: {row}'\n"
+            "finally:\n"
+            "    clear_connection_cache(only_current_and_inactive=False)\n"
+        )
+        res = subprocess.run(
+            [sys.executable, "-c", child_code],
+            capture_output=True,
+            text=True,
+            env=child_env,
+            cwd=repo_root,
+        )
+        assert res.returncode == 0, (
+            f"Child SQLCipher open failed (rc={res.returncode}):\n"
+            f"stdout={res.stdout}\nstderr={res.stderr}"
+        )
+    finally:
+        db_conn.clear_connection_cache(only_current_and_inactive=False)
+        keyring.set_keyring(prev_backend)
+        _reset_keyring_probe_cache()
+        _clear_session_crypto_cache()

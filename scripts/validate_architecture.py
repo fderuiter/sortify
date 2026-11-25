@@ -789,7 +789,26 @@ def validate_import_time_globals(errors: list, filepath: str, tree: ast.AST) -> 
 
 
 _TEST_DETECTION_NAMES = frozenset(
-    {"MagicMock", "NonCallableMock", "mock_add_spec", "PYTEST_CURRENT_TEST"}
+    {
+        "Mock",
+        "MagicMock",
+        "AsyncMock",
+        "NonCallableMock",
+        "NonCallableMagicMock",
+        "PropertyMock",
+        "mock_add_spec",
+        "PYTEST_CURRENT_TEST",
+        "PYTEST_XDIST_WORKER",
+        "PYTEST_VERSION",
+        "_disable_pytest_win_fallback",
+        "InMemoryDBMock",
+        "is_mock",
+    }
+)
+_TEST_DETECTION_IMPORT_MODULES: tuple[str, ...] = (
+    "unittest.mock",
+    "pytest",
+    "_pytest",
 )
 
 
@@ -986,6 +1005,7 @@ class ArchitectureASTVisitor(ast.NodeVisitor):
         self.function_depth = 0
         self._func_or_lambda_depth = 0
         self._type_checking_depth = 0
+        self._in_test_detection_table = False
 
     def _record_function_hash_if_eligible(
         self, node: ast.FunctionDef | ast.AsyncFunctionDef
@@ -1025,6 +1045,11 @@ class ArchitectureASTVisitor(ast.NodeVisitor):
             return
 
         class_name = node.name
+        if self._do_no_test_detection and class_name in _TEST_DETECTION_NAMES:
+            self.errors.append(
+                f"{self.raw_filepath}:{node.lineno}: Test detection in production code: "
+                f"'{class_name}'; inject the dependency so tests run the production path"
+            )
         if self._do_anti_duplication and class_name in CANONICAL_UTILITY_REGISTRY:
             expected_home = CANONICAL_UTILITY_REGISTRY[class_name]
             if self.norm_path != expected_home:
@@ -1100,6 +1125,11 @@ class ArchitectureASTVisitor(ast.NodeVisitor):
             return
 
         func_name = node.name
+        if self._do_no_test_detection and func_name in _TEST_DETECTION_NAMES:
+            self.errors.append(
+                f"{self.raw_filepath}:{node.lineno}: Test detection in production code: "
+                f"'{func_name}'; inject the dependency so tests run the production path"
+            )
         if self._do_anti_duplication:
             if func_name in CANONICAL_UTILITY_REGISTRY:
                 expected_home = CANONICAL_UTILITY_REGISTRY[func_name]
@@ -1213,7 +1243,14 @@ class ArchitectureASTVisitor(ast.NodeVisitor):
 
         if self._do_no_test_detection:
             found = next(
-                (a.name for a in node.names if a.name.startswith("unittest.mock")),
+                (
+                    a.name
+                    for a in node.names
+                    if any(
+                        a.name == mod or a.name.startswith(f"{mod}.")
+                        for mod in _TEST_DETECTION_IMPORT_MODULES
+                    )
+                ),
                 None,
             )
             if found:
@@ -1278,7 +1315,10 @@ class ArchitectureASTVisitor(ast.NodeVisitor):
 
         if self._do_no_test_detection:
             found = None
-            if node.module and node.module.startswith("unittest.mock"):
+            if node.module and any(
+                node.module == mod or node.module.startswith(f"{mod}.")
+                for mod in _TEST_DETECTION_IMPORT_MODULES
+            ):
                 found = node.module
             elif node.module == "unittest" and any(
                 a.name == "mock" for a in node.names
@@ -1306,6 +1346,19 @@ class ArchitectureASTVisitor(ast.NodeVisitor):
             return
         if self._do_import_time_globals and self._func_or_lambda_depth == 0:
             self._check_global_targets(node, node.targets)
+        is_allowlist_decl = (
+            self.norm_path == "scripts/validate_architecture.py"
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id == "_TEST_DETECTION_NAMES"
+        )
+        if is_allowlist_decl:
+            self._in_test_detection_table = True
+            try:
+                self.generic_visit(node)
+            finally:
+                self._in_test_detection_table = False
+            return
         self.generic_visit(node)
 
     def visit_AugAssign(self, node: ast.AugAssign) -> None:
@@ -1483,7 +1536,11 @@ class ArchitectureASTVisitor(ast.NodeVisitor):
         if self._hash_index_only:
             return
         val = node.value
-        if self._do_no_test_detection and val in _TEST_DETECTION_NAMES:
+        if (
+            self._do_no_test_detection
+            and not self._in_test_detection_table
+            and val in _TEST_DETECTION_NAMES
+        ):
             self.errors.append(
                 f"{self.raw_filepath}:{node.lineno}: Test detection in production code: "
                 f"'{val}'; inject the dependency so tests run the production path"
@@ -1577,6 +1634,9 @@ def classify_cli_paths(
                 targeted_diagram_specs.add("core_architecture")
             if os.path.exists(rel):
                 staged_app_files.add(rel)
+        elif rel.startswith("scripts/") and rel.endswith(".py"):
+            if os.path.exists(rel):
+                staged_app_files.add(rel)
 
     if escalate_full_scan:
         return True, None, has_diagram_workspace, None, True
@@ -1638,29 +1698,55 @@ def main():
     errors: list[str] = []
 
     if run_ast_checks:
-        parsed_files = _collect_parsed_app_files("app")
-        declared_settings = _resolve_declared_settings(parsed_files)
-        function_hashes: dict[str, list[tuple[str, int, str]]] = {}
+        should_scan_app = target_files is None or any(
+            p.startswith("app/") for p in target_files
+        )
+        if should_scan_app:
+            parsed_files = _collect_parsed_app_files("app")
+            declared_settings = _resolve_declared_settings(parsed_files)
+            function_hashes: dict[str, list[tuple[str, int, str]]] = {}
 
-        for filepath, tree in parsed_files:
-            if target_files is None or filepath in target_files:
+            for filepath, tree in parsed_files:
+                if target_files is None or filepath in target_files:
+                    ArchitectureASTVisitor(
+                        filepath,
+                        errors,
+                        declared_settings=declared_settings,
+                        function_hashes=function_hashes,
+                    ).visit(tree)
+                else:
+                    ArchitectureASTVisitor(
+                        filepath,
+                        [],
+                        function_hashes=function_hashes,
+                        checks=_CHECK_HASH_INDEX_ONLY,
+                    ).visit(tree)
+
+            _report_duplicate_function_hashes(
+                errors, function_hashes, target_files=target_files
+            )
+
+        if target_files is None:
+            if os.path.isdir("scripts"):
+                for filepath, tree in _collect_parsed_app_files("scripts"):
+                    ArchitectureASTVisitor(
+                        filepath,
+                        errors,
+                        checks=_CHECK_NO_TEST_DETECTION,
+                    ).visit(tree)
+        else:
+            for filepath in sorted(p for p in target_files if p.startswith("scripts/")):
+                try:
+                    with open(filepath, encoding="utf-8") as f:
+                        script_content = f.read()
+                    script_tree = ast.parse(script_content, filename=filepath)
+                except (OSError, SyntaxError, UnicodeDecodeError, ValueError):
+                    continue
                 ArchitectureASTVisitor(
                     filepath,
                     errors,
-                    declared_settings=declared_settings,
-                    function_hashes=function_hashes,
-                ).visit(tree)
-            else:
-                ArchitectureASTVisitor(
-                    filepath,
-                    [],
-                    function_hashes=function_hashes,
-                    checks=_CHECK_HASH_INDEX_ONLY,
-                ).visit(tree)
-
-        _report_duplicate_function_hashes(
-            errors, function_hashes, target_files=target_files
-        )
+                    checks=_CHECK_NO_TEST_DETECTION,
+                ).visit(script_tree)
 
     if run_diagram_checks:
         validate_diagram_schema_and_assets(

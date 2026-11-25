@@ -217,6 +217,47 @@ def _call_keyring_bounded(
     return outcome.get("result")
 
 
+_PERSISTENT_KEYRING_MODULE_PREFIXES: tuple[str, ...] = (
+    "keyring.backends.Windows",
+    "keyring.backends.macOS",
+    "keyring.backends.SecretService",
+    "keyring.backends.kwallet",
+    "keyring.backends.libsecret",
+    "keyrings.alt.file",
+    "keyrings.cryptfile",
+)
+
+
+def _backend_is_persistent(backend: Any) -> bool:
+    """Return True if a keyring backend persists credentials across processes."""
+    if backend is None:
+        return False
+    explicit = getattr(backend, "persistent", None)
+    if isinstance(explicit, bool):
+        return explicit
+    cls_mod = getattr(type(backend), "__module__", "") or ""
+    if cls_mod.startswith(("keyring.backends.fail", "keyring.backends.null")):
+        return False
+    if cls_mod.startswith("keyring.backends.chainer"):
+        sub_backends = getattr(backend, "backends", ()) or ()
+        return any(_backend_is_persistent(sub) for sub in sub_backends)
+    return cls_mod.startswith(_PERSISTENT_KEYRING_MODULE_PREFIXES)
+
+
+def _is_persistent_keyring() -> bool:
+    """Return True only when keyring uses unpatched core dispatch and a persistent backend."""
+    if (
+        getattr(keyring.get_password, "__module__", "") != "keyring.core"
+        or getattr(keyring.set_password, "__module__", "") != "keyring.core"
+    ):
+        return False
+    try:
+        backend = keyring.get_keyring()
+    except (AttributeError, OSError, RuntimeError, TypeError, ValueError):
+        return False
+    return _backend_is_persistent(backend)
+
+
 def _keyring_get_password(
     service: str,
     account: str,
@@ -742,8 +783,9 @@ class SessionCrypto:
                     if verify_str and verify_str.encode("utf-8") == key:
                         saved_to_keyring = True
 
-                if not saved_to_keyring:
-                    # Fallback to isolated fallback key path with secure permissions
+                if not saved_to_keyring or not _is_persistent_keyring():
+                    # Fallback or mirror to isolated key path with secure permissions so
+                    # spawned child processes share keys even under non-persistent keyrings.
                     self.isolated_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
                     try:
                         os.chmod(self.isolated_dir, 0o700)
@@ -779,11 +821,35 @@ class SessionCrypto:
             try:
                 self._key = key
                 self._cipher = Fernet(key)
-                return self._cipher
             except Exception as e:
                 raise CryptoError(
                     "Database accessed but key file is missing or invalid."
                 ) from e
+
+            if (
+                key_str
+                and not self.isolated_key_path.exists()
+                and not _is_persistent_keyring()
+                and not (self.db_path.exists() and self.db_path.stat().st_size > 0)
+            ):
+                self.isolated_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+                with contextlib.suppress(OSError):
+                    os.chmod(self.isolated_dir, 0o700)
+                try:
+                    fd = os.open(
+                        str(self.isolated_key_path),
+                        os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                        0o600,
+                    )
+                    with os.fdopen(fd, "wb") as f:
+                        f.write(key)
+                except OSError:
+                    with contextlib.suppress(OSError):
+                        with open(self.isolated_key_path, "wb") as f:
+                            f.write(key)
+                        os.chmod(self.isolated_key_path, 0o600)
+
+            return self._cipher
 
     def get_raw_key(
         self,

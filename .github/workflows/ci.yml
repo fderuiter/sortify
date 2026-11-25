@@ -299,7 +299,7 @@ jobs:
         # floors checked in the next step.
         BRANCH_FLAG=""
         if [ "$RUNNER_OS" = "Linux" ]; then BRANCH_FLAG="--cov-branch"; fi
-        if ! uv run pytest -m "not slow" -n auto --cov=app $BRANCH_FLAG --cov-report=xml --cov-report=html --cov-report=json --cov-report=term --cov-fail-under=70 tests/; then
+        if ! uv run pytest -m "not slow and not benchmark" -n auto --cov=app $BRANCH_FLAG --cov-report=xml --cov-report=html --cov-report=json --cov-report=term --cov-fail-under=70 tests/; then
           if [ -f pytest_failures.txt ]; then
             echo "=== PYTEST FAILURES ==="
             cat pytest_failures.txt
@@ -333,6 +333,19 @@ jobs:
           htmlcov/
           coverage.xml
         retention-days: 14
+
+    - name: Latency Benchmark Suite
+      shell: bash
+      run: |
+        if ! uv run pytest -m "benchmark" -n0 --no-cov tests/; then
+          if [ -f pytest_failures.txt ]; then
+            echo "=== PYTEST FAILURES ==="
+            cat pytest_failures.txt
+          else
+            echo "No pytest_failures.txt found."
+          fi
+          exit 1
+        fi
 
     - name: Build executable (Lite)
       run: |
@@ -472,6 +485,8 @@ jobs:
     needs: [security-and-audit, type-check, static-checks]
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      PYTHON_KEYRING_BACKEND: keyring.backends.fail.Keyring
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:

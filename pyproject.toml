@@ -255,6 +255,9 @@ markers = [
     "slow: marks tests as slow / heavy ML, full-repository gate, or integration tests (deselect with '-m \"not slow\"')",
     "integration: marks integration tests",
     "ml: marks machine learning model tests",
+    "benchmark: marks latency and throughput SLA benchmarks run serially without xdist or coverage ('-m \"benchmark\" -n0 --no-cov')",
+    "inline_clustering: run RecursiveKMeansStrategy inline in-process for white-box strategy tests",
+    "sync_db_worker: run DBWorker.execute_write_async synchronously for white-box worker tests",
     "real_db_worker: run against the real asynchronous DBWorker write queue instead of the synchronous test stand-in",
     "subprocess_clustering: run RecursiveKMeansStrategy in its spawned child process instead of inline",
 ]

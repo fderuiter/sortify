@@ -1,4 +1,3 @@
-import os
 import shutil
 import tempfile
 import time
@@ -11,8 +10,6 @@ from app.core.analyzer_strategies import GenerativeNamingStrategy
 from app.core.db import Database
 from app.core.db_worker import DBWorker
 from app.core.semantic_embeddings import ModelProperties, SemanticEmbeddingManager
-
-pytestmark = [pytest.mark.slow, pytest.mark.ml]
 
 
 @pytest.fixture
@@ -41,6 +38,8 @@ def db(temp_dir, db_worker):
     clear_connection_cache()
 
 
+@pytest.mark.slow
+@pytest.mark.ml
 def test_generative_naming_uses_precomputed_vectors_and_zero_decryption(db, temp_dir):
     """
     Verify:
@@ -89,7 +88,7 @@ def test_generative_naming_uses_precomputed_vectors_and_zero_decryption(db, temp
     strategy.set_db_context(db, base_dir)
     strategy.stop_words = {"the", "and"}
 
-    # We must set model_path to a truthy existing path to ensure is_mock is False
+    # We must set model_path to a truthy existing path to ensure is_fallback is False
     strategy.model_path = str(temp_dir)
 
     # Mock ModelProperties to simulate valid ONNX model matching our signature and dimensions
@@ -148,6 +147,8 @@ def test_generative_naming_uses_precomputed_vectors_and_zero_decryption(db, temp
         assert "hist2.txt" not in prompt_passed
 
 
+@pytest.mark.slow
+@pytest.mark.ml
 def test_generative_naming_fallback_to_keyword_on_missing_embeddings(db, temp_dir):
     """
     Verify:
@@ -211,7 +212,7 @@ def test_generative_naming_fallback_to_keyword_on_missing_embeddings(db, temp_di
     with (
         patch.object(
             SemanticEmbeddingManager,
-            "is_mock",
+            "is_fallback",
             new_callable=PropertyMock,
             return_value=True,
         ),
@@ -228,6 +229,7 @@ def test_generative_naming_fallback_to_keyword_on_missing_embeddings(db, temp_di
         assert spy_decrypt.called
 
 
+@pytest.mark.benchmark
 def test_generative_naming_latency_performance_1000_docs(db, temp_dir):
     """
     Verify:
@@ -301,11 +303,12 @@ def test_generative_naming_latency_performance_1000_docs(db, temp_dir):
             strategy, "_run_prompt", return_value="Fast Semantic Cluster"
         ) as mock_run_prompt,
     ):
-        # Pre-warm imports and sklearn so timing measures only matching/preparation logic
+        # Pre-warm imports, sklearn, and vector similarity path so timing measures steady-state retrieval
         from sklearn.feature_extraction.text import TfidfVectorizer
         from sklearn.metrics.pairwise import cosine_similarity  # noqa: F401
 
         TfidfVectorizer().fit_transform(["warmup text"])
+        strategy._get_cluster_keywords(["warmup space flight launch rocket"])
 
         # Measure duration of matching and prompt preparation
         start_time = time.perf_counter()
@@ -316,20 +319,8 @@ def test_generative_naming_latency_performance_1000_docs(db, temp_dir):
 
         duration_ms = (end_time - start_time) * 1000.0
 
-        # Verify correct folder name returned
+        # Verify correct folder name returned and warmed sub-200ms SLA
         assert name == "Fast Semantic Cluster"
-        # Must be under 200ms locally, but more generous under high parallel/CI load or coverage instrumentation
-        is_parallel_or_ci = (
-            "PYTEST_XDIST_WORKER" in os.environ
-            or "CI" in os.environ
-            or os.environ.get("GITHUB_ACTIONS") == "true"
-            or "COV_CORE_DATAFILE" in os.environ
-            or "COVERAGE_RUN" in os.environ
-        )
-        threshold = 2000.0 if is_parallel_or_ci else 400.0
-        assert duration_ms < threshold, (
-            f"Generative naming matched too slow: {duration_ms} ms (threshold: {threshold} ms)"
-        )
-        print(
-            f"\n1000 documents generative naming matching duration: {duration_ms:.2f} ms"
+        assert duration_ms < 200.0, (
+            f"Generative naming matched too slow: {duration_ms:.2f} ms (SLA: <200.0 ms)"
         )

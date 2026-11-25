@@ -2243,26 +2243,48 @@ class Database:
         if not base_dir:
             return []
 
-        join_clause = "LEFT JOIN" if include_unvectorized else "INNER JOIN"
         conn = get_db_connection(self.db_path)
         with conn:
-            cursor = conn.execute(
-                f"""
-                SELECT d.filepath, d.user_verified_target_path, v.vector
-                FROM documents d
-                {join_clause} document_vectors v
-                    ON d.base_dir = v.base_dir
-                    AND (
-                        d.filepath = v.filepath
-                        OR REPLACE(d.filepath, '\\', '/') = REPLACE(v.filepath, '\\', '/')
-                    )
-                WHERE d.base_dir = ?
-                    AND d.user_verified_target_path IS NOT NULL
-                    AND d.user_verified_target_path != ''
+            doc_rows = conn.execute(
+                """
+                SELECT filepath, user_verified_target_path
+                FROM documents
+                WHERE base_dir = ?
+                    AND user_verified_target_path IS NOT NULL
+                    AND user_verified_target_path != ''
                 """,
                 (base_dir,),
+            ).fetchall()
+            vec_rows = (
+                conn.execute(
+                    """
+                    SELECT filepath, vector
+                    FROM document_vectors
+                    WHERE base_dir = ?
+                    """,
+                    (base_dir,),
+                ).fetchall()
+                if doc_rows
+                else []
             )
-            rows = cursor.fetchall()
+
+        if not doc_rows:
+            return []
+
+        norm_vectors: dict[str, list[Any]] = {}
+        for v_fp, vec in vec_rows:
+            if v_fp:
+                norm_vectors.setdefault(v_fp.replace("\\", "/"), []).append(vec)
+
+        rows: list[tuple[str, str, Any]] = []
+        for d_fp, folder in doc_rows:
+            norm_fp = d_fp.replace("\\", "/") if d_fp else ""
+            matched = norm_vectors.get(norm_fp)
+            if matched:
+                for vec in matched:
+                    rows.append((d_fp, folder, vec))
+            elif include_unvectorized:
+                rows.append((d_fp, folder, None))
 
         if not rows:
             return []

@@ -426,6 +426,32 @@ def test_heavy_tests_runs_single_uv_sync_with_ml_extra():
     assert "--ignore=tests/test_visual_snapshots.py" in test_step.get("run", "")
     assert steps.index(install_step) < steps.index(test_step)
 
+    heavy_env = jobs["heavy-tests"].get("env") or {}
+    workflow_env = workflow.get("env") or {}
+    assert (
+        heavy_env.get("PYTHON_KEYRING_BACKEND") == "keyring.backends.fail.Keyring"
+        or workflow_env.get("PYTHON_KEYRING_BACKEND") == "keyring.backends.fail.Keyring"
+    )
+
+
+def test_build_and_test_isolates_benchmark_suite_from_fast_smoke_tests():
+    """Verify Fast Smoke Tests excludes benchmarks and a dedicated step runs pytest -m benchmark -n0 --no-cov."""
+    workflow = _load_ci_workflow()
+    build_steps = workflow["jobs"]["build-and-test"]["steps"]
+
+    fast_step = next(
+        (s for s in build_steps if s.get("name") == "Fast Smoke Tests"), None
+    )
+    assert fast_step is not None
+    assert 'pytest -m "not slow and not benchmark"' in fast_step.get("run", "")
+
+    bench_step = next(
+        (s for s in build_steps if s.get("name") == "Latency Benchmark Suite"), None
+    )
+    assert bench_step is not None, "Missing 'Latency Benchmark Suite' step"
+    assert 'uv run pytest -m "benchmark" -n0 --no-cov' in bench_step.get("run", "")
+    assert build_steps.index(fast_step) < build_steps.index(bench_step)
+
 
 def test_no_ci_job_executes_duplicate_uv_sync():
     """Verify no job in ci.yml executes uv sync more than once."""

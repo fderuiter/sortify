@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "465f410a3915c9371ba157c90b855dc3722f2307e2a6eb399ddaf2b345665902"
+    "checksum": "020a60d30a0c1e473fbc4ee03b201649dffa3b7bf5d23ace203d463a41463525"
   },
   "classes": [
     {
@@ -51,6 +51,11 @@
               "annotation": "bool",
               "default": "False",
               "name": "force_validation"
+            },
+            {
+              "annotation": "Callable[[str], list[float]] | None",
+              "default": "None",
+              "name": "embedding_fn"
             }
           ],
           "returns": null
@@ -147,7 +152,7 @@
           "decorators": [
             "@property"
           ],
-          "name": "is_mock",
+          "name": "is_fallback",
           "parameters": [
             {
               "annotation": null,

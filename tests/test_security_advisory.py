@@ -65,12 +65,25 @@ def test_advisory_client_singleton_and_cache():
     )
 
 
-def test_cached_lookup_latency_under_50ms():
-    """Verify that in-memory cached advisory lookups complete in under 50 milliseconds."""
+def test_cached_advisory_check_returns_clean_result():
+    """Verify check_advisory returns cached clean advisory results without raising."""
     client = SecurityAdvisoryClient.get_instance()
     repo_id = "test-owner/test-model"
     res = SecurityAdvisoryResult(has_advisory=False, details="Clean")
     client.cache_advisory(repo_id, None, res)
+
+    result = client.check_advisory(repo_id=repo_id, raise_on_advisory=False)
+    assert result.has_advisory is False
+
+
+@pytest.mark.benchmark
+def test_cached_lookup_latency_under_50ms():
+    """Verify that warmed in-memory cached advisory lookups complete in under 50 milliseconds."""
+    client = SecurityAdvisoryClient.get_instance()
+    repo_id = "test-owner/test-model"
+    res = SecurityAdvisoryResult(has_advisory=False, details="Clean")
+    client.cache_advisory(repo_id, None, res)
+    client.check_advisory(repo_id=repo_id, raise_on_advisory=False)
 
     start_time = time.perf_counter()
     result = client.check_advisory(repo_id=repo_id, raise_on_advisory=False)

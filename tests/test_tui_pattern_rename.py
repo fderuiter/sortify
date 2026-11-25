@@ -652,6 +652,7 @@ def test_manual_edits_persist_sqlite_doc_relpath_nested_ops_and_rescan(
                 )
                 app.action_rename_node()
                 await pilot.pause(0.05)
+                session.db.worker.flush()
 
                 assert (
                     session.db.get_user_verified_target_path(str(ws), "inbox/inv_1.pdf")
@@ -674,6 +675,7 @@ def test_manual_edits_persist_sqlite_doc_relpath_nested_ops_and_rescan(
                 )
                 app.action_reassign_selected()
                 await pilot.pause(0.05)
+                session.db.worker.flush()
 
                 assert "tax_2024.pdf" in app.plan["Legal"]["Tax"]["2024"]
                 assert (
@@ -700,6 +702,7 @@ def test_manual_edits_persist_sqlite_doc_relpath_nested_ops_and_rescan(
                 )
                 app.action_rename_node()
                 await pilot.pause(0.05)
+                session.db.worker.flush()
 
                 assert "Invoices" not in app.plan["Finance"]["2024"]
                 assert (
@@ -724,12 +727,14 @@ def test_manual_edits_persist_sqlite_doc_relpath_nested_ops_and_rescan(
 
                 app.action_toggle_lock()
                 await pilot.pause(0.02)
+                session.db.worker.flush()
                 assert (
                     session.db.get_user_verified_target_path(str(ws), "inbox/inv_1.pdf")
                     is None
                 )
                 app.action_toggle_lock()
                 await pilot.pause(0.02)
+                session.db.worker.flush()
                 assert (
                     session.db.get_user_verified_target_path(str(ws), "inbox/inv_1.pdf")
                     == "Finance/2024/PaidInvoices"
@@ -751,6 +756,7 @@ def test_manual_edits_persist_sqlite_doc_relpath_nested_ops_and_rescan(
                 await pilot.pause(0.05)
 
                 # Simulate fresh generate_sorting_plan output followed by _reapply_manual_plan_edits
+                session.db.worker.flush()
                 fresh_plan = session.generate_sorting_plan()
                 app.plan = fresh_plan
                 app._reapply_manual_plan_edits()

@@ -10,7 +10,10 @@ import pytest
 
 from app.core import analyzer_strategies
 from app.core.analyzer import pre_fetch_historical_corpus
-from app.core.analyzer_strategies import GenerativeNamingStrategy, InMemoryDBMock
+from app.core.analyzer_strategies import (
+    GenerativeNamingStrategy,
+    InMemoryModelMetadataStore,
+)
 from app.core.db import Database
 from app.core.db_conn import clear_connection_cache, get_db_connection
 from app.core.db_worker import DBWorker
@@ -250,14 +253,14 @@ def test_generative_naming_corrupted_snippet_falls_back_to_basename_without_ciph
 
 
 def test_consolidated_callers_avoid_get_db_connection_and_guard_stubs() -> None:
-    """Verify zero direct get_db_connection references and stub safety for InMemoryDBMock/MagicMock."""
+    """Verify zero direct get_db_connection references and stub safety for InMemoryModelMetadataStore/MagicMock."""
     assert "get_db_connection" not in inspect.getsource(pre_fetch_historical_corpus)
     assert "get_db_connection" not in inspect.getsource(
         GenerativeNamingStrategy._get_cluster_keywords
     )
 
     with patch("app.core.db_conn.get_db_connection") as mock_get_conn:
-        in_mem_stub = InMemoryDBMock(
+        in_mem_stub = InMemoryModelMetadataStore(
             {
                 "active_model_signature": "sig",
                 "active_model_dimensions": "4",

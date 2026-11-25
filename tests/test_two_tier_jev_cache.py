@@ -5,6 +5,8 @@ import time
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from app.core.db_worker import DBWorker
 from app.core.jev_classifier import JevClassifierEngine
 
@@ -25,11 +27,8 @@ def test_in_memory_lru_cache_hit_zero_snippet_reads(tmp_path: Path):
         "builtins.open",
         side_effect=AssertionError("Disk read should not occur on cached hit"),
     ):
-        t0 = time.perf_counter()
         res2 = engine.classify(str(test_file))
-        latency_ms = (time.perf_counter() - t0) * 1000.0
 
-    assert latency_ms < 10.0  # Fast-path sub-10ms response time
     assert res2.is_classified is True
     assert res2.category == res1.category
 
@@ -48,25 +47,71 @@ def test_persistent_database_cache_hit_across_restarts(tmp_path: Path):
         assert res1.is_classified is True
         assert "Legal" in res1.category
 
-        # Wait briefly for worker async write
-        time.sleep(0.2)
+        # Deterministically drain async DB write queue
+        worker.flush()
 
         # Simulate app restart by creating a new engine instance with empty memory cache
         engine2 = JevClassifierEngine(db_path=db_path, worker=worker)
         assert len(engine2.memory_cache) == 0
 
-        # Spy on snippet reading logic to confirm DB cache hit avoids re-reading snippets
-        t0 = time.perf_counter()
         res2 = engine2.classify(str(test_file))
-        latency_ms = (time.perf_counter() - t0) * 1000.0
 
-        assert latency_ms < 10.0
         assert res2.is_classified is True
         assert res2.category == res1.category
         assert res2.sensitivity_rating == res1.sensitivity_rating
         assert res2.archival_priority == res1.archival_priority
         # Confirm in-memory cache was populated from DB
         assert len(engine2.memory_cache) == 1
+    finally:
+        worker.stop()
+
+
+@pytest.mark.benchmark
+def test_in_memory_lru_cache_hit_latency_benchmark(tmp_path: Path):
+    """Benchmark warmed in-memory JevClassifierEngine cache hit completing in under 10ms."""
+    engine = JevClassifierEngine(max_cache_size=100)
+    test_file = tmp_path / "invoice_q3.csv"
+    test_file.write_text("Invoice ID, Amount\n101, $250\n")
+
+    # Populate and warm in-memory cache hit path
+    engine.classify(str(test_file))
+    engine.classify(str(test_file))
+
+    t0 = time.perf_counter()
+    res = engine.classify(str(test_file))
+    latency_ms = (time.perf_counter() - t0) * 1000.0
+
+    assert res.is_classified is True
+    assert latency_ms < 10.0, f"In-memory cache hit took {latency_ms:.2f}ms (>10ms SLA)"
+
+
+@pytest.mark.benchmark
+def test_persistent_database_cache_hit_latency_benchmark(tmp_path: Path):
+    """Benchmark warmed SQLite persistent JevClassifierEngine cache hit completing in under 10ms."""
+    db_path = str(tmp_path / "autosorter.db")
+    worker = DBWorker()
+    try:
+        engine1 = JevClassifierEngine(db_path=db_path, worker=worker)
+        test_file = tmp_path / "nda_contract_2026.pdf"
+        test_file.write_text("Non-disclosure agreement terms and legal compliance.")
+        engine1.classify(str(test_file))
+        worker.flush()
+
+        # Warm SQLCipher connection and persistent cache lookup path
+        warmup_engine = JevClassifierEngine(db_path=db_path, worker=worker)
+        warmup_engine.classify(str(test_file))
+
+        bench_engine = JevClassifierEngine(db_path=db_path, worker=worker)
+        assert len(bench_engine.memory_cache) == 0
+
+        t0 = time.perf_counter()
+        res = bench_engine.classify(str(test_file))
+        latency_ms = (time.perf_counter() - t0) * 1000.0
+
+        assert res.is_classified is True
+        assert latency_ms < 10.0, (
+            f"Persistent DB cache hit took {latency_ms:.2f}ms (>10ms SLA)"
+        )
     finally:
         worker.stop()
 
@@ -83,7 +128,7 @@ def test_cache_invalidation_on_file_modification(tmp_path: Path):
         res1 = engine.classify(str(test_file))
         assert "Medical" in res1.category
 
-        time.sleep(0.1)
+        worker.flush()
 
         # Touch/modify the file to update modification timestamp
         new_mtime = time.time() + 10.0

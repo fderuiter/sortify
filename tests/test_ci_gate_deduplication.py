@@ -39,7 +39,7 @@ def test_ci_static_checks_catalog_gate_and_deduplicated_snapshots() -> None:
         (s for s in build_steps if s.get("name") == "Fast Smoke Tests"), None
     )
     assert fast_step is not None
-    assert 'pytest -m "not slow"' in fast_step.get("run", "")
+    assert 'pytest -m "not slow and not benchmark"' in fast_step.get("run", "")
 
     upload_mismatch_step = next(
         (

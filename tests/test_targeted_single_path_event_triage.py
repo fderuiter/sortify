@@ -415,6 +415,7 @@ async def test_triage_file_path_passes_target_paths_and_no_get_files_recursively
             assert call_kwargs.get("target_paths") == ["single_drop_invoice.pdf"]
     finally:
         daemon.stop()
+        session_db.worker.flush()
         clear_connection_cache(only_current_and_inactive=False)
 
 
@@ -521,4 +522,5 @@ async def test_triage_moves_files_off_the_event_loop(tmp_path, session_db):
     finally:
         release.set()
         daemon.stop()
+        session_db.worker.flush()
         clear_connection_cache(only_current_and_inactive=False)

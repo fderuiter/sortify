@@ -517,7 +517,7 @@ class FileRenamerEngine:
             ai_consent is True
             and bool(ai_assisted)
             and self.embedding_manager is not None
-            and getattr(self.embedding_manager, "is_mock", True) is False
+            and getattr(self.embedding_manager, "is_fallback", True) is False
             and getattr(self.embedding_manager, "is_degraded", False) is not True
             and not bool(self.embedding_manager.is_reconstruction_active())
         )

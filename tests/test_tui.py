@@ -3173,7 +3173,9 @@ def test_tui_auto_rescans_unedited_mock_plan_when_ai_becomes_active_and_respects
                 base_dir=temp_workspace,
                 lifecycle_state=PipelineLifecycleState.PLANNED,
                 analyzer=SimpleNamespace(
-                    embedding_manager=SimpleNamespace(is_mock=True, is_degraded=False)
+                    embedding_manager=SimpleNamespace(
+                        is_fallback=True, is_degraded=False
+                    )
                 ),
             )
             app.plan = {
@@ -3284,8 +3286,8 @@ def test_tui_auto_rescans_unedited_mock_plan_when_ai_becomes_active_and_respects
             assert app._should_auto_rescan_mock_session() is False
             app._daemon_is_moving = False
 
-            # Guard 6: Non-mock healthy session does not re-scan unnecessarily
-            app.app_session.analyzer.embedding_manager.is_mock = False
+            # Guard 6: Non-fallback healthy session does not re-scan unnecessarily
+            app.app_session.analyzer.embedding_manager.is_fallback = False
             assert app._should_auto_rescan_mock_session() is False
 
         DownloadManager.reset_instance()

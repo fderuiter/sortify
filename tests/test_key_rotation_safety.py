@@ -8,6 +8,8 @@ does: with whatever key ``get_cipher()`` finds in the keyring or key file.
 import keyring
 import pytest
 from cryptography.fernet import Fernet
+from keyring.backend import KeyringBackend
+from keyring.errors import PasswordDeleteError
 
 import app.core.crypto as crypto
 import app.core.db_conn as db_conn
@@ -18,21 +20,48 @@ from app.core.exceptions import CryptoError
 NEW_KEY = Fernet.generate_key().decode("utf-8")
 
 
+class _RotationTestKeyring(KeyringBackend):
+    """Self-contained keyring double for testing partial OS-keyring rotation failures."""
+
+    priority = 1
+
+    def __init__(self) -> None:
+        self._passwords: dict[tuple[str, str], str] = {}
+
+    def get_password(self, service: str, username: str) -> str | None:
+        return self._passwords.get((service, username))
+
+    def set_password(self, service: str, username: str, password: str) -> None:
+        self._passwords[(service, username)] = password
+
+    def delete_password(self, service: str, username: str) -> None:
+        if (service, username) not in self._passwords:
+            raise PasswordDeleteError("Password not found")
+        del self._passwords[(service, username)]
+
+
 @pytest.fixture
 def encrypted_db(tmp_path):
-    db_path = tmp_path / "docs.db"
-    key_path = tmp_path / "secret.key"
-    session = SessionCrypto(key_path, db_path)
-    session.get_cipher()
-    clear_connection_cache(only_current_and_inactive=False)
-    conn = get_db_connection(str(db_path))
-    conn.execute("CREATE TABLE docs (name TEXT)")
-    conn.execute("INSERT INTO docs VALUES ('report.pdf')")
-    conn.commit()
-    clear_connection_cache(only_current_and_inactive=False)
-    assert not db_path.read_bytes().startswith(b"SQLite format 3"), "not encrypted"
-    yield db_path, key_path, session
-    clear_connection_cache(only_current_and_inactive=False)
+    prev_backend = keyring.get_keyring()
+    keyring.set_keyring(_RotationTestKeyring())
+    crypto._reset_keyring_probe_cache()
+    try:
+        db_path = tmp_path / "docs.db"
+        key_path = tmp_path / "secret.key"
+        session = SessionCrypto(key_path, db_path)
+        session.get_cipher()
+        clear_connection_cache(only_current_and_inactive=False)
+        conn = get_db_connection(str(db_path))
+        conn.execute("CREATE TABLE docs (name TEXT)")
+        conn.execute("INSERT INTO docs VALUES ('report.pdf')")
+        conn.commit()
+        clear_connection_cache(only_current_and_inactive=False)
+        assert not db_path.read_bytes().startswith(b"SQLite format 3"), "not encrypted"
+        yield db_path, key_path, session
+    finally:
+        clear_connection_cache(only_current_and_inactive=False)
+        keyring.set_keyring(prev_backend)
+        crypto._reset_keyring_probe_cache()
 
 
 def _stored_key(db_path, key_path):

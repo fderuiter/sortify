@@ -114,9 +114,13 @@ def test_transition_matrix_invalid_transitions_raise_domain_exception():
         assert "Invalid session lifecycle transition" in str(exc_info.value)
 
 
+@pytest.mark.benchmark
 def test_transition_validation_performance():
     """Verify transition validation executes in well under 5ms (<5ms constraint)."""
     sm = SessionStateMachine()
+    sm.validate_transition(ACTIVE, COMPLETED)
+    sm.validate_transition(COMPLETED, ROLLED_BACK)
+
     start = time.perf_counter()
     for _ in range(1000):
         sm.validate_transition(ACTIVE, COMPLETED)

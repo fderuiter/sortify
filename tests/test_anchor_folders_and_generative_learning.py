@@ -327,7 +327,7 @@ def test_onnx_semantic_anchoring_and_post_cluster_snapping(tmp_path):
         with (
             mock.patch.object(
                 type(session.analyzer.embedding_manager),
-                "is_mock",
+                "is_fallback",
                 new_callable=mock.PropertyMock,
                 return_value=False,
             ),
