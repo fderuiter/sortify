@@ -138,3 +138,35 @@ def test_live_session_and_history_export_share_services(tmp_path):
         assert session.db_worker.execute_write(lambda: True)
     finally:
         session.close()
+
+
+def test_acquire_services_opens_standalone_main_database(tmp_path):
+    from app.core.db import Database
+    from app.core.db_conn import get_db_connection
+    from app.core.db_worker import DBWorker
+    from app.core.migrations import StoreTooNewError
+
+    standalone_db = tmp_path / "standalone.db"
+    setup_worker = DBWorker()
+    try:
+        Database(standalone_db, setup_worker)
+    finally:
+        setup_worker.stop(stop_embeddings=False)
+
+    with acquire_services(db_path=standalone_db) as lease:
+        assert lease.db is not None
+        assert lease.cache is not None
+        assert lease.history is not None
+        sid = lease.history.start_session(str(tmp_path))
+        assert sid
+
+    with acquire_services(db_path=standalone_db) as reopened:
+        assert reopened.history is not None
+        assert reopened.db is not None
+
+    future_db = tmp_path / "future.db"
+    conn = get_db_connection(str(future_db))
+    with conn:
+        conn.execute("PRAGMA user_version = 99")
+    with pytest.raises(StoreTooNewError):
+        acquire_services(db_path=future_db)

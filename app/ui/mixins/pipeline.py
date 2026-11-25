@@ -877,7 +877,7 @@ class SortPipelineMixin:
         # Update node styling in tree view
         self._apply_tree_node_styles()
 
-    @work(exclusive=True, thread=True)
+    @work(exclusive=True, thread=True, group="execute")
     def run_execute_worker(self: TUIHostProtocol) -> None:
         """Execute moves in worker thread."""
         try:
@@ -967,10 +967,11 @@ class SortPipelineMixin:
 
             from app.core.audit_reporter import resolve_audit_report
 
+            sess_base = self.app_session.base_dir if self.app_session else None
             base_dir: str = (
-                (self.app_session.base_dir if self.app_session else None)
-                or self.base_dir
-                or "."
+                sess_base
+                if isinstance(sess_base, str) and sess_base
+                else (self.base_dir or ".")
             )
             sess_id = (
                 summary.get("session_id")

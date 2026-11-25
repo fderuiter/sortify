@@ -533,11 +533,12 @@ async def test_ac4_tui_reassignment_persists_learned_rule_and_pipeline_applies_t
         modal.action_confirm()
         await pilot.pause()
 
-        # Verify a pattern was persisted to LEARNED_RULES -> "Expense_Claims"
-        assert settings.LEARNED_RULES
+        # Verify a pattern was persisted to folder-scoped LEARNED_RULES -> "Expense_Claims"
+        scoped_settings = app.get_active_settings()
+        assert scoped_settings.LEARNED_RULES
         learned_patterns = [
             pat
-            for pat, target in settings.LEARNED_RULES.items()
+            for pat, target in scoped_settings.LEARNED_RULES.items()
             if target == "Expense_Claims"
         ]
         assert len(learned_patterns) == 1
@@ -545,7 +546,7 @@ async def test_ac4_tui_reassignment_persists_learned_rule_and_pipeline_applies_t
         assert "reimbursement" in learned_pat
 
         # Verify ActiveRuleManagerModal lists the learned rule and supports editing/toggling
-        rule_modal = ActiveRuleManagerModal(settings)
+        rule_modal = ActiveRuleManagerModal(scoped_settings)
         app.push_screen(rule_modal)
         await pilot.pause()
         table = rule_modal.query_one("#rules-table", DataTable)
@@ -554,17 +555,16 @@ async def test_ac4_tui_reassignment_persists_learned_rule_and_pipeline_applies_t
         assert rule_modal._rules_data[0]["pattern"] == learned_pat
         assert rule_modal._rules_data[0]["target_folder"] == "Expense_Claims"
 
-        # Toggle learned rule off -> moves to DISABLED_KEYWORD_RULES, then toggle back on
+        # Toggle learned rule off -> moves to DISABLED_LEARNED_RULES, then toggle back on
         rule_modal.action_toggle_rule()
         await pilot.pause()
-        assert learned_pat in settings.DISABLED_KEYWORD_RULES
-        assert learned_pat not in settings.LEARNED_RULES
+        assert learned_pat in scoped_settings.DISABLED_LEARNED_RULES
+        assert learned_pat not in scoped_settings.LEARNED_RULES
         rule_modal.action_toggle_rule()
         await pilot.pause()
-        assert settings.KEYWORD_RULES.get(learned_pat) == "Expense_Claims" or (
-            settings.LEARNED_RULES.get(learned_pat) == "Expense_Claims"
-        )
-        # Ensure learned_rules still carries Expense_Claims for the pipeline test below
+        assert scoped_settings.LEARNED_RULES.get(learned_pat) == "Expense_Claims"
+        assert learned_pat not in scoped_settings.DISABLED_LEARNED_RULES
+        # Propagate learned rule to global settings for the separate next_batch workspace below
         settings.LEARNED_RULES = {learned_pat: "Expense_Claims"}
         settings.KEYWORD_RULES = {}
         app.pop_screen()
