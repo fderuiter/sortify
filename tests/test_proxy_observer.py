@@ -160,7 +160,7 @@ def test_encrypted_proxy_decryption_and_hot_reload(tmp_path):
     if settings._save_timer is not None:
         settings._save_timer.join(timeout=2.0)
 
-    with open(config_file, "r", encoding="utf-8") as f:
+    with open(config_file, encoding="utf-8") as f:
         disk_data = json.load(f)
 
     assert "PROXY" in disk_data

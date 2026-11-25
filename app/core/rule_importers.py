@@ -2096,7 +2096,7 @@ class DropItRuleImporter(BaseRuleImporter):
 
         content = ""
         try:
-            with open(p, "r", encoding="utf-8-sig", errors="replace") as f:
+            with open(p, encoding="utf-8-sig", errors="replace") as f:
                 content = f.read()
         except OSError as exc:
             logger.warning(f"Failed to read file '{file_path}': {exc}")
@@ -2665,7 +2665,7 @@ class TagSpacesRuleImporter(BaseRuleImporter):
             return False
 
         try:
-            with open(p, "r", encoding="utf-8") as f:
+            with open(p, encoding="utf-8") as f:
                 data = json.load(f)
         except (OSError, json.JSONDecodeError, TypeError, ValueError):
             return False
@@ -2734,7 +2734,7 @@ class TagSpacesRuleImporter(BaseRuleImporter):
             return result
 
         try:
-            with open(p, "r", encoding="utf-8") as f:
+            with open(p, encoding="utf-8") as f:
                 data = json.load(f)
         except (
             OSError,
@@ -3270,7 +3270,7 @@ class SortifyRuleImporter(BaseRuleImporter):
         if not p.exists():
             return "sortify" in p.name.lower()
         try:
-            with open(p, "r", encoding="utf-8") as f:
+            with open(p, encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, dict):
                 if (
@@ -3297,7 +3297,7 @@ class SortifyRuleImporter(BaseRuleImporter):
             return result
 
         try:
-            with open(p, "r", encoding="utf-8") as f:
+            with open(p, encoding="utf-8") as f:
                 data = json.load(f)
         except (
             OSError,

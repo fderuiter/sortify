@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "2510d0b94d2a48a0f73c97a01805db9f6d28b20e99cb842f74ec19fb3271eea4"
+    "checksum": "ef5db4787ad7ae6ecb0e58d6994f91b075204054a64294a22aacf8cddc4276c4"
   },
   "classes": [
     {
@@ -20,7 +20,7 @@
               "name": "text"
             }
           ],
-          "returns": "Optional[str]"
+          "returns": "str | None"
         },
         {
           "async": false,
@@ -40,7 +40,7 @@
               "name": "embedding_manager"
             },
             {
-              "annotation": "Optional[set[str]]",
+              "annotation": "set[str] | None",
               "default": "None",
               "name": "stop_words"
             },
@@ -50,7 +50,7 @@
               "name": "max_keywords"
             }
           ],
-          "returns": "Optional[list[str]]"
+          "returns": "list[str] | None"
         },
         {
           "async": false,
@@ -65,7 +65,7 @@
               "name": "text"
             },
             {
-              "annotation": "Optional[set[str]]",
+              "annotation": "set[str] | None",
               "default": "None",
               "name": "stop_words"
             },
@@ -132,12 +132,12 @@
               "name": "text"
             },
             {
-              "annotation": "Optional[set[str]]",
+              "annotation": "set[str] | None",
               "default": "None",
               "name": "stop_words"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "file_date"
             },
@@ -152,7 +152,7 @@
               "name": "seq"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "file_path"
             }
@@ -185,12 +185,12 @@
               "name": "base_dir"
             },
             {
-              "annotation": "Optional[dict]",
+              "annotation": "dict | None",
               "default": "None",
               "name": "locked_files"
             },
             {
-              "annotation": "Optional[set[str]]",
+              "annotation": "set[str] | None",
               "default": "None",
               "name": "stop_words"
             }
@@ -258,17 +258,17 @@
           "name": "filepath"
         },
         {
-          "annotation": "Optional[dict]",
+          "annotation": "dict | None",
           "default": "None",
           "name": "locked_files"
         },
         {
-          "annotation": "Optional[list]",
+          "annotation": "list | None",
           "default": "None",
           "name": "protected_paths"
         },
         {
-          "annotation": "Optional[dict]",
+          "annotation": "dict | None",
           "default": "None",
           "name": "matched_policies"
         }

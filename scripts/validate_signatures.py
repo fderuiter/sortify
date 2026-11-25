@@ -52,7 +52,7 @@ def collect_tui_svg_snapshots(tests_dir=None):
             if file.startswith("test_") and file.endswith(".py"):
                 file_path = os.path.join(root, file)
                 try:
-                    with open(file_path, "r", encoding="utf-8") as f:
+                    with open(file_path, encoding="utf-8") as f:
                         source = f.read()
                     if "assert_svg_snapshot" not in source:
                         continue
@@ -256,7 +256,7 @@ def extract_module_signatures(file_path):
         return {"classes": [], "functions": []}
 
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             source = f.read()
         tree = ast.parse(source, filename=file_path)
     except Exception as e:
@@ -272,7 +272,7 @@ def extract_protocols(file_path):
         print(f"Error: Protocol source file not found: {file_path}", file=sys.stderr)
         return {}
 
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         source = f.read()
 
     tree = ast.parse(source, filename=file_path)
@@ -342,7 +342,7 @@ def extract_cli(file_path):
         print(f"Error: CLI source file not found: {file_path}", file=sys.stderr)
         return []
 
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         source = f.read()
 
     tree = ast.parse(source, filename=file_path)
@@ -373,7 +373,7 @@ def collect_cli_definitions(cli_dir=None):
                     full_path = os.path.join(root, file)
                     rel_path = safe_relpath(full_path, BASE_DIR).replace("\\", "/")
                     try:
-                        with open(full_path, "r", encoding="utf-8") as f:
+                        with open(full_path, encoding="utf-8") as f:
                             source = f.read()
                         tree = ast.parse(source, filename=full_path)
                         sigs = _extract_module_signatures_from_tree(tree)
@@ -763,7 +763,7 @@ def main():
 
             if os.path.exists(snap_path) and not args.module_paths:
                 try:
-                    with open(snap_path, "r", encoding="utf-8") as f:
+                    with open(snap_path, encoding="utf-8") as f:
                         existing_data = json.load(f)
                     is_v, _, existing_payload = verify_snapshot_integrity(
                         existing_data, snap_path
@@ -822,7 +822,7 @@ def main():
             continue
 
         try:
-            with open(snap_path, "r", encoding="utf-8") as f:
+            with open(snap_path, encoding="utf-8") as f:
                 snapshot_data = json.load(f)
         except Exception as e:
             print(

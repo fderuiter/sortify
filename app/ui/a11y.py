@@ -8,7 +8,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 from textual import on
 from textual.app import App
@@ -30,10 +30,10 @@ class A11yMixin:
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.announcements: list[dict[str, Any]] = []
-        self.last_announcement: Optional[str] = None
-        self._speech_thread: Optional[threading.Thread] = None
+        self.last_announcement: str | None = None
+        self._speech_thread: threading.Thread | None = None
 
-    def _resolve_app_instance(self) -> Optional[Any]:
+    def _resolve_app_instance(self) -> Any | None:
         """Return the owning Textual App instance if mounted or self is an App."""
         if isinstance(self, App):
             return self
@@ -144,7 +144,7 @@ class A11yMixin:
         except Exception:
             return False
 
-    def _get_speech_binary(self) -> Optional[str]:
+    def _get_speech_binary(self) -> str | None:
         """Resolve available speech synthesis executable based on host platform.
 
         On macOS, returns native 'say' command path. On Linux, returns 'spd-say' or
@@ -165,7 +165,7 @@ class A11yMixin:
         self,
         message: str,
         priority: str = "polite",
-        help_url: Optional[str] = None,
+        help_url: str | None = None,
     ) -> str:
         """Emit auditory screen reader announcement and log accessibility event."""
         if message is None:
@@ -261,7 +261,7 @@ class A11yMixin:
 
         return message
 
-    def get_last_announcement(self) -> Optional[str]:
+    def get_last_announcement(self) -> str | None:
         """Get the most recent screen reader announcement text."""
         return self.last_announcement
 
@@ -454,7 +454,7 @@ class A11yMixin:
         )
         self.open_help_section(url)
 
-    def open_help_section(self, help_url: Optional[str] = None) -> None:
+    def open_help_section(self, help_url: str | None = None) -> None:
         """Open local offline troubleshooting help modal for ``help_url``."""
         from app.ui.modals.help import TroubleshootingHelpModal
 

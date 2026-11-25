@@ -1,7 +1,7 @@
 """Rule template gallery and rule import dialogs."""
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from textual import events, on, work
 from textual.app import ComposeResult
@@ -244,7 +244,7 @@ class TemplateGalleryModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
         self.dismiss(None)
 
 
-class ExportRulesModal(_CancelToCloseMixin, ResponsiveModalScreen[Optional[Path]]):
+class ExportRulesModal(_CancelToCloseMixin, ResponsiveModalScreen[Path | None]):
     """Modal screen for exporting active keyword rules and policies to external formats."""
 
     BINDINGS = [
@@ -451,7 +451,7 @@ class ExportRulesModal(_CancelToCloseMixin, ResponsiveModalScreen[Optional[Path]
         self.dismiss(None)
 
 
-class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Optional[Any]]):
+class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Any | None]):
     """Modal screen for selecting, inspecting, and merging external rules (Hazel, DropIt & TagSpaces)."""
 
     BINDINGS = [
@@ -556,7 +556,7 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Optional[Any]])
     def __init__(self, settings: Any):
         super().__init__()
         self.settings = settings
-        self.current_result: Optional[Any] = None
+        self.current_result: Any | None = None
         self.conflicts: list[Any] = []
         self.conflict_resolutions: dict[str, str] = {}
         self.import_disabled: bool = True
@@ -1043,7 +1043,7 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Optional[Any]])
         self.dismiss(None)
 
 
-class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
+class RuleEditModal(ResponsiveModalScreen[dict | None]):
     """Modal screen for adding or editing keyword rules and policies with live sample preview."""
 
     BINDINGS = [
@@ -1154,13 +1154,13 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
         action: str = "",
         enabled: bool = True,
         settings: Any = None,
-        base_dir: Optional[str] = None,
-        source_dirs: Optional[list[str]] = None,
+        base_dir: str | None = None,
+        source_dirs: list[str] | None = None,
         db: Any = None,
         *,
         rename_pattern: str = "",
-        rule_type: Optional[str] = None,
-        rule_action: Optional[str] = None,
+        rule_type: str | None = None,
+        rule_action: str | None = None,
     ):
         super().__init__()
         self.title_text = title
@@ -1468,7 +1468,7 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
             )
             if kind == "policy" and pol_type in METADATA_POLICY_TYPES:
                 doc_text = ""
-                status_tag: Optional[str] = None
+                status_tag: str | None = None
             else:
                 doc_text = self._get_item_text(src_root, rel_path)
                 status_re = (
@@ -1561,7 +1561,7 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
                     self.announce(msg)
                 return
 
-        selected_item: Optional[str] = None
+        selected_item: str | None = None
         try:
             sel_val = self.query_one("#select-sample-file", Select).value
             if sel_val and sel_val != Select.BLANK:
@@ -1768,7 +1768,7 @@ class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
                 )
                 return
 
-            normalized_action: Optional[str] = None
+            normalized_action: str | None = None
             if action_raw:
                 if not PolicyEngine.validate_policy_action(action_raw):
                     supported = ", ".join(sorted(PolicyEngine.SUPPORTED_ACTIONS))
@@ -2238,7 +2238,7 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
                 except Exception:
                     table.focus()
 
-    def _get_selected_rule(self) -> Optional[dict]:
+    def _get_selected_rule(self) -> dict | None:
         """Return the currently highlighted rule dictionary."""
         table = self.query_one("#rules-table", DataTable)
         if not self._rules_data or table.row_count == 0:
@@ -2317,7 +2317,7 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
     def action_add_rule(self) -> None:
         """Open editor modal to add a new keyword rule or policy."""
 
-        def on_rule_added(result: Optional[dict]) -> None:
+        def on_rule_added(result: dict | None) -> None:
             if not result:
                 return
             res_kind = result.get("kind", "keyword")
@@ -2384,7 +2384,7 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
             self.announce("No rule selected to edit.")
             return
 
-        def on_rule_edited(result: Optional[dict]) -> None:
+        def on_rule_edited(result: dict | None) -> None:
             if not result:
                 return
             res_kind = result.get("kind", rule["kind"])
@@ -2519,7 +2519,7 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
 
         pattern = rule["pattern"]
 
-        def on_confirmed(confirmed: Optional[bool]) -> None:
+        def on_confirmed(confirmed: bool | None) -> None:
             if not confirmed:
                 return
 
@@ -2605,7 +2605,7 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
         """Open external rule importer modal."""
         self.announce("Opening external rule importer modal.")
 
-        def on_import_closed(result: Optional[Any] = None) -> None:
+        def on_import_closed(result: Any | None = None) -> None:
             if result is not None:
                 self._mutated = True
                 self._refresh_table(preserve_focus=True)
@@ -2623,7 +2623,7 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
         """Open export rules modal."""
         self.announce("Opening export rules modal.")
 
-        def on_export_closed(result: Optional[Path] = None) -> None:
+        def on_export_closed(result: Path | None = None) -> None:
             self.announce("Returned to active rule manager.")
 
         self.app.push_screen(ExportRulesModal(self.settings), on_export_closed)

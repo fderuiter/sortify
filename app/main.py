@@ -10,7 +10,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Any, NoReturn, Optional, cast
+from typing import Any, NoReturn, cast
 
 from app.cli.error_emitter import emit_cli_error
 from app.config import AppSettings
@@ -544,7 +544,7 @@ def _prompt_workspace_selection(args: argparse.Namespace) -> Path:
 
 
 def resolve_preset_and_directory(
-    args: argparse.Namespace, settings: Optional[AppSettings] = None
+    args: argparse.Namespace, settings: AppSettings | None = None
 ) -> Path:
     """Resolve preset choice or target directory path from CLI arguments."""
     preset = getattr(args, "preset", None)

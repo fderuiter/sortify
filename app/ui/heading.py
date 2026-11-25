@@ -1,6 +1,6 @@
 """Centralized native semantic heading helper module for accessible TUI and GUI views."""
 
-from typing import Any, Optional
+from typing import Any
 
 from rich.console import RenderableType
 from textual.reactive import reactive
@@ -25,11 +25,11 @@ class Heading(Label):
         expand: bool = False,
         shrink: bool = False,
         markup: bool = True,
-        name: Optional[str] = None,
-        id: Optional[str] = None,
-        classes: Optional[str] = None,
+        name: str | None = None,
+        id: str | None = None,
+        classes: str | None = None,
         disabled: bool = False,
-        tooltip: Optional[RenderableType] = None,
+        tooltip: RenderableType | None = None,
     ) -> None:
         clamped_level = max(1, min(6, int(level)))
         super().__init__(
@@ -77,8 +77,8 @@ SemanticHeading = Heading
 def create_heading(
     text: RenderableType = "",
     level: int = 1,
-    classes: Optional[str] = None,
-    id: Optional[str] = None,
+    classes: str | None = None,
+    id: str | None = None,
     **kwargs: Any,
 ) -> Heading:
     """Centralized helper function to generate reactive semantic Heading instances."""

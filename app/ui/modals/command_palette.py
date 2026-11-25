@@ -1,7 +1,6 @@
 """Command palette overlay modal screen."""
 
 from dataclasses import dataclass
-from typing import Optional
 
 from textual import on
 from textual.app import ComposeResult
@@ -214,7 +213,7 @@ DEFAULT_COMMAND_CATALOG: list[PaletteCommand] = [
 ]
 
 
-class CommandPaletteModal(ResponsiveModalScreen[Optional[PaletteCommand]]):
+class CommandPaletteModal(ResponsiveModalScreen[PaletteCommand | None]):
     """Modal screen presenting a searchable command palette overlay."""
 
     BINDINGS = [
@@ -264,10 +263,10 @@ class CommandPaletteModal(ResponsiveModalScreen[Optional[PaletteCommand]]):
 
     def __init__(
         self,
-        catalog: Optional[list[PaletteCommand]] = None,
-        name: Optional[str] = None,
-        id: Optional[str] = None,
-        classes: Optional[str] = None,
+        catalog: list[PaletteCommand] | None = None,
+        name: str | None = None,
+        id: str | None = None,
+        classes: str | None = None,
     ) -> None:
         super().__init__(name=name, id=id, classes=classes)
         self.commands: list[PaletteCommand] = catalog or list(DEFAULT_COMMAND_CATALOG)

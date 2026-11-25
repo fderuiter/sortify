@@ -981,7 +981,7 @@ def test_sync_config_schema_task_execution(tmp_path):
     assert updated is True
     assert target_file.exists()
 
-    with open(target_file, "r", encoding="utf-8") as f:
+    with open(target_file, encoding="utf-8") as f:
         written_schema = json.load(f)
     assert written_schema == schema
 

@@ -5,7 +5,7 @@ import json
 import logging
 import os
 from contextvars import ContextVar
-from typing import Any, Optional
+from typing import Any
 
 from app.core.link_manager import LinkManager
 from app.core.path_utils import is_junction_entry
@@ -13,7 +13,7 @@ from app.core.path_utils import is_junction_entry
 _DEFAULT_QUARANTINE_DIRS = ("_Quarantine_Staging", "_Compliance_Quarantine")
 _INTERNAL_OWNED_DIRS = (".sortify_duplicates", ".sortify_overwritten", ".branches")
 DEFAULT_IGNORED_EXTENSIONS = (".crdownload", ".tmp", ".download")
-_ACTIVE_SCAN_FILTER: ContextVar[Optional["ScanFilter"]] = ContextVar(
+_ACTIVE_SCAN_FILTER: ContextVar["ScanFilter | None"] = ContextVar(
     "_ACTIVE_SCAN_FILTER", default=None
 )
 
@@ -58,7 +58,7 @@ def _get_quarantine_ignore_prefixes(settings: Any = None) -> tuple[str, ...]:
 
         settings_path = get_app_dir() / "settings.json"
         if settings_path.exists():
-            with open(settings_path, "r", encoding="utf-8") as fh:
+            with open(settings_path, encoding="utf-8") as fh:
                 data = json.load(fh)
             if isinstance(data, dict):
                 disk_qdir = _normalize_quarantine_dir_prefix(
@@ -114,12 +114,12 @@ class ScanFilter:
 
     def __init__(
         self,
-        protected_paths: Optional[list[str] | tuple[str, ...]] = None,
-        ignored_extensions: Optional[list[str] | tuple[str, ...]] = None,
-        quarantine_prefixes: Optional[tuple[str, ...]] = None,
+        protected_paths: list[str] | tuple[str, ...] | None = None,
+        ignored_extensions: list[str] | tuple[str, ...] | None = None,
+        quarantine_prefixes: tuple[str, ...] | None = None,
         include_hidden: bool = False,
-        max_depth: Optional[int] = None,
-        base_dir: Optional[str] = None,
+        max_depth: int | None = None,
+        base_dir: str | None = None,
     ) -> None:
         self.base_dir = os.path.abspath(base_dir) if base_dir else None
         self.include_hidden = bool(include_hidden)
@@ -176,13 +176,13 @@ class ScanFilter:
     def from_settings(
         cls,
         settings: Any = None,
-        base_dir: Optional[str] = None,
+        base_dir: str | None = None,
         include_hidden: bool = False,
-        max_depth: Optional[int] = None,
+        max_depth: int | None = None,
     ) -> "ScanFilter":
         """Build a ScanFilter from an AppSettings/Settings object or duck-typed mock."""
         prot: list[str] = []
-        ignored_exts: Optional[list[str] | tuple[str, ...]] = None
+        ignored_exts: list[str] | tuple[str, ...] | None = None
         eff_max_depth = max_depth
 
         if settings is not None:
@@ -215,8 +215,8 @@ class ScanFilter:
         return tuple(seg for seg in cleaned.split("/") if seg and seg != ".")
 
     def _scoped_relative_parts(
-        self, path_str: str, base_dir: Optional[str] = None
-    ) -> Optional[tuple[str, ...]]:
+        self, path_str: str, base_dir: str | None = None
+    ) -> tuple[str, ...] | None:
         """Return path segments relative to base_dir, or None when path_str is an external absolute path."""
         eff_base = os.path.abspath(base_dir) if base_dir else self.base_dir
         if not os.path.isabs(path_str):
@@ -232,7 +232,7 @@ class ScanFilter:
         return None
 
     def _full_segments(
-        self, path_str: str, base_dir: Optional[str] = None
+        self, path_str: str, base_dir: str | None = None
     ) -> tuple[str, ...]:
         """Return all path segments for path_str, resolving relative paths against base_dir."""
         eff_base = os.path.abspath(base_dir) if base_dir else self.base_dir
@@ -243,7 +243,7 @@ class ScanFilter:
             full_path = expanded
         return self._all_segments(full_path)
 
-    def is_protected(self, path_str: str, base_dir: Optional[str] = None) -> bool:
+    def is_protected(self, path_str: str, base_dir: str | None = None) -> bool:
         """Return True when path_str is inside or equal to any configured PROTECTED_PATHS."""
         if not path_str:
             return False
@@ -263,7 +263,7 @@ class ScanFilter:
                     return True
         return False
 
-    def is_app_bundle(self, path_str: str, base_dir: Optional[str] = None) -> bool:
+    def is_app_bundle(self, path_str: str, base_dir: str | None = None) -> bool:
         """Return True when path_str is a .app bundle directory or nested inside one."""
         if not path_str:
             return False
@@ -290,7 +290,7 @@ class ScanFilter:
         lower_name = os.path.basename(str(path_str).rstrip("/\\")).lower()
         return any(lower_name.endswith(ext) for ext in self.ignored_extensions)
 
-    def is_quarantine(self, path_str: str, base_dir: Optional[str] = None) -> bool:
+    def is_quarantine(self, path_str: str, base_dir: str | None = None) -> bool:
         """Return True when path_str belongs to a staging or compliance quarantine folder."""
         if not path_str:
             return False
@@ -299,7 +299,7 @@ class ScanFilter:
             _is_quarantine_entry_name(part, self.quarantine_prefixes) for part in parts
         )
 
-    def is_hidden(self, path_str: str, base_dir: Optional[str] = None) -> bool:
+    def is_hidden(self, path_str: str, base_dir: str | None = None) -> bool:
         """Return True when hidden files are excluded and any scoped segment starts with '.'."""
         if self.include_hidden:
             return False
@@ -312,7 +312,7 @@ class ScanFilter:
         return name.startswith(".") and name not in (".", "..")
 
     def exceeds_max_depth(
-        self, rel_file_path: str, base_dir: Optional[str] = None
+        self, rel_file_path: str, base_dir: str | None = None
     ) -> bool:
         """Return True when file nesting depth inside base_dir exceeds max_depth (depth 0 = top-level file)."""
         if self.max_depth is None:
@@ -328,7 +328,7 @@ class ScanFilter:
         dir_abs_path: str,
         dir_rel_path: str,
         current_depth: int,
-        base_dir: Optional[str] = None,
+        base_dir: str | None = None,
     ) -> bool:
         """Return True when scanner may descend into directory dir_rel_path at current_depth."""
         name = os.path.basename(dir_rel_path.rstrip("/\\"))
@@ -349,10 +349,10 @@ class ScanFilter:
     def check_path(
         self,
         path_str: str,
-        base_dir: Optional[str] = None,
+        base_dir: str | None = None,
         check_depth: bool = False,
         check_hidden: bool = True,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Return exclusion reason ('protected', 'app_bundle', 'quarantine', 'hidden', 'ignored_extension', 'max_depth') or None."""
         if not path_str:
             return "empty"
@@ -372,8 +372,8 @@ class ScanFilter:
 
 
 def discover_existing_folders(
-    base_dir: Optional[str],
-    dest_dir: Optional[str] = None,
+    base_dir: str | None,
+    dest_dir: str | None = None,
     settings: Any = None,
     include_hidden: bool = False,
 ) -> list[str]:
@@ -508,9 +508,9 @@ def get_files_recursively(
     base: str,
     rel_path: str = "",
     include_hidden: bool = False,
-    max_depth: Optional[int] = None,
+    max_depth: int | None = None,
     settings: Any = None,
-    scan_filter: Optional[ScanFilter] = None,
+    scan_filter: ScanFilter | None = None,
 ) -> list:
     """List files in a directory deterministically while honoring ScanFilter and max_depth."""
     if rel_path == "":
@@ -571,9 +571,9 @@ def parse_item_identifier(item: str, default_base_dir: str = "") -> tuple[str, s
 def get_files_from_sources(
     source_dirs: list[str],
     include_hidden: bool = False,
-    max_depth: Optional[int] = None,
+    max_depth: int | None = None,
     settings: Any = None,
-    scan_filter: Optional[ScanFilter] = None,
+    scan_filter: ScanFilter | None = None,
 ) -> list[str]:
     """Scan all configured source roots and produce namespaced relative path identifiers."""
     norm_sources = []

@@ -1,7 +1,7 @@
 """Shared sample data generation engine for Smart AutoSorter AI Pro."""
 
 import os
-from typing import Any, Optional
+from typing import Any
 
 SAMPLE_CORPUS_ITEMS: dict[str, str] = {
     "demo_finance.txt": (
@@ -43,8 +43,8 @@ def get_sample_corpus_items() -> dict[str, str]:
 
 
 def simulate_corpus_classification(
-    selected_packs: Optional[list[str]] = None,
-    settings: Optional[Any] = None,
+    selected_packs: list[str] | None = None,
+    settings: Any | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Run an in-memory classification dry-run against the sample document corpus.
 

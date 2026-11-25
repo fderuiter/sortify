@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "0beec251e4217067c086739994a1d424f2b236190e255795e3e4e5d975f9b809"
+    "checksum": "2d400661e07fd2340f11cad0269259b753cb8b16d734b732b6be8bb93acd49b4"
   },
   "classes": [
     {
@@ -56,7 +56,7 @@
               "name": "session_id"
             },
             {
-              "annotation": "Optional[dict[str, Any]]",
+              "annotation": "dict[str, Any] | None",
               "default": "None",
               "name": "metadata"
             }
@@ -89,7 +89,7 @@
               "name": "format"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "base_dir"
             }
@@ -107,17 +107,17 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "session_id"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "base_dir"
             },
             {
-              "annotation": "Optional[float]",
+              "annotation": "float | None",
               "default": "None",
               "name": "max_age_days"
             },
@@ -127,12 +127,12 @@
               "name": "trashed_only"
             },
             {
-              "annotation": "Optional[Any]",
+              "annotation": "Any | None",
               "default": "None",
               "name": "trash_fn"
             },
             {
-              "annotation": "Optional[Any]",
+              "annotation": "Any | None",
               "default": "None",
               "name": "audit_ledger"
             }
@@ -186,7 +186,7 @@
               "name": "session_id"
             },
             {
-              "annotation": "Optional[Collection[int | str]]",
+              "annotation": "Collection[int | str] | None",
               "default": "None",
               "name": "selected_step_ids"
             },
@@ -219,7 +219,7 @@
               "name": "ignore_missing"
             },
             {
-              "annotation": "Optional[Collection[int | str]]",
+              "annotation": "Collection[int | str] | None",
               "default": "None",
               "name": "selected_step_ids"
             }
@@ -239,7 +239,7 @@
               "name": "steps_to_analyze"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "session_id"
             },
@@ -267,7 +267,7 @@
               "name": "base_dir"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "session_id"
             }
@@ -295,7 +295,7 @@
               "name": "db"
             },
             {
-              "annotation": "Optional[Collection[int | str]]",
+              "annotation": "Collection[int | str] | None",
               "default": "None",
               "name": "selected_step_ids"
             }
@@ -319,7 +319,7 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "db_path"
             }
@@ -355,7 +355,7 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "session_id"
             },
@@ -411,12 +411,12 @@
               "name": "conn"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "error_details"
             },
             {
-              "annotation": "Optional[dict[str, Any]]",
+              "annotation": "dict[str, Any] | None",
               "default": "None",
               "name": "metadata"
             }
@@ -431,7 +431,7 @@
           "name": "validate_transition",
           "parameters": [
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": null,
               "name": "current_status"
             },

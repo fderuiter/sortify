@@ -5,7 +5,7 @@ import os
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
-from typing import Any, Optional
+from typing import Any
 
 from textual import on, work
 from textual.app import ComposeResult
@@ -186,9 +186,9 @@ class QuarantineVaultModal(ResponsiveModalScreen[None]):
 
     def __init__(
         self,
-        db: Optional[Any] = None,
+        db: Any | None = None,
         base_dir: str = "",
-        policies: Optional[list[dict[str, Any]]] = None,
+        policies: list[dict[str, Any]] | None = None,
     ):
         super().__init__()
         self.db = db
@@ -197,7 +197,7 @@ class QuarantineVaultModal(ResponsiveModalScreen[None]):
         self.records: list[dict[str, Any]] = []
         self.filtered_records: list[dict[str, Any]] = []
         self.selected_job_ids: set[str] = set()
-        self.selected_job_id: Optional[str] = None
+        self.selected_job_id: str | None = None
         self._updating_select_all: bool = False
 
     def compose(self) -> ComposeResult:
@@ -508,7 +508,7 @@ class QuarantineVaultModal(ResponsiveModalScreen[None]):
         except Exception:
             pass
 
-    def _get_selected_record(self, job_id: Optional[str]) -> Optional[dict[str, Any]]:
+    def _get_selected_record(self, job_id: str | None) -> dict[str, Any] | None:
         if not job_id:
             return None
         for r in self.records:
@@ -523,7 +523,7 @@ class QuarantineVaultModal(ResponsiveModalScreen[None]):
             return [self.selected_job_id]
         return []
 
-    def _render_detail_pane(self, job_id: Optional[str]) -> None:
+    def _render_detail_pane(self, job_id: str | None) -> None:
         try:
             title_lbl = self.query_one("#quarantine-detail-title", Label)
             content_st = self.query_one("#quarantine-detail-content", Static)
@@ -583,7 +583,7 @@ class QuarantineVaultModal(ResponsiveModalScreen[None]):
 
         base_dir = self.base_dir or "."
 
-        def _dir_selected_callback(target_dir: Optional[str | list[str]]) -> None:
+        def _dir_selected_callback(target_dir: str | list[str] | None) -> None:
             if isinstance(target_dir, list):
                 target_dir = target_dir[0] if target_dir else None
             if not target_dir:

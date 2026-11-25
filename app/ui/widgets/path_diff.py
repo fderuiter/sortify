@@ -2,7 +2,7 @@
 
 import difflib
 import os
-from typing import Any, Optional
+from typing import Any
 
 from rich.table import Table
 from rich.text import Text
@@ -41,7 +41,7 @@ def _diff_highlight_paths(src_path: str, tgt_path: str) -> tuple[Text, Text]:
 def format_side_by_side_path_comparison(
     source_path: str,
     target_path: str,
-    base_dir: Optional[str] = None,
+    base_dir: str | None = None,
 ) -> Table:
     """Render split side-by-side columns comparing source and target paths with contrasting color diffs."""
     table = Table(
@@ -83,7 +83,7 @@ def format_side_by_side_path_comparison(
 
 def format_folder_path_comparison(
     files_info: list[dict[str, Any]],
-    base_dir: Optional[str] = None,
+    base_dir: str | None = None,
     max_items: int = 8,
 ) -> Table:
     """Render side-by-side path comparison table for items in a folder subtree."""

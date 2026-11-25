@@ -101,7 +101,7 @@ def test_tar_packaging_nested_and_long_paths():
             f"Extracted deep file not found at {extracted_deep_file}"
         )
 
-        with open(extracted_deep_file, "r", encoding="utf-8") as f:
+        with open(extracted_deep_file, encoding="utf-8") as f:
             content = f.read()
         assert content == file_content, "Extracted file content mismatch"
 

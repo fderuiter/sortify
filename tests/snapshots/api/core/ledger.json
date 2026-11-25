@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "39b6c5da77a071f97226de83efab4e3ab1f7637976038cea2dfc4b3cc2d38352"
+    "checksum": "f68b42d1cebb2f06a25be58e17dd8c776a1e211ce4c8330e13b0a13225d98465"
   },
   "classes": [
     {
@@ -18,7 +18,7 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "db_path"
             }
@@ -36,37 +36,37 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "session_id"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "event_type"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "db_path_hash"
             },
             {
-              "annotation": "Optional[Any]",
+              "annotation": "Any | None",
               "default": "None",
               "name": "db_path"
             },
             {
-              "annotation": "Optional[float]",
+              "annotation": "float | None",
               "default": "None",
               "name": "start_time"
             },
             {
-              "annotation": "Optional[float]",
+              "annotation": "float | None",
               "default": "None",
               "name": "end_time"
             },
             {
-              "annotation": "Optional[int]",
+              "annotation": "int | None",
               "default": "None",
               "name": "limit"
             }
@@ -104,17 +104,17 @@
               "name": "status"
             },
             {
-              "annotation": "Optional[dict[str, Any]]",
+              "annotation": "dict[str, Any] | None",
               "default": "None",
               "name": "metadata"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "event_id"
             },
             {
-              "annotation": "Optional[float]",
+              "annotation": "float | None",
               "default": "None",
               "name": "created_at"
             }
@@ -157,12 +157,12 @@
               "name": "status"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "reason"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "db_path"
             }

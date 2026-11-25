@@ -5,7 +5,7 @@ import os
 import weakref
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from app.core.db_conn import get_db_connection
 from app.core.db_worker import DBWorker
@@ -289,7 +289,7 @@ class Database:
             except Exception:
                 pass
 
-    def invalidate_cache(self, base_dir: Optional[str] = None):
+    def invalidate_cache(self, base_dir: str | None = None):
         """Invalidate the in-memory decrypted documents cache and matrix LRU cache."""
         with self._cache_lock:
             self._cached_base_dir = None
@@ -1246,7 +1246,7 @@ class Database:
 
         self.worker.execute_write_async(_write)
 
-    def get_user_verified_target_path(self, base_dir, filepath) -> Optional[str]:
+    def get_user_verified_target_path(self, base_dir, filepath) -> str | None:
         """Retrieve the historical user-verified target path for a specific document."""
         filepath = filepath.replace("\\", "/")
         self._populate_cache_if_needed(base_dir)

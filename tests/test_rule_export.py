@@ -52,7 +52,7 @@ def test_export_sortify_json(populated_settings, tmp_path):
     assert result_path == out_file
     assert out_file.exists()
 
-    with open(out_file, "r", encoding="utf-8") as f:
+    with open(out_file, encoding="utf-8") as f:
         data = json.load(f)
 
     assert data["format"] == "sortify"

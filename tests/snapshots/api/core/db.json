@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "c8b66a9dbeb2202daf3729ddb3862ac07ab6b23eee690a5bbf43a7c27d7827be"
+    "checksum": "93997c2de02b489515a049733b17886377778b5e7fc1097bc2048d5af9df5581"
   },
   "classes": [
     {
@@ -512,7 +512,7 @@
               "name": "filepath"
             }
           ],
-          "returns": "Optional[str]"
+          "returns": "str | None"
         },
         {
           "async": false,
@@ -538,7 +538,7 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "base_dir"
             }

@@ -6,7 +6,7 @@ import yaml
 def _load_release_workflow():
     workflow_path = os.path.join(".github", "workflows", "release.yml")
     assert os.path.exists(workflow_path), f"Workflow file missing: {workflow_path}"
-    with open(workflow_path, "r", encoding="utf-8") as f:
+    with open(workflow_path, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 

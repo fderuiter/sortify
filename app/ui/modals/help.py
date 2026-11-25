@@ -2,7 +2,6 @@
 
 import re
 from pathlib import Path
-from typing import Optional
 
 from textual import on
 from textual.app import ComposeResult
@@ -38,8 +37,8 @@ def _fallback_section(anchor: str) -> tuple[str, str, bool]:
 
 
 def extract_troubleshooting_section(
-    help_url: Optional[str] = None,
-    docs_path: Optional[Path | str] = None,
+    help_url: str | None = None,
+    docs_path: Path | str | None = None,
 ) -> tuple[str, str, bool]:
     """Extract a Markdown section matching ``#anchor`` from bundled ``docs/troubleshooting.md``.
 
@@ -376,9 +375,9 @@ class TroubleshootingHelpModal(ResponsiveModalScreen[None]):
 
     def __init__(
         self,
-        help_url: Optional[str] = None,
-        docs_path: Optional[Path | str] = None,
-        anchor: Optional[str] = None,
+        help_url: str | None = None,
+        docs_path: Path | str | None = None,
+        anchor: str | None = None,
     ) -> None:
         super().__init__()
         from app.ui.notifications import TROUBLESHOOTING_URL
@@ -390,7 +389,7 @@ class TroubleshootingHelpModal(ResponsiveModalScreen[None]):
             resolved_url = help_url or TROUBLESHOOTING_URL
 
         self.help_url: str = resolved_url
-        self.docs_path: Optional[Path | str] = docs_path
+        self.docs_path: Path | str | None = docs_path
         _, _, raw_anchor = self.help_url.partition("#")
         self.section_anchor: str = raw_anchor.strip().lower()
         (

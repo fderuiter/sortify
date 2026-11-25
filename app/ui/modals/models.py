@@ -1,7 +1,6 @@
 """Offline model manager dialog."""
 
 import os
-from typing import Optional
 
 from textual import on
 from textual.app import ComposeResult
@@ -410,7 +409,7 @@ class ModelManagerModal(ResponsiveModalScreen[None]):
         dm = DownloadManager.get_instance()
         model_dir = self._resolve_model_dir()
 
-        def _on_done(success: bool, err: Optional[Exception]):
+        def _on_done(success: bool, err: Exception | None):
             self._refresh_app_status()
             if success:
                 self.announce("Model deleted successfully.", priority="polite")

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "5be84db7ed89106228bfceab8bc100b89da0618fa24f3e90b9dd0e0615a6a169"
+    "checksum": "471cd0a25146b4feea7d5f4cf548282400f20900584714099c95eb7790ca7982"
   },
   "classes": [
     {
@@ -52,7 +52,7 @@
               "name": "timeout"
             },
             {
-              "annotation": "Optional[Path]",
+              "annotation": "Path | None",
               "default": "None",
               "name": "lock_dir"
             }

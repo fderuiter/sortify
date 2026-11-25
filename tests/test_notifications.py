@@ -392,7 +392,7 @@ def test_notification_tui_dispatch_fallbacks():
 
     # Stream write exception is caught gracefully
     bad_stream = MagicMock()
-    bad_stream.write.side_effect = IOError("disk full")
+    bad_stream.write.side_effect = OSError("disk full")
     mgr.set_output_stream(bad_stream)
     mgr.set_mode(NotificationMode.CLI)
     res_err = notify("stream write error")

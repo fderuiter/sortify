@@ -1,7 +1,7 @@
 """Pydantic v2 domain schema contract models and boundary validation functions."""
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
@@ -32,7 +32,7 @@ TERMINAL_QUARANTINE_STATES: frozenset[str] = frozenset(
     }
 )
 
-QUARANTINE_TRANSITION_MATRIX: dict[Optional[str], frozenset[str]] = {
+QUARANTINE_TRANSITION_MATRIX: dict[str | None, frozenset[str]] = {
     None: frozenset({"STAGED"}),
     "STAGED": frozenset(
         {
@@ -119,7 +119,7 @@ QUARANTINE_TRANSITION_MATRIX: dict[Optional[str], frozenset[str]] = {
 
 
 def validate_quarantine_transition(
-    current_status: Optional[str], target_status: str, job_id: Optional[str] = None
+    current_status: str | None, target_status: str, job_id: str | None = None
 ) -> None:
     """Validate whether a quarantine status transition is permitted by the state machine.
 
@@ -226,17 +226,17 @@ class QuarantineRecordModel(DictCompatMixin, BaseModel):
     """Pydantic v2 contract model for quarantine staging records."""
 
     job_id: str
-    base_dir: Optional[str] = None
-    original_filepath: Optional[str] = None
-    staged_filepath: Optional[str] = None
-    file_hash: Optional[str] = None
+    base_dir: str | None = None
+    original_filepath: str | None = None
+    staged_filepath: str | None = None
+    file_hash: str | None = None
     status: str = "STAGED"
-    policy_action: Optional[str] = None
+    policy_action: str | None = None
     audit_log: list[Any] = Field(default_factory=list)
-    created_at: Optional[float] = None
-    updated_at: Optional[float] = None
-    error_message: Optional[str] = None
-    error: Optional[str] = None
+    created_at: float | None = None
+    updated_at: float | None = None
+    error_message: str | None = None
+    error: str | None = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -255,55 +255,55 @@ class SortingPlanNodeModel(DictCompatMixin, BaseModel):
     """Pydantic v2 contract model for sorting plan node payloads."""
 
     node_type: str = Field(default="file", alias="__type__")
-    relative_source: Optional[str] = None
-    routed_by: Optional[str] = None
-    keyword: Optional[str] = None
-    match: Optional[str] = None
-    status: Optional[str] = None
-    extraction_status: Optional[str | Any] = None
-    is_corrected: Optional[bool] = None
-    corrected: Optional[bool] = None
-    is_overridden: Optional[bool] = None
-    overridden: Optional[bool] = None
-    original_lock_path: Optional[str] = None
-    original_path: Optional[str] = None
-    user_lock_path: Optional[str] = None
-    historical_path: Optional[str] = None
-    policy_path: Optional[str] = None
-    new_policy_path: Optional[str] = None
-    is_conflicted: Optional[bool] = None
-    compliance_path: Optional[str] = None
-    new_filename: Optional[str] = None
-    category: Optional[str] = None
-    sensitivity_rating: Optional[str] = None
-    sensitivity_score: Optional[float] = None
-    archival_priority: Optional[int | float] = None
-    archival_priority_score: Optional[float] = None
-    confidence: Optional[float] = None
-    target_filename: Optional[str] = None
-    is_locked: Optional[bool] = None
-    confirmed: Optional[bool] = None
-    is_confirmed: Optional[bool] = None
-    user_confirmed: Optional[bool] = None
-    jev_category: Optional[str] = None
-    source_root: Optional[str] = None
-    file_date: Optional[str] = None
-    is_duplicate: Optional[bool] = None
-    is_duplicate_primary: Optional[bool] = None
-    duplicate_of: Optional[str] = None
-    duplicate_group_id: Optional[str] = None
-    duplicate_action: Optional[str] = None
-    policy_action: Optional[str] = None
-    post_unarchive_action: Optional[str] = None
-    post_unarchive_target: Optional[str] = None
-    is_excluded: Optional[bool] = None
-    is_checked: Optional[bool] = None
+    relative_source: str | None = None
+    routed_by: str | None = None
+    keyword: str | None = None
+    match: str | None = None
+    status: str | None = None
+    extraction_status: str | Any | None = None
+    is_corrected: bool | None = None
+    corrected: bool | None = None
+    is_overridden: bool | None = None
+    overridden: bool | None = None
+    original_lock_path: str | None = None
+    original_path: str | None = None
+    user_lock_path: str | None = None
+    historical_path: str | None = None
+    policy_path: str | None = None
+    new_policy_path: str | None = None
+    is_conflicted: bool | None = None
+    compliance_path: str | None = None
+    new_filename: str | None = None
+    category: str | None = None
+    sensitivity_rating: str | None = None
+    sensitivity_score: float | None = None
+    archival_priority: int | float | None = None
+    archival_priority_score: float | None = None
+    confidence: float | None = None
+    target_filename: str | None = None
+    is_locked: bool | None = None
+    confirmed: bool | None = None
+    is_confirmed: bool | None = None
+    user_confirmed: bool | None = None
+    jev_category: str | None = None
+    source_root: str | None = None
+    file_date: str | None = None
+    is_duplicate: bool | None = None
+    is_duplicate_primary: bool | None = None
+    duplicate_of: str | None = None
+    duplicate_group_id: str | None = None
+    duplicate_action: str | None = None
+    policy_action: str | None = None
+    post_unarchive_action: str | None = None
+    post_unarchive_target: str | None = None
+    is_excluded: bool | None = None
+    is_checked: bool | None = None
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
     @field_validator("confidence", mode="before")
     @classmethod
-    def validate_confidence(cls, v: Any) -> Optional[float]:
+    def validate_confidence(cls, v: Any) -> float | None:
         """Validate and clamp confidence score between 0.0 and 1.0."""
         if v is None:
             return None
@@ -327,10 +327,10 @@ class SortingPlanModel(BaseModel):
 
     nodes: dict[str, Any] = Field(default_factory=dict)
     model_status: str = "HEALTHY"
-    degradation_reason: Optional[str] = None
-    recovery_action: Optional[str] = None
-    suggested_recovery_action: Optional[str] = None
-    failure_reason: Optional[str] = None
+    degradation_reason: str | None = None
+    recovery_action: str | None = None
+    suggested_recovery_action: str | None = None
+    failure_reason: str | None = None
     invalid_locks: dict[str, str] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="allow")
@@ -377,9 +377,9 @@ class CorpusExampleModel(DictCompatMixin, BaseModel):
     """Pydantic v2 contract model for individual historical corpus examples."""
 
     filepath: str
-    user_verified_target_path: Optional[str] = None
-    vector: Optional[list[float]] = None
-    text: Optional[str] = None
+    user_verified_target_path: str | None = None
+    vector: list[float] | None = None
+    text: str | None = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -432,8 +432,8 @@ class CorpusPreFetchBatchModel(BaseModel):
 class VectorBatchPayloadModel(DictCompatMixin, BaseModel):
     """Pydantic v2 contract model for vector batch payloads."""
 
-    base_dir: Optional[str] = None
-    vectors: dict[str, Optional[list[float]]] = Field(default_factory=dict)
+    base_dir: str | None = None
+    vectors: dict[str, list[float] | None] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="allow")

@@ -3,7 +3,7 @@
 import logging
 import os
 from collections.abc import Callable
-from typing import Any, Optional
+from typing import Any
 
 from textual import on
 from textual.app import ComposeResult
@@ -133,9 +133,9 @@ class SamplePlaygroundModal(ResponsiveModalScreen[None]):
     def __init__(
         self,
         settings: Any,
-        target_dir: Optional[str] = None,
-        initial_selected_packs: Optional[list[str]] = None,
-        on_sync: Optional[Callable[[dict[str, Any]], None]] = None,
+        target_dir: str | None = None,
+        initial_selected_packs: list[str] | None = None,
+        on_sync: Callable[[dict[str, Any]], None] | None = None,
     ):
         super().__init__()
         self.settings = settings

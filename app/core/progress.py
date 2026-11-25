@@ -4,7 +4,7 @@ import inspect
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -14,9 +14,9 @@ class ProgressUpdate:
     """Standardized progress event structure across pipeline core modules."""
 
     progress: float = 0.0
-    stage: Optional[str] = None
-    unit_count: Optional[int] = None
-    unit_type: Optional[str] = None
+    stage: str | None = None
+    unit_count: int | None = None
+    unit_type: str | None = None
 
     def __post_init__(self) -> None:
         """Normalize progress ratio and coerce unit count."""
@@ -38,11 +38,11 @@ class ProgressUpdate:
 
 
 def emit_progress(
-    callback: Optional[Callable[..., Any]],
+    callback: Callable[..., Any] | None,
     progress_or_update: ProgressUpdate | float | int | str | None = 0.0,
-    stage: Optional[str] = None,
-    unit_count: Optional[int] = None,
-    unit_type: Optional[str] = None,
+    stage: str | None = None,
+    unit_count: int | None = None,
+    unit_type: str | None = None,
     **kwargs: Any,
 ) -> None:
     """Normalize callback arguments and emit a ProgressUpdate instance to callback."""

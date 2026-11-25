@@ -14,7 +14,7 @@ import os
 import re
 import zipfile
 from datetime import datetime
-from typing import Any, Optional, Protocol, cast
+from typing import Any, Protocol, cast
 
 import defusedxml.ElementTree as DET
 import pypdf
@@ -32,7 +32,7 @@ _IMAGE_EMBEDDED_DATE_EXTENSIONS = {
 }
 
 
-def _parse_embedded_datetime(raw: Any) -> Optional[datetime]:
+def _parse_embedded_datetime(raw: Any) -> datetime | None:
     """Parse an embedded EXIF or PDF metadata timestamp into a naive local datetime."""
     if raw is None:
         return None
@@ -98,7 +98,7 @@ def _parse_embedded_datetime(raw: Any) -> Optional[datetime]:
     return None
 
 
-def extract_embedded_date(file_path: str | os.PathLike[str]) -> Optional[datetime]:
+def extract_embedded_date(file_path: str | os.PathLike[str]) -> datetime | None:
     """Extract embedded creation/capture timestamp from image EXIF or PDF headers offline.
 
     Uses strictly bundled Pillow (EXIF tags DateTimeOriginal, DateTimeDigitized, DateTime)
@@ -306,7 +306,7 @@ class TxtExtractor:
 
     def extract(self, file_path: str, settings=None) -> str:
         """Extract text from a .txt file."""
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        with open(file_path, encoding="utf-8", errors="ignore") as f:
             return f.read()
 
 
@@ -639,8 +639,8 @@ class CsvExtractor:
     """Extractor for comma-separated values files."""
 
     truncated: bool = False
-    truncation_reason: Optional[str] = None
-    truncated_bounds: Optional[dict[str, Any]] = None
+    truncation_reason: str | None = None
+    truncated_bounds: dict[str, Any] | None = None
 
     def extract(self, file_path: str, settings=None) -> str:
         """Extract text from a .csv file using row-by-row streaming up to row and character limits."""
@@ -651,8 +651,8 @@ class TsvExtractor:
     """Extractor for tab-separated values files."""
 
     truncated: bool = False
-    truncation_reason: Optional[str] = None
-    truncated_bounds: Optional[dict[str, Any]] = None
+    truncation_reason: str | None = None
+    truncated_bounds: dict[str, Any] | None = None
 
     def extract(self, file_path: str, settings=None) -> str:
         """Extract text from a .tsv file using row-by-row streaming up to row and character limits."""
@@ -663,8 +663,8 @@ class XlsxExtractor:
     """Extractor for Excel spreadsheets."""
 
     truncated: bool = False
-    truncation_reason: Optional[str] = None
-    truncated_bounds: Optional[dict[str, Any]] = None
+    truncation_reason: str | None = None
+    truncated_bounds: dict[str, Any] | None = None
 
     def extract(self, file_path: str, settings=None) -> str:
         """Extract text from an Excel file using read-only streaming mode across sheets."""
@@ -2166,8 +2166,8 @@ class MarkdownExtractor:
     """Extractor for Markdown and reStructuredText markup documents."""
 
     truncated: bool = False
-    truncation_reason: Optional[str] = None
-    truncated_bounds: Optional[dict[str, Any]] = None
+    truncation_reason: str | None = None
+    truncated_bounds: dict[str, Any] | None = None
 
     def extract(self, file_path: str, settings=None) -> str:
         """Extract readable text from .md and .rst files within row and character limits."""
@@ -2175,7 +2175,7 @@ class MarkdownExtractor:
         acc = _BoundedTextAccumulator(max_rows=max_rows, max_chars=max_chars)
         in_fence = False
 
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        with open(file_path, encoding="utf-8", errors="ignore") as f:
             for raw_line in f:
                 stripped = raw_line.strip()
                 if stripped.startswith(("```", "~~~")):
@@ -2198,15 +2198,15 @@ class LogExtractor:
     """Extractor for plain-text application and system log files."""
 
     truncated: bool = False
-    truncation_reason: Optional[str] = None
-    truncated_bounds: Optional[dict[str, Any]] = None
+    truncation_reason: str | None = None
+    truncated_bounds: dict[str, Any] | None = None
 
     def extract(self, file_path: str, settings=None) -> str:
         """Stream log lines up to configured row and character budgets."""
         max_rows, max_chars = _resolve_text_budgets(settings)
         acc = _BoundedTextAccumulator(max_rows=max_rows, max_chars=max_chars)
 
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        with open(file_path, encoding="utf-8", errors="ignore") as f:
             for raw_line in f:
                 if not acc.add_line(raw_line.rstrip("\r\n")):
                     break
@@ -2219,15 +2219,15 @@ class YamlExtractor:
     """Extractor for YAML configuration and data files using standard library parsing."""
 
     truncated: bool = False
-    truncation_reason: Optional[str] = None
-    truncated_bounds: Optional[dict[str, Any]] = None
+    truncation_reason: str | None = None
+    truncated_bounds: dict[str, Any] | None = None
 
     def extract(self, file_path: str, settings=None) -> str:
         """Extract non-comment YAML keys and values up to row and character budgets."""
         max_rows, max_chars = _resolve_text_budgets(settings)
         acc = _BoundedTextAccumulator(max_rows=max_rows, max_chars=max_chars)
 
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        with open(file_path, encoding="utf-8", errors="ignore") as f:
             for raw_line in f:
                 no_comment = _strip_yaml_inline_comment(raw_line.rstrip("\r\n"))
                 stripped = no_comment.strip()
@@ -2245,8 +2245,8 @@ class JsonExtractor:
     """Extractor for JSON and JSON Lines data files."""
 
     truncated: bool = False
-    truncation_reason: Optional[str] = None
-    truncated_bounds: Optional[dict[str, Any]] = None
+    truncation_reason: str | None = None
+    truncated_bounds: dict[str, Any] | None = None
 
     @staticmethod
     def _emit_json_value(value: Any, acc: _BoundedTextAccumulator) -> bool:
@@ -2276,7 +2276,7 @@ class JsonExtractor:
         acc = _BoundedTextAccumulator(max_rows=max_rows, max_chars=max_chars)
 
         read_cap = max(max_chars * 8, 1024 * 1024)
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        with open(file_path, encoding="utf-8", errors="ignore") as f:
             raw = f.read(read_cap + 1)
 
         over_read_cap = len(raw) > read_cap
@@ -2316,14 +2316,14 @@ class HtmlExtractor:
     """Extractor for HTML and HTM documents."""
 
     truncated: bool = False
-    truncation_reason: Optional[str] = None
-    truncated_bounds: Optional[dict[str, Any]] = None
+    truncation_reason: str | None = None
+    truncated_bounds: dict[str, Any] | None = None
 
     def extract(self, file_path: str, settings=None) -> str:
         """Extract visible text and metadata from .html and .htm files."""
         max_rows, max_chars = _resolve_text_budgets(settings)
         read_cap = max(max_chars * 10, 2 * 1024 * 1024)
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        with open(file_path, encoding="utf-8", errors="ignore") as f:
             raw_html = f.read(read_cap + 1)
 
         over_cap = len(raw_html) > read_cap
@@ -2343,8 +2343,8 @@ class XmlExtractor:
     """Extractor for XML documents secured with defusedxml."""
 
     truncated: bool = False
-    truncation_reason: Optional[str] = None
-    truncated_bounds: Optional[dict[str, Any]] = None
+    truncation_reason: str | None = None
+    truncated_bounds: dict[str, Any] | None = None
 
     def extract(self, file_path: str, settings=None) -> str:
         """Parse an XML document safely with defusedxml and extract element text."""
@@ -2392,14 +2392,14 @@ class RtfExtractor:
     """Extractor for Rich Text Format (.rtf) documents."""
 
     truncated: bool = False
-    truncation_reason: Optional[str] = None
-    truncated_bounds: Optional[dict[str, Any]] = None
+    truncation_reason: str | None = None
+    truncated_bounds: dict[str, Any] | None = None
 
     def extract(self, file_path: str, settings=None) -> str:
         """Strip RTF control markup and return readable plain text."""
         max_rows, max_chars = _resolve_text_budgets(settings)
         read_cap = max(max_chars * 12, 4 * 1024 * 1024)
-        with open(file_path, "r", encoding="latin-1", errors="ignore") as f:
+        with open(file_path, encoding="latin-1", errors="ignore") as f:
             raw_rtf = f.read(read_cap + 1)
 
         over_cap = len(raw_rtf) > read_cap
@@ -2417,8 +2417,8 @@ class OdtExtractor:
     """Extractor for OpenDocument Text (.odt) archives secured with defusedxml."""
 
     truncated: bool = False
-    truncation_reason: Optional[str] = None
-    truncated_bounds: Optional[dict[str, Any]] = None
+    truncation_reason: str | None = None
+    truncated_bounds: dict[str, Any] | None = None
 
     def extract(self, file_path: str, settings=None) -> str:
         """Extract text from an .odt archive enforcing zip-bomb and XML entity guards."""
@@ -2432,8 +2432,8 @@ class EmlExtractor:
     """Extractor for saved RFC 5322 email (.eml) files."""
 
     truncated: bool = False
-    truncation_reason: Optional[str] = None
-    truncated_bounds: Optional[dict[str, Any]] = None
+    truncation_reason: str | None = None
+    truncated_bounds: dict[str, Any] | None = None
 
     def extract(self, file_path: str, settings=None) -> str:
         """Extract sender, recipients, subject, and body text from an .eml file without writing attachments."""

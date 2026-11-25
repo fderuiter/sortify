@@ -115,7 +115,7 @@ def assert_svg_snapshot(snapshot_name: str, actual_svg: str) -> None:
             )
         return
 
-    with open(snapshot_path, "r", encoding="utf-8", newline="\n") as f:
+    with open(snapshot_path, encoding="utf-8", newline="\n") as f:
         expected_svg = f.read().replace("\r\n", "\n")
 
     if sanitized_actual != expected_svg:

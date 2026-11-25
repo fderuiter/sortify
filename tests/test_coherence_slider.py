@@ -34,7 +34,7 @@ def test_coherence_threshold_persistence(tmp_path):
         app_settings._save_timer.cancel()
     app_settings._save()
 
-    with open(config_file, "r", encoding="utf-8") as f:
+    with open(config_file, encoding="utf-8") as f:
         data = json.load(f)
     assert data["COHERENCE_THRESHOLD"] == 0.8
 

@@ -12,7 +12,6 @@ Key accessibility capabilities:
 """
 
 import html
-from typing import Optional
 
 # Contrast-safe color tokens complying with WCAG 2.2 SC 1.4.3 (>= 4.5:1 against light backgrounds)
 # #b45309 delivers 5.02:1 contrast against white (#ffffff)
@@ -91,9 +90,9 @@ def render_accessible_input(
     input_type: str = "text",
     placeholder: str = "",
     input_class: str = "",
-    extra_attrs: Optional[dict[str, str]] = None,
+    extra_attrs: dict[str, str] | None = None,
     sr_only_label: bool = True,
-    aria_label: Optional[str] = None,
+    aria_label: str | None = None,
 ) -> str:
     """Render an accessible HTML input control with associated label and explicit ARIA label.
 
@@ -132,12 +131,12 @@ def render_accessible_input(
 def render_accessible_select(
     select_id: str,
     label_text: str,
-    options: Optional[list[tuple[str, str]]] = None,
+    options: list[tuple[str, str]] | None = None,
     select_class: str = "",
-    options_html: Optional[str] = None,
-    extra_attrs: Optional[dict[str, str]] = None,
+    options_html: str | None = None,
+    extra_attrs: dict[str, str] | None = None,
     sr_only_label: bool = True,
-    aria_label: Optional[str] = None,
+    aria_label: str | None = None,
 ) -> str:
     """Render an accessible HTML select control with associated label and explicit ARIA label.
 
@@ -192,8 +191,8 @@ def render_table_header(columns: list[str]) -> str:
 def render_table(
     columns: list[str],
     rows_html: str,
-    table_id: Optional[str] = None,
-    table_class: Optional[str] = None,
+    table_id: str | None = None,
+    table_class: str | None = None,
 ) -> str:
     """Render an accessible HTML table with column scope headers and preserved identifiers.
 
@@ -220,7 +219,7 @@ def render_table(
 def render_warning_banner(
     warnings: list[str],
     heading_level: int = 2,
-    title: Optional[str] = None,
+    title: str | None = None,
     banner_class: str = "warning-banner",
 ) -> str:
     """Render a warning banner adhering to sequential heading hierarchy (e.g. h2 under h1).
@@ -270,13 +269,13 @@ class AccessibleHtmlBuilder:
         self.styles = styles
         self.scripts = scripts
         self._header_content: str = ""
-        self._header_class: Optional[str] = None
+        self._header_class: str | None = None
         self._main_content: str = ""
-        self._main_class: Optional[str] = None
-        self._body_container_class: Optional[str] = None
+        self._main_class: str | None = None
+        self._body_container_class: str | None = None
 
     def set_header(
-        self, content: str, header_class: Optional[str] = None
+        self, content: str, header_class: str | None = None
     ) -> "AccessibleHtmlBuilder":
         """Set the content and optional CSS class for the <header> landmark."""
         self._header_content = content
@@ -284,7 +283,7 @@ class AccessibleHtmlBuilder:
         return self
 
     def set_main(
-        self, content: str, main_class: Optional[str] = None
+        self, content: str, main_class: str | None = None
     ) -> "AccessibleHtmlBuilder":
         """Set the content and optional CSS class for the <main> landmark."""
         self._main_content = content
@@ -374,9 +373,9 @@ def build_accessible_document(
     styles: str = "",
     scripts: str = "",
     lang: str = "en",
-    container_class: Optional[str] = None,
-    header_class: Optional[str] = None,
-    main_class: Optional[str] = None,
+    container_class: str | None = None,
+    header_class: str | None = None,
+    main_class: str | None = None,
 ) -> str:
     """Assemble and render an accessible HTML document."""
     builder = AccessibleHtmlBuilder(

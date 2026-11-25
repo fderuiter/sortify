@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "95e133eb1ba5303fc1842515da85e55e2818b2fce8b2a47b0da11ed32a4e3933"
+    "checksum": "8f7bbf3e9644055ee245e9cd3b941df6a2428aec2e16958ee4df601ae25b0f9c"
   },
   "classes": [],
   "functions": [
@@ -22,7 +22,7 @@
       "decorators": [],
       "name": "get_meipass_dir",
       "parameters": [],
-      "returns": "Optional[str]"
+      "returns": "str | None"
     },
     {
       "async": false,

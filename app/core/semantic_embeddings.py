@@ -177,7 +177,7 @@ def get_active_model_properties(model_path: str | None) -> tuple[str, int, str]:
         version_file = os.path.join(os.path.dirname(onnx_file), "version.txt")
         if os.path.exists(version_file):
             with contextlib.suppress(OSError, UnicodeDecodeError):
-                with open(version_file, "r") as vf:
+                with open(version_file) as vf:
                     version = vf.read().strip()
 
         props = ModelProperties(signature, dimensions, version, is_valid)

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "87cf97cc023d6bfcdc1646b76de0c0c052fb9ada074e8d44f2471d1582746cea"
+    "checksum": "1025ee8844ce40dc8c4cd90527153fa6d4bf060bc64a588ac8a3cc0184650c5e"
   },
   "classes": [
     {
@@ -36,7 +36,7 @@
               "name": "name"
             }
           ],
-          "returns": "Optional[Any]"
+          "returns": "Any | None"
         },
         {
           "async": false,
@@ -95,7 +95,7 @@
               "name": "view_name"
             }
           ],
-          "returns": "Optional[Any]"
+          "returns": "Any | None"
         },
         {
           "async": false,

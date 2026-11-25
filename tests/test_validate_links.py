@@ -1,5 +1,4 @@
 import os
-import socket
 import sys
 import urllib.error
 from unittest.mock import MagicMock, patch
@@ -92,7 +91,7 @@ def test_validate_url_critical_error(mock_urlopen):
 
 @patch("urllib.request.urlopen")
 def test_validate_url_timeout_warning(mock_urlopen):
-    mock_urlopen.side_effect = socket.timeout("timed out")
+    mock_urlopen.side_effect = TimeoutError("timed out")
 
     success, msg, is_critical = validate_url("http://example.com", set())
     assert success is False
@@ -102,7 +101,7 @@ def test_validate_url_timeout_warning(mock_urlopen):
 
 @patch("urllib.request.urlopen")
 def test_validate_url_timeout_allow_offline(mock_urlopen):
-    mock_urlopen.side_effect = socket.timeout("timed out")
+    mock_urlopen.side_effect = TimeoutError("timed out")
 
     success, msg, is_critical = validate_url(
         "http://example.com", set(), allow_offline=True
@@ -217,7 +216,7 @@ def test_main_allow_offline(mock_urlopen, monkeypatch, tmp_path):
         "Check https://nonexistent-domain-xyz123.org/doc for info.", encoding="utf-8"
     )
 
-    mock_urlopen.side_effect = socket.timeout("timed out")
+    mock_urlopen.side_effect = TimeoutError("timed out")
 
     monkeypatch.setattr(
         "scripts.validate_links.get_all_target_files",

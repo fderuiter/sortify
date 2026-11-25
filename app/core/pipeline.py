@@ -13,7 +13,7 @@ import threading
 from collections.abc import Callable, Collection, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -26,7 +26,7 @@ _ACTIVE_PIPELINE: contextvars.ContextVar["SortPipeline | None"] = (
 )
 
 
-class PipelineLifecycleState(str, Enum):
+class PipelineLifecycleState(StrEnum):
     """Operational lifecycle states of SortPipeline."""
 
     CREATED = "created"

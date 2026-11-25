@@ -71,7 +71,7 @@ def test_cro_pipeline_end_to_end():
         assert os.path.exists(result.chain_of_custody_manifest_path)
 
         # Check Chain of Custody Manifest file
-        with open(result.chain_of_custody_manifest_path, "r") as f:
+        with open(result.chain_of_custody_manifest_path) as f:
             manifest = json.load(f)
             assert manifest["summary_metrics"]["total_documents_scanned"] == 5
             assert manifest["summary_metrics"]["total_studies_discovered"] == 2
@@ -237,7 +237,7 @@ def test_cro_pipeline_single_study_unassigned_routing():
         # Verify study compliance report excludes unassigned files
         comp_json_path = os.path.join(proto101_dir, "compliance_audit_report.json")
         assert os.path.exists(comp_json_path)
-        with open(comp_json_path, "r") as f:
+        with open(comp_json_path) as f:
             comp_data = json.load(f)
             # Only 2 clinical files assigned to PROTO_101 evaluated
             assert comp_data["total_files_scanned"] == 2
@@ -272,7 +272,7 @@ def test_cro_pipeline_naming_collision_handling():
         assert result.total_scanned_files == 2
         assert os.path.exists(result.chain_of_custody_manifest_path)
 
-        with open(result.chain_of_custody_manifest_path, "r") as f:
+        with open(result.chain_of_custody_manifest_path) as f:
             manifest = json.load(f)
 
         dest_paths = [rec["destination_path"] for rec in manifest["document_manifest"]]
@@ -289,7 +289,7 @@ def test_cro_pipeline_naming_collision_handling():
 
         contents_on_disk = []
         for p in dest_paths:
-            with open(os.path.join(target_dir, p), "r") as f:
+            with open(os.path.join(target_dir, p)) as f:
                 contents_on_disk.append(f.read())
 
         assert content1 in contents_on_disk
@@ -308,7 +308,7 @@ def test_cro_pipeline_rerun_ingestion_existing_directory():
 
         # First run
         result1 = pipeline.run_pipeline(source_root=source_dir, target_root=target_dir)
-        with open(result1.chain_of_custody_manifest_path, "r") as f:
+        with open(result1.chain_of_custody_manifest_path) as f:
             m1 = json.load(f)
         dest1 = m1["document_manifest"][0]["destination_path"]
         assert os.path.exists(os.path.join(target_dir, dest1))
@@ -319,7 +319,7 @@ def test_cro_pipeline_rerun_ingestion_existing_directory():
 
         # Second run into same target_dir
         result2 = pipeline.run_pipeline(source_root=source_dir, target_root=target_dir)
-        with open(result2.chain_of_custody_manifest_path, "r") as f:
+        with open(result2.chain_of_custody_manifest_path) as f:
             m2 = json.load(f)
 
         # Check second run manifest entries
@@ -345,7 +345,7 @@ def test_cro_pipeline_identical_source_and_target_physical_files():
 
         # Run pipeline once so target file is generated
         res1 = pipeline.run_pipeline(source_root=source_dir, target_root=target_dir)
-        with open(res1.chain_of_custody_manifest_path, "r") as f:
+        with open(res1.chain_of_custody_manifest_path) as f:
             m1 = json.load(f)
         first_dest_rel = m1["document_manifest"][0]["destination_path"]
         first_dest_abs = os.path.join(target_dir, first_dest_rel)

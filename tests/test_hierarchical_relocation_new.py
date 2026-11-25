@@ -103,7 +103,7 @@ def test_deeply_nested_physical_execution_relocates_identically(test_environment
     # Check physical file was relocated to the exact dry-run destination
     assert not os.path.exists(source_file)
     assert os.path.exists(dry_run_dst)
-    with open(dry_run_dst, "r") as f:
+    with open(dry_run_dst) as f:
         assert f.read() == "deep file content"
 
 

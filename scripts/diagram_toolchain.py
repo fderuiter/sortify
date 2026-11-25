@@ -13,7 +13,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from scripts.diagram_schema import BaseDiagramSpec
@@ -31,7 +31,7 @@ CACHE_FILE_NAME = ".build_cache.json"
 _SOURCE_HASH_RE = re.compile(r"<!-- diagram-source-sha256: ([0-9a-f]{64}) -->")
 
 
-_BROWSER_AVAILABLE_CACHE: Optional[bool] = None
+_BROWSER_AVAILABLE_CACHE: bool | None = None
 
 
 def reset_browser_cache() -> None:
@@ -41,7 +41,7 @@ def reset_browser_cache() -> None:
 
 
 def is_browser_available(
-    mmdc_cmd: Optional[list[str]] = None, force_check: bool = False
+    mmdc_cmd: list[str] | None = None, force_check: bool = False
 ) -> bool:
     """Probe whether mmdc is present and capable of launching a browser engine."""
     global _BROWSER_AVAILABLE_CACHE
@@ -103,7 +103,7 @@ def stamp_svg_source(svg_file: Path, source_hash: str) -> None:
     )
 
 
-def svg_source_hash(svg_file: Path) -> Optional[str]:
+def svg_source_hash(svg_file: Path) -> str | None:
     """Return the source hash a rendered SVG was stamped with, if any."""
     if not svg_file.exists():
         return None
@@ -111,13 +111,13 @@ def svg_source_hash(svg_file: Path) -> Optional[str]:
     return match.group(1) if match else None
 
 
-def find_mmdc_executable(verify_browser: bool = True) -> Optional[list[str]]:
+def find_mmdc_executable(verify_browser: bool = True) -> list[str] | None:
     """Determine the command prefix required to run mmdc (mermaid-cli).
 
     If verify_browser is True, probes whether the browser engine can launch successfully.
     """
     mmdc_path = shutil.which("mmdc")
-    candidate: Optional[list[str]] = None
+    candidate: list[str] | None = None
     if mmdc_path:
         candidate = [mmdc_path]
     else:
@@ -313,7 +313,7 @@ def validate_mermaid_syntax(mmd_content: str) -> list[str]:
     return errors
 
 
-def check_no_raw_mermaid_in_docs(docs_dir: Optional[Path] = None) -> bool:
+def check_no_raw_mermaid_in_docs(docs_dir: Path | None = None) -> bool:
     """Scan docs directory for raw inline ```mermaid code blocks and return False if any remain."""
     import re
 
@@ -362,7 +362,7 @@ def load_cache(cache_path: Path) -> dict:
     """Load diagram compilation cache file."""
     if cache_path.exists():
         try:
-            with open(cache_path, "r", encoding="utf-8") as f:
+            with open(cache_path, encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             return {}

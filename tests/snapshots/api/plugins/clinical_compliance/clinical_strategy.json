@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "8bf4744e5445af0428a7cb8be186b8fd38f644bd1b8f15307ce4a626789f71a5"
+    "checksum": "a7dac9e4b51082ef1a6327a464846cfda5bcfcf8184f47e0e6baf5c4bfa20abd"
   },
   "classes": [
     {
@@ -61,7 +61,7 @@
               "name": "max_folders"
             },
             {
-              "annotation": "Optional[set]",
+              "annotation": "set | None",
               "default": "None",
               "name": "stop_words"
             },
@@ -76,7 +76,7 @@
               "name": "max_features"
             },
             {
-              "annotation": "Optional[list[list]]",
+              "annotation": "list[list] | None",
               "default": "None",
               "name": "pre_fetched_vectors"
             },
@@ -86,7 +86,7 @@
               "name": "cancel_check"
             },
             {
-              "annotation": "Optional[Any]",
+              "annotation": "Any | None",
               "default": "None",
               "name": "pre_fetched_corpus"
             }

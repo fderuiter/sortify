@@ -6,7 +6,6 @@ to generate standardized, audit-ready filenames adhering to clinical research co
 
 import os
 import re
-from typing import Optional
 
 from app.core.path_utils import sanitize_name
 
@@ -15,7 +14,7 @@ class ClinicalRenamer:
     """Renames clinical trial documents according to standardized regulatory naming schemas."""
 
     @staticmethod
-    def extract_protocol_id(text: str, filename: str) -> Optional[str]:
+    def extract_protocol_id(text: str, filename: str) -> str | None:
         """Extract study/protocol identifier from text or filename."""
         from app.core.text_utils import contains_secrets, sanitize_secret_patterns
 
@@ -56,7 +55,7 @@ class ClinicalRenamer:
         return None
 
     @staticmethod
-    def extract_investigator_name(text: str) -> Optional[str]:
+    def extract_investigator_name(text: str) -> str | None:
         """Extract Principal Investigator / Physician name from document text."""
         from app.core.text_utils import contains_secrets, sanitize_secret_patterns
 
@@ -76,7 +75,7 @@ class ClinicalRenamer:
         return None
 
     @staticmethod
-    def extract_date_or_version(text: str, filename: str) -> Optional[str]:
+    def extract_date_or_version(text: str, filename: str) -> str | None:
         """Extract date (YYYYMMDD or YYYY-MM-DD) or version string from text or filename."""
         from app.core.text_utils import sanitize_secret_patterns
 

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "9df6ca195407120bb09c71a435bec487589fb3b8d12f848dc27bc7a7e58837ea"
+    "checksum": "f4dafe75518f1ad658412eb5154a2641a6098bbc0f2b3011266c2884f32b2767"
   },
   "classes": [
     {
@@ -212,7 +212,7 @@
               "name": "dry_run"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "dest_dir"
             }
@@ -270,7 +270,7 @@
               "name": "self"
             }
           ],
-          "returns": "Optional[threading.Event]"
+          "returns": "threading.Event | None"
         },
         {
           "async": false,

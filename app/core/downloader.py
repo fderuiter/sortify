@@ -11,7 +11,7 @@ import threading
 import urllib.error
 import urllib.parse
 import urllib.request
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from app.core.exceptions import DownloaderError, ModelVerificationError
@@ -164,7 +164,7 @@ class DownloadCancelledError(DownloadError):
     """Raised when the download is cancelled by the user."""
 
 
-class DownloadState(str, Enum):
+class DownloadState(StrEnum):
     """Lifecycle states for model downloads."""
 
     IDLE = "IDLE"
@@ -687,7 +687,7 @@ def _inspect_model_bundle(model_dir: str) -> tuple[str, str]:
 
     config_file = os.path.join(model_dir, "config.json")
     try:
-        with open(config_file, "r", encoding="utf-8") as cf:
+        with open(config_file, encoding="utf-8") as cf:
             cfg_obj = json.load(cf)
         if not isinstance(cfg_obj, dict):
             return ("corrupted", "config.json must contain a JSON object.")

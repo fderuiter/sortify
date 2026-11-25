@@ -595,7 +595,7 @@ def main():
         sys.exit(1)
 
     if verify_lockfile_only:
-        with open(reqs_file, "r", encoding="utf-8") as f:
+        with open(reqs_file, encoding="utf-8") as f:
             manifest_content = f.read()
         _validate_manifest(manifest_content, is_cpu=is_cpu)
         print(f"Verified {reqs_file} is synchronized with uv.lock.")
@@ -626,7 +626,7 @@ def main():
     if not reqs_file.exists():
         print(f"Error: Requirements manifest not found at {reqs_file}.")
         sys.exit(1)
-    with open(reqs_file, "r", encoding="utf-8") as f:
+    with open(reqs_file, encoding="utf-8") as f:
         manifest_content = f.read()
     _validate_manifest(manifest_content, is_cpu=is_cpu)
 

@@ -391,11 +391,11 @@ def run_json_merge_driver(
 ) -> int:
     """Run 3-way merge driver for JSON snapshot files."""
     try:
-        with open(ancestor_path, "r", encoding="utf-8") as f:
+        with open(ancestor_path, encoding="utf-8") as f:
             base_str = f.read()
-        with open(current_path, "r", encoding="utf-8") as f:
+        with open(current_path, encoding="utf-8") as f:
             ours_str = f.read()
-        with open(incoming_path, "r", encoding="utf-8") as f:
+        with open(incoming_path, encoding="utf-8") as f:
             theirs_str = f.read()
     except Exception as e:
         print(f"Error reading JSON snapshot versions for merge: {e}", file=sys.stderr)
@@ -509,11 +509,11 @@ def run_svg_merge_driver(
 ) -> int:
     """Run 3-way merge driver for SVG visual snapshot files."""
     try:
-        with open(ancestor_path, "r", encoding="utf-8") as f:
+        with open(ancestor_path, encoding="utf-8") as f:
             base_str = f.read()
-        with open(current_path, "r", encoding="utf-8") as f:
+        with open(current_path, encoding="utf-8") as f:
             ours_str = f.read()
-        with open(incoming_path, "r", encoding="utf-8") as f:
+        with open(incoming_path, encoding="utf-8") as f:
             theirs_str = f.read()
     except Exception as e:
         print(f"Error reading SVG snapshot versions for merge: {e}", file=sys.stderr)
@@ -603,7 +603,7 @@ def run_cli_resolver(file_path: str | None = None, diff_only: bool = False):
         rel_p = os.path.relpath(tf)
         has_conflict = False
         try:
-            with open(tf, "r", encoding="utf-8") as f:
+            with open(tf, encoding="utf-8") as f:
                 content = f.read()
                 if tf.endswith(".json"):
                     try:
@@ -636,7 +636,7 @@ def run_cli_resolver(file_path: str | None = None, diff_only: bool = False):
             rel_p = os.path.relpath(tf)
             print(f"\n--- Analysis for {rel_p} ---")
             try:
-                with open(tf, "r", encoding="utf-8") as f:
+                with open(tf, encoding="utf-8") as f:
                     content = f.read()
                     if tf.endswith(".json"):
                         data = json.loads(content)
@@ -691,7 +691,7 @@ def run_cli_resolver(file_path: str | None = None, diff_only: bool = False):
         if 0 <= choice < len(target_files):
             selected = target_files[choice]
             print(f"\nInspecting: {selected}")
-            with open(selected, "r", encoding="utf-8") as f:
+            with open(selected, encoding="utf-8") as f:
                 content = f.read()
                 print("Content Preview:")
                 print(

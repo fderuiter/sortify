@@ -11,7 +11,7 @@ import os
 import plistlib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -165,7 +165,7 @@ def get_starter_templates() -> list[StarterTemplatePack]:
     return list(BUILTIN_STARTER_TEMPLATES)
 
 
-def get_starter_template_by_id(pack_id: str) -> Optional[StarterTemplatePack]:
+def get_starter_template_by_id(pack_id: str) -> StarterTemplatePack | None:
     """Find a starter template pack by unique ID."""
     for pack in BUILTIN_STARTER_TEMPLATES:
         if pack.id == pack_id:

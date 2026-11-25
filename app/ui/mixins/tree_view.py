@@ -4,7 +4,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, NamedTuple, Optional
+from typing import Any, NamedTuple
 
 from rich.text import Text
 from textual.widgets import Input, Static, Tree
@@ -41,10 +41,10 @@ class TreeViewMixin:
     """Render the plan tree, filter it by search query and fill the inspector."""
 
     _tree_expansion_memory: dict[str, bool] = {}
-    _last_cursor_key: Optional[str] = None
+    _last_cursor_key: str | None = None
 
     def _build_path_lookup_index(
-        self: TUIHostProtocol, paths: Optional[Any] = None
+        self: TUIHostProtocol, paths: Any | None = None
     ) -> PathLookupIndex:
         """Build sets of normalized paths and filename basenames from input path collections.
 
@@ -469,7 +469,7 @@ class TreeViewMixin:
         _walk(plan_dict, current_folder)
         return matching_ids
 
-    def render_tree(self: TUIHostProtocol, search_query: Optional[str] = None) -> None:
+    def render_tree(self: TUIHostProtocol, search_query: str | None = None) -> None:
         """Render Textual Tree widget from in-memory plan structure without running validation worker."""
         try:
             tree_matches = self.query("#plan-tree")
@@ -548,7 +548,7 @@ class TreeViewMixin:
 
     def rebuild_tree(
         self: TUIHostProtocol,
-        search_query: Optional[str] = None,
+        search_query: str | None = None,
         run_validation: bool = True,
     ) -> None:
         """Rebuild Textual Tree widget from in-memory plan structure and optionally validate plan integrity."""
@@ -583,7 +583,7 @@ class TreeViewMixin:
         current_folder: str = "",
         query: str = "",
         parent_folder_matches: bool = False,
-        matching_ids: Optional[set[int]] = None,
+        matching_ids: set[int] | None = None,
     ) -> list[dict[str, Any]]:
         """Collect file info dicts for nodes visible under the active search query filter."""
         files = []
@@ -648,10 +648,10 @@ class TreeViewMixin:
         current_folder: str,
         query: str = "",
         parent_folder_matches: bool = False,
-        matching_ids: Optional[set[int]] = None,
-        crit_index: Optional[tuple[set[str], set[str]]] = None,
-        warn_index: Optional[tuple[set[str], set[str]]] = None,
-        collision_index: Optional[tuple[set[str], set[str]]] = None,
+        matching_ids: set[int] | None = None,
+        crit_index: tuple[set[str], set[str]] | None = None,
+        warn_index: tuple[set[str], set[str]] | None = None,
+        collision_index: tuple[set[str], set[str]] | None = None,
     ) -> int:
         """Recursively build tree nodes, filtering by search query if specified. Returns count of nodes added."""
         added_count = 0

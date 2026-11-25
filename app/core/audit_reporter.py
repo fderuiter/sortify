@@ -5,9 +5,9 @@ import csv
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from app.core.exceptions import AuditExportError
 from app.core.path_utils import safe_relpath
@@ -135,7 +135,7 @@ def generate_audit_report(
 
     return {
         "base_dir": base_dir,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "total_files": total_files,
         "verified_pass_count": pass_count,
         "mismatch_fail_count": fail_count,
@@ -147,10 +147,10 @@ def generate_audit_report(
 
 
 def resolve_audit_report(
-    audit_report: Optional[dict[str, Any]],
-    base_dir: Optional[str],
+    audit_report: dict[str, Any] | None,
+    base_dir: str | None,
     plan: Any,
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Return ``audit_report`` or synthesize an audit report from ``plan`` moves.
 
     Parameters
@@ -181,8 +181,8 @@ def resolve_audit_report(
 
 def _validate_and_resolve_export_path(
     output_path: str,
-    base_dir: Optional[str] = None,
-    report_data: Optional[dict[str, Any]] = None,
+    base_dir: str | None = None,
+    report_data: dict[str, Any] | None = None,
 ) -> str:
     """Validate export output path against allowed base directory boundary.
 
@@ -260,7 +260,7 @@ def _validate_and_resolve_export_path(
 
 
 def _open_secure_export_file(
-    abs_path: str, mode: str = "w", newline: Optional[str] = None
+    abs_path: str, mode: str = "w", newline: str | None = None
 ):
     """Open an export report file with mode 0o600 permissions.
 
@@ -297,7 +297,7 @@ def _open_secure_export_file(
             newline=newline,
             closefd=True,
         )
-    except (OSError, IOError, PermissionError) as err:
+    except (OSError, PermissionError) as err:
         msg = f"Failed to create secure export file at {abs_path}: {err}"
         logger.error(msg)
         raise AuditExportError(msg) from err
@@ -306,7 +306,7 @@ def _open_secure_export_file(
 def export_audit_report_json(
     report_data: dict[str, Any],
     output_path: str,
-    base_dir: Optional[str] = None,
+    base_dir: str | None = None,
 ) -> str:
     """Export audit report to a structured JSON file on disk.
 
@@ -333,7 +333,7 @@ def export_audit_report_json(
         return abs_path
     except AuditExportError:
         raise
-    except (OSError, IOError, PermissionError) as err:
+    except (OSError, PermissionError) as err:
         msg = f"Failed to export audit report to JSON at {abs_path}: {err}"
         logger.error(msg)
         raise AuditExportError(msg) from err
@@ -342,7 +342,7 @@ def export_audit_report_json(
 def export_audit_report_csv(
     report_data: dict[str, Any],
     output_path: str,
-    base_dir: Optional[str] = None,
+    base_dir: str | None = None,
 ) -> str:
     """Export audit report to a structured CSV file on disk.
 
@@ -396,7 +396,7 @@ def export_audit_report_csv(
         return abs_path
     except AuditExportError:
         raise
-    except (OSError, IOError, PermissionError) as err:
+    except (OSError, PermissionError) as err:
         msg = f"Failed to export audit report to CSV at {abs_path}: {err}"
         logger.error(msg)
         raise AuditExportError(msg) from err
@@ -406,7 +406,7 @@ def export_audit_report(
     report_data: dict[str, Any],
     output_path: str,
     format_type: str = "json",
-    base_dir: Optional[str] = None,
+    base_dir: str | None = None,
 ) -> str:
     """Export audit report to disk in specified format ('json' or 'csv').
 

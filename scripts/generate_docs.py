@@ -44,7 +44,7 @@ def _init_defines_dunder_all(source_path: str) -> bool:
     import ast
 
     try:
-        with open(source_path, "r", encoding="utf-8") as f:
+        with open(source_path, encoding="utf-8") as f:
             tree = ast.parse(f.read(), filename=source_path)
     except Exception:
         return False
@@ -192,7 +192,7 @@ def _collect_bindings(source_path: str) -> dict:
     """Map class name to ``(title, [(keys, description)])`` from ``BINDINGS``."""
     import ast
 
-    with open(source_path, "r", encoding="utf-8") as f:
+    with open(source_path, encoding="utf-8") as f:
         tree = ast.parse(f.read())
 
     found = {}
@@ -761,7 +761,7 @@ def update_security_md(sec_file="SECURITY.md", local_only: bool = True):
     if os.path.exists(config_path):
         import json
 
-        with open(config_path, "r", encoding="utf-8") as f:
+        with open(config_path, encoding="utf-8") as f:
             config = json.load(f)
         raw_rules = config.get("rules", [])
         for rule in raw_rules:
@@ -808,7 +808,7 @@ def update_security_md(sec_file="SECURITY.md", local_only: bool = True):
             if "generate_docs.py" in filepath.replace("\\", "/"):
                 continue
 
-            with open(filepath, "r", encoding="utf-8") as f:
+            with open(filepath, encoding="utf-8") as f:
                 try:
                     file_content = f.read()
                 except UnicodeDecodeError:
@@ -916,7 +916,7 @@ def update_security_md(sec_file="SECURITY.md", local_only: bool = True):
 
     if not sec_file:
         sec_file = "SECURITY.md"
-    with open(sec_file, "r", encoding="utf-8") as f:
+    with open(sec_file, encoding="utf-8") as f:
         lines = f.readlines()
 
     out_lines = []
@@ -1509,7 +1509,7 @@ def audit_handwritten_docs(local_only: bool = True):
         if not os.path.exists(doc_path):
             continue
         try:
-            with open(doc_path, "r", encoding="utf-8") as f:
+            with open(doc_path, encoding="utf-8") as f:
                 content = f.read()
         except Exception:
             continue
@@ -1605,7 +1605,7 @@ def validate_mermaid_diagrams():
             continue
 
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
+            with open(file_path, encoding="utf-8") as f:
                 full_text = f.read()
         except Exception as e:
             errors.append(f"Could not read file {file_path}: {e}")
@@ -1657,7 +1657,7 @@ def validate_mkdocs_config(config_path: str | Path = MKDOCS_CONFIG_PATH) -> list
         return [f"Missing MkDocs configuration file: {label}"]
 
     try:
-        with open(cfg_path, "r", encoding="utf-8") as f:
+        with open(cfg_path, encoding="utf-8") as f:
             raw_yaml = f.read()
     except Exception as exc:
         return [f"Could not read MkDocs configuration {label}: {exc}"]
@@ -1866,7 +1866,7 @@ def main():
         for filepath in generated_files:
             if os.path.exists(filepath):
                 try:
-                    with open(filepath, "r", encoding="utf-8") as f:
+                    with open(filepath, encoding="utf-8") as f:
                         initial_contents[filepath] = f.read().replace("\r\n", "\n")
                 except Exception:
                     initial_contents[filepath] = None
@@ -1942,7 +1942,7 @@ def main():
                     )
                     if os.path.exists(read_target):
                         try:
-                            with open(read_target, "r", encoding="utf-8") as f:
+                            with open(read_target, encoding="utf-8") as f:
                                 new_content = f.read().replace("\r\n", "\n")
                         except Exception:
                             pass

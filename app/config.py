@@ -40,7 +40,7 @@ def _get_schema_validator():
                     try:
                         import jsonschema
 
-                        with open(schema_path, "r", encoding="utf-8") as sf:
+                        with open(schema_path, encoding="utf-8") as sf:
                             schema = json.load(sf)
                         _SCHEMA_VALIDATOR = jsonschema.Draft202012Validator(schema)
                     except Exception as e:
@@ -1351,7 +1351,7 @@ class AppSettings:
         file_lock = self._get_file_lock(self._filepath)
         try:
             with file_lock:
-                with open(self._filepath, "r", encoding="utf-8") as f:
+                with open(self._filepath, encoding="utf-8") as f:
                     data = json.load(f)
 
             # Decrypt PROXY setting if encrypted, or mark for migration if legacy plaintext

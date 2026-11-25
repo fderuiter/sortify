@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "63f581adb0fd76e33e7a42b6e60f1e08b3019f3c5d602b5b6659236f304184ed"
+    "checksum": "8e6b2b736a181631ac932b54d2448a2207a16a8d4b8bf0933775deab56d1132d"
   },
   "classes": [
     {
@@ -41,7 +41,7 @@
               "name": "method"
             },
             {
-              "annotation": "Optional[dict]",
+              "annotation": "dict | None",
               "default": "None",
               "name": "params"
             },
@@ -131,7 +131,7 @@
           "name": "base_dir"
         }
       ],
-      "returns": "Optional[dict[str, Any]]"
+      "returns": "dict[str, Any] | None"
     }
   ]
 }

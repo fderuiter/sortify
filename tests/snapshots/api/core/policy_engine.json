@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "88b71632d8b1460890e175e7683f4b22790c3b991ce25ad0b89b6bdc6e6059bc"
+    "checksum": "f6e4208070ac1592e3a6e54bd36061996816ad6a9cf6e0fc7f02623c08146c11"
   },
   "classes": [
     {
@@ -294,7 +294,7 @@
           "name": "mtime"
         },
         {
-          "annotation": "Optional[datetime]",
+          "annotation": "datetime | None",
           "default": "None",
           "name": "now"
         }
@@ -317,7 +317,7 @@
           "name": "target_dt"
         },
         {
-          "annotation": "Optional[datetime]",
+          "annotation": "datetime | None",
           "default": "None",
           "name": "now"
         }

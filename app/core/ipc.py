@@ -9,7 +9,7 @@ import secrets
 import sys
 import tempfile
 import time
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger("app.ipc")
 
@@ -52,13 +52,13 @@ def is_process_alive(pid: int) -> bool:
             return False
 
 
-def read_pid_file(base_dir: str) -> Optional[dict[str, Any]]:
+def read_pid_file(base_dir: str) -> dict[str, Any] | None:
     """Read and parse the daemon PID file from base_dir."""
     pid_path = os.path.join(base_dir, PID_FILE_NAME)
     if not os.path.exists(pid_path):
         return None
     try:
-        with open(pid_path, "r", encoding="utf-8") as f:
+        with open(pid_path, encoding="utf-8") as f:
             data = json.load(f)
             if isinstance(data, dict) and "pid" in data:
                 return data
@@ -73,10 +73,10 @@ class DaemonIPCServer:
     def __init__(self, daemon):
         self.daemon = daemon
         self.base_dir = daemon.base_dir
-        self.server: Optional[asyncio.Server] = None
-        self.socket_path: Optional[str] = None
+        self.server: asyncio.Server | None = None
+        self.socket_path: str | None = None
         self.pid_path = os.path.join(self.base_dir, PID_FILE_NAME)
-        self.auth_token: Optional[str] = None
+        self.auth_token: str | None = None
         self.is_running = False
 
     async def start(self):
@@ -413,7 +413,7 @@ class DaemonIPCClient:
         self.base_dir = os.path.abspath(base_dir)
 
     async def send_command(
-        self, method: str, params: Optional[dict] = None, timeout: float = 15.0
+        self, method: str, params: dict | None = None, timeout: float = 15.0
     ) -> dict[str, Any]:
         """Send a JSON-RPC method request to the daemon IPC server and return result dict."""
         pid_info = read_pid_file(self.base_dir)

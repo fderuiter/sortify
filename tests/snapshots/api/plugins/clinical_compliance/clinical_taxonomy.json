@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "6e53092a404d59530b67ac6070f634646d27646ed7af3fa07085ed641826b670"
+    "checksum": "4d6a34be005bd25656287c26b91627d839059b46c6294cb83796f97c483aff0f"
   },
   "classes": [
     {
@@ -23,7 +23,7 @@
           "name": "artifact_id"
         }
       ],
-      "returns": "Optional[ClinicalArtifactDefinition]"
+      "returns": "ClinicalArtifactDefinition | None"
     }
   ]
 }

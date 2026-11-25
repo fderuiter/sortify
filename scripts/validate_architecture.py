@@ -415,7 +415,7 @@ def _collect_parsed_app_files(app_root: str = "app") -> list[tuple[str, ast.Modu
                 continue
             filepath = os.path.join(root, file).replace("\\", "/")
             try:
-                with open(filepath, "r", encoding="utf-8") as f:
+                with open(filepath, encoding="utf-8") as f:
                     content = f.read()
                 tree = ast.parse(content, filename=filepath)
             except Exception:
@@ -761,7 +761,7 @@ def declared_settings_keys(
 
     Read from the source rather than imported, so the check needs no app imports.
     """
-    with open(config_path, "r", encoding="utf-8") as f:
+    with open(config_path, encoding="utf-8") as f:
         tree = ast.parse(f.read(), filename=config_path)
     for node in tree.body:
         if isinstance(node, ast.ClassDef) and node.name == "Settings":

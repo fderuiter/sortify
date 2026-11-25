@@ -12,7 +12,6 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Optional
 
 
 class FolderBusyError(RuntimeError):
@@ -26,7 +25,7 @@ class FolderBusyError(RuntimeError):
         self.folder = folder
 
 
-def _lock_path(folder: str, lock_dir: Optional[Path]) -> Path:
+def _lock_path(folder: str, lock_dir: Path | None) -> Path:
     if lock_dir is None:
         from app.config import get_app_dir
 
@@ -73,13 +72,11 @@ class FolderLock:
     ``FolderBusyError``. A ``timeout`` of 0 fails at once.
     """
 
-    def __init__(
-        self, folder: str, timeout: float = 0.0, lock_dir: Optional[Path] = None
-    ):
+    def __init__(self, folder: str, timeout: float = 0.0, lock_dir: Path | None = None):
         self.folder = folder
         self.timeout = timeout
         self._path = _lock_path(folder, lock_dir)
-        self._fd: Optional[int] = None
+        self._fd: int | None = None
 
     def __enter__(self) -> "FolderLock":
         """Take the lock, waiting up to ``timeout`` seconds."""

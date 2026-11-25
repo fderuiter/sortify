@@ -9,7 +9,7 @@ import re
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -281,7 +281,7 @@ def is_packaged() -> bool:
     return getattr(sys, "frozen", False) or hasattr(sys, "_MEIPASS")
 
 
-def get_meipass_dir() -> Optional[str]:
+def get_meipass_dir() -> str | None:
     """Get the PyInstaller _MEIPASS bundle directory path if running packaged, else None."""
     if is_packaged():
         return getattr(sys, "_MEIPASS", None)
