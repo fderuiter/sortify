@@ -87,19 +87,19 @@ repos:
         name: Validate API and CLI Signatures
         entry: uv run python scripts/validate_signatures.py
         language: system
-        pass_filenames: false
-        files: '(\.py$|^tests/snapshots/|pyproject\.toml$|uv\.lock$)'
+        pass_filenames: true
+        files: '^(app/(cli|core|plugins)/.*\.py|app/(main|config)\.py|app/ui/protocols\.py|sandbox_cli\.py|tests/snapshots/.*|tests/test_visual_snapshots\.py|pyproject\.toml|uv\.lock)$'
       - id: validate-architecture
         name: Validate Architectural Guardrails and System Utilities
         entry: uv run python scripts/validate_architecture.py
         language: system
-        pass_filenames: false
+        pass_filenames: true
         files: '^(app/.*\.py|scripts/validate_architecture\.py|scripts/diagram_schema\.py|docs/assets/diagrams/.*|pyproject\.toml|uv\.lock)$'
       - id: deptry
         name: Check dependency declarations
         entry: uv run deptry .
         language: system
         pass_filenames: false
-        files: '(\.py$|^pyproject\.toml$|^uv\.lock$)'
+        files: '^((app|scripts)/.*\.py|sandbox_cli\.py|pyproject\.toml|uv\.lock)$'
 
 

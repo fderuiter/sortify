@@ -6,7 +6,10 @@ import builtins
 import glob
 import hashlib
 import os
+import re
 import sys
+from collections import deque
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 # Add project root to sys.path so we can import app modules
@@ -295,7 +298,8 @@ class UtilityAntiDuplicationVisitor(ast.NodeVisitor):
         self.filepath = filepath.replace("\\", "/")
         self.errors = errors
         self.function_hashes = function_hashes
-        self.current_class = None
+        self.current_class: str | None = None
+        self.function_depth = 0
 
     def visit_ClassDef(self, node):
         class_name = node.name
@@ -315,7 +319,7 @@ class UtilityAntiDuplicationVisitor(ast.NodeVisitor):
     def _check_function(self, node):
         func_name = node.name
 
-        # Requirement 2 & 3: Check for re-definition of canonical utilities outside home module
+        # Requirement 2 & 3: Check for re-definition of canonical utilities outside home module (all depths)
         if func_name in CANONICAL_UTILITY_REGISTRY:
             expected_home = CANONICAL_UTILITY_REGISTRY[func_name]
             if self.filepath != expected_home:
@@ -327,7 +331,8 @@ class UtilityAntiDuplicationVisitor(ast.NodeVisitor):
 
         # Requirement 3b: Flag redundant dictionary adapter methods on domain contract models
         if (
-            (
+            self.function_depth == 0
+            and (
                 self.filepath == "app/core/domain_contracts.py"
                 or self.filepath.startswith("app/plugins/clinical_compliance/")
             )
@@ -351,8 +356,12 @@ class UtilityAntiDuplicationVisitor(ast.NodeVisitor):
                 f"Use canonical 'DictCompatMixin' from 'app.core.domain_contracts' instead."
             )
 
-        # Requirement 4: Record function hash for structural anti-duplication comparison if non-excluded
-        if func_name not in EXCLUDED_METHOD_NAMES and not _is_overload_decorated(node):
+        # Requirement 4: Record function hash only for outer functions/methods (skip nested closures)
+        if (
+            self.function_depth == 0
+            and func_name not in EXCLUDED_METHOD_NAMES
+            and not _is_overload_decorated(node)
+        ):
             effective_body = _effective_function_body(node)
             # Check if function body is non-trivial after stripping any leading docstring
             if len(effective_body) > 1 or (
@@ -363,7 +372,11 @@ class UtilityAntiDuplicationVisitor(ast.NodeVisitor):
                     (self.filepath, node.lineno, func_name)
                 )
 
-        self.generic_visit(node)
+        self.function_depth += 1
+        try:
+            self.generic_visit(node)
+        finally:
+            self.function_depth -= 1
 
     def visit_FunctionDef(self, node):
         self._check_function(node)
@@ -426,34 +439,12 @@ def _collect_parsed_app_files(app_root: str = "app") -> list[tuple[str, ast.Modu
     return parsed_files
 
 
-def validate_codebase_duplication(
+def _report_duplicate_function_hashes(
     errors: list,
+    function_hashes: dict[str, list[tuple[str, int, str]]],
     target_files: set[str] | None = None,
-    parsed_files: list[tuple[str, ast.Module]] | None = None,
 ) -> None:
-    """Traverse app/ ASTs to run primitive duplicate checks, canonical utility re-definition checks, and structural function hash comparison."""
-    function_hashes: dict[str, list[tuple[str, int, str]]] = {}
-    app_asts = (
-        parsed_files if parsed_files is not None else _collect_parsed_app_files("app")
-    )
-
-    for filepath, tree in app_asts:
-        # Run primitive duplicate pattern checks
-        if target_files is None or filepath in target_files:
-            prim_visitor = DuplicatePatternVisitor(filepath)
-            prim_visitor.visit(tree)
-            errors.extend(prim_visitor.errors)
-
-        # Run AST anti-duplication visitor
-        file_errors = [] if target_files is not None else errors
-        anti_dup_visitor = UtilityAntiDuplicationVisitor(
-            filepath, file_errors, function_hashes
-        )
-        anti_dup_visitor.visit(tree)
-        if target_files is not None and filepath in target_files:
-            errors.extend(file_errors)
-
-    # Compare normalized function hashes across same-file and cross-file definitions
+    """Compare normalized function hashes across same-file and cross-file definitions."""
     for _h, locs in function_hashes.items():
         if len(locs) > 1:
             if target_files is None:
@@ -487,6 +478,39 @@ def validate_codebase_duplication(
                             )
 
 
+def validate_codebase_duplication(
+    errors: list,
+    target_files: set[str] | None = None,
+    parsed_files: list[tuple[str, ast.Module]] | None = None,
+) -> None:
+    """Traverse app/ ASTs to run primitive duplicate checks, canonical utility re-definition checks, and structural function hash comparison."""
+    function_hashes: dict[str, list[tuple[str, int, str]]] = {}
+    app_asts = (
+        parsed_files if parsed_files is not None else _collect_parsed_app_files("app")
+    )
+
+    for filepath, tree in app_asts:
+        norm_path = filepath.replace("\\", "/")
+        if target_files is None or norm_path in target_files:
+            ArchitectureASTVisitor(
+                filepath,
+                errors,
+                function_hashes=function_hashes,
+                checks=_CHECK_DUPLICATE_PATTERNS | _CHECK_ANTI_DUPLICATION,
+            ).visit(tree)
+        else:
+            ArchitectureASTVisitor(
+                filepath,
+                [],
+                function_hashes=function_hashes,
+                checks=_CHECK_HASH_INDEX_ONLY,
+            ).visit(tree)
+
+    _report_duplicate_function_hashes(
+        errors, function_hashes, target_files=target_files
+    )
+
+
 def _extract_base_class_name(base: ast.expr) -> str | None:
     """Extract terminal class identifier from a ClassDef base expression."""
     target = base.value if isinstance(base, ast.Subscript) else base
@@ -497,11 +521,15 @@ def _extract_base_class_name(base: ast.expr) -> str | None:
     return None
 
 
+_CSS_RULE_RE = re.compile(r"([^{}]+)\{([^{}]*)\}")
+_CSS_COMMENT_RE = re.compile(r"/\*.*?\*/", flags=re.DOTALL)
+_MODAL_BREAKPOINT_RE = re.compile(r"(?<![\w-])\.(?:compact|narrow)(?![\w-])")
+_MODAL_AMPERSAND_PREFIX_RE = re.compile(r"&(?:\.[\w-]+)*$")
+
+
 def _has_inlined_modal_shell_css(css_text: str, cls_name: str = "") -> bool:
     """Return True if a modal CSS string re-inlines shared BASE_MODAL_CSS shell rules."""
-    import re
-
-    for match in re.finditer(r"([^{}]+)\{([^{}]*)\}", css_text):
+    for match in _CSS_RULE_RE.finditer(css_text):
         selector = match.group(1).strip()
         decls = match.group(2)
         if "rgba(0, 0, 0, 0.6)" in decls:
@@ -532,22 +560,18 @@ def _has_inlined_modal_shell_css(css_text: str, cls_name: str = "") -> bool:
 
 def _has_unnested_modal_breakpoint_css(css_text: str) -> bool:
     """Return True if a modal stylesheet uses .compact or .narrow without nesting via '&.' inside a modal block."""
-    import re
-
-    cleaned = re.sub(r"/\*.*?\*/", "", css_text, flags=re.DOTALL)
+    cleaned = _CSS_COMMENT_RE.sub("", css_text)
     depth = 0
     buf: list[str] = []
     for ch in cleaned:
         if ch == "{":
             selector_group = "".join(buf).strip()
             buf.clear()
-            for match in re.finditer(
-                r"(?<![\w-])\.(?:compact|narrow)(?![\w-])", selector_group
-            ):
+            for match in _MODAL_BREAKPOINT_RE.finditer(selector_group):
                 if depth == 0:
                     return True
                 prefix = selector_group[: match.start()]
-                if not re.search(r"&(?:\.[\w-]+)*$", prefix):
+                if not _MODAL_AMPERSAND_PREFIX_RE.search(prefix):
                     return True
             depth += 1
         elif ch == "}":
@@ -575,92 +599,51 @@ def validate_modal_shell_conventions(
             continue
         if norm_path == "app/ui/layout.py":
             continue
-
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.ClassDef):
-                continue
-            base_names = {
-                name
-                for b in node.bases
-                if (name := _extract_base_class_name(b)) is not None
-            }
-            if "ModalScreen" in base_names:
-                errors.append(
-                    f"{norm_path}:{node.lineno}: Class '{node.name}' inherits directly from 'ModalScreen'. "
-                    "Inherit from 'app.ui.layout.ResponsiveModalScreen' instead."
-                )
-
-            is_modal_cls = (
-                node.name.endswith("Modal")
-                or "ResponsiveModalScreen" in base_names
-                or "ModalScreen" in base_names
-            )
-            if not is_modal_cls:
-                continue
-
-            for stmt in node.body:
-                attr_name: str | None = None
-                val_node: ast.expr | None = None
-                if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1:
-                    tgt = stmt.targets[0]
-                    if isinstance(tgt, ast.Name):
-                        attr_name = tgt.id
-                        val_node = stmt.value
-                elif isinstance(stmt, ast.AnnAssign) and isinstance(
-                    stmt.target, ast.Name
-                ):
-                    attr_name = stmt.target.id
-                    val_node = stmt.value
-
-                if attr_name == "CSS":
-                    errors.append(
-                        f"{norm_path}:{stmt.lineno}: Modal class '{node.name}' defines 'CSS' directly. "
-                        "Declare subclass overrides in 'MODAL_CSS' on 'ResponsiveModalScreen' instead."
-                    )
-                if (
-                    attr_name in ("CSS", "MODAL_CSS")
-                    and isinstance(val_node, ast.Constant)
-                    and isinstance(val_node.value, str)
-                ):
-                    if _has_inlined_modal_shell_css(val_node.value, node.name):
-                        errors.append(
-                            f"{norm_path}:{stmt.lineno}: Modal class '{node.name}' re-inlines shared modal shell CSS rules in '{attr_name}'. "
-                            "Keep shared shell styles in 'app.ui.layout.BASE_MODAL_CSS' and put only deltas in 'MODAL_CSS'."
-                        )
-                    if _has_unnested_modal_breakpoint_css(val_node.value):
-                        errors.append(
-                            f"{norm_path}:{stmt.lineno}: Modal class '{node.name}' defines un-nested '.compact' or '.narrow' selectors in '{attr_name}'. "
-                            f"Nest '&.compact' and '&.narrow' inside '{node.name} {{ ... }}' so SCOPED_CSS binds breakpoints to the dialog root."
-                        )
+        ArchitectureASTVisitor(norm_path, errors, checks=_CHECK_MODAL_SHELL).visit(tree)
 
 
-def validate_diagram_schema_and_assets(errors: list) -> None:
+def validate_diagram_schema_and_assets(
+    errors: list,
+    target_spec_ids: set[str] | None = None,
+    check_core_modules: bool = True,
+) -> None:
     """Validate that Pydantic diagram specifications represent all active core modules and match generated assets."""
     try:
-        from scripts.diagram_schema import CORE_ARCHITECTURE_SPEC, SYSTEM_DIAGRAM_SPECS
+        from scripts.diagram_schema import SYSTEM_DIAGRAM_SPECS
 
         # 1. Verify all active app/core/*.py submodules are represented in core_architecture diagram spec
-        core_files = glob.glob("app/core/*.py")
-        core_modules = {
-            f"app.core.{Path(p).stem}"
-            for p in core_files
-            if not p.endswith("__init__.py")
-        }
+        if check_core_modules:
+            core_files = glob.glob("app/core/*.py")
+            core_modules = {
+                f"app.core.{Path(p).stem}"
+                for p in core_files
+                if not p.endswith("__init__.py")
+            }
 
-        arch_spec = SYSTEM_DIAGRAM_SPECS.get(
-            "core_architecture", CORE_ARCHITECTURE_SPEC
-        )
-        represented_labels = {node.label for node in arch_spec.nodes}
+            arch_spec = SYSTEM_DIAGRAM_SPECS["core_architecture"]
+            represented_labels = {node.label for node in arch_spec.nodes}
 
-        for mod in sorted(core_modules):
-            if not any(mod in label for label in represented_labels):
-                errors.append(
-                    f"Diagram validation error: Module '{mod}' is not represented in 'core_architecture' diagram schema specification."
-                )
+            for mod in sorted(core_modules):
+                if not any(mod in label for label in represented_labels):
+                    errors.append(
+                        f"Diagram validation error: Module '{mod}' is not represented in 'core_architecture' diagram schema specification."
+                    )
 
         # 2. Check that compiled diagram assets exist and match spec Mermaid output
+        # Hydrate only targeted keys via LazyDiagramSpecsDict rather than .items()
         diagrams_dir = Path("docs/assets/diagrams")
-        for spec_id, spec in SYSTEM_DIAGRAM_SPECS.items():
+        spec_keys = (
+            list(SYSTEM_DIAGRAM_SPECS.keys())
+            if target_spec_ids is None
+            else sorted(target_spec_ids)
+        )
+        for spec_id in spec_keys:
+            if spec_id not in SYSTEM_DIAGRAM_SPECS:
+                errors.append(
+                    f"Diagram validation error: Unknown diagram spec '{spec_id}'."
+                )
+                continue
+            spec = SYSTEM_DIAGRAM_SPECS[spec_id]
             mmd_file = diagrams_dir / f"{spec_id}.mmd"
             svg_file = diagrams_dir / f"{spec_id}.svg"
             if not mmd_file.exists():
@@ -699,44 +682,7 @@ def validate_import_layers(errors: list, filepath: str, tree: ast.AST) -> None:
 
     Walks the whole tree, so imports hidden inside functions are caught too.
     """
-    module = _module_name(filepath)
-    if module in IMPORT_LAYER_EXEMPT:
-        return
-    layers = [p for p in IMPORT_LAYER_RULES if _matches(module, p)]
-    if not layers:
-        return
-    forbidden = IMPORT_LAYER_RULES[max(layers, key=len)]
-
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            names = [alias.name for alias in node.names]
-        elif isinstance(node, ast.ImportFrom):
-            imported = node.module or ""
-            if node.level:
-                package = (
-                    module
-                    if Path(filepath).stem == "__init__"
-                    else module.rpartition(".")[0]
-                )
-                parts = package.split(".")
-                if node.level > len(parts):
-                    continue  # Python itself rejects imports above the package root.
-                imported = ".".join(
-                    parts[: len(parts) - node.level + 1]
-                    + ([imported] if imported else [])
-                )
-            names = [
-                imported if alias.name == "*" else f"{imported}.{alias.name}"
-                for alias in node.names
-            ]
-        else:
-            continue
-        for name in names:
-            for banned in forbidden:
-                if _matches(name, banned):
-                    message = f"{filepath}:{node.lineno}: Layer violation: '{module}' imports '{name}' ('{banned}' is off-limits here)"
-                    if message not in errors:
-                        errors.append(message)
+    ArchitectureASTVisitor(filepath, errors, checks=_CHECK_IMPORT_LAYERS).visit(tree)
 
 
 SETTINGS_SOURCE = "app/config.py"
@@ -744,26 +690,25 @@ SETTINGS_SOURCE = "app/config.py"
 
 def validate_service_ownership(errors: list, filepath: str, tree: ast.AST) -> None:
     """Keep runtime writer construction in the managed composition root."""
-    if filepath == "app/core/services.py":
-        return
-    names = {"DBWorker"}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module == "app.core.db_worker":
-            names.update(
-                alias.asname or alias.name
-                for alias in node.names
-                if alias.name == "DBWorker"
-            )
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and (
-            isinstance(node.func, ast.Name)
-            and node.func.id in names
-            or isinstance(node.func, ast.Attribute)
-            and node.func.attr == "DBWorker"
-        ):
-            errors.append(
-                f"{filepath}:{node.lineno}: Acquire managed services instead of constructing DBWorker"
-            )
+    ArchitectureASTVisitor(filepath, errors, checks=_CHECK_SERVICE_OWNERSHIP).visit(
+        tree
+    )
+
+
+def _declared_settings_keys_from_tree(tree: ast.Module) -> set[str] | None:
+    """Extract declared field and property names on `Settings` from a parsed AST."""
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef) and node.name == "Settings":
+            keys: set[str] = set()
+            for stmt in node.body:
+                if isinstance(stmt, ast.AnnAssign) and isinstance(
+                    stmt.target, ast.Name
+                ):
+                    keys.add(stmt.target.id)
+                elif isinstance(stmt, ast.FunctionDef):
+                    keys.add(stmt.name)
+            return keys
+    return None
 
 
 def declared_settings_keys(
@@ -775,17 +720,9 @@ def declared_settings_keys(
     """
     with open(config_path, encoding="utf-8") as f:
         tree = ast.parse(f.read(), filename=config_path)
-    for node in tree.body:
-        if isinstance(node, ast.ClassDef) and node.name == "Settings":
-            keys = set()
-            for stmt in node.body:
-                if isinstance(stmt, ast.AnnAssign) and isinstance(
-                    stmt.target, ast.Name
-                ):
-                    keys.add(stmt.target.id)
-                elif isinstance(stmt, ast.FunctionDef):
-                    keys.add(stmt.name)
-            return keys
+    keys = _declared_settings_keys_from_tree(tree)
+    if keys is not None:
+        return keys
     raise ValueError(f"No Settings class found in {config_path}")
 
 
@@ -805,22 +742,9 @@ def validate_settings_keys(
     `AppSettings` raises for unknown keys, so such a read always falls back to
     its default and the setting can never be configured.
     """
-    for node in ast.walk(tree):
-        if not (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == "getattr"
-            and len(node.args) >= 2
-            and _is_settings_receiver(node.args[0])
-            and isinstance(node.args[1], ast.Constant)
-            and isinstance(node.args[1].value, str)
-        ):
-            continue
-        key = node.args[1].value
-        if key.isupper() and key not in declared:
-            errors.append(
-                f"{filepath}:{node.lineno}: Undeclared setting '{key}' is read from settings; declare it on Settings in {SETTINGS_SOURCE} or drop the read"
-            )
+    ArchitectureASTVisitor(
+        filepath, errors, declared_settings=declared, checks=_CHECK_SETTINGS_KEYS
+    ).visit(tree)
 
 
 def _is_global_target(target: ast.AST) -> bool:
@@ -841,6 +765,17 @@ def _is_global_target(target: ast.AST) -> bool:
     return False
 
 
+def _find_global_target(target: ast.AST) -> ast.AST | None:
+    """Breadth-first search over an assignment/delete target for a global patch target."""
+    queue: deque[ast.AST] = deque([target])
+    while queue:
+        part = queue.popleft()
+        if _is_global_target(part):
+            return part
+        queue.extend(ast.iter_child_nodes(part))
+    return None
+
+
 def validate_import_time_globals(errors: list, filepath: str, tree: ast.AST) -> None:
     """Flag module-level writes to ``sys.modules[...]`` or ``socket.*`` (#711).
 
@@ -848,30 +783,9 @@ def validate_import_time_globals(errors: list, filepath: str, tree: ast.AST) -> 
     statements inside functions are allowed; class bodies run at import and
     are checked.
     """
-    pending = list(ast.iter_child_nodes(tree))
-    while pending:
-        node = pending.pop()
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
-            continue
-        if isinstance(node, ast.Assign):
-            targets = node.targets
-        elif isinstance(node, (ast.AugAssign, ast.AnnAssign)):
-            targets = [node.target]
-        elif isinstance(node, ast.Delete):
-            targets = node.targets
-        else:
-            targets = []
-        for target in targets:
-            for part in ast.walk(target):
-                if _is_global_target(part):
-                    lineno = getattr(node, "lineno", 0)
-                    errors.append(
-                        f"{filepath}:{lineno}: Import-time global patch: "
-                        f"'{ast.unparse(part)}' is assigned at module level; "
-                        "move it into an explicit install() called from an entrypoint"
-                    )
-                    break
-        pending.extend(ast.iter_child_nodes(node))
+    ArchitectureASTVisitor(filepath, errors, checks=_CHECK_IMPORT_TIME_GLOBALS).visit(
+        tree
+    )
 
 
 _TEST_DETECTION_NAMES = frozenset(
@@ -885,32 +799,9 @@ def validate_no_test_detection(errors: list, filepath: str, tree: ast.AST) -> No
     Branches on ``unittest.mock`` types or ``PYTEST_CURRENT_TEST`` mean tests
     exercise a path production never runs; inject the dependency instead.
     """
-    for node in ast.walk(tree):
-        found = None
-        if isinstance(node, ast.Import):
-            found = next(
-                (a.name for a in node.names if a.name.startswith("unittest.mock")),
-                None,
-            )
-        elif isinstance(node, ast.ImportFrom):
-            if node.module and node.module.startswith("unittest.mock"):
-                found = node.module
-            elif node.module == "unittest" and any(
-                a.name == "mock" for a in node.names
-            ):
-                found = "unittest.mock"
-        elif isinstance(node, ast.Name) and node.id in _TEST_DETECTION_NAMES:
-            found = node.id
-        elif isinstance(node, ast.Attribute) and node.attr in _TEST_DETECTION_NAMES:
-            found = node.attr
-        elif isinstance(node, ast.Constant) and node.value in _TEST_DETECTION_NAMES:
-            found = node.value
-        if found:
-            lineno = getattr(node, "lineno", 0)
-            errors.append(
-                f"{filepath}:{lineno}: Test detection in production code: "
-                f"'{found}'; inject the dependency so tests run the production path"
-            )
+    ArchitectureASTVisitor(filepath, errors, checks=_CHECK_NO_TEST_DETECTION).visit(
+        tree
+    )
 
 
 HEAVY_ML_PACKAGES = frozenset(
@@ -997,8 +888,726 @@ def validate_lazy_ml_imports(errors: list, filepath: str, tree: ast.AST) -> None
     bodies to prevent startup crashes and bloat in base installations without ML extras.
     Imports guarded by `if TYPE_CHECKING:` are allowed for type hints.
     """
-    visitor = LazyMLImportVisitor(filepath, errors)
-    visitor.visit(tree)
+    ArchitectureASTVisitor(filepath, errors, checks=_CHECK_LAZY_ML).visit(tree)
+
+
+_CHECK_IMPORT_LAYERS = 1 << 0
+_CHECK_SERVICE_OWNERSHIP = 1 << 1
+_CHECK_SETTINGS_KEYS = 1 << 2
+_CHECK_LAZY_ML = 1 << 3
+_CHECK_IMPORT_TIME_GLOBALS = 1 << 4
+_CHECK_NO_TEST_DETECTION = 1 << 5
+_CHECK_ASYNC_AND_UI = 1 << 6
+_CHECK_DUPLICATE_PATTERNS = 1 << 7
+_CHECK_ANTI_DUPLICATION = 1 << 8
+_CHECK_MODAL_SHELL = 1 << 9
+_CHECK_HASH_INDEX_ONLY = 1 << 10
+_CHECK_ALL = (
+    _CHECK_IMPORT_LAYERS
+    | _CHECK_SERVICE_OWNERSHIP
+    | _CHECK_SETTINGS_KEYS
+    | _CHECK_LAZY_ML
+    | _CHECK_IMPORT_TIME_GLOBALS
+    | _CHECK_NO_TEST_DETECTION
+    | _CHECK_ASYNC_AND_UI
+    | _CHECK_DUPLICATE_PATTERNS
+    | _CHECK_ANTI_DUPLICATION
+    | _CHECK_MODAL_SHELL
+)
+
+
+class ArchitectureASTVisitor(ast.NodeVisitor):
+    """Single-pass AST visitor consolidating all architectural and anti-duplication checks per file."""
+
+    def __init__(
+        self,
+        filepath: str,
+        errors: list,
+        *,
+        declared_settings: set[str] | None = None,
+        function_hashes: dict[str, list[tuple[str, int, str]]] | None = None,
+        checks: int = _CHECK_ALL,
+    ) -> None:
+        self.raw_filepath = filepath
+        self.norm_path = filepath.replace("\\", "/")
+        self.errors = errors
+        self.declared_settings = declared_settings
+        self.function_hashes = function_hashes
+
+        self._hash_index_only = checks == _CHECK_HASH_INDEX_ONLY
+        self._do_import_layers = bool(checks & _CHECK_IMPORT_LAYERS)
+        self._do_service_ownership = (
+            bool(checks & _CHECK_SERVICE_OWNERSHIP)
+            and self.norm_path != "app/core/services.py"
+        )
+        self._do_settings_keys = (
+            bool(checks & _CHECK_SETTINGS_KEYS) and declared_settings is not None
+        )
+        self._do_lazy_ml = bool(checks & _CHECK_LAZY_ML)
+        self._do_import_time_globals = bool(checks & _CHECK_IMPORT_TIME_GLOBALS)
+        self._do_no_test_detection = bool(checks & _CHECK_NO_TEST_DETECTION)
+        self._do_async_and_ui = bool(checks & _CHECK_ASYNC_AND_UI)
+        self._do_duplicate_patterns = bool(checks & _CHECK_DUPLICATE_PATTERNS)
+        self._do_anti_duplication = bool(checks & _CHECK_ANTI_DUPLICATION)
+        self._do_modal_shell = (
+            bool(checks & _CHECK_MODAL_SHELL) and self.norm_path != "app/ui/layout.py"
+        )
+
+        self._is_ui_file = "app/ui" in self.norm_path
+        self._check_frozen = (
+            self._do_duplicate_patterns and self.norm_path not in ALLOWED_FOR_FROZEN
+        )
+        self._check_sessions = (
+            self._do_duplicate_patterns and self.norm_path not in ALLOWED_FOR_SESSIONS
+        )
+        self._check_keys = (
+            self._do_duplicate_patterns and self.norm_path not in ALLOWED_FOR_KEYS
+        )
+        self._check_chars = (
+            self._do_duplicate_patterns and self.norm_path not in ALLOWED_FOR_CHARS
+        )
+
+        self._module = ""
+        self._is_package_init = False
+        self._forbidden_layers: tuple[str, ...] = ()
+        if self._do_import_layers:
+            module = _module_name(filepath)
+            if module not in IMPORT_LAYER_EXEMPT:
+                layers = [p for p in IMPORT_LAYER_RULES if _matches(module, p)]
+                if layers:
+                    self._module = module
+                    self._is_package_init = Path(filepath).stem == "__init__"
+                    self._forbidden_layers = IMPORT_LAYER_RULES[max(layers, key=len)]
+
+        self._db_worker_names: set[str] = {"DBWorker"}
+        self._unmatched_name_calls: list[tuple[str, int]] = []
+        self._async_context: list[str] = []
+        self.current_class: str | None = None
+        self.function_depth = 0
+        self._func_or_lambda_depth = 0
+        self._type_checking_depth = 0
+
+    def _record_function_hash_if_eligible(
+        self, node: ast.FunctionDef | ast.AsyncFunctionDef
+    ) -> None:
+        if self.function_hashes is None or self.function_depth != 0:
+            return
+        func_name = node.name
+        if func_name in EXCLUDED_METHOD_NAMES or _is_overload_decorated(node):
+            return
+        effective_body = _effective_function_body(node)
+        if len(effective_body) > 1 or (
+            effective_body and not _is_trivial_stub_statement(effective_body[0])
+        ):
+            h = compute_normalized_ast_hash(node)
+            self.function_hashes.setdefault(h, []).append(
+                (self.norm_path, node.lineno, func_name)
+            )
+
+    def visit_Module(self, node: ast.Module) -> None:
+        self.generic_visit(node)
+        if (
+            self._do_service_ownership
+            and len(self._db_worker_names) > 1
+            and self._unmatched_name_calls
+        ):
+            for call_name, lineno in self._unmatched_name_calls:
+                if call_name in self._db_worker_names:
+                    self.errors.append(
+                        f"{self.raw_filepath}:{lineno}: Acquire managed services instead of constructing DBWorker"
+                    )
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        if self._hash_index_only:
+            if self.function_depth == 0:
+                for stmt in node.body:
+                    self.visit(stmt)
+            return
+
+        class_name = node.name
+        if self._do_anti_duplication and class_name in CANONICAL_UTILITY_REGISTRY:
+            expected_home = CANONICAL_UTILITY_REGISTRY[class_name]
+            if self.norm_path != expected_home:
+                home_module = expected_home.replace(".py", "").replace("/", ".")
+                self.errors.append(
+                    f"{self.norm_path}:{node.lineno}: Re-definition of canonical utility '{class_name}' found. "
+                    f"Use '{home_module}.{class_name}' instead."
+                )
+
+        if self._do_modal_shell:
+            base_names = {
+                name
+                for b in node.bases
+                if (name := _extract_base_class_name(b)) is not None
+            }
+            if "ModalScreen" in base_names:
+                self.errors.append(
+                    f"{self.norm_path}:{node.lineno}: Class '{class_name}' inherits directly from 'ModalScreen'. "
+                    "Inherit from 'app.ui.layout.ResponsiveModalScreen' instead."
+                )
+
+            is_modal_cls = (
+                class_name.endswith("Modal")
+                or "ResponsiveModalScreen" in base_names
+                or "ModalScreen" in base_names
+            )
+            if is_modal_cls:
+                for stmt in node.body:
+                    attr_name: str | None = None
+                    val_node: ast.expr | None = None
+                    if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1:
+                        tgt = stmt.targets[0]
+                        if isinstance(tgt, ast.Name):
+                            attr_name = tgt.id
+                            val_node = stmt.value
+                    elif isinstance(stmt, ast.AnnAssign) and isinstance(
+                        stmt.target, ast.Name
+                    ):
+                        attr_name = stmt.target.id
+                        val_node = stmt.value
+
+                    if attr_name == "CSS":
+                        self.errors.append(
+                            f"{self.norm_path}:{stmt.lineno}: Modal class '{class_name}' defines 'CSS' directly. "
+                            "Declare subclass overrides in 'MODAL_CSS' on 'ResponsiveModalScreen' instead."
+                        )
+                    if (
+                        attr_name in ("CSS", "MODAL_CSS")
+                        and isinstance(val_node, ast.Constant)
+                        and isinstance(val_node.value, str)
+                    ):
+                        if _has_inlined_modal_shell_css(val_node.value, class_name):
+                            self.errors.append(
+                                f"{self.norm_path}:{stmt.lineno}: Modal class '{class_name}' re-inlines shared modal shell CSS rules in '{attr_name}'. "
+                                "Keep shared shell styles in 'app.ui.layout.BASE_MODAL_CSS' and put only deltas in 'MODAL_CSS'."
+                            )
+                        if _has_unnested_modal_breakpoint_css(val_node.value):
+                            self.errors.append(
+                                f"{self.norm_path}:{stmt.lineno}: Modal class '{class_name}' defines un-nested '.compact' or '.narrow' selectors in '{attr_name}'. "
+                                f"Nest '&.compact' and '&.narrow' inside '{class_name} {{ ... }}' so SCOPED_CSS binds breakpoints to the dialog root."
+                            )
+
+        prev_class = self.current_class
+        self.current_class = class_name
+        self.generic_visit(node)
+        self.current_class = prev_class
+
+    def _visit_function(
+        self, node: ast.FunctionDef | ast.AsyncFunctionDef, *, is_async: bool
+    ) -> None:
+        if self._hash_index_only:
+            self._record_function_hash_if_eligible(node)
+            return
+
+        func_name = node.name
+        if self._do_anti_duplication:
+            if func_name in CANONICAL_UTILITY_REGISTRY:
+                expected_home = CANONICAL_UTILITY_REGISTRY[func_name]
+                if self.norm_path != expected_home:
+                    home_module = expected_home.replace(".py", "").replace("/", ".")
+                    self.errors.append(
+                        f"{self.norm_path}:{node.lineno}: Re-definition of canonical utility '{func_name}' found. "
+                        f"Use '{home_module}.{func_name}' instead."
+                    )
+
+            if (
+                self.function_depth == 0
+                and (
+                    self.norm_path == "app/core/domain_contracts.py"
+                    or self.norm_path.startswith("app/plugins/clinical_compliance/")
+                )
+                and (
+                    self.current_class in REDUNDANT_DICT_MODELS
+                    or (
+                        self.norm_path == "app/core/domain_contracts.py"
+                        and self.current_class
+                        and self.current_class
+                        not in (
+                            "DictCompatMixin",
+                            "SortingPlanModel",
+                            "CorpusPreFetchBatchModel",
+                        )
+                    )
+                )
+                and func_name in CANONICAL_DICT_METHODS
+            ):
+                self.errors.append(
+                    f"{self.norm_path}:{node.lineno}: Redundant dictionary adapter method '{func_name}' found in class '{self.current_class}'. "
+                    f"Use canonical 'DictCompatMixin' from 'app.core.domain_contracts' instead."
+                )
+
+            self._record_function_hash_if_eligible(node)
+
+        self.function_depth += 1
+        self._func_or_lambda_depth += 1
+        if is_async and self._do_async_and_ui:
+            self._async_context.append(func_name)
+        try:
+            self.generic_visit(node)
+        finally:
+            if is_async and self._do_async_and_ui:
+                self._async_context.pop()
+            self._func_or_lambda_depth -= 1
+            self.function_depth -= 1
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._visit_function(node, is_async=False)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._visit_function(node, is_async=True)
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        if self._hash_index_only:
+            return
+        self._func_or_lambda_depth += 1
+        try:
+            self.generic_visit(node)
+        finally:
+            self._func_or_lambda_depth -= 1
+
+    def visit_If(self, node: ast.If) -> None:
+        if self._hash_index_only:
+            for stmt in node.body:
+                self.visit(stmt)
+            for stmt in node.orelse:
+                self.visit(stmt)
+            return
+        if self._do_lazy_ml and _is_type_checking_guard(node):
+            self.visit(node.test)
+            self._type_checking_depth += 1
+            try:
+                for stmt in node.body:
+                    self.visit(stmt)
+            finally:
+                self._type_checking_depth -= 1
+            for stmt in node.orelse:
+                self.visit(stmt)
+        else:
+            self.generic_visit(node)
+
+    def visit_Import(self, node: ast.Import) -> None:
+        if self._hash_index_only:
+            return
+        if self._forbidden_layers:
+            for alias in node.names:
+                name = alias.name
+                for banned in self._forbidden_layers:
+                    if _matches(name, banned):
+                        message = f"{self.raw_filepath}:{node.lineno}: Layer violation: '{self._module}' imports '{name}' ('{banned}' is off-limits here)"
+                        if message not in self.errors:
+                            self.errors.append(message)
+
+        if (
+            self._do_lazy_ml
+            and self._func_or_lambda_depth == 0
+            and self._type_checking_depth == 0
+        ):
+            for alias in node.names:
+                pkg = alias.name.split(".", 1)[0]
+                if pkg in HEAVY_ML_PACKAGES:
+                    self.errors.append(
+                        f"{self.norm_path}:{node.lineno}: Top-level import of heavy ML package '{pkg}' found. "
+                        "Heavy ML packages must be lazily imported inside function or method bodies, "
+                        "or guarded under 'if TYPE_CHECKING:'."
+                    )
+
+        if self._do_no_test_detection:
+            found = next(
+                (a.name for a in node.names if a.name.startswith("unittest.mock")),
+                None,
+            )
+            if found:
+                self.errors.append(
+                    f"{self.raw_filepath}:{node.lineno}: Test detection in production code: "
+                    f"'{found}'; inject the dependency so tests run the production path"
+                )
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        if self._hash_index_only:
+            return
+        if self._forbidden_layers:
+            imported = node.module or ""
+            skip_layer = False
+            if node.level:
+                package = (
+                    self._module
+                    if self._is_package_init
+                    else self._module.rpartition(".")[0]
+                )
+                parts = package.split(".")
+                if node.level > len(parts):
+                    skip_layer = True
+                else:
+                    imported = ".".join(
+                        parts[: len(parts) - node.level + 1]
+                        + ([imported] if imported else [])
+                    )
+            if not skip_layer:
+                names = [
+                    imported if alias.name == "*" else f"{imported}.{alias.name}"
+                    for alias in node.names
+                ]
+                for name in names:
+                    for banned in self._forbidden_layers:
+                        if _matches(name, banned):
+                            message = f"{self.raw_filepath}:{node.lineno}: Layer violation: '{self._module}' imports '{name}' ('{banned}' is off-limits here)"
+                            if message not in self.errors:
+                                self.errors.append(message)
+
+        if self._do_service_ownership and node.module == "app.core.db_worker":
+            self._db_worker_names.update(
+                alias.asname or alias.name
+                for alias in node.names
+                if alias.name == "DBWorker"
+            )
+
+        if (
+            self._do_lazy_ml
+            and self._func_or_lambda_depth == 0
+            and self._type_checking_depth == 0
+            and node.level == 0
+            and node.module
+        ):
+            pkg = node.module.split(".", 1)[0]
+            if pkg in HEAVY_ML_PACKAGES:
+                self.errors.append(
+                    f"{self.norm_path}:{node.lineno}: Top-level import of heavy ML package '{pkg}' found. "
+                    "Heavy ML packages must be lazily imported inside function or method bodies, "
+                    "or guarded under 'if TYPE_CHECKING:'."
+                )
+
+        if self._do_no_test_detection:
+            found = None
+            if node.module and node.module.startswith("unittest.mock"):
+                found = node.module
+            elif node.module == "unittest" and any(
+                a.name == "mock" for a in node.names
+            ):
+                found = "unittest.mock"
+            if found:
+                self.errors.append(
+                    f"{self.raw_filepath}:{node.lineno}: Test detection in production code: "
+                    f"'{found}'; inject the dependency so tests run the production path"
+                )
+
+    def _check_global_targets(self, node: ast.AST, targets: Iterable[ast.AST]) -> None:
+        for target in targets:
+            part = _find_global_target(target)
+            if part is not None:
+                lineno = getattr(node, "lineno", 0)
+                self.errors.append(
+                    f"{self.raw_filepath}:{lineno}: Import-time global patch: "
+                    f"'{ast.unparse(part)}' is assigned at module level; "
+                    "move it into an explicit install() called from an entrypoint"
+                )
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        if self._hash_index_only:
+            return
+        if self._do_import_time_globals and self._func_or_lambda_depth == 0:
+            self._check_global_targets(node, node.targets)
+        self.generic_visit(node)
+
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:
+        if self._hash_index_only:
+            return
+        if self._do_import_time_globals and self._func_or_lambda_depth == 0:
+            self._check_global_targets(node, (node.target,))
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if self._hash_index_only:
+            return
+        if self._do_import_time_globals and self._func_or_lambda_depth == 0:
+            self._check_global_targets(node, (node.target,))
+        self.generic_visit(node)
+
+    def visit_Delete(self, node: ast.Delete) -> None:
+        if self._hash_index_only:
+            return
+        if self._do_import_time_globals and self._func_or_lambda_depth == 0:
+            self._check_global_targets(node, node.targets)
+        self.generic_visit(node)
+
+    def visit_Expr(self, node: ast.Expr) -> None:
+        if self._hash_index_only:
+            return
+        self.generic_visit(node)
+
+    def visit_Call(self, node: ast.Call) -> None:
+        if self._hash_index_only:
+            return
+        func = node.func
+
+        if self._do_service_ownership:
+            if isinstance(func, ast.Attribute) and func.attr == "DBWorker":
+                self.errors.append(
+                    f"{self.raw_filepath}:{node.lineno}: Acquire managed services instead of constructing DBWorker"
+                )
+            elif isinstance(func, ast.Name):
+                if func.id in self._db_worker_names:
+                    self.errors.append(
+                        f"{self.raw_filepath}:{node.lineno}: Acquire managed services instead of constructing DBWorker"
+                    )
+                else:
+                    self._unmatched_name_calls.append((func.id, node.lineno))
+
+        if (
+            self._do_settings_keys
+            and self.declared_settings is not None
+            and isinstance(func, ast.Name)
+            and func.id == "getattr"
+            and len(node.args) >= 2
+            and _is_settings_receiver(node.args[0])
+            and isinstance(node.args[1], ast.Constant)
+            and isinstance(node.args[1].value, str)
+        ):
+            key = node.args[1].value
+            if key.isupper() and key not in self.declared_settings:
+                self.errors.append(
+                    f"{self.raw_filepath}:{node.lineno}: Undeclared setting '{key}' is read from settings; declare it on Settings in {SETTINGS_SOURCE} or drop the read"
+                )
+
+        if (
+            self._check_frozen
+            and isinstance(func, ast.Name)
+            and func.id in ("getattr", "hasattr")
+            and len(node.args) >= 2
+        ):
+            arg0, arg1 = node.args[0], node.args[1]
+            if (
+                isinstance(arg0, ast.Name)
+                and arg0.id == "sys"
+                and isinstance(arg1, ast.Constant)
+                and arg1.value in ("frozen", "_MEIPASS")
+            ):
+                self.errors.append(
+                    f"{self.norm_path}:{node.lineno}: Direct {func.id}(sys, '{arg1.value}') usage found. "
+                    "Use 'app.core.path_utils.is_packaged()' or 'get_meipass_dir()' instead."
+                )
+
+        if self._async_context:
+            async_fn = self._async_context[-1]
+            if isinstance(func, ast.Attribute):
+                method_name = func.attr
+                if method_name == "commit":
+                    self.errors.append(
+                        f"{self.raw_filepath}:{node.lineno}: Direct database commit() inside async function '{async_fn}'"
+                    )
+                elif method_name in ("execute", "executemany"):
+                    if (
+                        node.args
+                        and isinstance(node.args[0], ast.Constant)
+                        and isinstance(node.args[0].value, str)
+                    ):
+                        query = node.args[0].value.upper()
+                        if any(
+                            q in query
+                            for q in (
+                                "INSERT ",
+                                "UPDATE ",
+                                "DELETE ",
+                                "CREATE ",
+                                "DROP ",
+                            )
+                        ):
+                            self.errors.append(
+                                f"{self.raw_filepath}:{node.lineno}: Direct database write ({method_name} with {query.split()[0]}) inside async function '{async_fn}'"
+                            )
+
+            if self._is_ui_file:
+                if (
+                    isinstance(func, ast.Attribute)
+                    and func.attr == "sleep"
+                    and isinstance(func.value, ast.Name)
+                    and func.value.id == "time"
+                ):
+                    self.errors.append(
+                        f"{self.raw_filepath}:{node.lineno}: Synchronous time.sleep() inside async function '{async_fn}'"
+                    )
+
+                if (
+                    isinstance(func, ast.Attribute)
+                    and func.attr in ("get", "post", "put", "delete", "patch")
+                    and isinstance(func.value, ast.Name)
+                    and func.value.id == "requests"
+                ):
+                    self.errors.append(
+                        f"{self.raw_filepath}:{node.lineno}: Synchronous requests.{func.attr}() inside async function '{async_fn}'"
+                    )
+
+                if isinstance(func, ast.Name) and func.id == "open":
+                    self.errors.append(
+                        f"{self.raw_filepath}:{node.lineno}: Synchronous open() inside async function '{async_fn}'"
+                    )
+
+                if isinstance(func, ast.Attribute) and func.attr.startswith(
+                    ("read_", "write_")
+                ):
+                    self.errors.append(
+                        f"{self.raw_filepath}:{node.lineno}: Synchronous Path.{func.attr}() inside async function '{async_fn}'"
+                    )
+
+        self.generic_visit(node)
+
+    def visit_Attribute(self, node: ast.Attribute) -> None:
+        if self._hash_index_only:
+            return
+        if self._do_no_test_detection and node.attr in _TEST_DETECTION_NAMES:
+            self.errors.append(
+                f"{self.raw_filepath}:{node.lineno}: Test detection in production code: "
+                f"'{node.attr}'; inject the dependency so tests run the production path"
+            )
+        if (
+            self._check_frozen
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "sys"
+            and node.attr in ("frozen", "_MEIPASS")
+        ):
+            self.errors.append(
+                f"{self.norm_path}:{node.lineno}: Direct 'sys.{node.attr}' usage found. "
+                "Use 'app.core.path_utils.is_packaged()' or 'get_meipass_dir()' instead."
+            )
+        self.generic_visit(node)
+
+    def visit_Name(self, node: ast.Name) -> None:
+        if self._hash_index_only:
+            return
+        if self._do_no_test_detection and node.id in _TEST_DETECTION_NAMES:
+            self.errors.append(
+                f"{self.raw_filepath}:{node.lineno}: Test detection in production code: "
+                f"'{node.id}'; inject the dependency so tests run the production path"
+            )
+
+    def visit_Constant(self, node: ast.Constant) -> None:
+        if self._hash_index_only:
+            return
+        val = node.value
+        if self._do_no_test_detection and val in _TEST_DETECTION_NAMES:
+            self.errors.append(
+                f"{self.raw_filepath}:{node.lineno}: Test detection in production code: "
+                f"'{val}'; inject the dependency so tests run the production path"
+            )
+        if isinstance(val, str):
+            if self._check_sessions and "autosorter_sessions" in val:
+                self.errors.append(
+                    f"{self.norm_path}:{node.lineno}: Direct reference to 'autosorter_sessions' folder found. "
+                    "Use 'app.core.path_utils.get_session_base_dir()' or 'setup_session_directory()' instead."
+                )
+            if self._check_keys and "secret.key" in val:
+                self.errors.append(
+                    f"{self.norm_path}:{node.lineno}: Direct reference to 'secret.key' database key file found. "
+                    "Use 'app.core.path_utils.resolve_db_crypto(db_path)' instead."
+                )
+            if self._check_chars and (val == '<>:"|?*' or val == '[<>:"/\\|?*]'):
+                self.errors.append(
+                    f"{self.norm_path}:{node.lineno}: Hardcoded illegal character set or regex pattern '{val}' found. "
+                    "Use shared validators/sanitizers in 'app.core.path_utils' instead."
+                )
+
+
+FULL_SCAN_TRIGGER_PATHS = frozenset(
+    {
+        "scripts/validate_architecture.py",
+        SETTINGS_SOURCE,
+        "pyproject.toml",
+        "uv.lock",
+    }
+)
+DIAGRAM_SCHEMA_PATH = "scripts/diagram_schema.py"
+DIAGRAM_ASSETS_PREFIX = "docs/assets/diagrams/"
+
+
+def _normalize_cli_path(raw_path: str) -> str:
+    """Normalize a CLI path argument relative to the current working directory."""
+    abs_cwd = os.path.abspath(".")
+    abs_path = os.path.abspath(raw_path)
+    try:
+        rel = os.path.relpath(abs_path, abs_cwd).replace("\\", "/")
+    except ValueError:
+        rel = raw_path.replace("\\", "/")
+    while rel.startswith("./"):
+        rel = rel[2:]
+    return rel
+
+
+def classify_cli_paths(
+    files: Sequence[str],
+) -> tuple[bool, set[str] | None, bool, set[str] | None, bool]:
+    """Classify CLI file paths into AST and diagram validation execution plans.
+
+    Returns ``(run_ast_checks, target_app_files, run_diagram_checks, target_diagram_specs, check_core_modules)``.
+    """
+    has_diagram_workspace = (
+        Path("docs/assets/diagrams").exists() or Path(DIAGRAM_SCHEMA_PATH).exists()
+    )
+    if not files:
+        return True, None, has_diagram_workspace, None, True
+
+    escalate_full_scan = False
+    staged_app_files: set[str] = set()
+    run_diagram_checks = False
+    full_diagram_scan = False
+    check_core_modules = False
+    targeted_diagram_specs: set[str] = set()
+
+    for raw in files:
+        rel = _normalize_cli_path(raw)
+        if rel in FULL_SCAN_TRIGGER_PATHS:
+            escalate_full_scan = True
+        elif rel == DIAGRAM_SCHEMA_PATH:
+            run_diagram_checks = True
+            full_diagram_scan = True
+            check_core_modules = True
+        elif rel.startswith(DIAGRAM_ASSETS_PREFIX):
+            run_diagram_checks = True
+            rem = rel[len(DIAGRAM_ASSETS_PREFIX) :]
+            if rem and "/" not in rem and Path(rem).suffix in {".mmd", ".svg"}:
+                spec_id = Path(rem).stem
+                targeted_diagram_specs.add(spec_id)
+                if spec_id == "core_architecture":
+                    check_core_modules = True
+            else:
+                full_diagram_scan = True
+                check_core_modules = True
+        elif rel.startswith("app/") and rel.endswith(".py"):
+            if rel.startswith("app/core/") and has_diagram_workspace:
+                run_diagram_checks = True
+                check_core_modules = True
+                targeted_diagram_specs.add("core_architecture")
+            if os.path.exists(rel):
+                staged_app_files.add(rel)
+
+    if escalate_full_scan:
+        return True, None, has_diagram_workspace, None, True
+
+    run_ast_checks = bool(staged_app_files)
+    target_app_files: set[str] | None = staged_app_files if run_ast_checks else set()
+    target_diagram_specs: set[str] | None = (
+        None if full_diagram_scan else targeted_diagram_specs
+    )
+    return (
+        run_ast_checks,
+        target_app_files,
+        run_diagram_checks,
+        target_diagram_specs,
+        check_core_modules,
+    )
+
+
+def _resolve_declared_settings(
+    parsed_files: list[tuple[str, ast.Module]],
+) -> set[str]:
+    """Extract declared Settings keys from parsed app/config.py if present, else fallback."""
+    for filepath, tree in parsed_files:
+        if filepath == SETTINGS_SOURCE:
+            keys = _declared_settings_keys_from_tree(tree)
+            if keys is not None:
+                return keys
+            break
+    if os.path.exists(SETTINGS_SOURCE):
+        return declared_settings_keys(SETTINGS_SOURCE)
+    return declared_settings_keys()
 
 
 def main():
@@ -1014,139 +1623,51 @@ def main():
     )
     args = parser.parse_args()
 
-    is_full_scan = not args.files
+    (
+        run_ast_checks,
+        target_files,
+        run_diagram_checks,
+        target_diagram_specs,
+        check_core_modules,
+    ) = classify_cli_paths(args.files)
 
-    if not is_full_scan:
-        staged_py_files = set()
-        for f in args.files:
-            norm_f = f.replace("\\", "/")
-            if norm_f.endswith(".py") and os.path.exists(norm_f):
-                rel = os.path.relpath(norm_f, ".").replace("\\", "/")
-                if rel.startswith("app/"):
-                    staged_py_files.add(rel)
-        if not staged_py_files:
-            print(
-                "No relevant staged Python files under app/ to validate for architecture."
-            )
-            sys.exit(0)
-        target_files = staged_py_files
-    else:
-        target_files = None
+    if not run_ast_checks and not run_diagram_checks:
+        print("No relevant staged files to validate for architecture.")
+        sys.exit(0)
 
-    errors = []
-    declared_settings = declared_settings_keys()
-    parsed_files = _collect_parsed_app_files("app")
+    errors: list[str] = []
 
-    # Rule 1 & Rule 2: Async DB writes and UI blocking operations
-    for filepath, tree in parsed_files:
-        if target_files is not None and filepath not in target_files:
-            continue
+    if run_ast_checks:
+        parsed_files = _collect_parsed_app_files("app")
+        declared_settings = _resolve_declared_settings(parsed_files)
+        function_hashes: dict[str, list[tuple[str, int, str]]] = {}
 
-        validate_import_layers(errors, filepath, tree)
-        validate_service_ownership(errors, filepath, tree)
-        validate_settings_keys(errors, filepath, tree, declared_settings)
-        validate_lazy_ml_imports(errors, filepath, tree)
+        for filepath, tree in parsed_files:
+            if target_files is None or filepath in target_files:
+                ArchitectureASTVisitor(
+                    filepath,
+                    errors,
+                    declared_settings=declared_settings,
+                    function_hashes=function_hashes,
+                ).visit(tree)
+            else:
+                ArchitectureASTVisitor(
+                    filepath,
+                    [],
+                    function_hashes=function_hashes,
+                    checks=_CHECK_HASH_INDEX_ONLY,
+                ).visit(tree)
 
-        validate_import_time_globals(errors, filepath, tree)
-        validate_no_test_detection(errors, filepath, tree)
+        _report_duplicate_function_hashes(
+            errors, function_hashes, target_files=target_files
+        )
 
-        is_ui_file = "app/ui" in filepath
-
-        class Visitor(ast.NodeVisitor):
-            def __init__(self):
-                self.async_context = []
-
-            def visit_AsyncFunctionDef(self, node):
-                self.async_context.append(node.name)
-                self.generic_visit(node)
-                self.async_context.pop()
-
-            def visit_Call(self, node):
-                if not self.async_context:
-                    self.generic_visit(node)
-                    return
-
-                # Direct DB writes in async def (execute, executemany, commit)
-                if isinstance(node.func, ast.Attribute):
-                    method_name = node.func.attr
-                    if method_name in ("execute", "executemany", "commit"):
-                        if method_name == "commit":
-                            errors.append(
-                                f"{filepath}:{node.lineno}: Direct database commit() inside async function '{self.async_context[-1]}'"
-                            )
-                        elif method_name in ("execute", "executemany"):
-                            if (
-                                node.args
-                                and isinstance(node.args[0], ast.Constant)
-                                and isinstance(node.args[0].value, str)
-                            ):
-                                query = node.args[0].value.upper()
-                                if any(
-                                    q in query
-                                    for q in (
-                                        "INSERT ",
-                                        "UPDATE ",
-                                        "DELETE ",
-                                        "CREATE ",
-                                        "DROP ",
-                                    )
-                                ):
-                                    errors.append(
-                                        f"{filepath}:{node.lineno}: Direct database write ({method_name} with {query.split()[0]}) inside async function '{self.async_context[-1]}'"
-                                    )
-
-                # Synchronous blocking operations in UI-bound logic
-                if is_ui_file:
-                    if (
-                        isinstance(node.func, ast.Attribute)
-                        and node.func.attr == "sleep"
-                        and isinstance(node.func.value, ast.Name)
-                        and node.func.value.id == "time"
-                    ):
-                        errors.append(
-                            f"{filepath}:{node.lineno}: Synchronous time.sleep() inside async function '{self.async_context[-1]}'"
-                        )
-
-                    if (
-                        isinstance(node.func, ast.Attribute)
-                        and node.func.attr in ("get", "post", "put", "delete", "patch")
-                        and isinstance(node.func.value, ast.Name)
-                        and node.func.value.id == "requests"
-                    ):
-                        errors.append(
-                            f"{filepath}:{node.lineno}: Synchronous requests.{node.func.attr}() inside async function '{self.async_context[-1]}'"
-                        )
-
-                    if isinstance(node.func, ast.Name) and node.func.id == "open":
-                        errors.append(
-                            f"{filepath}:{node.lineno}: Synchronous open() inside async function '{self.async_context[-1]}'"
-                        )
-
-                    if isinstance(
-                        node.func, ast.Attribute
-                    ) and node.func.attr.startswith(("read_", "write_")):
-                        errors.append(
-                            f"{filepath}:{node.lineno}: Synchronous Path.{node.func.attr}() inside async function '{self.async_context[-1]}'"
-                        )
-
-                self.generic_visit(node)
-
-        Visitor().visit(tree)
-
-    # Rule 3: Anti-duplication, canonical utility registration, and modal shell conventions
-    validate_codebase_duplication(
-        errors, target_files=target_files, parsed_files=parsed_files
-    )
-    validate_modal_shell_conventions(
-        errors, target_files=target_files, parsed_files=parsed_files
-    )
-
-    # Rule 4: Validate Pydantic diagram specs and asset sync
-    if is_full_scan or (
-        target_files is not None
-        and any("app/core" in f or "diagram" in f for f in target_files)
-    ):
-        validate_diagram_schema_and_assets(errors)
+    if run_diagram_checks:
+        validate_diagram_schema_and_assets(
+            errors,
+            target_spec_ids=target_diagram_specs,
+            check_core_modules=check_core_modules,
+        )
 
     if errors:
         print("Architectural Violations Found:")

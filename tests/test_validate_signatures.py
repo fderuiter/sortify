@@ -1213,3 +1213,27 @@ def test_collect_cli_definitions_parses_each_cli_module_once(monkeypatch):
     cli_defs = validate_signatures.collect_cli_definitions()
     assert cli_defs
     assert len(parsed_cli_files) == len(set(parsed_cli_files))
+
+
+def test_validate_signatures_scoped_cli_parses_only_matched_module(monkeypatch):
+    """Scoped validate_signatures runs parse only matched monitored modules rather than all app/ files."""
+    import ast
+
+    real_parse = ast.parse
+    parsed_app_files: list[str] = []
+
+    def tracking_parse(source, filename="<unknown>", *args, **kwargs):
+        rel = validate_signatures.safe_relpath(
+            str(filename), validate_signatures.BASE_DIR
+        ).replace("\\", "/")
+        if rel.startswith("app/") or rel == "sandbox_cli.py":
+            parsed_app_files.append(rel)
+        return real_parse(source, filename, *args, **kwargs)
+
+    monkeypatch.setattr(ast, "parse", tracking_parse)
+    monkeypatch.setattr(sys, "argv", ["validate_signatures.py", "app/config.py"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        validate_signatures.main()
+    assert exc_info.value.code == 0
+    assert parsed_app_files == ["app/config.py"]
