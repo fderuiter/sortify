@@ -904,17 +904,28 @@ class HistoryManager:
         if self.db_path:
             db_p = str(Path(self.db_path).resolve())
             conn = None
+            snapshot_sids: set[str] = set()
             try:
                 conn = get_db_connection(db_p)
                 try:
+                    snap_rows = conn.execute(
+                        "SELECT session_id FROM sessions WHERE LOWER(COALESCE(status, '')) = 'undo_snapshot'"
+                    ).fetchall()
+                    snapshot_sids = {str(r[0]) for r in snap_rows if r[0] is not None}
+                except DB_ERRORS:
+                    snapshot_sids = set()
+
+                try:
                     if session_id:
                         cur_sess = conn.execute(
-                            "SELECT session_id, timestamp, base_dir, status FROM sessions WHERE session_id = ?",
+                            "SELECT session_id, timestamp, base_dir, status FROM sessions "
+                            "WHERE session_id = ? AND LOWER(COALESCE(status, '')) != 'undo_snapshot'",
                             (session_id,),
                         )
                     else:
                         cur_sess = conn.execute(
-                            "SELECT session_id, timestamp, base_dir, status FROM sessions ORDER BY timestamp DESC"
+                            "SELECT session_id, timestamp, base_dir, status FROM sessions "
+                            "WHERE LOWER(COALESCE(status, '')) != 'undo_snapshot' ORDER BY timestamp DESC"
                         )
                     for row in cur_sess.fetchall():
                         sid = row[0]
@@ -1006,6 +1017,8 @@ class HistoryManager:
                         created_at,
                         updated_at,
                     ) in cur_moves.fetchall():
+                        if str(sid) in snapshot_sids:
+                            continue
                         moves_sids.add(str(sid))
                         _append_step_row(
                             seq,
@@ -1023,11 +1036,14 @@ class HistoryManager:
                 # Read-only legacy fallback for step_ledger / transaction_ledger sessions.
                 candidate_legacy_sids: list[str] = []
                 if session_id:
-                    if str(session_id) not in moves_sids:
+                    if (
+                        str(session_id) not in moves_sids
+                        and str(session_id) not in snapshot_sids
+                    ):
                         candidate_legacy_sids.append(str(session_id))
                 else:
                     for sid in sessions_map:
-                        if sid not in moves_sids:
+                        if sid not in moves_sids and sid not in snapshot_sids:
                             candidate_legacy_sids.append(sid)
                     for legacy_table in ("step_ledger", "transaction_ledger"):
                         try:
@@ -1038,6 +1054,7 @@ class HistoryManager:
                                 lsid_str = str(lsid)
                                 if (
                                     lsid_str not in moves_sids
+                                    and lsid_str not in snapshot_sids
                                     and lsid_str not in candidate_legacy_sids
                                 ):
                                     candidate_legacy_sids.append(lsid_str)
@@ -1602,10 +1619,14 @@ class HistoryManager:
 
         conn = get_db_connection(self.db_path)
         row = conn.execute(
-            "SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,)
+            "SELECT base_dir, status FROM sessions WHERE session_id = ?", (session_id,)
         ).fetchone()
         if not row:
             raise ValueError("Session not found")
+        if str(row[1] or "").strip().lower() == "undo_snapshot":
+            raise ValueError(
+                f"Session '{session_id}' is an internal undo snapshot and cannot be undone."
+            )
 
         try:
             return self._unwind_session_internal(

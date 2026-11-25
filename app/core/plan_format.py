@@ -88,11 +88,11 @@ def format_session_rollback_outcome(
     if trashed_remaining > 0:
         warn = format_trashed_unrestorable_warning(trashed_remaining)
         return (
-            f"Session {short_sid} rolled back ({restored_count} file(s) restored). {warn}",
+            f"Session {short_sid} undone ({restored_count} file(s) restored). {warn}",
             "warning",
         )
     return (
-        f"Session {short_sid} successfully rolled back ({restored_count} file(s) restored).",
+        f"Session {short_sid} successfully undone ({restored_count} file(s) restored).",
         "info",
     )
 

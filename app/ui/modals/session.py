@@ -741,7 +741,7 @@ class RollbackConfirmModal(ResponsiveModalScreen[dict[str, Any] | None]):
             # Stage 1 Container: Step Selection
             with Vertical(id="stage-1-container"):
                 yield Heading(
-                    "Confirm Session Rollback",
+                    "Confirm Session Undo",
                     level=1,
                     classes="modal-title",
                     id="confirm-title",
@@ -778,15 +778,13 @@ class RollbackConfirmModal(ResponsiveModalScreen[dict[str, Any] | None]):
                                 variant="default",
                             )
 
-                    yield Label(
-                        "Selected for Rollback: 0 items", id="lbl-selection-count"
-                    )
+                    yield Label("Selected for Undo: 0 items", id="lbl-selection-count")
 
                     yield DataTable(id="rollback-items-table")
 
                     with Vertical(classes="warning-box"):
                         yield Label(
-                            "⚠️ Warning: Rolling back will restore checked files to their original locations. Unchecked files will remain in target folders."
+                            "⚠️ Warning: Undoing this sort will restore checked files to their original locations. Unchecked files will remain in target folders."
                         )
                         trashed_cnt = int(self.session_info.get("trashed_count") or 0)
                         if trashed_cnt > 0:
@@ -806,7 +804,7 @@ class RollbackConfirmModal(ResponsiveModalScreen[dict[str, Any] | None]):
                         )
                     else:
                         yield Checkbox(
-                            "Roll back even if some sorted files are missing (they are skipped)",
+                            "Undo even if some sorted files are missing (they are skipped)",
                             value=False,
                             id="chk-ignore-missing",
                         )
@@ -819,7 +817,7 @@ class RollbackConfirmModal(ResponsiveModalScreen[dict[str, Any] | None]):
                         variant="primary",
                     )
                     yield Button(
-                        "Confirm Rollback",
+                        "Confirm Undo",
                         id="btn-confirm-rollback",
                         variant="error",
                     )
@@ -864,7 +862,7 @@ class RollbackConfirmModal(ResponsiveModalScreen[dict[str, Any] | None]):
 
                     with Vertical(classes="warning-box", id="dryrun-warning-box"):
                         yield Label(
-                            "Review target restoration paths above before executing rollback.",
+                            "Review target restoration paths above before executing undo.",
                             id="lbl-dryrun-warning",
                         )
 
@@ -878,7 +876,7 @@ class RollbackConfirmModal(ResponsiveModalScreen[dict[str, Any] | None]):
                         "Cancel", id="btn-cancel-rollback-2", variant="default"
                     )
                     yield Button(
-                        "Execute Rollback",
+                        "Execute Undo",
                         id="btn-execute-rollback",
                         variant="error",
                     )
@@ -913,7 +911,7 @@ class RollbackConfirmModal(ResponsiveModalScreen[dict[str, Any] | None]):
                 btn_confirm = self.query_one("#btn-confirm-rollback", Button)
                 btn_confirm.disabled = True
                 btn_confirm.tooltip = (
-                    "Cannot confirm rollback because session history failed to load."
+                    "Cannot confirm undo because session history failed to load."
                 )
             except Exception:
                 pass
@@ -951,7 +949,7 @@ class RollbackConfirmModal(ResponsiveModalScreen[dict[str, Any] | None]):
                 self.query_one("#btn-confirm-rollback", Button).focus()
             except Exception:
                 pass
-        self.announce("Opened rollback confirmation modal dialog.")
+        self.announce("Opened undo confirmation modal dialog.")
 
     def _refresh_table(self) -> None:
         dt = self.query_one("#rollback-items-table", DataTable)
@@ -1005,7 +1003,7 @@ class RollbackConfirmModal(ResponsiveModalScreen[dict[str, Any] | None]):
         selected = len(self.selected_step_ids)
         try:
             lbl = self.query_one("#lbl-selection-count", Label)
-            lbl.update(f"Selected for Rollback: {selected} / {total} items")
+            lbl.update(f"Selected for Undo: {selected} / {total} items")
         except Exception:
             pass
 
@@ -1119,7 +1117,7 @@ class RollbackConfirmModal(ResponsiveModalScreen[dict[str, Any] | None]):
         for item in getattr(self, "filtered_items", self.all_items):
             self.selected_step_ids.add(item["step_id"])
         self._refresh_table()
-        self.announce("Selected all items for rollback.")
+        self.announce("Selected all items for undo.")
 
     @on(Button.Pressed, "#btn-deselect-all")
     def action_deselect_all(self) -> None:
@@ -1127,7 +1125,7 @@ class RollbackConfirmModal(ResponsiveModalScreen[dict[str, Any] | None]):
         for item in getattr(self, "filtered_items", self.all_items):
             self.selected_step_ids.discard(item["step_id"])
         self._refresh_table()
-        self.announce("Deselected all items for rollback.")
+        self.announce("Deselected all items for undo.")
 
     @on(Button.Pressed, "#btn-invert-selection")
     def action_invert_selection(self) -> None:
@@ -1256,7 +1254,7 @@ class RollbackErrorModal(ResponsiveModalScreen[None]):
 
     def __init__(
         self,
-        title: str = "Rollback Failed",
+        title: str = "Undo Failed",
         error_message: str = "",
         settings: Any = None,
     ):
@@ -1291,7 +1289,7 @@ class RollbackErrorModal(ResponsiveModalScreen[None]):
                 yield btn_export
 
                 btn_close = Button("Close", id="btn-close-error", variant="primary")
-                btn_close.tooltip = "Close rollback error dialog"
+                btn_close.tooltip = "Close undo error dialog"
                 yield btn_close
 
     def on_mount(self) -> None:
@@ -1303,11 +1301,11 @@ class RollbackErrorModal(ResponsiveModalScreen[None]):
     def _build_scrubbed_diagnostics_payload(self, settings_obj: Any) -> str:
         """Build a redacted diagnostic report from error context and ``settings.LOG_FILE``."""
         ts_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        clean_title = scrub_diagnostic_text(str(self.error_title or "Rollback Failed"))
+        clean_title = scrub_diagnostic_text(str(self.error_title or "Undo Failed"))
         clean_error = scrub_diagnostic_text(str(self.error_message or ""))
 
         lines = [
-            "Sortify Rollback Diagnostic Report",
+            "Sortify Undo Diagnostic Report",
             f"Generated: {ts_iso}",
             f"Title: {clean_title}",
             f"Error: {clean_error}",
@@ -1476,8 +1474,13 @@ class HistoryModal(ResponsiveModalScreen[dict[str, Any] | None]):
             from app.core.session_catalog import list_sessions
 
             sessions = list_sessions()
-        self.sessions = sessions or []
+        self.sessions = [
+            s
+            for s in (sessions or [])
+            if str(s.get("status") or "").strip().lower() != "undo_snapshot"
+        ]
         self.base_dir = base_dir
+        self._default_export_dir = Path(get_app_dir()) / "exports"
         self._rollback_in_progress = False
         self._rollback_pipeline: Any = None
 
@@ -1500,17 +1503,18 @@ class HistoryModal(ResponsiveModalScreen[dict[str, Any] | None]):
         return options
 
     def compose(self) -> ComposeResult:
-        """Compose history view, export, and rollback modal widgets."""
+        """Compose history view, export, and undo modal widgets."""
+        default_csv_path = str(self._default_export_dir / "audit_log.csv")
         with ModalBox(classes="modal-box"):
             yield Heading(
-                "Session History & Rollback Controls [Ctrl+Y]",
+                "Session History & Undo Controls [Ctrl+Y]",
                 level=1,
                 classes="modal-title",
                 id="modal-title",
             )
             with Vertical(classes="modal-body"):
                 yield Label(
-                    "Select a session row to export audit log or perform session rollback:",
+                    "Select a session row to export an audit record or undo a sort:",
                     classes="modal-subtitle",
                 )
 
@@ -1522,7 +1526,9 @@ class HistoryModal(ResponsiveModalScreen[dict[str, Any] | None]):
                     id="select-history-session",
                     allow_blank=False,
                 )
-                select_sess.tooltip = "Select historical session row for audit log export or session rollback"
+                select_sess.tooltip = (
+                    "Select historical session row for audit export or session undo"
+                )
                 yield select_sess
 
                 yield Label("Session Details:", classes="modal-subtitle")
@@ -1534,12 +1540,12 @@ class HistoryModal(ResponsiveModalScreen[dict[str, Any] | None]):
 
                 yield Label("Output File Path (Audit Log Export):")
                 inp_path = Input(
-                    value="./audit_log.csv",
-                    placeholder="Enter export path (e.g. ./audit_log.csv)...",
+                    value=default_csv_path,
+                    placeholder=f"Enter export path (e.g. {default_csv_path})...",
                     id="input-history-path",
                 )
                 inp_path.tooltip = (
-                    "Enter target output path for exported session audit log file"
+                    "Enter external output path for exported session audit file"
                 )
                 yield inp_path
 
@@ -1561,12 +1567,12 @@ class HistoryModal(ResponsiveModalScreen[dict[str, Any] | None]):
                 yield btn_cancel
 
                 btn_rollback = Button(
-                    "Rollback Session",
+                    "Undo Session",
                     id="btn-rollback-session",
                     variant="warning",
                     disabled=True,
                 )
-                btn_rollback.tooltip = "Revert file operations for selected session"
+                btn_rollback.tooltip = "Undo file moves for selected session"
                 yield btn_rollback
 
                 btn_export = Button(
@@ -1583,7 +1589,19 @@ class HistoryModal(ResponsiveModalScreen[dict[str, Any] | None]):
         select_widget = self.query_one("#select-history-session", Select)
         select_widget.focus()
         self._update_selected_session_view(select_widget.value)
-        self.announce("Opened session history export and rollback modal dialog.")
+        self.announce("Opened session history export and undo modal dialog.")
+
+    @on(Select.Changed, "#select-history-format")
+    def on_format_changed(self, event: Select.Changed) -> None:
+        """Sync default export filename suffix when switching between CSV and JSON."""
+        fmt_val = str(event.value or "").strip().lower()
+        if fmt_val not in ("csv", "json"):
+            return
+        for inp_path in self.query("#input-history-path").results(Input):
+            curr = inp_path.value.strip()
+            default_stem = str(self._default_export_dir / "audit_log")
+            if curr in (f"{default_stem}.csv", f"{default_stem}.json"):
+                inp_path.value = f"{default_stem}.{fmt_val}"
 
     @on(Select.Changed, "#select-history-session")
     def on_session_changed(self, event: Select.Changed) -> None:
@@ -1605,7 +1623,7 @@ class HistoryModal(ResponsiveModalScreen[dict[str, Any] | None]):
                 else "No session selected."
             )
             btn_rollback.disabled = True
-            btn_rollback.tooltip = "Select an individual session to enable rollback"
+            btn_rollback.tooltip = "Select an individual session to enable undo"
             return
 
         target = None
@@ -1638,12 +1656,20 @@ class HistoryModal(ResponsiveModalScreen[dict[str, Any] | None]):
         )
         lbl_details.update(details_str)
 
-        if status.lower() == "rolled_back":
+        from app.core.session_catalog import can_undo_session
+
+        status_lower = status.lower()
+        if not can_undo_session(target):
             btn_rollback.disabled = True
-            btn_rollback.tooltip = "Session has already been rolled back"
+            if status_lower == "rolled_back":
+                btn_rollback.tooltip = "Session has already been undone"
+            elif status_lower in ("abandoned", "undo_snapshot"):
+                btn_rollback.tooltip = "Session cannot be undone"
+            else:
+                btn_rollback.tooltip = "Session has no reversible file moves to undo"
         else:
             btn_rollback.disabled = False
-            btn_rollback.tooltip = "Revert file operations for selected session"
+            btn_rollback.tooltip = "Undo file moves for selected session"
 
     @on(Button.Pressed, "#btn-export")
     def action_export_audit(self) -> None:
@@ -1670,10 +1696,12 @@ class HistoryModal(ResponsiveModalScreen[dict[str, Any] | None]):
 
     @on(Button.Pressed, "#btn-rollback-session")
     def action_rollback_session(self) -> None:
-        """Prompt confirmation and initiate asynchronous session rollback."""
+        """Prompt confirmation and initiate asynchronous session undo."""
+        from app.core.session_catalog import can_undo_session
+
         session_val = self.query_one("#select-history-session", Select).value
         if not session_val or session_val in ("none", "all"):
-            self.announce("Please select a specific session to rollback.")
+            self.announce("Please select a specific session to undo.")
             return
 
         target_sess = None
@@ -1682,8 +1710,21 @@ class HistoryModal(ResponsiveModalScreen[dict[str, Any] | None]):
                 target_sess = s
                 break
 
-        if not target_sess or str(target_sess.get("status")).lower() == "rolled_back":
-            self.announce("Selected session cannot be rolled back.")
+        if not target_sess or not can_undo_session(target_sess):
+            status_lower = (
+                str(target_sess.get("status") or "").strip().lower()
+                if target_sess
+                else ""
+            )
+            if status_lower == "rolled_back":
+                err_msg = "Selected session has already been undone."
+            elif target_sess and int(target_sess.get("step_count") or 0) <= 0:
+                err_msg = "Selected session has no reversible file moves to undo."
+            else:
+                err_msg = "Selected session cannot be undone."
+            for status_lbl in self.query("#lbl-rollback-status").results(Label):
+                status_lbl.update(f"⚠️ {err_msg}")
+            self.announce(err_msg)
             return
 
         if (
@@ -1712,8 +1753,8 @@ class HistoryModal(ResponsiveModalScreen[dict[str, Any] | None]):
             self._rollback_in_progress = True
 
             lbl_status = self.query_one("#lbl-rollback-status", Label)
-            lbl_status.update(f"⏳ Rolling back session {sid[:8]}... Please wait.")
-            self.announce(f"Executing rollback for session {sid[:8]}...")
+            lbl_status.update(f"⏳ Undoing session {sid[:8]}... Please wait.")
+            self.announce(f"Executing undo for session {sid[:8]}...")
 
             self.run_rollback_worker(sid, ignore_missing, selected_step_ids)
 
@@ -1807,11 +1848,11 @@ class HistoryModal(ResponsiveModalScreen[dict[str, Any] | None]):
             )
         elif trashed_remaining > 0:
             lbl_status.update(
-                f"✅ Session rolled back ({restored_count} restored; {trashed_remaining} in OS Trash)."
+                f"✅ Session undone ({restored_count} restored; {trashed_remaining} in OS Trash)."
             )
         else:
             lbl_status.update(
-                f"✅ Session successfully rolled back. ({restored_count} operations unwound)"
+                f"✅ Session successfully undone. ({restored_count} operations restored)"
             )
 
         self.announce(msg)
@@ -1826,12 +1867,12 @@ class HistoryModal(ResponsiveModalScreen[dict[str, Any] | None]):
         self.query_one("#btn-export", Button).disabled = False
 
     def _on_rollback_failure(self, session_id: str, err: Exception) -> None:
-        """Handle session rollback failure on main thread."""
+        """Handle session undo failure on main thread."""
         self._rollback_in_progress = False
         lbl_status = self.query_one("#lbl-rollback-status", Label)
-        lbl_status.update(f"❌ Rollback failed: {err}")
+        lbl_status.update(f"❌ Undo failed: {err}")
 
-        msg = f"Rollback failed for session {session_id[:8]}...: {err}"
+        msg = f"Undo failed for session {session_id[:8]}...: {err}"
         self.announce(msg)
         try:
             from app.ui.notifications import notify
@@ -1846,7 +1887,7 @@ class HistoryModal(ResponsiveModalScreen[dict[str, Any] | None]):
 
         self.app.push_screen(
             RollbackErrorModal(
-                title="Rollback Failed",
+                title="Undo Failed",
                 error_message=str(err),
                 settings=getattr(self.app, "settings", None),
             )
@@ -1864,13 +1905,13 @@ class HistoryModal(ResponsiveModalScreen[dict[str, Any] | None]):
 
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:
-        """Cancel history export modal, unless a rollback is still running."""
+        """Cancel history export modal, unless an undo is still running."""
         from app.core.pipeline import PipelineLifecycleState
 
         rb_pipe = getattr(self, "_rollback_pipeline", None)
         if self._rollback_in_progress or (
             rb_pipe is not None and rb_pipe.state == PipelineLifecycleState.ROLLING_BACK
         ):
-            self.announce("Rollback in progress. Please wait for it to finish.")
+            self.announce("Undo in progress. Please wait for it to finish.")
             return
         self.dismiss(None)

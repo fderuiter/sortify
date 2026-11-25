@@ -2,6 +2,7 @@
 
 import logging
 import os
+from pathlib import Path
 from typing import Any
 
 from rich.text import Text
@@ -410,16 +411,24 @@ class ExportReportModal(ResponsiveModalScreen[tuple[str, str] | None]):
         self,
         default_path: str = "./simulation_report.html",
         default_format: str = "html",
+        *,
+        title: str = "Export Simulation Report",
+        format_options: list[tuple[str, str]] | None = None,
     ):
         super().__init__()
         self.default_path = default_path
         self.default_format = default_format
+        self.modal_title_text = title
+        self.format_options = format_options or [
+            ("HTML Report (*.html)", "html"),
+            ("JSON Data (*.json)", "json"),
+        ]
 
     def compose(self) -> ComposeResult:
         """Compose export report modal widgets."""
         with ModalBox(classes="modal-box"):
             yield Heading(
-                "Export Simulation Report",
+                self.modal_title_text,
                 level=1,
                 classes="modal-title",
                 id="modal-title",
@@ -431,14 +440,14 @@ class ExportReportModal(ResponsiveModalScreen[tuple[str, str] | None]):
                 )
                 inp = Input(
                     value=self.default_path,
-                    placeholder="Enter output path (e.g. ./report.html)...",
+                    placeholder=f"Enter output path (e.g. {self.default_path})...",
                     id="input-export-path",
                 )
-                inp.tooltip = "Enter path for exported dry-run simulation report"
+                inp.tooltip = "Enter external path for exported report file"
                 yield inp
 
                 fmt_select = Select(
-                    [("HTML Report (*.html)", "html"), ("JSON Data (*.json)", "json")],
+                    self.format_options,
                     value=self.default_format,
                     id="select-export-format",
                     allow_blank=False,
@@ -450,14 +459,26 @@ class ExportReportModal(ResponsiveModalScreen[tuple[str, str] | None]):
                 btn_cancel.tooltip = "Cancel report export action"
                 yield btn_cancel
                 btn_export = Button("Export Report", id="btn-export", variant="primary")
-                btn_export.tooltip = "Export simulation report to disk"
+                btn_export.tooltip = "Export report to disk"
                 yield btn_export
 
     def on_mount(self) -> None:
         """Focus input field on mount and emit accessibility announcement."""
         super().on_mount()
         self.query_one("#input-export-path", Input).focus()
-        self.announce("Opened export simulation report dialog.")
+        self.announce(f"Opened {self.modal_title_text.lower()} dialog.")
+
+    @on(Select.Changed, "#select-export-format")
+    def _on_format_changed(self, event: Select.Changed) -> None:
+        """Update default file extension when user switches export format."""
+        new_fmt = str(event.value or "").strip().lower()
+        if not new_fmt:
+            return
+        for inp in self.query("#input-export-path").results(Input):
+            curr = inp.value.strip()
+            default_stem = str(Path(self.default_path).with_suffix(""))
+            if curr and str(Path(curr).with_suffix("")) == default_stem:
+                inp.value = f"{default_stem}.{new_fmt}"
 
     @on(Input.Submitted, "#input-export-path")
     def action_submit_input(self) -> None:
@@ -724,13 +745,11 @@ class AuditReportModal(ResponsiveModalScreen[None]):
                 btn_json = Button(
                     "Export JSON", id="btn-export-json", variant="primary"
                 )
-                btn_json.tooltip = (
-                    "Export audit report to JSON file in target directory"
-                )
+                btn_json.tooltip = "Export audit report to an external JSON file"
                 yield btn_json
 
                 btn_csv = Button("Export CSV", id="btn-export-csv", variant="success")
-                btn_csv.tooltip = "Export audit report to CSV file in target directory"
+                btn_csv.tooltip = "Export audit report to an external CSV file"
                 yield btn_csv
 
                 btn_close = Button("Close", id="btn-close", variant="default")
@@ -1021,17 +1040,21 @@ class AuditReportModal(ResponsiveModalScreen[None]):
         """Export audit report to CSV format."""
         self._export_report("csv")
 
-    def _export_report(self, fmt: str) -> None:
-        """Export report to disk with error handling."""
-        base_dir = self.report_data.get("base_dir", ".") or "."
-        out_name = f"audit_report.{fmt}"
-        out_path = os.path.join(base_dir, out_name)
+    def _perform_export_report(self, out_path: str, fmt: str) -> None:
+        """Write audit report to ``out_path`` while guarding against sorted-folder writes."""
+        base_dir = self.report_data.get("base_dir") or getattr(
+            getattr(self, "app", None), "base_dir", None
+        )
+        effective_base = str(base_dir) if base_dir else None
 
         try:
             from app.core.audit_reporter import export_audit_report
 
             final_path = export_audit_report(
-                self.report_data, out_path, format_type=fmt, base_dir=base_dir
+                self.report_data,
+                out_path,
+                format_type=fmt,
+                base_dir=effective_base,
             )
             msg = f"Audit report successfully exported to {final_path}"
             self.announce(msg)
@@ -1041,6 +1064,36 @@ class AuditReportModal(ResponsiveModalScreen[None]):
             logger.error(err_msg)
             self.announce(err_msg)
             self.notify(err_msg, severity="error")
+
+    def _export_report(self, fmt: str) -> None:
+        """Prompt for an external export path defaulting to ``<app_dir>/exports``."""
+        from app.config import get_app_dir
+
+        clean_fmt = (fmt or "json").strip().lower()
+        default_out = str(Path(get_app_dir()) / "exports" / f"audit_report.{clean_fmt}")
+
+        def handle_export_prompt(result: tuple[str, str] | None) -> None:
+            if not result:
+                return
+            chosen_path, chosen_fmt = result
+            self._perform_export_report(chosen_path, chosen_fmt or clean_fmt)
+
+        app_ref = getattr(self, "app", None)
+        if app_ref is not None and hasattr(app_ref, "push_screen"):
+            app_ref.push_screen(
+                ExportReportModal(
+                    default_path=default_out,
+                    default_format=clean_fmt,
+                    title="Export Audit Verification Report",
+                    format_options=[
+                        ("JSON Report (*.json)", "json"),
+                        ("CSV Report (*.csv)", "csv"),
+                    ],
+                ),
+                handle_export_prompt,
+            )
+        else:
+            self._perform_export_report(default_out, clean_fmt)
 
     def action_cancel(self) -> None:
         """Cancel dialog and dismiss modal."""

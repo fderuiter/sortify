@@ -60,10 +60,22 @@ def test_failure_and_system_exit_release_leases(tmp_path):
 
 def test_custom_paths_are_distinct_and_queues_drain(tmp_path):
     completed = []
-    with acquire_services(db_path=tmp_path / "one.db") as one:
+    custom_db = tmp_path / "one.db"
+    sorted_dir = tmp_path / "sorted"
+    sorted_dir.mkdir()
+    with acquire_services(db_path=custom_db) as one:
         worker = one.worker
+        assert one.history is not None
+        assert one.cache is not None
+        assert one.db.db_path == one.history.db_path == one.cache.db_path
+        sid = one.history.start_session(str(sorted_dir))
+        seq = one.history.moves.record_intent(
+            sid, "/src/a.txt", "/dst/a.txt", src_sha256="abc123"
+        )
+        one.history.moves.mark_done(sid, seq, "/dst/a.txt")
         with acquire_services(db_path=tmp_path / "two.db") as two:
             assert one.worker is not two.worker
+            assert two.history is not None
         one.worker.execute_write_async(lambda: completed.append("written"))
     assert completed == ["written"]
     assert not worker.thread.is_alive()

@@ -339,6 +339,7 @@ def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bo
             output_path = getattr(args, "output", None)
             fmt = getattr(args, "format", None)
             is_csv = getattr(args, "csv", False)
+            ledger_db_path = getattr(args, "ledger_db", None)
 
             if is_csv and not fmt:
                 fmt = "csv"
@@ -349,9 +350,12 @@ def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bo
 
             from app.core.services import acquire_services
 
-            lease = acquire_services()
+            lease = (
+                acquire_services(db_path=ledger_db_path)
+                if ledger_db_path
+                else acquire_services()
+            )
             try:
-                db = lease.db
                 history_mgr = lease.history
                 export_res = history_mgr.export_audit_log(
                     output_path=output_path,

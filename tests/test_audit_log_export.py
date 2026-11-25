@@ -187,7 +187,7 @@ def test_cli_ledger_export_command(test_history_env, monkeypatch):
         output=csv_out,
         format="csv",
         csv=True,
-        ledger_db=str(env["tmp_path"] / "transaction_ledger.db"),
+        ledger_db=None,
         quiet=True,
         json=True,
     )
@@ -282,7 +282,7 @@ def test_cli_ledger_export_without_session_id(tmp_path, monkeypatch):
         output=csv_out,
         format="csv",
         csv=True,
-        ledger_db=str(tmp_path / "transaction_ledger.db"),
+        ledger_db=None,
         quiet=True,
         json=False,
     )
@@ -326,15 +326,28 @@ def test_export_audit_log_path_traversal(test_history_env):
     ) or "contains invalid directory traversal" in str(exc_info.value)
 
 
-def test_export_audit_log_0o600_permissions(test_history_env):
-    """Test that export_audit_log creates output files with 0o600 permissions."""
+def test_export_audit_log_0o600_permissions_and_sorted_folder_blocking(
+    test_history_env,
+):
+    """Test that export_audit_log creates external output files with 0o600 permissions and blocks writes inside base_dir."""
     import stat
+
+    from app.core.exceptions import AuditExportError
 
     env = test_history_env
     history_mgr = env["history_mgr"]
     session_id = env["session_id"]
     base_dir = env["base_dir"]
-    out_file = os.path.join(base_dir, "secure_export.csv")
+    out_file = str(env["tmp_path"] / "exports" / "secure_export.csv")
+
+    with pytest.raises(AuditExportError) as exc_info:
+        history_mgr.export_audit_log(
+            output_path=os.path.join(base_dir, "inside.csv"),
+            session_id=session_id,
+            format="csv",
+            base_dir=base_dir,
+        )
+    assert "sorted folder" in str(exc_info.value).lower()
 
     res = history_mgr.export_audit_log(
         output_path=out_file,
@@ -347,3 +360,172 @@ def test_export_audit_log_0o600_permissions(test_history_env):
     if os.name != "nt":
         mode = stat.S_IMODE(os.stat(res["output_path"]).st_mode)
         assert mode == 0o600
+
+
+def test_export_audit_log_excludes_undo_snapshot_rows(test_history_env):
+    """Legacy undo_snapshot rows are excluded from all-session exports and rejected by explicit session_id."""
+    from app.core.db_conn import get_db_connection
+
+    env = test_history_env
+    history_mgr = env["history_mgr"]
+    snap_id = str(uuid.uuid4())
+    conn = get_db_connection(history_mgr.db_path)
+    with conn:
+        conn.execute(
+            "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, ?)",
+            (snap_id, 1700000100.0, env["base_dir"], "undo_snapshot"),
+        )
+        conn.execute(
+            "INSERT INTO moves (session_id, seq, src, dst, src_sha256, state, created_at, updated_at) "
+            "VALUES (?, 1, ?, ?, 'snaphash', 'done', 1700000100.0, 1700000100.0)",
+            (snap_id, "/snap/src.txt", "/snap/dst.txt"),
+        )
+
+    json_out = str(env["tmp_path"] / "exports" / "filtered_all.json")
+    res = history_mgr.export_audit_log(json_out, session_id=None, format="json")
+    assert res["count"] == 2
+    with open(json_out, encoding="utf-8") as f:
+        payload = json.load(f)
+    assert {step["session_id"] for step in payload["steps"]} == {env["session_id"]}
+
+    with pytest.raises(ValueError, match="not found"):
+        history_mgr.export_audit_log(
+            str(env["tmp_path"] / "exports" / "snap.json"),
+            session_id=snap_id,
+            format="json",
+        )
+
+
+def test_cli_ledger_export_and_undo_export_honor_custom_ledger_db(
+    tmp_path, monkeypatch
+):
+    """Both `ledger export --ledger-db` and `undo --export --ledger-db` export from the custom DB path."""
+    import argparse
+
+    from app.cli.undo_cli import execute_undo_command
+    from app.core.services import acquire_services
+
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path / "empty_default_app"))
+    custom_db = tmp_path / "custom_store" / "custom.db"
+    sorted_dir = tmp_path / "sorted_workspace"
+    sorted_dir.mkdir()
+
+    with acquire_services(db_path=custom_db) as lease:
+        sid = lease.history.start_session(str(sorted_dir))
+        seq = lease.history.moves.record_intent(
+            sid,
+            str(sorted_dir / "alpha.txt"),
+            str(sorted_dir / "Docs" / "alpha.txt"),
+            src_sha256="hash_alpha",
+        )
+        lease.history.moves.mark_done(sid, seq, str(sorted_dir / "Docs" / "alpha.txt"))
+        lease.history.complete_session(sid)
+
+    ledger_csv = tmp_path / "exports" / "custom_ledger.csv"
+    ledger_args = argparse.Namespace(
+        subcommand="ledger",
+        ledger_command="export",
+        session_id=None,
+        output=str(ledger_csv),
+        format="csv",
+        csv=True,
+        ledger_db=str(custom_db),
+        quiet=True,
+        json=True,
+    )
+    with pytest.raises(SystemExit) as ledger_exit:
+        handle_ledger_command(ledger_args, AppSettings())
+    assert ledger_exit.value.code == 0
+    with open(ledger_csv, encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    assert len(rows) == 1
+    assert rows[0]["session_id"] == sid
+
+    undo_json = tmp_path / "exports" / "undo_export.json"
+    undo_args = argparse.Namespace(
+        subcommand="undo",
+        list_sessions=False,
+        export=str(undo_json),
+        format="json",
+        ledger_db=str(custom_db),
+        session_id=None,
+        latest=True,
+        dry_run=False,
+        force=False,
+        step_ids=None,
+        files=None,
+        json=True,
+        quiet=True,
+    )
+    with pytest.raises(SystemExit) as undo_exit:
+        execute_undo_command(undo_args, AppSettings())
+    assert undo_exit.value.code == 0
+    with open(undo_json, encoding="utf-8") as f:
+        undo_data = json.load(f)
+    assert undo_data["session_id"] == sid
+    assert undo_data["total_steps"] == 1
+    assert list(sorted_dir.iterdir()) == []
+
+
+def test_history_modal_defaults_to_external_exports_and_blocks_sorted_folder(
+    test_history_env,
+):
+    """HistoryModal defaults to <app_dir>/exports/audit_log.csv and blocks exports inside base_dir."""
+    import asyncio
+
+    from textual.widgets import Button, Input, Select
+
+    from app.config import get_app_dir
+    from app.core.session_catalog import list_sessions
+    from app.ui.tui import AutoSorterTUI
+
+    env = test_history_env
+
+    async def _test():
+        settings = AppSettings(filepath=str(env["tmp_path"] / "settings.json"))
+        settings.AI_CONSENT_GRANTED = False
+        app = AutoSorterTUI(settings=settings, base_dir=env["base_dir"])
+        async with app.run_test() as pilot:
+            app.action_open_history()
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, HistoryModal)
+
+            path_inp = modal.query_one("#input-history-path", Input)
+            expected_default = os.path.join(get_app_dir(), "exports", "audit_log.csv")
+            assert path_inp.value == expected_default
+
+            # Changing format updates default filename suffix automatically
+            fmt_select = modal.query_one("#select-history-format", Select)
+            fmt_select.value = "json"
+            await pilot.pause()
+            expected_json = os.path.join(get_app_dir(), "exports", "audit_log.json")
+            assert path_inp.value == expected_json
+
+            modal.query_one("#btn-export", Button).press()
+            await pilot.pause()
+
+            assert os.path.exists(expected_json)
+            assert os.listdir(env["base_dir"]) == []
+
+            # Re-open HistoryModal and attempt to export inside the sorted folder -> blocked
+            app.push_screen(
+                HistoryModal(sessions=list_sessions(), base_dir=env["base_dir"]),
+                callback=None,
+            )
+            await pilot.pause()
+            app.pop_screen()
+            await pilot.pause()
+
+            app.action_open_history()
+            await pilot.pause()
+            modal2 = app.screen
+            assert isinstance(modal2, HistoryModal)
+            inside_target = os.path.join(env["base_dir"], "inside_sorted.csv")
+            modal2.query_one("#input-history-path", Input).value = inside_target
+            modal2.query_one("#btn-export", Button).press()
+            await pilot.pause()
+            assert not os.path.exists(inside_target)
+            assert os.listdir(env["base_dir"]) == []
+
+    asyncio.run(_test())

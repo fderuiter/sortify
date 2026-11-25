@@ -11,6 +11,15 @@ logger = logging.getLogger(__name__)
 # Statuses of a session whose moves never finished.
 UNFINISHED_STATUSES = ("active", "uncommitted", "failed")
 
+# Statuses of a session eligible for user-requested undo when moves exist.
+UNDOABLE_SESSION_STATUSES = (
+    "completed",
+    "partially_rolled_back",
+    "active",
+    "failed",
+    "uncommitted",
+)
+
 
 def _count(conn, table: str, session_id: str) -> int:
     try:
@@ -35,6 +44,55 @@ def list_sessions(store=None) -> list:
     store = store or open_store()
     store_path = str(store.path)
     return session_summary_dicts(store_path, history_db_path=store_path)
+
+
+def can_undo_session(session_entry: dict[str, Any] | None, store: Any = None) -> bool:
+    """Return True only when ``session_entry`` has an undoable status and recorded moves."""
+    if not session_entry or not isinstance(session_entry, dict):
+        return False
+    sid = session_entry.get("session_id")
+    if not sid:
+        return False
+    status = str(session_entry.get("status") or "").strip().lower()
+    if status not in UNDOABLE_SESSION_STATUSES:
+        return False
+    if status == "completed" and int(session_entry.get("trashed_count") or 0) > 0:
+        return True
+    if int(session_entry.get("step_count") or 0) <= 0:
+        return False
+
+    target_db_path = (
+        str(store.path)
+        if store is not None and getattr(store, "path", None)
+        else session_entry.get("history_db_path")
+    )
+    if isinstance(target_db_path, str) and os.path.exists(target_db_path):
+        from app.core.db_conn import DB_ERRORS, get_db_connection
+        from app.core.moves import _read_legacy_moves_for_session
+
+        try:
+            conn = get_db_connection(target_db_path)
+            row = conn.execute(
+                "SELECT 1 FROM moves WHERE session_id = ? AND state IN ('done', 'verified', 'intent') LIMIT 1",
+                (str(sid),),
+            ).fetchone()
+            if row is not None:
+                return True
+            any_moves_row = conn.execute(
+                "SELECT 1 FROM moves WHERE session_id = ? LIMIT 1",
+                (str(sid),),
+            ).fetchone()
+            if any_moves_row is not None:
+                return False
+            legacy_moves = _read_legacy_moves_for_session(conn, str(sid))
+            if legacy_moves:
+                return any(
+                    m.state in ("done", "verified", "intent") for m in legacy_moves
+                )
+            return False
+        except (*DB_ERRORS, OSError, RuntimeError, ValueError):
+            return True
+    return True
 
 
 def _has_files(folder: str) -> bool:

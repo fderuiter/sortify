@@ -1768,8 +1768,23 @@ class AutoSorterTUI(
             if not result:
                 return
             session_id = result["session_id"]
-            output_path = result["output_path"]
-            fmt = result["format"]
+            fmt = str(result.get("format") or "csv")
+            output_path = str(result.get("output_path") or "").strip()
+            if not output_path:
+                from app.config import get_app_dir
+
+                output_path = str(
+                    Path(get_app_dir()) / "exports" / f"audit_log.{fmt.lower()}"
+                )
+
+            selected_base_dir: str | None = self.base_dir or None
+            if not selected_base_dir and session_id not in ("none", "all"):
+                for sess_item in sessions:
+                    if sess_item.get("session_id") == session_id:
+                        raw_bdir = sess_item.get("base_dir")
+                        if raw_bdir:
+                            selected_base_dir = str(raw_bdir)
+                        break
 
             try:
                 from app.core.services import acquire_services
@@ -1781,7 +1796,7 @@ class AutoSorterTUI(
                         if session_id not in ("none", "all")
                         else None,
                         format=fmt,
-                        base_dir=self.base_dir,
+                        base_dir=selected_base_dir,
                     )
                 cnt = export_res.get("count", 0)
                 out_p = export_res.get("output_path", output_path)
@@ -1944,8 +1959,8 @@ class AutoSorterTUI(
             self._start_scan()
 
     def _on_undo_failure(self, session_id: str, err: Exception) -> None:
-        """Handle session rollback failure on main thread."""
-        msg = f"Rollback failed for session {session_id[:8]}...: {err}"
+        """Handle session undo failure on main thread."""
+        msg = f"Undo failed for session {session_id[:8]}...: {err}"
         self.announce(msg)
         try:
             from app.ui.notifications import notify
@@ -1956,7 +1971,7 @@ class AutoSorterTUI(
 
         self.push_screen(
             RollbackErrorModal(
-                title="Rollback Failed",
+                title="Undo Failed",
                 error_message=str(err),
                 settings=self.settings,
             )

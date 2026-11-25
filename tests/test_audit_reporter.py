@@ -107,20 +107,24 @@ def test_unverified_file_hash_pairs():
 
 
 def test_export_audit_report_json(tmp_path):
-    """Test exporting audit report to JSON format."""
+    """Test exporting audit report to an external JSON file."""
+    sorted_dir = tmp_path / "sorted"
+    sorted_dir.mkdir()
+    exports_dir = tmp_path / "exports"
     records = [
         {
-            "source_path": str(tmp_path / "file1.txt"),
-            "destination_path": str(tmp_path / "out" / "file1.txt"),
+            "source_path": str(sorted_dir / "file1.txt"),
+            "destination_path": str(sorted_dir / "out" / "file1.txt"),
             "pre_hash": "hash123",
             "post_hash": "hash123",
         }
     ]
-    report = generate_audit_report(str(tmp_path), records)
-    out_file = str(tmp_path / "audit_report.json")
+    report = generate_audit_report(str(sorted_dir), records)
+    out_file = str(exports_dir / "audit_report.json")
 
     res = export_audit_report_json(report, out_file)
     assert os.path.exists(res)
+    assert list(sorted_dir.iterdir()) == []
 
     with open(res, encoding="utf-8") as f:
         data = json.load(f)
@@ -131,20 +135,24 @@ def test_export_audit_report_json(tmp_path):
 
 
 def test_export_audit_report_csv(tmp_path):
-    """Test exporting audit report to CSV format."""
+    """Test exporting audit report to an external CSV file."""
+    sorted_dir = tmp_path / "sorted"
+    sorted_dir.mkdir()
+    exports_dir = tmp_path / "exports"
     records = [
         {
-            "source_path": str(tmp_path / "file2.txt"),
-            "destination_path": str(tmp_path / "out" / "file2.txt"),
+            "source_path": str(sorted_dir / "file2.txt"),
+            "destination_path": str(sorted_dir / "out" / "file2.txt"),
             "pre_hash": "hash456",
             "post_hash": "hash456",
         }
     ]
-    report = generate_audit_report(str(tmp_path), records)
-    out_file = str(tmp_path / "audit_report.csv")
+    report = generate_audit_report(str(sorted_dir), records)
+    out_file = str(exports_dir / "audit_report.csv")
 
     res = export_audit_report_csv(report, out_file)
     assert os.path.exists(res)
+    assert list(sorted_dir.iterdir()) == []
 
     with open(res, encoding="utf-8") as f:
         reader = csv.reader(f)
@@ -158,22 +166,27 @@ def test_export_audit_report_csv(tmp_path):
 
 def test_export_audit_report_dispatch(tmp_path):
     """Test export_audit_report generic dispatcher for json and csv."""
+    sorted_dir = tmp_path / "sorted"
+    sorted_dir.mkdir()
+    exports_dir = tmp_path / "exports"
     records = [
         {
-            "source_path": str(tmp_path / "test.txt"),
-            "destination_path": str(tmp_path / "out" / "test.txt"),
+            "source_path": str(sorted_dir / "test.txt"),
+            "destination_path": str(sorted_dir / "out" / "test.txt"),
             "pre_hash": "abc",
             "post_hash": "abc",
         }
     ]
-    report = generate_audit_report(str(tmp_path), records)
+    report = generate_audit_report(str(sorted_dir), records)
 
     json_path = export_audit_report(
-        report, str(tmp_path / "r.json"), format_type="json"
+        report, str(exports_dir / "r.json"), format_type="json"
     )
     assert json_path.endswith(".json") and os.path.exists(json_path)
 
-    csv_path = export_audit_report(report, str(tmp_path / "r.csv"), format_type="csv")
+    csv_path = export_audit_report(
+        report, str(exports_dir / "r.csv"), format_type="csv"
+    )
     assert csv_path.endswith(".csv") and os.path.exists(csv_path)
 
 
@@ -191,9 +204,11 @@ def test_export_audit_report_permission_error():
         export_audit_report_json(report, invalid_path)
 
 
-def test_export_audit_report_path_traversal_prevention(tmp_path):
-    """Test that export attempts escaping the allowed base directory raise AuditExportError."""
-    base_dir = tmp_path / "allowed_base"
+def test_export_audit_report_path_traversal_and_sorted_folder_prevention(
+    tmp_path, monkeypatch
+):
+    """Test that traversal sequences and writes inside the sorted folder raise AuditExportError while external paths succeed."""
+    base_dir = tmp_path / "sorted_base"
     base_dir.mkdir()
     outside_dir = tmp_path / "outside"
     outside_dir.mkdir()
@@ -208,16 +223,31 @@ def test_export_audit_report_path_traversal_prevention(tmp_path):
     ]
     report = generate_audit_report(str(base_dir), records)
 
-    # Relative path traversal escape
+    # Relative path traversal sequence is rejected
     with pytest.raises(AuditExportError) as exc_info:
         export_audit_report_json(report, "../outside_report.json")
-    assert "escapes allowed base directory boundary" in str(exc_info.value)
+    assert "traversal" in str(exc_info.value).lower()
 
-    # Absolute path escape outside base_dir
-    outside_file = str(outside_dir / "report.csv")
+    # Embedded '..' in an absolute path is rejected
     with pytest.raises(AuditExportError) as exc_info:
-        export_audit_report_csv(report, outside_file)
-    assert "escapes allowed base directory boundary" in str(exc_info.value)
+        export_audit_report_json(report, f"{outside_dir}/../outside/report.json")
+    assert "traversal" in str(exc_info.value).lower()
+
+    # Writing inside the sorted folder (explicit or via CWD) is rejected
+    with pytest.raises(AuditExportError) as exc_info:
+        export_audit_report_json(report, str(base_dir / "report.json"))
+    assert "sorted folder" in str(exc_info.value).lower()
+
+    monkeypatch.chdir(base_dir)
+    with pytest.raises(AuditExportError) as exc_info:
+        export_audit_report_csv(report, "report.csv")
+    assert "sorted folder" in str(exc_info.value).lower()
+
+    # Clean external path outside base_dir succeeds
+    outside_file = str(outside_dir / "report.csv")
+    written = export_audit_report_csv(report, outside_file)
+    assert os.path.exists(written)
+    assert list(base_dir.iterdir()) == []
 
 
 def test_export_audit_report_posix_permissions_0o600(tmp_path):
@@ -226,10 +256,11 @@ def test_export_audit_report_posix_permissions_0o600(tmp_path):
 
     base_dir = tmp_path / "secure_base"
     base_dir.mkdir()
+    exports_dir = tmp_path / "secure_exports"
     report = generate_audit_report(str(base_dir), [])
 
-    json_path = export_audit_report_json(report, str(base_dir / "report.json"))
-    csv_path = export_audit_report_csv(report, str(base_dir / "report.csv"))
+    json_path = export_audit_report_json(report, str(exports_dir / "report.json"))
+    csv_path = export_audit_report_csv(report, str(exports_dir / "report.csv"))
 
     assert os.path.exists(json_path)
     assert os.path.exists(csv_path)
@@ -242,7 +273,7 @@ def test_export_audit_report_posix_permissions_0o600(tmp_path):
 
 
 def test_export_audit_report_explicit_base_dir_override(tmp_path):
-    """Test that explicit base_dir argument overrides report_data base_dir."""
+    """Test that explicit base_dir argument overrides report_data base_dir as the protected sorted folder."""
     base_1 = tmp_path / "base1"
     base_1.mkdir()
     base_2 = tmp_path / "base2"
@@ -250,11 +281,19 @@ def test_export_audit_report_explicit_base_dir_override(tmp_path):
 
     report = generate_audit_report(str(base_1), [])
 
-    # Exporting to base_2 using explicit base_dir=base_2 should succeed
-    out_2 = str(base_2 / "report.json")
-    res = export_audit_report(report, out_2, format_type="json", base_dir=str(base_2))
+    # With explicit base_dir=base_2, writing inside base_2 is blocked while external paths succeed
+    with pytest.raises(AuditExportError):
+        export_audit_report(
+            report,
+            str(base_2 / "report.json"),
+            format_type="json",
+            base_dir=str(base_2),
+        )
+
+    out_1 = str(base_1 / "report.json")
+    res = export_audit_report(report, out_1, format_type="json", base_dir=str(base_2))
     assert os.path.exists(res)
 
-    # Exporting to base_2 without overriding base_dir should fail because report base_dir is base_1
+    # Without overriding base_dir, writing inside report["base_dir"] (base_1) fails
     with pytest.raises(AuditExportError):
-        export_audit_report(report, out_2, format_type="json")
+        export_audit_report(report, str(base_1 / "other.json"), format_type="json")
