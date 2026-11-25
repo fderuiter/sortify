@@ -3,6 +3,7 @@
 
 import argparse
 import calendar
+import contextlib
 import os
 import re
 import shutil
@@ -74,10 +75,8 @@ def safe_extract_zip(zip_path, extract_to):
                         pass
             elif os.path.isfile(target_file):
                 member_epoch = calendar.timegm(member.date_time)
-                try:
+                with contextlib.suppress(OSError):
                     os.utime(target_file, (member_epoch, member_epoch))
-                except OSError:
-                    pass
 
 
 def get_uv_cmd():
