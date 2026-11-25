@@ -22,7 +22,7 @@ from app.core.analyzer_strategies import GenerativeNamingStrategy
 from app.core.db import Database
 from app.core.db_worker import DBWorker
 from app.core.extractor_strategies import AudioExtractor
-from app.core.mover import _remove_empty_dirs, get_safe_path
+from app.core.mover import _prune_emptied_dirs, get_safe_path
 from app.core.semantic_embeddings import ModelProperties, SemanticEmbeddingManager
 
 pytestmark = [pytest.mark.slow, pytest.mark.integration]
@@ -322,6 +322,8 @@ def test_holistic_resiliency_guards_and_rollback(db, temp_workspace):
     real_empty_dir.mkdir(parents=True, exist_ok=True)
     try:
         os.symlink(str(real_empty_dir), str(symlink_dir))
-        _remove_empty_dirs(str(temp_workspace))
+        _prune_emptied_dirs({str(symlink_dir)}, str(temp_workspace))
+        assert os.path.islink(str(symlink_dir))
+        assert real_empty_dir.is_dir()
     except (OSError, NotImplementedError):
         pass

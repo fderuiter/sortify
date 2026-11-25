@@ -3,12 +3,10 @@
 This module is responsible for safely moving files to new directories.
 """
 
-import asyncio
 import concurrent.futures
 import contextlib
 import logging
 import os
-import shutil  # noqa: F401
 import threading
 import unicodedata
 import uuid
@@ -513,11 +511,8 @@ def _update_path_map_entry(
 
 
 def _resolve_pending_links(
-    base_dir: str,
     pending_links: list,
     path_map: dict,
-    db=None,
-    session_id: str | None = None,
 ) -> None:
     """Secondary pass: resolve and update shortcut/link targets after all physical moves in batch complete."""
     if not pending_links:
@@ -1030,38 +1025,6 @@ def _is_foreign_hidden_dir(path: str) -> bool:
     return name.startswith(".") and name not in _OWNED_HIDDEN_DIRS
 
 
-def _remove_empty_dirs(path: str, protected_paths: list[str] | None = None):
-    """Recursively remove empty directories, respecting protected paths."""
-    if protected_paths:
-        for p in protected_paths:
-            if is_subpath_or_equal(path, p):
-                return
-
-    if not os.path.isdir(path) or is_junction_path(path) or os.path.islink(path):
-        return
-
-    # Hidden directories (.git, .venv, ...) are not ours, and empty ones can be
-    # meaningful (e.g. .git/refs/tags), so leave them alone. ``.branches`` holds
-    # the sorter's own rollback safety copies and may be pruned.
-    if _is_foreign_hidden_dir(path):
-        return
-
-    for entry in os.listdir(path):
-        entry_path = os.path.join(path, entry)
-        if is_junction_path(entry_path) or os.path.islink(entry_path):
-            continue
-        if os.path.isdir(entry_path):
-            _remove_empty_dirs(entry_path, protected_paths)
-
-    if not os.listdir(path):
-        from app.core.resilient_file_ops import resilient_remove
-
-        try:
-            resilient_remove(path)
-        except OSError:
-            pass
-
-
 def _prune_emptied_dirs(
     dirs: set, base_dir: str, protected_paths: list[str] | None = None
 ) -> None:
@@ -1096,28 +1059,6 @@ def _prune_emptied_dirs(
             except OSError:
                 break
             current = os.path.dirname(current)
-
-
-def _is_cross_volume(src: str, dst: str) -> bool:
-    """Check if moving src to dst crosses file system device or drive boundaries."""
-    try:
-        src_dev = os.stat(src).st_dev if os.path.lexists(src) else None
-        dst_dir = os.path.dirname(dst)
-        if not os.path.exists(dst_dir):
-            os.makedirs(dst_dir, exist_ok=True)
-        dst_dev = os.stat(dst_dir).st_dev
-        if src_dev is not None and src_dev != dst_dev:
-            return True
-    except OSError:
-        pass
-    try:
-        src_drive = os.path.splitdrive(os.path.abspath(src))[0].upper()
-        dst_drive = os.path.splitdrive(os.path.abspath(dst))[0].upper()
-        if src_drive and dst_drive and src_drive != dst_drive:
-            return True
-    except Exception:
-        pass
-    return False
 
 
 def _resolve_source_path(
@@ -1181,53 +1122,6 @@ def _resolve_source_path(
     if abs_sp is not None:
         return abs_sp
     return cand
-
-
-def _get_node_mtime(
-    base_dir: str,
-    key: str,
-    content: Any,
-    active_parent_path: str = "",
-    depth: int = 0,
-) -> float:
-    """Recursively calculate the minimum modification timestamp (st_mtime) for a plan node."""
-    node_type = _get_val(content, "node_type") or _get_val(content, "__type__")
-    rel_src = _get_val(content, "relative_source")
-    target_fn = _get_val(content, "target_filename")
-
-    if (
-        content is None
-        or node_type in ("file", "directory")
-        or rel_src is not None
-        or target_fn is not None
-    ):
-        if node_type == "directory":
-            return float("inf")
-
-        source_path = _resolve_source_path(
-            base_dir, key, content, active_parent_path, depth
-        )
-
-        try:
-            if os.path.lexists(source_path):
-                return os.stat(source_path).st_mtime
-        except OSError:
-            pass
-        return float("inf")
-    elif isinstance(content, dict) or hasattr(content, "items"):
-        items = (
-            content.items()
-            if hasattr(content, "items")
-            else getattr(content, "plan", {}).items()
-        )
-        min_mtime = float("inf")
-        sub_parent = os.path.join(active_parent_path, key)
-        for sub_key, sub_content in items:
-            m = _get_node_mtime(base_dir, sub_key, sub_content, sub_parent, depth + 1)
-            if m < min_mtime:
-                min_mtime = m
-        return min_mtime
-    return float("inf")
 
 
 def _get_node_priority_key(
@@ -3824,11 +3718,8 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                     self.transition_to(MoveEngineState.RESOLVING_LINKS)
                     summary.state = self.state
                     _resolve_pending_links(
-                        base_dir=base_dir,
                         pending_links=pending_links,
                         path_map=path_map,
-                        db=db,
-                        session_id=session_id,
                     )
                 cleanup_enabled = (
                     getattr(runtime_settings, "CLEANUP_EMPTY_FOLDERS", True)
@@ -4060,27 +3951,6 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                     pass
             raise e
 
-    def retry_failed_moves(
-        self,
-        base_dir: str,
-        failed_items: list[dict[str, Any]],
-        db=None,
-        history_manager=None,
-        runtime_settings=None,
-        progress_callback=None,
-        **kwargs,
-    ) -> dict[str, Any]:
-        """Re-attempt file move operations for selected or all failed items in mover engine."""
-        return retry_failed_moves(
-            base_dir,
-            failed_items,
-            db=db,
-            history_manager=history_manager,
-            runtime_settings=runtime_settings,
-            progress_callback=progress_callback,
-            **kwargs,
-        )
-
 
 def execute_moves(
     base_dir: str,
@@ -4097,7 +3967,6 @@ def execute_moves(
     cancellation_token=None,
     priority: str | None = None,
     progress_callback=None,
-    source_dirs: list[str] | None = None,
     pipeline: Any = None,
     session_id: str | None = None,
     manage_session_lifecycle: bool = True,
@@ -4120,7 +3989,6 @@ def execute_moves(
         cancellation_token: Optional cancellation token object.
         priority: Priority level identifier.
         progress_callback: Optional progress emission callback function.
-        source_dirs: Optional list of individual source directories being sorted.
         pipeline: Optional pipeline instance for lifecycle state coordination.
         **kwargs: Additional keyword arguments for future extensibility.
 
@@ -4149,80 +4017,16 @@ def execute_moves(
     )
 
 
-async def execute_moves_async(
-    base_dir: str,
-    plan: dict,
-    db,
-    history_manager,
-    runtime_settings=None,
-    resume: bool = False,
-    batch_size: int = 50,
-    chunk_size: int | None = None,
-    max_workers: int | None = None,
-    cancel_check=None,
-    cancel_event=None,
-    cancellation_token=None,
-    priority: str | None = None,
-    progress_callback=None,
-) -> dict:
-    """Asynchronously execute move operations off the main event loop thread.
-
-    Args:
-        base_dir: Target base directory path.
-        plan: Move operations plan dictionary.
-        db: Database connection instance.
-        history_manager: History tracking manager.
-        runtime_settings: Optional application runtime configuration.
-        resume: Flag indicating whether to resume an existing session.
-        batch_size: Database transaction batch size.
-        chunk_size: Number of files per worker execution chunk.
-        max_workers: Maximum concurrency level for worker tasks.
-        cancel_check: Optional function returning True if cancellation requested.
-        cancel_event: Optional thread event indicating cancellation.
-        cancellation_token: Optional cancellation token object.
-        priority: Priority level identifier.
-        progress_callback: Optional progress emission callback function.
-
-    Returns
-    -------
-        dict: Execution summary and status details.
-    """
-    return await asyncio.to_thread(
-        execute_moves,
-        base_dir,
-        plan,
-        db,
-        history_manager,
-        runtime_settings=runtime_settings,
-        resume=resume,
-        batch_size=batch_size,
-        chunk_size=chunk_size,
-        max_workers=max_workers,
-        cancel_check=cancel_check,
-        cancel_event=cancel_event,
-        cancellation_token=cancellation_token,
-        priority=priority,
-        progress_callback=progress_callback,
-    )
-
-
 def retry_failed_moves(
     base_dir: str,
     failed_items: list[dict[str, Any]],
-    db=None,
-    history_manager=None,
-    runtime_settings=None,
     progress_callback=None,
-    **kwargs,
 ) -> dict[str, Any]:
     """Re-attempt file move operations for selected or all failed items in mover engine.
 
     Args:
         base_dir: Target base directory path.
         failed_items: List of failed item dictionaries (audit records or queue items).
-        db: Optional database connection instance.
-        history_manager: Optional history manager instance.
-        runtime_settings: Optional application runtime settings.
         progress_callback: Optional progress emission callback.
 
     Returns
@@ -4309,6 +4113,3 @@ def retry_failed_moves(
         "retried_count": total,
         "audit_report": report,
     }
-
-
-FileMover = AsyncMoveEngine

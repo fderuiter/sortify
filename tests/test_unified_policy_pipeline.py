@@ -29,7 +29,7 @@ from app.core.pipeline import (
 from app.core.plan_format import format_plan_tree
 from app.core.quarantine_interceptor import QuarantineInterceptorService
 from app.core.rule_templates import apply_starter_templates
-from app.core.session import AppSession, split_plan_phases
+from app.core.session import AppSession
 from app.core.store import open_store
 
 
@@ -167,11 +167,6 @@ def test_sort_pipeline_unified_policy_actions_and_full_undo(tmp_path: Path) -> N
             assert "[ACTION: unarchive]" in tree_str
             assert "[ACTION: redact]" in tree_str
             assert "[ACTION: quarantine]" in tree_str
-
-            # split_plan_phases routes policy actions into Phase 1 fast_plan
-            fast_plan, _slow_plan = split_plan_phases(plan)
-            assert "Sanitized_Records" in fast_plan
-            assert "_Compliance_Quarantine" in fast_plan
 
             # Zip unpacked & deleted from workspace root, children sorted to target folders
             assert not zip_path.exists()

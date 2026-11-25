@@ -1,5 +1,95 @@
 {
   "$defs": {
+    "PolicyCondition": {
+      "additionalProperties": true,
+      "description": "Typed dictionary schema for a single compound policy condition clause.",
+      "properties": {
+        "field": {
+          "description": "File or document target inspected by this clause: 'name' (basename), 'extension' (file suffix), 'content' (extracted text), 'path' (relative/full path), or 'any_text' (basename, path, or extracted text).",
+          "enum": [
+            "name",
+            "extension",
+            "content",
+            "path",
+            "any_text"
+          ],
+          "title": "Field",
+          "type": "string"
+        },
+        "operator": {
+          "description": "Comparison operator applied to the target field: 'contains', 'equals', 'starts_with', 'ends_with', 'glob' wildcard matching, or bounded 'regex'.",
+          "enum": [
+            "contains",
+            "equals",
+            "starts_with",
+            "ends_with",
+            "glob",
+            "regex"
+          ],
+          "title": "Operator",
+          "type": "string"
+        },
+        "value": {
+          "description": "Non-empty string, wildcard mask, or bounded regular expression (<= 256 chars) to match.",
+          "minLength": 1,
+          "title": "Value",
+          "type": "string"
+        },
+        "negate": {
+          "description": "When true, invert this individual condition clause's match result.",
+          "title": "Negate",
+          "type": "boolean"
+        },
+        "case_sensitive": {
+          "description": "When true, preserve character casing when evaluating this condition clause.",
+          "title": "Case Sensitive",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "field",
+        "operator",
+        "value"
+      ],
+      "title": "PolicyCondition",
+      "type": "object"
+    },
+    "PolicyConditionGroup": {
+      "additionalProperties": true,
+      "description": "Typed dictionary schema for a nested boolean condition group within a PolicyRule.",
+      "properties": {
+        "match_mode": {
+          "description": "Boolean combinator applied across nested clauses: 'all' (AND), 'any' (OR), or 'none' (NOR).",
+          "enum": [
+            "all",
+            "any",
+            "none"
+          ],
+          "title": "Match Mode",
+          "type": "string"
+        },
+        "conditions": {
+          "description": "Non-empty list of leaf PolicyCondition clauses evaluated under match_mode.",
+          "items": {
+            "$ref": "#/$defs/PolicyCondition"
+          },
+          "minItems": 1,
+          "title": "Conditions",
+          "type": "array"
+        },
+        "negate": {
+          "description": "When true, invert the boolean outcome of this nested condition group.",
+          "title": "Negate",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "match_mode",
+        "conditions"
+      ],
+      "title": "PolicyConditionGroup",
+      "type": "object"
+    },
     "PolicyRule": {
       "additionalProperties": true,
       "description": "Typed dictionary schema for unified compliance and routing policy rules.",
@@ -24,7 +114,7 @@
           "type": "string"
         },
         "expression": {
-          "description": "Non-empty case-insensitive substring, wildcard pattern, or metadata comparison expression (such as '> 30d', '< 2025-01-01', or '> 10MB') to match.",
+          "description": "Non-empty case-insensitive substring, wildcard/regex pattern, metadata comparison expression (such as '> 30d', '< 2025-01-01', or '> 10MB'), or readable summary of compound conditions.",
           "minLength": 1,
           "title": "Expression",
           "type": "string"
@@ -38,6 +128,46 @@
           "description": "Integer evaluation priority; rules execute sequentially from highest priority to lowest.",
           "title": "Priority",
           "type": "integer"
+        },
+        "match_mode": {
+          "description": "Optional boolean combinator for compound 'conditions' (or single-clause 'none' inversion): 'all' (every clause must match), 'any' (at least one clause must match), or 'none' (no clause may match).",
+          "enum": [
+            "all",
+            "any",
+            "none"
+          ],
+          "title": "Match Mode",
+          "type": "string"
+        },
+        "conditions": {
+          "description": "Optional compound boolean condition tree (capped at 2 nesting levels and 32 total clauses per PolicyRule).",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PolicyCondition"
+              },
+              {
+                "$ref": "#/$defs/PolicyConditionGroup"
+              }
+            ]
+          },
+          "title": "Conditions",
+          "type": "array"
+        },
+        "negate": {
+          "description": "When true, invert the overall match result of this policy rule.",
+          "title": "Negate",
+          "type": "boolean"
+        },
+        "regex": {
+          "description": "When true, evaluate 'expression' as a bounded ReDoS-safe regular expression (<= 256 characters, rejecting nested quantifiers).",
+          "title": "Regex",
+          "type": "boolean"
+        },
+        "case_sensitive": {
+          "description": "When true, preserve character casing during policy evaluation.",
+          "title": "Case Sensitive",
+          "type": "boolean"
         },
         "halting": {
           "description": "When true, stop evaluating lower-priority rules immediately if this rule does not match.",

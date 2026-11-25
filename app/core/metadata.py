@@ -247,7 +247,8 @@ class MetadataPass:
         has_content_compliance_policy = bool(auto_quarantine_ratings) or any(
             bool(_policy_field(p, "enabled", True))
             and (
-                str(_policy_field(p, "type", "") or "").lower()
+                PolicyEngine.rule_inspects_content(p)
+                or str(_policy_field(p, "type", "") or "").lower()
                 in ("compliance", "action")
                 or str(_policy_field(p, "action", "") or "").lower()
                 in ("quarantine", "redact", "archive", "retain")
@@ -356,7 +357,7 @@ class MetadataPass:
                         "secret",
                         "credential",
                         "",
-                    ):
+                    ) or PolicyEngine.rule_inspects_content(pol_cand):
                         unmatched_higher_content_policy = True
                     if _policy_field(pol_cand, "halting", False):
                         break

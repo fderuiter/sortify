@@ -2754,9 +2754,6 @@ def _create_architecture_move_engine_state_spec() -> StateDiagramSpec:
     )
 
 
-_create_move_engine_state_spec = _create_architecture_move_engine_state_spec
-
-
 def _create_architecture_pipeline_state_spec() -> StateDiagramSpec:
     """Build architecture_pipeline_state diagram specification for PipelineLifecycleState."""
     return StateDiagramSpec(
@@ -2871,9 +2868,6 @@ def _create_architecture_pipeline_state_spec() -> StateDiagramSpec:
             ),
         ],
     )
-
-
-_create_pipeline_state_spec = _create_architecture_pipeline_state_spec
 
 
 def _create_architecture_session_state_spec() -> StateDiagramSpec:
@@ -3009,9 +3003,6 @@ def _create_architecture_session_state_spec() -> StateDiagramSpec:
     )
 
 
-_create_session_history_state_spec = _create_architecture_session_state_spec
-
-
 def _create_architecture_download_state_spec() -> StateDiagramSpec:
     """Build architecture_download_state diagram specification for DownloadState."""
     return StateDiagramSpec(
@@ -3069,9 +3060,6 @@ def _create_architecture_download_state_spec() -> StateDiagramSpec:
             StateTransition(source="CANCELLED", target="[*]", label="Download Aborted"),
         ],
     )
-
-
-_create_download_state_spec = _create_architecture_download_state_spec
 
 
 def _create_catalog_workflow_spec() -> ComponentDiagramSpec:
