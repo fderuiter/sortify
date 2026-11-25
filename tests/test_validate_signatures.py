@@ -1213,3 +1213,39 @@ def test_collect_cli_definitions_parses_each_cli_module_once(monkeypatch):
     cli_defs = validate_signatures.collect_cli_definitions()
     assert cli_defs
     assert len(parsed_cli_files) == len(set(parsed_cli_files))
+
+
+def test_assert_svg_snapshot_unlinks_stale_actual_on_update_and_clean_match(
+    tmp_path, monkeypatch
+):
+    """Verify assert_svg_snapshot writes .svg.actual on mismatch and unlinks it on UPDATE_SNAPSHOTS=1 or clean match."""
+    import tests.test_visual_snapshots as vs
+
+    monkeypatch.setattr(vs, "SNAPSHOT_DIR", str(tmp_path))
+    monkeypatch.delenv("UPDATE_SNAPSHOTS", raising=False)
+
+    snap_id = "synthetic_modal"
+    svg_path = tmp_path / f"{snap_id}.svg"
+    actual_path = tmp_path / f"{snap_id}.svg.actual"
+
+    svg_v1 = "<svg><text>v1</text></svg>\n"
+    svg_v2 = "<svg><text>v2</text></svg>\n"
+    svg_path.write_text(svg_v1, encoding="utf-8")
+
+    # Mismatch writes .svg.actual and fails
+    with pytest.raises(AssertionError, match="SVG visual snapshot mismatch"):
+        vs.assert_svg_snapshot(snap_id, svg_v2)
+    assert actual_path.is_file()
+
+    # UPDATE_SNAPSHOTS=1 rewrites baseline and removes stale .svg.actual
+    monkeypatch.setenv("UPDATE_SNAPSHOTS", "1")
+    vs.assert_svg_snapshot(snap_id, svg_v2)
+    assert svg_path.read_text(encoding="utf-8") == svg_v2
+    assert not actual_path.exists()
+
+    # Clean match also removes any leftover .svg.actual
+    monkeypatch.delenv("UPDATE_SNAPSHOTS", raising=False)
+    actual_path.write_text(svg_v1, encoding="utf-8")
+    assert actual_path.is_file()
+    vs.assert_svg_snapshot(snap_id, svg_v2)
+    assert not actual_path.exists()

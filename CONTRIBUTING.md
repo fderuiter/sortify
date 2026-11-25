@@ -29,8 +29,8 @@ Dependency groups (PEP 735, in `pyproject.toml`):
 ```bash
 uv run smart-autosorter --demo          # isolated end-to-end run on a generated sample corpus
 uv run python sandbox_cli.py analyze -q --json  # isolated sandbox analysis (auto-seeds dataset)
-uv run pytest -m "not slow"             # fast suite, parallel by default (pytest-xdist)
-uv run pytest -m slow -n 0              # ML, snapshot and integration tests
+uv run pytest -m "not slow"             # fast suite (includes TUI snapshots), parallel by default (pytest-xdist)
+uv run pytest -m slow -n 0              # ML, full-repo gate and integration tests
 uv run ruff check . && uv run ruff format .
 uv run ty check                         # type check app/, scripts/, tests/, .agents/ and sandbox_cli.py (config in pyproject.toml)
 SKIP=no-commit-to-branch uv run pre-commit run --all-files       # every hook offline, including on main
@@ -65,7 +65,7 @@ Read-only `--check` and `--verify` commands never overwrite tracked files on dis
 - **Configuration schema:** `uv run python scripts/validate_config.py --sync` rewrites `app/config_schema.json` from `app/config.py`.
 - **Generated docs:** `uv run python scripts/generate_docs.py` rewrites the generated pages, `SECURITY.md`, and synchronizes `app/config_schema.json` offline without building `site/` (pass `--build` to also build the MkDocs HTML site and `--live-links` to probe external URLs).
 - **API and CLI signatures:** `uv run python scripts/validate_signatures.py --update`.
-- **TUI snapshots:** `UPDATE_SNAPSHOTS=1 uv run pytest tests/test_visual_snapshots.py -n 0`, then commit `tests/snapshots/tui_svg/`.
+- **TUI snapshots:** `UPDATE_SNAPSHOTS=1 uv run pytest tests/test_visual_snapshots.py -n 0` (rewrites baselines and removes any stale `.svg.actual` files; TUI snapshots run in `uv run pytest -m "not slow"`), then commit `tests/snapshots/tui_svg/`.
 - **Diagrams:** edit the spec in `scripts/diagram_schema.py`, then run `uv run python scripts/diagram_toolchain.py build` and commit the `.mmd` and `.svg` files in `docs/assets/diagrams/`. Rendering needs Node and mermaid-cli (`npm install -g @mermaid-js/mermaid-cli`, which also fetches the headless Chrome it uses). Without it the build keeps the existing SVGs and warns that a changed diagram is stale.
 
 ## Code conventions

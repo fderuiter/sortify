@@ -278,10 +278,83 @@ def test_main_cli_help_and_invalid_report_paths(tmp_path: Path) -> None:
     assert "not a regular file" in res_dir.stderr
 
 
+@pytest.mark.slow
 def test_head_passes_live_ty_warning_ratchet() -> None:
     assert main(["prog"]) == 0
-    for platform in PLATFORMS:
-        assert main(["prog", "--platform", platform]) == 0
+
+
+def test_main_platform_and_parallel_dispatch_with_mocks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(
+        '[tool.sortify.ty-warning-ceilings]\n"tests/win_only.py" = 1\n',
+        encoding="utf-8",
+    )
+    win_mod = tmp_path / "tests" / "win_only.py"
+    win_mod.parent.mkdir(parents=True)
+    win_mod.write_text("x = 1\n", encoding="utf-8")
+
+    dispatched: list[tuple[Path, str | None]] = []
+
+    def _fake_run_ty_report(
+        repo_root: Path, *, platform: str | None = None
+    ) -> tuple[int, list[dict[str, Any]] | None, str]:
+        dispatched.append((repo_root, platform))
+        if platform == "win32":
+            return 0, [_diag("tests/win_only.py")], ""
+        return 0, [], ""
+
+    monkeypatch.setattr("scripts.check_ty_warnings.run_ty_report", _fake_run_ty_report)
+
+    # Single-platform mode invokes run_ty_report once and disables stale-ceiling ratchet
+    for plat in PLATFORMS:
+        assert main(["prog", "--platform", plat], repo_root=tmp_path) == 0
+    assert [plat for _, plat in dispatched] == list(PLATFORMS)
+    capsys.readouterr()
+
+    # Default multi-platform mode dispatches via run_ty_reports_parallel and enforces ratchet
+    parallel_calls: list[tuple[Path, tuple[str, ...]]] = []
+
+    def _fake_parallel(
+        repo_root: Path, platforms: tuple[str, ...] = PLATFORMS
+    ) -> dict[str, tuple[int, list[dict[str, Any]] | None, str]]:
+        parallel_calls.append((repo_root, tuple(platforms)))
+        return {
+            "linux": (0, [], ""),
+            "darwin": (0, [], ""),
+            "win32": (0, [_diag("tests/win_only.py")], ""),
+        }
+
+    monkeypatch.setattr(
+        "scripts.check_ty_warnings.run_ty_reports_parallel", _fake_parallel
+    )
+    assert main(["prog"], repo_root=tmp_path) == 0
+    assert parallel_calls == [(tmp_path.resolve(), tuple(PLATFORMS))]
+    capsys.readouterr()
+
+    # Error handling when run_ty_report or run_ty_reports_parallel returns None
+    monkeypatch.setattr(
+        "scripts.check_ty_warnings.run_ty_report",
+        lambda repo_root, *, platform=None: (2, None, "boom single"),
+    )
+    assert main(["prog", "--platform", "linux"], repo_root=tmp_path) == 1
+    assert "Error running ty check: boom single" in capsys.readouterr().err
+
+    monkeypatch.setattr(
+        "scripts.check_ty_warnings.run_ty_reports_parallel",
+        lambda repo_root, platforms=PLATFORMS: {
+            "linux": (0, [], ""),
+            "darwin": (2, None, "boom darwin"),
+            "win32": (0, [], ""),
+        },
+    )
+    assert main(["prog"], repo_root=tmp_path) == 1
+    assert "Error running ty check (--platform darwin): boom darwin" in (
+        capsys.readouterr().err
+    )
 
 
 def test_ty_rejects_invalid_parameter_default_probe(tmp_path: Path) -> None:

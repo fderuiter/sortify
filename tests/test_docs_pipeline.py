@@ -605,30 +605,84 @@ def test_validate_mkdocs_site_valid_and_invalid_directories(tmp_path):
     errors = validate_mkdocs_site(str(malformed_site))
     assert any("Invalid XML in MkDocs sitemap" in e for e in errors)
 
-    # 4. Valid site directory
-    valid_site = tmp_path / "valid_site"
-    valid_site.mkdir()
-    (valid_site / "index.html").write_text(
+    # 4. Missing or misresolved md-logo anchor and non-canonical sitemap URLs
+    missing_logo_site = tmp_path / "missing_logo_site"
+    missing_logo_site.mkdir()
+    (missing_logo_site / "index.html").write_text(
         "<!doctype html><html><body><h1>Smart AutoSorter AI Pro</h1></body></html>",
         encoding="utf-8",
     )
-    (valid_site / "sitemap.xml").write_text(
+    (missing_logo_site / "sitemap.xml").write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        "  <url><loc>https://example.com/other/</loc></url>\n"
+        "</urlset>\n",
+        encoding="utf-8",
+    )
+    errors = validate_mkdocs_site(str(missing_logo_site))
+    assert any("Missing md-logo anchor" in e for e in errors)
+    assert any("missing canonical root URL" in e for e in errors)
+    assert any("Non-canonical MkDocs sitemap <loc> URL" in e for e in errors)
+
+    broken_logo_site = tmp_path / "broken_logo_site"
+    (broken_logo_site / "user_guide").mkdir(parents=True)
+    (broken_logo_site / "index.html").write_text(
+        '<!doctype html><html><body><a class="md-header__button md-logo" href=".">Logo</a></body></html>',
+        encoding="utf-8",
+    )
+    (broken_logo_site / "user_guide" / "index.html").write_text(
+        '<!doctype html><html><body><a class="md-logo" href=".">Wrong</a></body></html>',
+        encoding="utf-8",
+    )
+    (broken_logo_site / "sitemap.xml").write_text(
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
         "  <url><loc>https://fderuiter.github.io/sortify/</loc></url>\n"
         "</urlset>\n",
         encoding="utf-8",
     )
+    errors = validate_mkdocs_site(str(broken_logo_site))
+    assert any("Logo link '.'" in e for e in errors)
+    assert any(
+        "missing canonical page URL 'https://fderuiter.github.io/sortify/user_guide/'"
+        in e
+        for e in errors
+    )
+
+    # 5. Valid site directory with root and nested pages
+    valid_site = tmp_path / "valid_site"
+    (valid_site / "user_guide").mkdir(parents=True)
+    (valid_site / "tutorials" / "01_ml_analyzer_clustering").mkdir(parents=True)
+    (valid_site / "index.html").write_text(
+        '<!doctype html><html><body><a class="md-header__button md-logo" href=".">Logo</a>'
+        "<h1>Smart AutoSorter AI Pro</h1></body></html>",
+        encoding="utf-8",
+    )
+    (valid_site / "user_guide" / "index.html").write_text(
+        '<!doctype html><html><body><a href=".." class="md-header__button md-logo">Logo</a></body></html>',
+        encoding="utf-8",
+    )
+    (valid_site / "tutorials" / "01_ml_analyzer_clustering" / "index.html").write_text(
+        '<!doctype html><html><body><a class="md-logo" href="../..">Logo</a></body></html>',
+        encoding="utf-8",
+    )
+    (valid_site / "sitemap.xml").write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        "  <url><loc>https://fderuiter.github.io/sortify/</loc></url>\n"
+        "  <url><loc>https://fderuiter.github.io/sortify/user_guide/</loc></url>\n"
+        "  <url><loc>https://fderuiter.github.io/sortify/tutorials/01_ml_analyzer_clustering/</loc></url>\n"
+        "</urlset>\n",
+        encoding="utf-8",
+    )
     assert validate_mkdocs_site(str(valid_site)) == []
 
 
+@pytest.mark.slow
 def test_mkdocs_strict_build_generates_index_logo_links_and_sitemap(tmp_path):
     """Integration test running mkdocs build --strict -d to verify index.html, logo links, and sitemap.xml."""
-    import re
     import subprocess
     import sys
-
-    from defusedxml import ElementTree as ET
 
     pytest.importorskip("mkdocs")
 
@@ -651,40 +705,6 @@ def test_mkdocs_strict_build_generates_index_logo_links_and_sitemap(tmp_path):
     index_html = root_index.read_text(encoding="utf-8")
     assert "Smart AutoSorter AI Pro" in index_html
     assert "assets/diagrams/core_architecture.svg" in index_html
-
-    # Verify logo links across root and nested pages resolve to site/index.html
-    logo_href_re = re.compile(
-        r'<a[^>]*class="[^"]*\bmd-logo\b[^"]*"[^>]*href="([^"]+)"'
-        r'|<a[^>]*href="([^"]+)"[^>]*class="[^"]*\bmd-logo\b[^"]*"'
-    )
-    pages_to_check = [
-        root_index,
-        site_dir / "user_guide" / "index.html",
-        site_dir / "tutorials" / "01_ml_analyzer_clustering" / "index.html",
-    ]
-    for page_path in pages_to_check:
-        assert page_path.is_file(), f"Expected built page {page_path}"
-        html = page_path.read_text(encoding="utf-8")
-        match = logo_href_re.search(html)
-        assert match is not None, f"Missing md-logo anchor in {page_path}"
-        href = match.group(1) or match.group(2)
-        resolved = (page_path.parent / href).resolve()
-        target_index = resolved / "index.html" if resolved.is_dir() else resolved
-        assert target_index == root_index.resolve(), (
-            f"Logo link '{href}' in {page_path} resolved to {target_index}, expected {root_index.resolve()}"
-        )
-
-    # Verify sitemap.xml has canonical <loc> URLs for root and existing pages
-    sitemap_root = ET.fromstring((site_dir / "sitemap.xml").read_text(encoding="utf-8"))
-    locs = {
-        (elem.text or "").strip()
-        for elem in sitemap_root.iter()
-        if (elem.tag == "loc" or elem.tag.endswith("}loc"))
-        and (elem.text or "").strip()
-    }
-    assert "https://fderuiter.github.io/sortify/" in locs
-    assert "https://fderuiter.github.io/sortify/user_guide/" in locs
-    assert all(url.startswith("https://fderuiter.github.io/sortify/") for url in locs)
 
 
 def test_main_no_build_flag():
@@ -1274,7 +1294,7 @@ def test_diagram_toolchain_cli_main_verify():
 def test_find_mmdc_executable():
     from scripts.diagram_toolchain import find_mmdc_executable
 
-    cmd = find_mmdc_executable()
+    cmd = find_mmdc_executable(verify_browser=False)
     if cmd and any("npx" in arg for arg in cmd):
         assert "--no-install" in cmd or "--yes" in cmd
 
@@ -2174,6 +2194,7 @@ def test_committed_security_md_omits_placeholder_and_xml_namespaces():
     assert "www.w3.org" not in sec_text
 
 
+@pytest.mark.slow
 def test_generate_docs_local_only_performs_zero_network_calls():
     """Verify generate_docs.py --check --no-build --local-only succeeds offline without network sockets."""
     import os
@@ -2300,27 +2321,25 @@ def test_generate_admin_guide_isolates_columns_app_dir_and_sortify_env(
 def test_generate_docs_offline_check_and_sync_under_host_env(tmp_path):
     """Verify bare generate_docs.py --check and write-mode sync succeed offline under COLUMNS=120, AUTOSORTER_APP_DIR, and SORTIFY_MAX_FOLDERS=999."""
     import os
-    import subprocess
-    import sys
 
     import scripts.generate_docs as gen_docs
 
     uncreated_app_dir = tmp_path / "host_env_app_dir"
-    env = dict(os.environ)
-    env["COLUMNS"] = "120"
-    env["AUTOSORTER_APP_DIR"] = str(uncreated_app_dir)
-    env["SORTIFY_MAX_FOLDERS"] = "999"
-    env["HTTPS_PROXY"] = "http://127.0.0.1:9"
-    env["HTTP_PROXY"] = "http://127.0.0.1:9"
-    env.setdefault("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
-
-    result = subprocess.run(
-        [sys.executable, "scripts/generate_docs.py", "--check"],
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    with (
+        patch.dict(
+            os.environ,
+            {
+                "COLUMNS": "120",
+                "AUTOSORTER_APP_DIR": str(uncreated_app_dir),
+                "SORTIFY_MAX_FOLDERS": "999",
+                "HTTPS_PROXY": "http://127.0.0.1:9",
+                "HTTP_PROXY": "http://127.0.0.1:9",
+                "PYTHON_KEYRING_BACKEND": "keyring.backends.fail.Keyring",
+            },
+        ),
+        patch("sys.argv", ["generate_docs.py", "--check"]),
+    ):
+        main()
     assert not uncreated_app_dir.exists()
     assert not Path("site").exists()
 
@@ -2426,29 +2445,37 @@ def test_validate_mkdocs_config_accepts_allowlisted_superfences_tag_and_rejects_
 def test_generate_docs_check_no_build_and_build_reject_unsafe_mkdocs_yaml_before_build(
     tmp_path, capsys
 ):
-    import subprocess
-    import sys
-
     valid_cfg = tmp_path / "mkdocs_ok.yml"
     valid_cfg.write_text(
         Path("mkdocs.yml").read_text(encoding="utf-8"),
         encoding="utf-8",
     )
-    ok_proc = subprocess.run(
-        [
-            sys.executable,
-            "scripts/generate_docs.py",
-            "--check",
-            "--no-build",
-            "--local-only",
-            "--mkdocs-config",
-            str(valid_cfg),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert ok_proc.returncode == 0, f"stderr:\n{ok_proc.stderr}"
+    with (
+        patch(
+            "sys.argv",
+            [
+                "generate_docs.py",
+                "--check",
+                "--no-build",
+                "--local-only",
+                "--mkdocs-config",
+                str(valid_cfg),
+            ],
+        ),
+        patch("scripts.generate_docs.compile_diagram_assets"),
+        patch("scripts.generate_docs.generate_tutorial_docs"),
+        patch("scripts.generate_docs.generate_api_docs"),
+        patch("scripts.generate_docs.generate_ui_docs"),
+        patch("scripts.generate_docs.generate_admin_guide"),
+        patch("scripts.generate_docs.generate_keyboard_docs"),
+        patch("scripts.generate_docs.update_security_md"),
+        patch("scripts.generate_docs.sync_config_schema"),
+        patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
+        patch("scripts.generate_docs.audit_handwritten_docs", return_value=[]),
+        patch("scripts.generate_docs.audit_model_hosts", return_value=[]),
+    ):
+        main()
+        capsys.readouterr()
 
     for bad_tag in (
         "!!python/object/apply:os.system ['id']",
@@ -2459,22 +2486,22 @@ def test_generate_docs_check_no_build_and_build_reject_unsafe_mkdocs_yaml_before
             f"site_name: Sortify\nextra_payload: {bad_tag}\n",
             encoding="utf-8",
         )
-        bad_proc = subprocess.run(
+        with patch(
+            "sys.argv",
             [
-                sys.executable,
-                "scripts/generate_docs.py",
+                "generate_docs.py",
                 "--check",
                 "--no-build",
                 "--local-only",
                 "--mkdocs-config",
                 str(bad_cfg),
             ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        assert bad_proc.returncode != 0
-        assert "Disallowed YAML tag" in bad_proc.stderr
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code == 1
+            captured_no_build = capsys.readouterr()
+            assert "Disallowed YAML tag" in captured_no_build.err
 
         # Also verify --build halts before invoking mkdocs build subprocess
         with (

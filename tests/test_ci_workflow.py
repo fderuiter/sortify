@@ -984,3 +984,49 @@ def test_precommit_check_yaml_does_not_enable_global_unsafe_mode():
         h for h in local_repo["hooks"] if h.get("id") == "validate-docs"
     )
     assert re.search(validate_docs["files"], "mkdocs.yml")
+
+
+def test_ci_static_checks_catalog_gate_and_deduplicated_snapshots():
+    """Verify static-checks runs full catalog audit once and build-and-test runs TUI snapshots via Fast Smoke Tests."""
+    workflow = _load_ci_workflow()
+    static_steps = workflow["jobs"]["static-checks"]["steps"]
+    catalog_step = next(
+        (
+            s
+            for s in static_steps
+            if "app.ui.catalog" in s.get("run", "")
+            and "--audit-only" in s.get("run", "")
+        ),
+        None,
+    )
+    assert catalog_step is not None, (
+        "Missing 'app.ui.catalog --audit-only' step in static-checks"
+    )
+    assert "if" not in catalog_step
+
+    build_steps = workflow["jobs"]["build-and-test"]["steps"]
+    assert not any(
+        "test_visual_snapshots.py" in s.get("run", "") for s in build_steps
+    ), "build-and-test must not run test_visual_snapshots.py in a separate step"
+
+    fast_step = next(
+        (s for s in build_steps if s.get("name") == "Fast Smoke Tests"), None
+    )
+    assert fast_step is not None
+    assert 'pytest -m "not slow"' in fast_step.get("run", "")
+
+    upload_mismatch_step = next(
+        (
+            s
+            for s in build_steps
+            if s.get("name") == "Upload Snapshot Mismatch Artifacts"
+        ),
+        None,
+    )
+    assert upload_mismatch_step is not None, (
+        "Missing 'Upload Snapshot Mismatch Artifacts' step in build-and-test"
+    )
+    assert upload_mismatch_step.get("if") == "failure()"
+    assert build_steps.index(fast_step) < build_steps.index(upload_mismatch_step), (
+        "'Upload Snapshot Mismatch Artifacts' must run after 'Fast Smoke Tests'"
+    )

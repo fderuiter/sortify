@@ -210,6 +210,12 @@ jobs:
       run: |
         uv run python scripts/diagram_toolchain.py verify
 
+    - name: Audit TUI Component Catalog Accessibility
+      env:
+        PYTHON_KEYRING_BACKEND: keyring.backends.fail.Keyring
+      run: |
+        uv run python -m app.ui.catalog --audit-only
+
     - name: Set up Node
       uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
       with:
@@ -276,20 +282,6 @@ jobs:
       run: |
         uv sync --frozen --all-groups
 
-    - name: Terminal Interface Snapshot Validation
-      run: |
-        uv run pytest tests/test_visual_snapshots.py -n 0
-
-    - name: Upload Snapshot Mismatch Artifacts
-      if: failure()
-      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-      with:
-        name: snapshot-mismatches-${{ matrix.os }}
-        path: |
-          tests/snapshots/tui_svg/*.actual
-          tests/snapshots/*.actual
-        retention-days: 7
-
     - name: Validate Configuration Schema
       run: |
         uv run python scripts/validate_config.py --check
@@ -318,6 +310,16 @@ jobs:
           fi
           exit 1
         fi
+
+    - name: Upload Snapshot Mismatch Artifacts
+      if: failure()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: snapshot-mismatches-${{ matrix.os }}
+        path: |
+          tests/snapshots/tui_svg/*.actual
+          tests/snapshots/*.actual
+        retention-days: 7
 
     - name: Check Data-Safety Coverage Floors
       if: matrix.os == 'ubuntu-latest'

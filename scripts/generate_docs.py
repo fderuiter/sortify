@@ -1713,14 +1713,23 @@ def validate_mkdocs_config(config_path: str | Path = MKDOCS_CONFIG_PATH) -> list
     return []
 
 
-def validate_mkdocs_site(site_dir="site"):
-    """Validate built MkDocs site artifacts (non-empty index.html and populated sitemap.xml)."""
+def validate_mkdocs_site(
+    site_dir="site",
+    canonical_site_url: str = "https://fderuiter.github.io/sortify/",
+):
+    """Validate built MkDocs site artifacts (root index, md-logo anchors, and canonical sitemap.xml)."""
     from defusedxml import ElementTree as ET
 
     site_path = Path(site_dir)
     errors = []
+    canonical_prefix = canonical_site_url.rstrip("/") + "/"
+    logo_href_re = re.compile(
+        r'<a[^>]*class="[^"]*\bmd-logo\b[^"]*"[^>]*href="([^"]+)"'
+        r'|<a[^>]*href="([^"]+)"[^>]*class="[^"]*\bmd-logo\b[^"]*"'
+    )
 
     index_path = site_path / "index.html"
+    root_index_valid = False
     if not index_path.is_file():
         errors.append(f"Missing MkDocs root page: {index_path.as_posix()}")
     else:
@@ -1733,6 +1742,30 @@ def validate_mkdocs_site(site_dir="site"):
         else:
             if not index_content.strip():
                 errors.append(f"Empty MkDocs root page: {index_path.as_posix()}")
+            else:
+                root_index_valid = True
+
+    index_pages = sorted(site_path.rglob("index.html")) if root_index_valid else []
+    resolved_root_index = index_path.resolve() if root_index_valid else None
+    for page_path in index_pages:
+        try:
+            page_html = page_path.read_text(encoding="utf-8")
+        except Exception as exc:
+            errors.append(f"Could not read MkDocs page {page_path.as_posix()}: {exc}")
+            continue
+        match = logo_href_re.search(page_html)
+        if match is None:
+            errors.append(f"Missing md-logo anchor in {page_path.as_posix()}")
+            continue
+        href = match.group(1) or match.group(2)
+        assert href is not None
+        resolved = (page_path.parent / href).resolve()
+        target_index = resolved / "index.html" if resolved.is_dir() else resolved
+        if target_index != resolved_root_index:
+            errors.append(
+                f"Logo link '{href}' in {page_path.as_posix()} resolved to "
+                f"{target_index.as_posix()}, expected {index_path.as_posix()}"
+            )
 
     sitemap_path = site_path / "sitemap.xml"
     if not sitemap_path.is_file():
@@ -1756,6 +1789,29 @@ def validate_mkdocs_site(site_dir="site"):
                 errors.append(
                     f"MkDocs sitemap contains no <loc> entries: {sitemap_path.as_posix()}"
                 )
+            else:
+                locs = set(loc_entries)
+                if canonical_prefix not in locs:
+                    errors.append(
+                        f"MkDocs sitemap missing canonical root URL '{canonical_prefix}': {sitemap_path.as_posix()}"
+                    )
+                for url in loc_entries:
+                    if not url.startswith(canonical_prefix):
+                        errors.append(
+                            f"Non-canonical MkDocs sitemap <loc> URL '{url}' in {sitemap_path.as_posix()} "
+                            f"(expected prefix '{canonical_prefix}')"
+                        )
+                for page_path in index_pages:
+                    rel_dir = page_path.parent.relative_to(site_path)
+                    expected_url = (
+                        canonical_prefix
+                        if rel_dir == Path(".")
+                        else f"{canonical_prefix}{rel_dir.as_posix()}/"
+                    )
+                    if expected_url not in locs:
+                        errors.append(
+                            f"MkDocs sitemap missing canonical page URL '{expected_url}': {sitemap_path.as_posix()}"
+                        )
 
     return errors
 

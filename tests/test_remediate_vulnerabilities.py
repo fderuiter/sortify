@@ -1925,17 +1925,59 @@ def test_run_uv_audit_json_separates_stderr_warnings_and_parses_structured_outpu
     )
 
 
-def test_discover_targeted_tests_maps_reverse_dependencies_and_skips_unrelated_tui():
-    repo_root = Path(__file__).resolve().parent.parent
+def test_discover_targeted_tests_maps_reverse_dependencies_and_skips_unrelated_tui(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    import scripts.remediate_vulnerabilities as rem_mod
+
+    (tmp_path / "app" / "core").mkdir(parents=True)
+    (tmp_path / "app" / "ui").mkdir(parents=True)
+    (tmp_path / "tests").mkdir(parents=True)
+
+    (tmp_path / "uv.lock").write_text(
+        '[[package]]\nname = "tornado"\nversion = "6.5.5"\n\n'
+        '[[package]]\nname = "jaraco-classes"\nversion = "3.4.0"\n\n'
+        '[[package]]\nname = "keyring"\nversion = "25.7.0"\n'
+        'dependencies = [{ name = "jaraco-classes" }]\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "app" / "core" / "crypto.py").write_text(
+        "import keyring\n", encoding="utf-8"
+    )
+    (tmp_path / "app" / "ui" / "banner.py").write_text(
+        "from textual.widgets import Static\n", encoding="utf-8"
+    )
+    (tmp_path / "tests" / "test_crypto.py").write_text(
+        "from app.core import crypto\n\ndef test_key(): pass\n", encoding="utf-8"
+    )
+    (tmp_path / "tests" / "test_critical_enforcement_alert_banner.py").write_text(
+        "from app.ui import banner\n\ndef test_banner(): pass\n", encoding="utf-8"
+    )
+
+    rem_mod._scan_repo_ast_imports.cache_clear()
+    real_collect = rem_mod._collect_ast_imports
+    ast_scan_calls = 0
+
+    def counting_collect(py_path: Path) -> tuple[set[str], set[str]]:
+        nonlocal ast_scan_calls
+        ast_scan_calls += 1
+        return real_collect(py_path)
+
+    monkeypatch.setattr(rem_mod, "_collect_ast_imports", counting_collect)
+
     # tornado is only in notebooks dependency group; zero app/scripts/TUI modules import it
-    tornado_tests = discover_targeted_tests(repo_root, "tornado")
+    tornado_tests = discover_targeted_tests(tmp_path, "tornado")
     assert "tests/test_critical_enforcement_alert_banner.py" not in tornado_tests
     assert tornado_tests == []
+    first_scan_calls = ast_scan_calls
+    assert first_scan_calls == 4
 
-    # jaraco-classes -> keyring -> app/core/crypto.py -> targeted crypto tests (not TUI banner tests)
-    jaraco_tests = discover_targeted_tests(repo_root, "jaraco-classes")
-    assert "tests/test_crypto.py" in jaraco_tests
+    # jaraco-classes -> keyring -> app/core/crypto.py -> targeted crypto tests (memoized AST scan)
+    jaraco_tests = discover_targeted_tests(tmp_path, "jaraco-classes")
+    assert jaraco_tests == ["tests/test_crypto.py"]
     assert "tests/test_critical_enforcement_alert_banner.py" not in jaraco_tests
+    assert ast_scan_calls == first_scan_calls
+    assert rem_mod._scan_repo_ast_imports.cache_info().hits >= 1
 
 
 @patch("scripts.remediate_vulnerabilities.subprocess.run")

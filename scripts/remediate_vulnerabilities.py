@@ -13,6 +13,7 @@ import ast
 import base64
 import email
 import email.message
+import functools
 import importlib.metadata
 import json
 import logging
@@ -119,16 +120,81 @@ def _collect_ast_imports(py_path: Path) -> tuple[set[str], set[str]]:
     return roots, full_mods
 
 
+@functools.lru_cache(maxsize=1)
+def _get_installed_dist_import_map() -> dict[str, frozenset[str]]:
+    """Build and cache normalized distribution-to-import-root mapping."""
+    dist_to_imports: dict[str, set[str]] = {
+        k: set(v) for k, v in _KNOWN_IMPORT_NAME_MAP.items()
+    }
+    try:
+        for dist in importlib.metadata.distributions():
+            d_name = dist.metadata.get("Name")
+            if not d_name:
+                continue
+            norm_d = normalize_package_name(d_name)
+            top_txt = dist.read_text("top_level.txt")
+            if top_txt:
+                mods = {
+                    line.strip().split("/")[0]
+                    for line in top_txt.splitlines()
+                    if line.strip()
+                }
+                if mods:
+                    dist_to_imports.setdefault(norm_d, set()).update(mods)
+                    continue
+            dist_to_imports.setdefault(norm_d, set()).add(norm_d.replace("-", "_"))
+    except Exception:
+        pass
+    return {k: frozenset(v) for k, v in dist_to_imports.items()}
+
+
+@functools.lru_cache(maxsize=16)
+def _scan_repo_ast_imports(
+    resolved_root: Path,
+) -> tuple[
+    tuple[tuple[str, frozenset[str]], ...],
+    tuple[tuple[str, frozenset[str], frozenset[str]], ...],
+]:
+    """Memoize AST import scans across app/, scripts/, and tests/ per repository root."""
+    first_party_entries: list[tuple[str, frozenset[str]]] = []
+    for folder in ("app", "scripts"):
+        base = resolved_root / folder
+        if not base.is_dir():
+            continue
+        for py_file in sorted(base.rglob("*.py")):
+            if py_file.name == "__init__.py":
+                continue
+            roots, _ = _collect_ast_imports(py_file)
+            rel = py_file.relative_to(resolved_root).with_suffix("")
+            first_party_entries.append((".".join(rel.parts), frozenset(roots)))
+
+    test_entries: list[tuple[str, frozenset[str], frozenset[str]]] = []
+    tests_dir = resolved_root / "tests"
+    if tests_dir.is_dir():
+        for test_file in sorted(tests_dir.rglob("test_*.py")):
+            roots, full_mods = _collect_ast_imports(test_file)
+            test_entries.append(
+                (
+                    test_file.relative_to(resolved_root).as_posix(),
+                    frozenset(roots),
+                    frozenset(full_mods),
+                )
+            )
+
+    return tuple(first_party_entries), tuple(test_entries)
+
+
 def discover_targeted_tests(repo_root: Path, package_name: str) -> list[str]:
     """Identify fast test files affected by package_name via uv.lock reverse deps and AST imports."""
-    tests_dir = repo_root / "tests"
+    resolved_root = repo_root.resolve()
+    tests_dir = resolved_root / "tests"
     if not tests_dir.is_dir():
         return []
 
     target_norm = normalize_package_name(package_name)
     closure: set[str] = {target_norm}
 
-    uv_lock_path = repo_root / "uv.lock"
+    uv_lock_path = resolved_root / "uv.lock"
     if uv_lock_path.is_file():
         try:
             lock_data = tomllib.loads(uv_lock_path.read_text(encoding="utf-8"))
@@ -165,62 +231,33 @@ def discover_targeted_tests(repo_root: Path, package_name: str) -> list[str]:
                 f"Failed to parse uv.lock for reverse dependency discovery: {e}"
             )
 
-    dist_to_imports: dict[str, set[str]] = {
-        k: set(v) for k, v in _KNOWN_IMPORT_NAME_MAP.items()
-    }
-    try:
-        for dist in importlib.metadata.distributions():
-            d_name = dist.metadata.get("Name")
-            if not d_name:
-                continue
-            norm_d = normalize_package_name(d_name)
-            top_txt = dist.read_text("top_level.txt")
-            if top_txt:
-                mods = {
-                    line.strip().split("/")[0]
-                    for line in top_txt.splitlines()
-                    if line.strip()
-                }
-                if mods:
-                    dist_to_imports.setdefault(norm_d, set()).update(mods)
-                    continue
-            dist_to_imports.setdefault(norm_d, set()).add(norm_d.replace("-", "_"))
-    except Exception:
-        pass
+    dist_to_imports = _get_installed_dist_import_map()
 
     import_roots: set[str] = set()
     for dist_name in closure:
         import_roots.update(
-            dist_to_imports.get(dist_name, {dist_name.replace("-", "_")})
+            dist_to_imports.get(dist_name, frozenset({dist_name.replace("-", "_")}))
         )
         if dist_name.startswith("jaraco-"):
             import_roots.add("jaraco")
 
-    affected_first_party: set[str] = set()
-    for folder in ("app", "scripts"):
-        base = repo_root / folder
-        if not base.is_dir():
-            continue
-        for py_file in base.rglob("*.py"):
-            if py_file.name == "__init__.py":
-                continue
-            roots, _ = _collect_ast_imports(py_file)
-            if roots & import_roots:
-                rel = py_file.relative_to(repo_root).with_suffix("")
-                affected_first_party.add(".".join(rel.parts))
+    first_party_entries, test_entries = _scan_repo_ast_imports(resolved_root)
+
+    affected_first_party: set[str] = {
+        mod_name for mod_name, roots in first_party_entries if roots & import_roots
+    }
 
     matched_tests: list[str] = []
-    for test_file in sorted(tests_dir.rglob("test_*.py")):
-        roots, full_mods = _collect_ast_imports(test_file)
+    for rel_test_path, roots, full_mods in test_entries:
         if roots & import_roots:
-            matched_tests.append(test_file.relative_to(repo_root).as_posix())
+            matched_tests.append(rel_test_path)
             continue
         if affected_first_party and any(
             imp == fp or imp.startswith(fp + ".")
             for imp in full_mods
             for fp in affected_first_party
         ):
-            matched_tests.append(test_file.relative_to(repo_root).as_posix())
+            matched_tests.append(rel_test_path)
 
     return matched_tests
 

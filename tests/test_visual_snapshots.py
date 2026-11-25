@@ -18,7 +18,7 @@ from app.ui.tui import (
     WizardModal,
 )
 
-pytestmark = [pytest.mark.slow, pytest.mark.xdist_group(name="tui")]
+pytestmark = [pytest.mark.xdist_group(name="tui")]
 
 SNAPSHOT_DIR = os.path.join(os.path.dirname(__file__), "snapshots", "tui_svg")
 # The Quit binding, which the footer shows in every snapshot.
@@ -102,6 +102,7 @@ def assert_svg_snapshot(snapshot_name: str, actual_svg: str) -> None:
     """Assert actual rendered SVG string matches stored reference snapshot file."""
     os.makedirs(SNAPSHOT_DIR, exist_ok=True)
     snapshot_path = os.path.join(SNAPSHOT_DIR, f"{snapshot_name}.svg")
+    actual_path = snapshot_path + ".actual"
     sanitized_actual = sanitize_svg(actual_svg)
 
     update_snapshots = os.environ.get("UPDATE_SNAPSHOTS") == "1"
@@ -109,6 +110,8 @@ def assert_svg_snapshot(snapshot_name: str, actual_svg: str) -> None:
     if not os.path.exists(snapshot_path) or update_snapshots:
         with open(snapshot_path, "w", encoding="utf-8", newline="\n") as f:
             f.write(sanitized_actual)
+        if os.path.exists(actual_path):
+            os.unlink(actual_path)
         if not update_snapshots:
             pytest.fail(
                 f"SVG snapshot '{snapshot_name}' generated for the first time at {snapshot_path}. Run again to verify."
@@ -119,8 +122,10 @@ def assert_svg_snapshot(snapshot_name: str, actual_svg: str) -> None:
         expected_svg = f.read().replace("\r\n", "\n")
 
     if sanitized_actual != expected_svg:
-        with open(snapshot_path + ".actual", "w", encoding="utf-8", newline="\n") as f:
+        with open(actual_path, "w", encoding="utf-8", newline="\n") as f:
             f.write(sanitized_actual)
+    elif os.path.exists(actual_path):
+        os.unlink(actual_path)
 
     assert sanitized_actual == expected_svg, (
         f"SVG visual snapshot mismatch for '{snapshot_name}'. Set UPDATE_SNAPSHOTS=1 to re-baseline."
@@ -190,7 +195,6 @@ def isolated_app_dir(monkeypatch, tmp_path):
         monkeypatch.delattr(app.config, "settings", raising=False)
 
 
-@pytest.mark.slow
 def test_tui_main_screen_snapshot():
     """Verify visual layout of default AutoSorterTUI main screen."""
 
@@ -205,7 +209,6 @@ def test_tui_main_screen_snapshot():
     asyncio.run(_test())
 
 
-@pytest.mark.slow
 def test_tui_populated_plan_snapshot():
     """Verify visual layout of AutoSorterTUI with a populated tree plan."""
 
@@ -248,7 +251,6 @@ def test_tui_populated_plan_snapshot():
     asyncio.run(_test())
 
 
-@pytest.mark.slow
 def test_wizard_modal_snapshot():
     """Verify visual layout of WizardModal onboarding screen."""
 
@@ -264,7 +266,6 @@ def test_wizard_modal_snapshot():
     asyncio.run(_test())
 
 
-@pytest.mark.slow
 def test_settings_modal_snapshot():
     """Verify visual layout of SettingsModal screen."""
 
@@ -284,7 +285,6 @@ def test_settings_modal_snapshot():
     asyncio.run(_test())
 
 
-@pytest.mark.slow
 def test_rename_modal_snapshot():
     """Verify visual layout of RenameModal screen."""
 
@@ -305,7 +305,6 @@ def test_rename_modal_snapshot():
     asyncio.run(_test())
 
 
-@pytest.mark.slow
 def test_cro_forensic_modal_snapshot():
     """Verify visual layout of CROForensicModal screen."""
 
@@ -325,7 +324,6 @@ def test_cro_forensic_modal_snapshot():
     asyncio.run(_test())
 
 
-@pytest.mark.slow
 def test_new_folder_modal_snapshot():
     """Verify visual layout of NewFolderModal screen."""
 
@@ -341,7 +339,6 @@ def test_new_folder_modal_snapshot():
     asyncio.run(_test())
 
 
-@pytest.mark.slow
 def test_directory_select_modal_snapshot():
     """Verify visual layout of DirectorySelectModal screen."""
 
@@ -357,7 +354,6 @@ def test_directory_select_modal_snapshot():
     asyncio.run(_test())
 
 
-@pytest.mark.slow
 def test_extraction_preview_modal_snapshot(tmp_path):
     """Verify visual layout of ExtractionPreviewModal screen."""
 
