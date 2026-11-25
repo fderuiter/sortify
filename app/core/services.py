@@ -129,22 +129,14 @@ def acquire_services(
 
             def build():
                 if db_path is not None:
-                    from app.core.db_conn import get_db_connection
-                    from app.core.store import _store_initial
-
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    conn = get_db_connection(str(path))
-                    with conn:
-                        _store_initial(conn)
                     custom_store = Store(path.parent, path)
-                    db = custom_store.database(worker)
-                    cache = custom_store.cache(worker)
+                    db, cache, history = custom_store.open_custom_managers(worker)
                     return _Services(
                         custom_store,
                         worker,
                         db,
                         cache,
-                        custom_store.history(db, cache),
+                        history,
                     )
                 canonical = store or open_store(path.parent)
                 if canonical.path != path:

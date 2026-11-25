@@ -8,6 +8,7 @@ with integrity checks and offline enforcement on load.
 import logging
 import os
 import threading
+from typing import Any
 
 from app.core.network_guard import block_external_network
 from app.core.network_guard import install as apply_global_socket_sandbox
@@ -117,7 +118,7 @@ class SharedModelRegistry:
 
             if not hasattr(ort.InferenceSession, "_original_init"):
                 original_init = ort.InferenceSession.__init__
-                ort.InferenceSession._original_init = original_init
+                setattr(ort.InferenceSession, "_original_init", original_init)
 
                 registry_instance = self
 
@@ -462,11 +463,15 @@ class SharedModelRegistry:
                         )
                         task = "text-generation"
 
-                    quantized_model = torch.quantization.quantize_dynamic(
+                    quantize_dynamic_fn: Any = getattr(
+                        torch.quantization, "quantize_dynamic"
+                    )
+                    quantized_model = quantize_dynamic_fn(
                         model, {torch.nn.Linear}, dtype=torch.qint8
                     )
 
-                    generator = pipeline(
+                    pipeline_fn: Any = pipeline
+                    generator = pipeline_fn(
                         task, model=quantized_model, tokenizer=tokenizer, device=-1
                     )
 

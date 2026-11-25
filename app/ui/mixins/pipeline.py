@@ -162,7 +162,7 @@ class SortPipelineMixin:
         """Handle telemetry events broadcast by the pipeline."""
         logger.debug(f"UI observed pipeline telemetry: {event} {payload}")
 
-    @work(exclusive=True, thread=True)
+    @work(group="scan", exclusive=True, thread=True)
     def run_scan_worker(self: TUIHostProtocol) -> None:
         """Execute scan and plan generation in worker thread."""
         try:
@@ -877,7 +877,7 @@ class SortPipelineMixin:
         # Update node styling in tree view
         self._apply_tree_node_styles()
 
-    @work(exclusive=True, thread=True)
+    @work(group="execute", exclusive=True, thread=True)
     def run_execute_worker(self: TUIHostProtocol) -> None:
         """Execute moves in worker thread."""
         try:

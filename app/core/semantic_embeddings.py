@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 import weakref
+from typing import Any
 
 import numpy as np
 
@@ -664,7 +665,7 @@ class SemanticEmbeddingManager:
 
                     # Cache tokenizer in the shared registry to avoid heavy disk loads per text
                     tokenizer_key = f"tokenizer_{tokenizer_path}"
-                    tokenizer = registry._models.get(tokenizer_key)
+                    tokenizer: Any = registry._models.get(tokenizer_key)
 
                     if tokenizer is None:
                         with block_external_network(reason="tokenizer initialization"):
@@ -674,6 +675,11 @@ class SemanticEmbeddingManager:
                                 tokenizer_path, local_files_only=True
                             )
                         registry._models[tokenizer_key] = tokenizer
+
+                    if not callable(tokenizer):
+                        raise RuntimeError(
+                            f"Failed to initialize callable tokenizer from {tokenizer_path}"
+                        )
 
                     # Load/get ONNX session from registry (which applies thread limits)
                     session = registry.get_onnx_session(onnx_file)

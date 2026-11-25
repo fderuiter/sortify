@@ -391,7 +391,6 @@ flowchart TD
     core_semantic_embeddings --> core_resilient_file_ops
     core_semantic_embeddings --> core_shared_registry
     core_semantic_embeddings --> core_text_utils
-    core_services --> core_db_conn
     core_services --> core_db_worker
     core_services --> core_store
     core_session --> core_analyzer

@@ -6,6 +6,7 @@ import pytest
 from textual.widgets import Input, OptionList, Tree
 
 from app.config import AppSettings
+from app.core.rule_scopes import ScopedSettingsView
 from app.ui.modals.command_palette import (
     DEFAULT_COMMAND_CATALOG,
     CommandPaletteModal,
@@ -323,7 +324,8 @@ async def test_command_palette_launch_template_gallery(tmp_path):
         await pilot.pause()
 
         assert isinstance(app.screen, TemplateGalleryModal)
-        assert app.screen.settings is app.settings
+        assert isinstance(app.screen.settings, ScopedSettingsView)
+        assert app.screen.settings.root_settings is app.settings
 
         # Closing modal returns focus to #plan-tree
         await pilot.press("escape")
@@ -352,7 +354,8 @@ async def test_command_palette_launch_export_rules(tmp_path):
         await pilot.pause()
 
         assert isinstance(app.screen, ExportRulesModal)
-        assert app.screen.settings is app.settings
+        assert isinstance(app.screen.settings, ScopedSettingsView)
+        assert app.screen.settings.root_settings is app.settings
 
         # Closing modal returns focus to #plan-tree
         await pilot.press("escape")
@@ -381,7 +384,8 @@ async def test_command_palette_launch_import_rules(tmp_path):
         await pilot.pause()
 
         assert isinstance(app.screen, RuleImportModal)
-        assert app.screen.settings is app.settings
+        assert isinstance(app.screen.settings, ScopedSettingsView)
+        assert app.screen.settings.root_settings is app.settings
 
         # Closing modal returns focus to #plan-tree
         await pilot.press("escape")
@@ -464,7 +468,8 @@ async def test_tui_direct_rule_actions(tmp_path):
         app.action_open_template_gallery()
         await pilot.pause()
         assert isinstance(app.screen, TemplateGalleryModal)
-        assert app.screen.settings is app.settings
+        assert isinstance(app.screen.settings, ScopedSettingsView)
+        assert app.screen.settings.root_settings is app.settings
         await pilot.press("escape")
         await pilot.pause()
 
@@ -472,7 +477,8 @@ async def test_tui_direct_rule_actions(tmp_path):
         app.action_export_rules()
         await pilot.pause()
         assert isinstance(app.screen, ExportRulesModal)
-        assert app.screen.settings is app.settings
+        assert isinstance(app.screen.settings, ScopedSettingsView)
+        assert app.screen.settings.root_settings is app.settings
         await pilot.press("escape")
         await pilot.pause()
 
@@ -480,7 +486,8 @@ async def test_tui_direct_rule_actions(tmp_path):
         app.action_import_rules()
         await pilot.pause()
         assert isinstance(app.screen, RuleImportModal)
-        assert app.screen.settings is app.settings
+        assert isinstance(app.screen.settings, ScopedSettingsView)
+        assert app.screen.settings.root_settings is app.settings
         await pilot.press("escape")
         await pilot.pause()
 

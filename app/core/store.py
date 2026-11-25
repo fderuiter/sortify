@@ -15,6 +15,7 @@ from pathlib import Path
 
 from app.core.cache import CacheManager, _cache_db_baseline
 from app.core.db import (
+    MAIN_DB_MIGRATIONS,
     Database,
     _main_db_baseline,
     migrate_add_user_verified_target_name,
@@ -23,7 +24,7 @@ from app.core.db_conn import DB_ERRORS, get_db_connection
 from app.core.exceptions import CryptoError
 from app.core.history import HistoryManager, _history_db_baseline
 from app.core.ledger import _create_key_audit_ledger_schema, _flush_buffered_key_audits
-from app.core.migrations import Migration, migrate
+from app.core.migrations import Migration, migrate, schema_version, table_columns
 from app.core.moves import (
     import_sidecar_ledger,
     import_step_ledger,
@@ -108,6 +109,47 @@ class Store:
         return HistoryManager(
             db, cache_manager, db_path=str(self.path), migrations=STORE_MIGRATIONS
         )
+
+    def open_custom_managers(
+        self, worker
+    ) -> tuple[Database, CacheManager, HistoryManager]:
+        """Open ``(db, cache, history)`` for an explicit ``--db-path`` database.
+
+        Supports both unified store files (``STORE_MIGRATIONS``, versions 1..6)
+        and standalone document databases created via ``Database(path, worker)``
+        (``MAIN_DB_MIGRATIONS``, versions 7..8), while preserving
+        ``StoreTooNewError`` when opening a genuinely newer schema version.
+        """
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        conn = get_db_connection(str(self.path))
+        current_ver = schema_version(conn)
+        has_legacy_imports = bool(table_columns(conn, "legacy_imports"))
+        if (
+            not has_legacy_imports
+            and STORE_MIGRATIONS[-1].version
+            < current_ver
+            <= MAIN_DB_MIGRATIONS[-1].version
+        ):
+            with conn:
+                _main_db_baseline(conn)
+                _history_db_baseline(conn)
+                _cache_db_baseline(conn)
+                if not table_columns(conn, "moves"):
+                    migrate_add_moves(conn)
+                migrate_moves_exported_to_trash(conn)
+                migrate_add_user_verified_target_name(conn)
+                if not table_columns(conn, "key_audit_ledger"):
+                    _migrate_key_audit_ledger(conn)
+            db = Database(self.path, worker, migrations=MAIN_DB_MIGRATIONS)
+            cache = CacheManager(str(self.path), worker, migrations=MAIN_DB_MIGRATIONS)
+            history = HistoryManager(
+                db, cache, db_path=str(self.path), migrations=MAIN_DB_MIGRATIONS
+            )
+            return db, cache, history
+
+        db = self.database(worker)
+        cache = self.cache(worker)
+        return db, cache, self.history(db, cache)
 
 
 def open_store(

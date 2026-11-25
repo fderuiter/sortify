@@ -138,3 +138,34 @@ def test_live_session_and_history_export_share_services(tmp_path):
         assert session.db_worker.execute_write(lambda: True)
     finally:
         session.close()
+
+
+def test_custom_db_path_opens_standalone_main_db_and_rejects_future_schema(tmp_path):
+    from app.core.db import Database
+    from app.core.db_conn import get_db_connection
+    from app.core.db_worker import DBWorker
+    from app.core.migrations import StoreTooNewError, schema_version
+
+    standalone_path = tmp_path / "autosorter.db"
+    init_worker = DBWorker()
+    try:
+        standalone_db = Database(standalone_path, init_worker)
+        assert standalone_db.CURRENT_VERSION == 8
+    finally:
+        init_worker.stop(stop_embeddings=False)
+
+    # Multiple sequential leases on the standalone v8 database succeed without StoreTooNewError
+    for _ in range(2):
+        with acquire_services(db_path=standalone_path) as lease:
+            assert lease.db is not None
+            assert lease.cache is not None
+            assert lease.history is not None
+            assert schema_version(get_db_connection(str(standalone_path))) == 8
+
+    # Genuinely future schema version still raises StoreTooNewError cleanly
+    future_path = tmp_path / "future.db"
+    conn = get_db_connection(str(future_path))
+    with conn:
+        conn.execute("PRAGMA user_version = 99")
+    with pytest.raises(StoreTooNewError, match="version 99"):
+        acquire_services(db_path=future_path)
