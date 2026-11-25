@@ -640,31 +640,74 @@ def test_precommit_hooks_full_repo_readonly_parity():
     precommit_cfg = yaml.safe_load(
         (repo_root / ".pre-commit-config.yaml").read_text(encoding="utf-8")
     )
-    gitleaks_repo = next(
-        r
-        for r in precommit_cfg["repos"]
-        if r["repo"] == "https://github.com/gitleaks/gitleaks"
+    repos = precommit_cfg.get("repos", [])
+    assert repos and all(r.get("repo") == "local" for r in repos), (
+        f"Expected only offline local repos in .pre-commit-config.yaml, got {[r.get('repo') for r in repos]!r}"
     )
-    assert gitleaks_repo["rev"] == "v8.24.0"
-    gitleaks_hooks = {h.get("alias", h["id"]): h for h in gitleaks_repo["hooks"]}
-    assert "gitleaks" in gitleaks_hooks
-    assert gitleaks_hooks["gitleaks"].get("args") == ["--config", ".gitleaks.toml"]
-    assert "gitleaks-dir" in gitleaks_hooks
-    gitleaks_dir_hook = gitleaks_hooks["gitleaks-dir"]
-    assert gitleaks_dir_hook["id"] == "gitleaks"
+    for repo_entry in repos:
+        repo_url = str(repo_entry.get("repo", ""))
+        assert not repo_url.startswith(("http://", "https://", "git@", "ssh://")), (
+            f"Remote pre-commit hook URL forbidden for offline setup: {repo_url!r}"
+        )
+
+    pyproject_cfg = tomllib.loads(
+        (repo_root / "pyproject.toml").read_text(encoding="utf-8")
+    )
+    dev_deps = pyproject_cfg.get("dependency-groups", {}).get("dev", [])
+    assert any(str(dep).startswith("pre-commit-hooks>=5.0.0") for dep in dev_deps), (
+        "pyproject.toml [dependency-groups].dev must lock pre-commit-hooks>=5.0.0"
+    )
+
+    local_repo = next(r for r in repos if r["repo"] == "local")
+    hooks = {h["id"]: h for h in local_repo["hooks"]}
+
+    import importlib.metadata as metadata
+
+    installed_pc_scripts = {
+        ep.name
+        for ep in metadata.distribution("pre_commit_hooks").entry_points
+        if ep.group == "console_scripts"
+    }
+    for pc_hook_id in (
+        "check-added-large-files",
+        "check-case-conflict",
+        "check-json",
+        "check-toml",
+        "check-yaml",
+        "check-merge-conflict",
+        "debug-statements",
+        "no-commit-to-branch",
+    ):
+        entry_parts = hooks[pc_hook_id]["entry"].split()
+        assert entry_parts[:2] == ["uv", "run"] and len(entry_parts) >= 3
+        assert entry_parts[2] in installed_pc_scripts, (
+            f"Hook {pc_hook_id!r} entry {entry_parts[2]!r} not in pre-commit-hooks console_scripts"
+        )
+
+    assert "gitleaks" in hooks
+    gitleaks_hook = hooks["gitleaks"]
+    assert gitleaks_hook.get("language") == "system"
+    assert "scripts/run_secret_scan.py" in gitleaks_hook.get("entry", "")
+    assert gitleaks_hook.get("args") == ["--config", ".gitleaks.toml"]
+    assert gitleaks_hook.get("pass_filenames") is False
+
+    assert "gitleaks-dir" in hooks
+    gitleaks_dir_hook = hooks["gitleaks-dir"]
+    assert gitleaks_dir_hook.get("language") == "system"
     assert gitleaks_dir_hook.get("pass_filenames") is False, (
         "gitleaks-dir must set pass_filenames: false"
     )
-    assert "gitleaks dir ." in gitleaks_dir_hook.get("entry", "")
+    assert "scripts/run_secret_scan.py" in gitleaks_dir_hook.get("entry", "")
     assert gitleaks_dir_hook.get("args") == ["--config", ".gitleaks.toml"]
+
+    assert "actionlint" in hooks
+    assert hooks["actionlint"].get("language") == "system"
+    assert "scripts/run_actionlint.py" in hooks["actionlint"].get("entry", "")
 
     gitleaks_cfg = tomllib.loads(
         (repo_root / ".gitleaks.toml").read_text(encoding="utf-8")
     )
     _validate_gitleaks_config(gitleaks_cfg)
-
-    local_repo = next(r for r in precommit_cfg["repos"] if r["repo"] == "local")
-    hooks = {h["id"]: h for h in local_repo["hooks"]}
 
     for hook_id in (
         "validate-docs",
@@ -966,20 +1009,22 @@ def test_precommit_check_yaml_does_not_enable_global_unsafe_mode():
     precommit_cfg = yaml.safe_load(
         Path(".pre-commit-config.yaml").read_text(encoding="utf-8")
     )
-    hooks_repo = next(
-        r
-        for r in precommit_cfg["repos"]
-        if "pre-commit-hooks" in str(r.get("repo", ""))
-    )
-    check_yaml = next(h for h in hooks_repo["hooks"] if h.get("id") == "check-yaml")
+    repos = precommit_cfg.get("repos", [])
+    assert repos and all(r.get("repo") == "local" for r in repos)
+    local_repo = next(r for r in repos if r["repo"] == "local")
+    check_yaml = next(h for h in local_repo["hooks"] if h.get("id") == "check-yaml")
+    assert check_yaml.get("language") == "system"
+    assert "check-yaml" in check_yaml.get("entry", "")
     assert "--unsafe" not in (check_yaml.get("args") or []), (
         "check-yaml must not pass --unsafe globally"
+    )
+    assert "--unsafe" not in check_yaml.get("entry", ""), (
+        "check-yaml entry must not enable --unsafe"
     )
     exclude_re = check_yaml.get("exclude", "")
     assert exclude_re and re.search(exclude_re, "mkdocs.yml")
     assert not re.search(exclude_re, ".github/workflows/ci.yml")
 
-    local_repo = next(r for r in precommit_cfg["repos"] if r["repo"] == "local")
     validate_docs = next(
         h for h in local_repo["hooks"] if h.get("id") == "validate-docs"
     )

@@ -305,18 +305,32 @@ def socket_mock(monkeypatch):
     yield mock_connect, mock_connect_ex
 
 
+def _scrub_failure_text(raw_text: str) -> str:
+    """Scrub secret patterns from failure tracebacks while preserving line structure."""
+    from app.core.text_utils import sanitize_secret_patterns
+
+    text = raw_text
+    if "PRIVATE KEY" in text.upper():
+        text = sanitize_secret_patterns(text, replacement="[REDACTED]")
+    return "\n".join(
+        sanitize_secret_patterns(line, replacement="[REDACTED]")
+        for line in text.splitlines()
+    )
+
+
 def pytest_runtest_logreport(report):
-    """Intercept pytest failures across all phases and output them as GitHub Actions error annotations to capture raw tracebacks."""
+    """Intercept pytest failures across all phases and output them as GitHub Actions error annotations to capture scrubbed tracebacks."""
     if report.failed:
         import sys
 
-        tb = str(report.longrepr)
-        message = f"Test Failed ({report.when}): {report.nodeid}\n\n{tb}"
+        tb = _scrub_failure_text(str(report.longrepr))
+        safe_nodeid = _scrub_failure_text(str(report.nodeid))
+        message = f"Test Failed ({report.when}): {safe_nodeid}\n\n{tb}"
 
         # Write to pytest_failures.txt
         try:
             with open("pytest_failures.txt", "a", encoding="utf-8") as f:
-                f.write(f"=== [{report.when}] {report.nodeid} ===\n{tb}\n\n")
+                f.write(f"=== [{report.when}] {safe_nodeid} ===\n{tb}\n\n")
         except Exception:
             pass
 

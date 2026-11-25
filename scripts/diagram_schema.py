@@ -1618,7 +1618,9 @@ CONTRIBUTOR_ONBOARDING_SPEC = ComponentDiagramSpec(
     nodes=[
         DiagramNode(id="A", label="Clone Repository"),
         DiagramNode(id="B", label="Sync Environment: uv sync"),
-        DiagramNode(id="C", label="Install Hooks: uv run pre-commit install"),
+        DiagramNode(
+            id="C", label="Install Hooks: uv run python scripts/install_git_hooks.py"
+        ),
         DiagramNode(id="D", label="Run Test Suite: uv run pytest"),
         DiagramNode(id="E", label="Run CLI Demo: uv run smart-autosorter --demo"),
         DiagramNode(
@@ -3273,7 +3275,10 @@ def _create_contributor_onboarding_spec() -> ComponentDiagramSpec:
         nodes=[
             DiagramNode(id="A", label="Clone Repository"),
             DiagramNode(id="B", label="Sync Environment: uv sync"),
-            DiagramNode(id="C", label="Install Hooks: uv run pre-commit install"),
+            DiagramNode(
+                id="C",
+                label="Install Hooks: uv run python scripts/install_git_hooks.py",
+            ),
             DiagramNode(id="D", label="Run Test Suite: uv run pytest"),
             DiagramNode(id="E", label="Run CLI Demo: uv run smart-autosorter --demo"),
             DiagramNode(

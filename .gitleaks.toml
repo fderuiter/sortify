@@ -119,6 +119,18 @@ id = "generic-api-key"
         '''^invoice_q4\.pdf$''',
     ]
 
+    [[rules.allowlists]]
+    description = "Sortify *_key document filename assignments and dictionary entries in Python modules"
+    condition = "AND"
+    paths = [
+        '''(?:^|/)(?:app|tests|scripts)/.*\.py$''',
+        '''^sandbox_cli\.py$''',
+    ]
+    regexTarget = "match"
+    regexes = [
+        '''^(?:node_key|file_key|dest_key|item_key|scoped_key|row_key)['"]?\s*[:=]\s*['"][A-Za-z0-9_./:\\() -]+\.(?:pdf|docx?|pptx?|xlsx?|odt|ods|odp|rtf|txt|md|rst|csv|tsv|json|ya?ml|html?|xml|eml|msg|png|jpe?g|gif|bmp|tiff?|webp|svg|mp3|wav|m4a|flac|ogg|mp4|mov|epub|tex|log|zip|tar|gz)['"]?$''',
+    ]
+
 [[rules]]
 id = "stripe-access-token"
 

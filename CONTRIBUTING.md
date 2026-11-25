@@ -9,8 +9,8 @@ You need [uv](https://docs.astral.sh/uv/). It reads `.python-version` and instal
 ```bash
 git clone https://github.com/fderuiter/sortify.git
 cd sortify
-uv sync --all-groups      # app + dev, docs, notebooks and build groups
-uv run pre-commit install # run the hooks on every commit
+uv sync --all-groups                         # app + dev, docs, notebooks and build groups
+uv run python scripts/install_git_hooks.py   # install hooks (skips cleanly if Git sets core.hooksPath)
 ```
 
 Add `--extra ml` to `uv sync` if you work on OCR, audio transcription, embeddings or LLM naming. Those libraries are imported lazily, so everything else runs without them.
@@ -19,7 +19,7 @@ Dependency groups (PEP 735, in `pyproject.toml`):
 
 | Group | Used for |
 |---|---|
-| `dev` | pytest, ruff, ty, pre-commit and the repo validators |
+| `dev` | pytest, ruff, ty, pre-commit, pre-commit-hooks and the repo validators |
 | `docs` | MkDocs site build |
 | `build` | PyInstaller executables (`scripts/build.py`) |
 | `notebooks` | Jupyter |
@@ -43,11 +43,12 @@ Headless runs probe an unavailable OS keyring at most once (within a 2-second ti
 
 ## What the hooks and CI check
 
-`.pre-commit-config.yaml` runs ruff (lint and format), staged and full-tree secret detection (`gitleaks` and `gitleaks-dir` with `.gitleaks.toml` extending Gitleaks' built-in rules), workflow linting (`actionlint`), ty (type check) plus the repo's own read-only validators in `scripts/` across the full repository:
+`.pre-commit-config.yaml` runs offline `uv`-provisioned local hooks: file hygiene (`pre-commit-hooks`), ruff (lint and format), staged and non-ignored working-tree secret detection (`gitleaks` and `gitleaks-dir` via `scripts/run_secret_scan.py` with `.gitleaks.toml`, delegating to `gitleaks` when installed on `PATH` and running offline Python credential/entropy rules otherwise), workflow linting (`actionlint` via `scripts/run_actionlint.py`, delegating to `actionlint` when installed and running offline YAML checks otherwise), ty (type check) plus the repo's own read-only validators in `scripts/` across the full repository:
 
 | Hook | Script | Fails when |
 |---|---|---|
-| `gitleaks` / `gitleaks-dir` | `gitleaks git --staged --config .gitleaks.toml` / `gitleaks dir . --config .gitleaks.toml` | staged diffs or any non-ignored working-tree file match Gitleaks' built-in credential rules outside the scoped allowlists in `.gitleaks.toml` |
+| `gitleaks` / `gitleaks-dir` | `uv run python scripts/run_secret_scan.py --mode staged --config .gitleaks.toml` / `uv run python scripts/run_secret_scan.py --mode working-tree --config .gitleaks.toml` | staged diffs (including force-staged files) or any non-ignored working-tree file match credential rules outside the scoped allowlists in `.gitleaks.toml` |
+| `actionlint` | `uv run python scripts/run_actionlint.py` | a workflow under `.github/workflows/` fails `actionlint` (when installed) or offline safe YAML and workflow-schema validation |
 | `validate-docs` | `uv run python scripts/generate_docs.py --check --no-build --local-only` | generated docs (`docs/api_reference.md`, `docs/ui.md`, `docs/admin_guide.md`, `docs/keyboard_shortcuts.md`, `SECURITY.md`, `app/config_schema.json`) are stale, or a handwritten doc links to a missing path |
 | `validate-diagram-artifacts` | `uv run python scripts/diagram_toolchain.py --verify` | a Mermaid diagram spec or `.mmd`/`.svg` artifact in `docs/assets/diagrams/` is stale or invalid |
 | `validate-signatures` | `uv run python scripts/validate_signatures.py` | a public API or CLI signature changed without updating its baseline in `tests/snapshots/api/`, or an orphaned snapshot exists under `tests/snapshots/` |
