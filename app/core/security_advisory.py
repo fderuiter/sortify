@@ -1,6 +1,5 @@
 """Pre-download security advisory client with thread-safe in-memory caching."""
 
-import ipaddress
 import json
 import logging
 import re
@@ -13,6 +12,13 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from app.core.exceptions import ModelVerificationError
+from app.core.network_guard import (
+    _DEFAULT_TRUSTED_HOSTS,
+    _build_proxy_opener,
+    _is_allowed_outbound_host,
+    _resolve_trusted_hosts,
+    _validate_outbound_https_url,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -20,113 +26,20 @@ DEFAULT_ADVISORY_ENDPOINT = "https://huggingface.co/api/models"
 DEFAULT_CACHE_TTL = 3600  # 1 hour in seconds
 MAX_API_TIMEOUT = 5.0  # Max 5 seconds timeout constraint
 
-ALLOWED_ADVISORY_HOSTS: frozenset[str] = frozenset({"huggingface.co", "hf.co"})
-_ALLOWED_ADVISORY_HOSTS = ALLOWED_ADVISORY_HOSTS
-_LOCAL_HOSTNAMES: frozenset[str] = frozenset(
-    {"127.0.0.1", "localhost", "::1", "0.0.0.0", ""}
-)
-
-
-def _normalize_trusted_hosts(trusted_hosts=None) -> frozenset[str]:
-    """Normalize optional configured trusted hostnames combined with default Hugging Face hosts."""
-    combined = set(_ALLOWED_ADVISORY_HOSTS)
-    if not trusted_hosts:
-        return frozenset(combined)
-    for raw_host in trusted_hosts:
-        if not isinstance(raw_host, str):
-            continue
-        candidate = raw_host.strip().lower().rstrip(".")
-        if "://" in candidate:
-            parsed_cand = urllib.parse.urlsplit(candidate)
-            candidate = (parsed_cand.hostname or "").strip().lower().rstrip(".")
-        if (
-            not candidate
-            or candidate.startswith(".")
-            or candidate in _LOCAL_HOSTNAMES
-            or candidate.endswith((".local", ".localhost"))
-        ):
-            continue
-        try:
-            ipaddress.ip_address(candidate)
-        except ValueError:
-            combined.add(candidate)
-    return frozenset(combined)
-
-
-def _is_allowed_advisory_host(hostname: str, trusted_hosts=None) -> bool:
-    """Check if the given hostname matches an allowed advisory host or trusted subdomain."""
-    host = hostname.lower().rstrip(".")
-    if not host or host.startswith("."):
-        return False
-    allowed_set = _normalize_trusted_hosts(trusted_hosts)
-    return host in allowed_set or any(
-        host.endswith(f".{allowed}") for allowed in allowed_set
-    )
+ALLOWED_ADVISORY_HOSTS: frozenset[str] = _DEFAULT_TRUSTED_HOSTS
+_is_allowed_advisory_host = _is_allowed_outbound_host
 
 
 def _validate_advisory_url(url: str, trusted_hosts=None) -> None:
-    """Validate that the security advisory URL uses HTTPS and points to an allowed host.
-
-    Rejects non-HTTPS schemes, private/loopback/link-local IP addresses, empty hostnames,
-    and untrusted hostnames with ModelVerificationError.
-    """
-    if not isinstance(url, str) or not url.strip():
-        raise ModelVerificationError(
-            "Security advisory URL must be a non-empty string."
-        )
-
-    cleaned_url = url.strip()
-    try:
-        parsed = urllib.parse.urlsplit(cleaned_url)
-    except ValueError as e:
-        raise ModelVerificationError(f"Malformed security advisory URL: {e}") from e
-
-    scheme = (parsed.scheme or "").lower()
-    if scheme != "https":
-        raise ModelVerificationError(
-            f"Unsupported URL scheme '{parsed.scheme}'. Only HTTPS is permitted."
-        )
-
-    hostname = parsed.hostname
-    if not hostname or not hostname.strip():
-        raise ModelVerificationError("URL hostname is missing or empty.")
-
-    host_clean = hostname.strip().lower().rstrip(".")
-    if not host_clean or host_clean.startswith("."):
-        raise ModelVerificationError(f"Invalid URL hostname: {hostname}")
-
-    # Reject IP address literals (loopback, private, link-local, unspecified, or public)
-    try:
-        ip = ipaddress.ip_address(host_clean)
-    except ValueError:
-        pass
-    else:
-        if (
-            ip.is_loopback
-            or ip.is_private
-            or ip.is_link_local
-            or ip.is_unspecified
-            or ip.is_reserved
-            or ip.is_multicast
-        ):
-            raise ModelVerificationError(
-                f"Private or local IP addresses are not permitted: {hostname}"
-            )
-        raise ModelVerificationError(
-            f"IP address literals are not permitted as security advisory hosts: {hostname}"
-        )
-
-    # Reject local hostnames and loopback names
-    if host_clean in _LOCAL_HOSTNAMES or host_clean.endswith((".local", ".localhost")):
-        raise ModelVerificationError(
-            f"Local or loopback hostnames are not permitted: {hostname}"
-        )
-
-    # Restrict to trusted advisory hosts
-    if not _is_allowed_advisory_host(host_clean, trusted_hosts=trusted_hosts):
-        raise ModelVerificationError(
-            f"Untrusted security advisory host: {hostname}. Only trusted advisory hosts are permitted."
-        )
+    """Validate that the security advisory URL uses HTTPS and points to an allowed host."""
+    return _validate_outbound_https_url(
+        url,
+        trusted_hosts=trusted_hosts,
+        default_hosts=ALLOWED_ADVISORY_HOSTS,
+        error_cls=ModelVerificationError,
+        endpoint_label="security advisory",
+        trusted_label="advisory",
+    )
 
 
 def _build_advisory_query_url(
@@ -371,15 +284,9 @@ class SecurityAdvisoryClient:
 
     def _get_trusted_hosts(self) -> frozenset[str]:
         """Return normalized trusted hostnames including any configured TRUSTED_MODEL_HOSTS."""
-        if self._settings is None:
-            try:
-                from app.config import AppSettings
-
-                self._settings = AppSettings()
-            except (OSError, ValueError, RuntimeError):
-                return _ALLOWED_ADVISORY_HOSTS
-        raw = getattr(self._settings, "TRUSTED_MODEL_HOSTS", None)
-        return _normalize_trusted_hosts(raw)
+        return _resolve_trusted_hosts(
+            self._settings, default_hosts=ALLOWED_ADVISORY_HOSTS
+        )
 
     @property
     def endpoint(self) -> str:
@@ -527,29 +434,23 @@ class SecurityAdvisoryClient:
 
     def _build_opener(self) -> urllib.request.OpenerDirector:
         """Build an independent urllib opener configured with active proxy settings."""
-        proxy_str = ""
-        if self._settings:
-            proxy_str = getattr(self._settings, "PROXY", "") or ""
-        else:
+        from app.core.downloader import NetworkError
+
+        proxy_val = getattr(self._settings, "PROXY", None)
+        if proxy_val is None:
             try:
                 from app.config import AppSettings
 
-                self._settings = AppSettings()
-                proxy_str = getattr(self._settings, "PROXY", "") or ""
+                app_settings = AppSettings()
+                if self._settings is None:
+                    self._settings = app_settings
+                proxy_val = getattr(app_settings, "PROXY", "")
             except Exception as err:  # noqa: BLE001 - optional settings initialization fallback
                 logger.debug(
                     "Failed to load AppSettings for proxy configuration: %s", err
                 )
-
-        p_str = (proxy_str or "").strip()
-        handlers = []
-        if p_str and "<DECRYPTION_FAILED>" not in p_str:
-            handlers.append(
-                urllib.request.ProxyHandler({"http": p_str, "https": p_str})
-            )
-        else:
-            handlers.append(urllib.request.ProxyHandler({}))
-        return urllib.request.build_opener(*handlers)
+                proxy_val = ""
+        return _build_proxy_opener(proxy_val, error_cls=NetworkError)
 
     def check_advisory(
         self,

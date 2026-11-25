@@ -430,6 +430,20 @@ def test_audit_model_hosts_detects_new_allowed_host(monkeypatch):
     assert any("models.example.org" in e for e in errors)
 
 
+def test_audit_model_hosts_detects_new_advisory_host(monkeypatch):
+    """Verify audit_model_hosts reports errors if a new host is added to ALLOWED_ADVISORY_HOSTS without docs."""
+    import app.core.security_advisory
+
+    new_hosts = frozenset(
+        app.core.security_advisory.ALLOWED_ADVISORY_HOSTS | {"advisories.example.org"}
+    )
+    monkeypatch.setattr(app.core.security_advisory, "ALLOWED_ADVISORY_HOSTS", new_hosts)
+
+    errors = audit_model_hosts()
+    assert len(errors) == 2
+    assert all("advisories.example.org" in e for e in errors)
+
+
 def test_audit_handwritten_docs_detects_invalid_path(tmp_path):
     bad_doc = tmp_path / "bad_guide.md"
     bad_doc.write_text(
