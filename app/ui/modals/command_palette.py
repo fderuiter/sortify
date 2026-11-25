@@ -11,6 +11,7 @@ from textual.widgets.option_list import Option
 
 from app.ui.heading import Heading
 from app.ui.layout import ResponsiveModalScreen
+from app.ui.markup_utils import literal_content
 
 
 @dataclass
@@ -310,7 +311,7 @@ class CommandPaletteModal(ResponsiveModalScreen[PaletteCommand | None]):
             label = f"[{cmd.category}] {cmd.title}"
             if cmd.shortcut:
                 label += f" ({cmd.shortcut})"
-            option_list.add_option(Option(label, id=cmd.id))
+            option_list.add_option(Option(literal_content(label), id=cmd.id))
 
         status_lbl = self.query_one("#palette-status", Label)
         if self._filtered_commands:

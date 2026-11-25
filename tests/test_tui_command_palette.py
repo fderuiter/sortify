@@ -516,3 +516,66 @@ async def test_model_manager_ctrl_g_binding_and_catalog_entry(tmp_path):
         )
         assert "Ctrl+G" in rendered_labels
         assert "Model Manager" in rendered_labels
+
+
+@pytest.mark.anyio
+async def test_command_palette_renders_literal_category_prefixes_for_all_23_entries(
+    tmp_path,
+):
+    """Verify all 23 entries in #palette-list preserve literal [Category] prefixes and filter across all fields."""
+    import re
+
+    from textual.content import Content
+
+    assert len(DEFAULT_COMMAND_CATALOG) == 23
+
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    settings._settings_model.AI_CONSENT_GRANTED = True
+    app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
+
+    def _svg_text() -> str:
+        return re.sub(r"<[^>]+>", "", app.export_screenshot()).replace("&#160;", " ")
+
+    async with app.run_test(size=(120, 45)) as pilot:
+        await pilot.pause()
+        app.action_open_command_palette()
+        await pilot.pause()
+
+        assert isinstance(app.screen, CommandPaletteModal)
+        modal = app.screen
+        inp = modal.query_one("#palette-input", Input)
+        lst = modal.query_one("#palette-list", OptionList)
+        assert lst.option_count == 23
+
+        for idx, cmd in enumerate(DEFAULT_COMMAND_CATALOG):
+            opt = lst.get_option_at_index(idx)
+            assert isinstance(opt.prompt, Content)
+            assert opt.prompt.plain.startswith(f"[{cmd.category}]")
+            assert cmd.title in opt.prompt.plain
+
+        # Visible viewport renders literal bracketed categories instead of stripping them
+        top_svg = _svg_text()
+        assert "[Workspace]" in top_svg
+        assert "[Settings]" in top_svg
+        assert "[Rules]" in top_svg
+
+        # Filter by title, category, description (including aligned undo copy), and shortcut
+        queries_and_expected = [
+            ("Starter Rule Templates", "open_template_gallery", "[Rules]"),
+            ("Compliance", "open_cro_forensic", "[Compliance]"),
+            ("undo sorts", "open_history", "[History]"),
+            ("Ctrl+G", "open_model_manager", "[Models]"),
+        ]
+        for query, expected_id, expected_prefix in queries_and_expected:
+            inp.value = query
+            await pilot.pause()
+            assert lst.option_count >= 1
+            matched_ids = [
+                lst.get_option_at_index(i).id for i in range(lst.option_count)
+            ]
+            assert expected_id in matched_ids
+            first_opt = lst.get_option_at_index(0)
+            assert isinstance(first_opt.prompt, Content)
+            assert first_opt.prompt.plain.startswith(expected_prefix)
+            rendered_svg = _svg_text().replace("&amp;", "&")
+            assert expected_prefix in rendered_svg

@@ -551,9 +551,15 @@ def test_tree_search_input_isolates_global_shortcuts_keeping_whitelisted_keys(
             await pilot.press("escape")
             await pilot.pause(0.05)
 
-            # Esc clears #tree-search-input and returns focus to #plan-tree
+            # First Esc moves focus from #tree-search-input to #plan-tree while keeping filter active
             search_input.focus()
             await pilot.pause(0.05)
+            await pilot.press("escape")
+            await pilot.pause(0.05)
+            assert search_input.value == "?x"
+            assert app._tree_has_focus() is True
+
+            # Second Esc on #plan-tree clears #tree-search-input and restores full tree
             await pilot.press("escape")
             await pilot.pause(0.05)
             assert search_input.value == ""

@@ -28,6 +28,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.ui.layout
 
+## `app.ui.markup_utils`
+
+::: app.ui.markup_utils
+
 ## `app.ui.mixins.pipeline`
 
 ::: app.ui.mixins.pipeline
@@ -95,6 +99,10 @@ This document is automatically generated. Do not edit manually.
 ## `app.ui.protocols`
 
 ::: app.ui.protocols
+
+## `app.ui.tree_search`
+
+::: app.ui.tree_search
 
 ## `app.ui.tui`
 

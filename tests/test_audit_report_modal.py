@@ -346,3 +346,121 @@ def test_mover_retry_failed_moves(tmp_path):
     rep = res.get("audit_report", {})
     assert rep.get("verified_pass_count") == 1
     assert rep.get("mismatch_fail_count") == 0
+
+
+def test_audit_report_modal_literal_status_badges_on_cards_filter_and_retry(
+    sample_audit_report, tmp_path
+):
+    """Verify [PASS], [FAIL], [SKIPPED], and [UNVERIFIED] render literally on stat cards, status Select, and after retry."""
+    import re
+
+    from textual.widgets import Static
+
+    from app.core.extractor import get_file_hash
+
+    def _svg_text(app: AutoSorterTUI) -> str:
+        return re.sub(r"<[^>]+>", "", app.export_screenshot()).replace("&#160;", " ")
+
+    async def _test_mount_and_select():
+        modal = AuditReportModal(sample_audit_report)
+        settings = AppSettings(filepath=str(tmp_path / "settings_mount.json"))
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings)
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            await app.push_screen(modal)
+            await pilot.pause()
+
+            cards = [str(card.render()) for card in modal.query(".stat-card")]
+            assert cards == [
+                "Total: 4",
+                "[PASS]: 1",
+                "[FAIL]: 1",
+                "[SKIPPED]: 1",
+                "[UNVERIFIED]: 1",
+            ]
+            mounted_svg = _svg_text(app)
+            for expected in (
+                "[PASS]: 1",
+                "[FAIL]: 1",
+                "[SKIPPED]: 1",
+                "[UNVERIFIED]: 1",
+            ):
+                assert expected in mounted_svg
+
+            status_sel = modal.query_one("#audit-status-filter", Select)
+            status_sel.focus()
+            status_sel.action_show_overlay()
+            await pilot.pause()
+            overlay_svg = _svg_text(app)
+            for badge in ("[PASS]", "[FAIL]", "[SKIPPED]", "[UNVERIFIED]"):
+                assert badge in overlay_svg
+
+            await pilot.press("escape")
+            await pilot.pause()
+
+            for val, expected_label, badge in (
+                ("VERIFIED_PASS", "Verified Pass [PASS]", "[PASS]"),
+                ("MISMATCH_FAIL", "Mismatch Fail [FAIL]", "[FAIL]"),
+                ("SKIPPED", "Skipped [SKIPPED]", "[SKIPPED]"),
+                ("UNVERIFIED", "Unverified [UNVERIFIED]", "[UNVERIFIED]"),
+            ):
+                status_sel.value = val
+                await pilot.pause()
+                closed_label = str(status_sel.query_one("#label", Static).render())
+                assert closed_label == expected_label
+                assert badge in _svg_text(app)
+
+    async def _test_after_retry():
+        src_file = tmp_path / "retry_literal.txt"
+        src_file.write_text("literal badge test", encoding="utf-8")
+        dst_file = tmp_path / "Sorted" / "retry_literal.txt"
+        file_hash = get_file_hash(str(src_file))
+        audit_rep = generate_audit_report(
+            str(tmp_path),
+            [
+                {
+                    "source_path": str(src_file),
+                    "destination_path": str(dst_file),
+                    "pre_hash": file_hash,
+                    "post_hash": None,
+                    "status": "MOVE_FAIL",
+                    "error": "Locked",
+                }
+            ],
+        )
+        modal = AuditReportModal(audit_rep)
+        settings = AppSettings(filepath=str(tmp_path / "settings_retry.json"))
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings)
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            await app.push_screen(modal)
+            await pilot.pause()
+
+            before_cards = [str(card.render()) for card in modal.query(".stat-card")]
+            assert "[FAIL]: 1" in before_cards
+            assert "[PASS]: 0" in before_cards
+
+            modal.query_one("#btn-retry-all", Button).press()
+            await pilot.pause()
+
+            after_cards = [str(card.render()) for card in modal.query(".stat-card")]
+            assert after_cards == [
+                "Total: 1",
+                "[PASS]: 1",
+                "[FAIL]: 0",
+                "[SKIPPED]: 0",
+                "[UNVERIFIED]: 0",
+            ]
+            after_svg = _svg_text(app)
+            for expected in (
+                "[PASS]: 1",
+                "[FAIL]: 0",
+                "[SKIPPED]: 0",
+                "[UNVERIFIED]: 0",
+            ):
+                assert expected in after_svg
+
+    asyncio.run(_test_mount_and_select())
+    asyncio.run(_test_after_retry())

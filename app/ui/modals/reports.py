@@ -23,6 +23,7 @@ from textual.widgets import (
 
 from app.ui.heading import Heading
 from app.ui.layout import ModalBox, ResponsiveModalScreen
+from app.ui.markup_utils import literal_content
 from app.ui.widgets.density_slider import DensitySlider
 
 logger = logging.getLogger(__name__)
@@ -678,15 +679,26 @@ class AuditReportModal(ResponsiveModalScreen[None]):
 
             with Vertical(classes="modal-body"):
                 with Horizontal(classes="audit-stats-row"):
-                    yield Static(f"Total: {total}", classes="stat-card")
-                    yield Static(f"[PASS]: {pass_cnt}", classes="stat-card stat-pass")
-                    yield Static(f"[FAIL]: {fail_cnt}", classes="stat-card stat-fail")
+                    yield Static(f"Total: {total}", classes="stat-card", markup=False)
                     yield Static(
-                        f"[SKIPPED]: {skip_cnt}", classes="stat-card stat-skipped"
+                        f"[PASS]: {pass_cnt}",
+                        classes="stat-card stat-pass",
+                        markup=False,
+                    )
+                    yield Static(
+                        f"[FAIL]: {fail_cnt}",
+                        classes="stat-card stat-fail",
+                        markup=False,
+                    )
+                    yield Static(
+                        f"[SKIPPED]: {skip_cnt}",
+                        classes="stat-card stat-skipped",
+                        markup=False,
                     )
                     yield Static(
                         f"[UNVERIFIED]: {unverified_cnt}",
                         classes="stat-card stat-unverified",
+                        markup=False,
                     )
 
                 with TabbedContent(initial="tab-all-records", id="audit-tabs"):
@@ -703,11 +715,20 @@ class AuditReportModal(ResponsiveModalScreen[None]):
 
                             status_sel = Select(
                                 [
-                                    ("All Statuses", "ALL"),
-                                    ("Verified Pass [PASS]", "VERIFIED_PASS"),
-                                    ("Mismatch Fail [FAIL]", "MISMATCH_FAIL"),
-                                    ("Skipped [SKIPPED]", "SKIPPED"),
-                                    ("Unverified [UNVERIFIED]", "UNVERIFIED"),
+                                    (literal_content("All Statuses"), "ALL"),
+                                    (
+                                        literal_content("Verified Pass [PASS]"),
+                                        "VERIFIED_PASS",
+                                    ),
+                                    (
+                                        literal_content("Mismatch Fail [FAIL]"),
+                                        "MISMATCH_FAIL",
+                                    ),
+                                    (literal_content("Skipped [SKIPPED]"), "SKIPPED"),
+                                    (
+                                        literal_content("Unverified [UNVERIFIED]"),
+                                        "UNVERIFIED",
+                                    ),
                                 ],
                                 value="ALL",
                                 id="audit-status-filter",

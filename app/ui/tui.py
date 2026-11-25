@@ -84,6 +84,11 @@ from app.ui.modals.settings import (
 from app.ui.modals.settings import _get_vector_count as _get_vector_count
 from app.ui.modals.wizard import WizardModal
 from app.ui.protocols import TUIHostProtocol as TUIHostProtocol
+from app.ui.tree_search import (
+    handle_search_and_tree_key,
+    handoff_search_to_tree,
+    schedule_tree_search_filter,
+)
 from app.ui.widgets.density_slider import DensitySlider as DensitySlider
 from app.ui.widgets.labeled_switch import LabeledSwitch as LabeledSwitch
 from app.ui.widgets.path_diff import (
@@ -112,6 +117,7 @@ class AutoSorterTUI(
 
     TITLE = "Sortify AI Pro - Terminal UI"
     SUB_TITLE = "Interactive Tree & Modal Controls"
+    ENABLE_COMMAND_PALETTE = False
 
     BINDINGS = [
         Binding("space", "toggle_selection", "Toggle Checkbox", show=True),
@@ -132,7 +138,7 @@ class AutoSorterTUI(
             "ctrl+k",
             "open_command_palette",
             "Command Palette",
-            show=False,
+            show=True,
             priority=True,
         ),
         Binding("ctrl+w", "open_wizard", "Wizard", show=False),
@@ -415,6 +421,9 @@ class AutoSorterTUI(
         self._pending_flush_trash: bool = False
         self._manual_plan_edits: dict[str, dict[str, Any]] = {}
         self._manual_empty_folders: set[str] = set()
+        self._tree_filter_timer: Any = None
+        self._tree_filter_pending: bool = False
+        self._flushed_search_value: str | None = None
 
     def compose(self) -> ComposeResult:
         """Compose main dual-pane TUI layout."""
@@ -527,6 +536,7 @@ class AutoSorterTUI(
         sb = Static(
             initial_status,
             id="status-bar",
+            markup=False,
         )
         sb.tooltip = "Application status and screen reader announcement bar"
         yield sb
@@ -2080,31 +2090,22 @@ class AutoSorterTUI(
     @on(Input.Changed, "#tree-search-input")
     def on_tree_search_changed(self, event: Input.Changed) -> None:
         """Handle real-time search input field change to dynamically filter preview tree nodes."""
-        val = event.value
-        timer = getattr(self, "_tree_filter_timer", None)
-        if timer is not None:
-            timer.stop()
-        self._tree_filter_timer = self.set_timer(
-            0.15, lambda: self.render_tree(search_query=val)
-        )
+        schedule_tree_search_filter(self, event.value)
+
+    @on(Input.Submitted, "#tree-search-input")
+    def on_tree_search_submitted(self, event: Input.Submitted) -> None:
+        """Move focus from ``#tree-search-input`` to ``#plan-tree`` on Enter while preserving filter."""
+        event.stop()
+        handoff_search_to_tree(self)
 
     def on_key(self, event: events.Key) -> None:
         """Handle global application key events."""
-        if event.key in ("escape", "esc"):
-            try:
-                inp = self.query_one("#tree-search-input", Input)
-                if inp.has_focus:
-                    inp.value = ""
-                    timer = getattr(self, "_tree_filter_timer", None)
-                    if timer is not None:
-                        timer.stop()
-                    self.render_tree(search_query="")
-                    tree = self.query_one("#plan-tree", Tree)
-                    tree.focus()
-                    event.stop()
-                    event.prevent_default()
-            except Exception:
-                pass
+        try:
+            if isinstance(self.screen, ModalScreen):
+                return
+            handle_search_and_tree_key(self, event)
+        except Exception:
+            pass
 
     def action_focus_search(self) -> None:
         """Focus the real-time tree filter search input bar."""

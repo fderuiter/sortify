@@ -1947,12 +1947,25 @@ def test_user_guide_command_palette_section():
     assert "search filtering" in content.lower() or "filter" in content.lower()
 
     # Workflows without dedicated shortcuts
-    assert "Model Manager" in content
-    assert "CRO Forensic Ingestion" in content
-    assert "Export Active Rules" in content
-    assert "Import External Rules" in content
-    assert "Export Simulation Report" in content
-    assert "Browse Starter Rule Templates" in content
+    from app.ui.modals.command_palette import DEFAULT_COMMAND_CATALOG
+
+    unbound_section = content.split("### Workflows Without Dedicated Shortcuts")[
+        1
+    ].split("\n## ")[0]
+    assert "Model Manager" in unbound_section
+    assert "[Ctrl+G]" in unbound_section
+
+    expected_unbound_titles = [
+        cmd.title for cmd in DEFAULT_COMMAND_CATALOG if not cmd.shortcut
+    ]
+    assert len(expected_unbound_titles) == 5
+    bullet_lines = [
+        line for line in unbound_section.splitlines() if line.strip().startswith("- ")
+    ]
+    assert len(bullet_lines) == 5
+    for title in expected_unbound_titles:
+        assert any(f"`{title}`" in line for line in bullet_lines)
+    assert not any("Open Model Manager" in line for line in bullet_lines)
 
     # Cross reference in sorting instructions
     sorting_section = content.split("## Sorting a Folder")[1].split("\n## ")[0]
