@@ -156,3 +156,83 @@ def test_extraction_preview_modal_interactive_slider(tmp_path):
     import asyncio
 
     asyncio.run(_test())
+
+
+def test_ctrl_x_extraction_preview_on_scanned_plan_without_filepath(tmp_path):
+    """Verify Ctrl+X opens ExtractionPreviewModal on real source PDF when scanned plan omits filepath."""
+    import asyncio
+    import os
+
+    from textual.widgets import Label, Static, Tree
+
+    async def _test():
+        ws = tmp_path / "scan_ws"
+        inbox = ws / "inbox"
+        inbox.mkdir(parents=True)
+        pdf_path = create_multi_page_pdf(inbox)
+
+        settings_file = str(tmp_path / "settings.json")
+        settings = AppSettings(filepath=settings_file)
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        settings.PDF_TEXT_DENSITY_THRESHOLD = 50
+
+        app = AutoSorterTUI(settings=settings, base_dir=str(ws))
+
+        async with app.run_test(size=(100, 35)) as pilot:
+            # Scanned plan structure from IncrementalAnalyzer._ensure_relative_source (omits filepath)
+            app.plan = {
+                "Finance": {
+                    "Invoices": {
+                        "preview_sample.pdf": {
+                            "__type__": "file",
+                            "source_root": str(ws),
+                            "relative_source": "../../inbox/preview_sample.pdf",
+                            "routed_by": "clustering",
+                        }
+                    }
+                }
+            }
+            app.rebuild_tree(run_validation=False)
+            await pilot.pause()
+
+            tree = app.query_one("#plan-tree", Tree)
+            finance_node = tree.root.children[0]
+            invoices_node = finance_node.children[0]
+            pdf_leaf = invoices_node.children[0]
+
+            # 1. Leaf node selected -> Ctrl+X opens modal with real 3-page PDF density & text
+            tree.focus()
+            tree.select_node(pdf_leaf)
+            app.active_tree_node = pdf_leaf
+            await pilot.pause()
+
+            await pilot.press("ctrl+x")
+            await pilot.pause()
+
+            assert isinstance(app.screen, ExtractionPreviewModal)
+            modal = app.screen
+            assert os.path.normpath(modal.file_path) == os.path.normpath(pdf_path)
+            assert len(modal.page_data) == 3
+            summary_txt = str(modal.query_one("#preview-summary-label", Label).render())
+            assert "Total Pages: 3" in summary_txt
+            extracted_txt = str(
+                modal.query_one("#preview-extracted-text", Static).render()
+            )
+            assert "dense digital embedded text" in extracted_txt
+
+            await pilot.press("escape")
+            await pilot.pause()
+
+            # 2. Folder node selected -> Ctrl+X resolves enriched file_info from _get_target_file_infos()
+            tree.select_node(finance_node)
+            app.active_tree_node = finance_node
+            await pilot.pause()
+
+            await pilot.press("ctrl+x")
+            await pilot.pause()
+
+            assert isinstance(app.screen, ExtractionPreviewModal)
+            assert os.path.normpath(app.screen.file_path) == os.path.normpath(pdf_path)
+            assert len(app.screen.page_data) == 3
+
+    asyncio.run(_test())
