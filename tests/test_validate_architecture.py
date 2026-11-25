@@ -5,6 +5,14 @@ import pytest
 from scripts.validate_architecture import main
 
 
+@pytest.fixture(scope="module")
+def parsed_app_files():
+    from scripts.validate_architecture import _collect_parsed_app_files
+
+    return _collect_parsed_app_files("app")
+
+
+@pytest.mark.slow
 def test_validate_architecture_full_scan_pass(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["validate_architecture.py"])
     with pytest.raises(SystemExit) as exc_info:
@@ -354,16 +362,12 @@ def test_import_time_globals_allow_install_functions_and_reads():
     assert not _global_errors('import sys\nsys.modules["torch"].set_num_threads(1)\n')
 
 
-def test_app_has_no_import_time_global_patches():
-    import ast
-    from pathlib import Path
-
+def test_app_has_no_import_time_global_patches(parsed_app_files):
     from scripts.validate_architecture import validate_import_time_globals
 
     errors = []
-    for path in Path("app").rglob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        validate_import_time_globals(errors, str(path), tree)
+    for filepath, tree in parsed_app_files:
+        validate_import_time_globals(errors, filepath, tree)
     assert errors == []
 
 
@@ -393,16 +397,12 @@ def test_test_detection_allows_ordinary_code():
     assert not _detection_errors("mock_mode = False\n")
 
 
-def test_app_has_no_test_detection():
-    import ast
-    from pathlib import Path
-
+def test_app_has_no_test_detection(parsed_app_files):
     from scripts.validate_architecture import validate_no_test_detection
 
     errors = []
-    for path in Path("app").rglob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        validate_no_test_detection(errors, str(path), tree)
+    for filepath, tree in parsed_app_files:
+        validate_no_test_detection(errors, filepath, tree)
     assert errors == []
 
 
@@ -556,16 +556,12 @@ class Foo:
     assert _ml_errors(ordinary_code) == []
 
 
-def test_app_has_no_eager_ml_imports():
-    import ast
-    from pathlib import Path
-
+def test_app_has_no_eager_ml_imports(parsed_app_files):
     from scripts.validate_architecture import validate_lazy_ml_imports
 
     errors = []
-    for path in Path("app").rglob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        validate_lazy_ml_imports(errors, str(path), tree)
+    for filepath, tree in parsed_app_files:
+        validate_lazy_ml_imports(errors, filepath, tree)
     assert errors == []
 
 
@@ -608,11 +604,47 @@ def test_writer_construction_requires_composition_root(source):
     assert not errors
 
 
-def test_validate_architecture_single_app_walk_and_zero_deepcopy(monkeypatch):
+def test_validate_architecture_single_app_walk_and_zero_deepcopy(monkeypatch, tmp_path):
     """Verify full validate_architecture scan walks app/ once, parses each app file once, and skips copy.deepcopy."""
     import ast
     import copy
     import os
+
+    from scripts.diagram_schema import SYSTEM_DIAGRAM_SPECS
+
+    core_dir = tmp_path / "app" / "core"
+    modals_dir = tmp_path / "app" / "ui" / "modals"
+    diagrams_dir = tmp_path / "docs" / "assets" / "diagrams"
+    core_dir.mkdir(parents=True)
+    modals_dir.mkdir(parents=True)
+    diagrams_dir.mkdir(parents=True)
+
+    (tmp_path / "app" / "config.py").write_text(
+        "class Settings:\n    MAX_DEPTH: int = 3\n",
+        encoding="utf-8",
+    )
+    (core_dir / "scanner.py").write_text(
+        "def compute_budget(items: list[int]) -> int:\n"
+        "    total = sum(items)\n"
+        "    return total * 2\n",
+        encoding="utf-8",
+    )
+    (modals_dir / "sample_modal.py").write_text(
+        "from app.ui.layout import ResponsiveModalScreen\n\n"
+        "class SampleModal(ResponsiveModalScreen[bool]):\n"
+        '    MODAL_CSS = "SampleModal { &.compact .modal-box { max-width: 60; } }"\n\n'
+        "    def format_summary(self, count: int) -> str:\n"
+        "        label = f'{count} item(s)'\n"
+        "        return label.strip()\n",
+        encoding="utf-8",
+    )
+    for spec_id, spec in SYSTEM_DIAGRAM_SPECS.items():
+        (diagrams_dir / f"{spec_id}.mmd").write_text(
+            spec.to_mermaid(), encoding="utf-8"
+        )
+        (diagrams_dir / f"{spec_id}.svg").write_text("<svg/>\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
 
     real_walk = os.walk
     app_walk_calls = 0
@@ -627,8 +659,8 @@ def test_validate_architecture_single_app_walk_and_zero_deepcopy(monkeypatch):
     parsed_files: list[str] = []
 
     def counting_parse(source, filename="<unknown>", *args, **kwargs):
-        if isinstance(filename, str) and filename.startswith("app/"):
-            parsed_files.append(filename)
+        if isinstance(filename, str) and filename.replace("\\", "/").startswith("app/"):
+            parsed_files.append(filename.replace("\\", "/"))
         return real_parse(source, filename, *args, **kwargs)
 
     monkeypatch.setattr(os, "walk", counting_walk)
@@ -646,6 +678,7 @@ def test_validate_architecture_single_app_walk_and_zero_deepcopy(monkeypatch):
         main()
     assert exc_info.value.code == 0
     assert app_walk_calls == 1
+    assert len(parsed_files) == 3
     assert len(parsed_files) == len(set(parsed_files))
 
 

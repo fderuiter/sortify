@@ -1713,51 +1713,16 @@ def validate_mkdocs_config(config_path: str | Path = MKDOCS_CONFIG_PATH) -> list
     return []
 
 
-def validate_mkdocs_site(site_dir="site"):
-    """Validate built MkDocs site artifacts (non-empty index.html and populated sitemap.xml)."""
-    from defusedxml import ElementTree as ET
+def validate_mkdocs_site(
+    site_dir="site",
+    canonical_site_url: str = "https://fderuiter.github.io/sortify/",
+):
+    """Validate built MkDocs site artifacts (root index, md-logo anchors, and canonical sitemap.xml)."""
+    from scripts.mkdocs_site_validator import validate_mkdocs_site_artifacts
 
-    site_path = Path(site_dir)
-    errors = []
-
-    index_path = site_path / "index.html"
-    if not index_path.is_file():
-        errors.append(f"Missing MkDocs root page: {index_path.as_posix()}")
-    else:
-        try:
-            index_content = index_path.read_text(encoding="utf-8")
-        except Exception as exc:
-            errors.append(
-                f"Could not read MkDocs root page {index_path.as_posix()}: {exc}"
-            )
-        else:
-            if not index_content.strip():
-                errors.append(f"Empty MkDocs root page: {index_path.as_posix()}")
-
-    sitemap_path = site_path / "sitemap.xml"
-    if not sitemap_path.is_file():
-        errors.append(f"Missing MkDocs sitemap: {sitemap_path.as_posix()}")
-    else:
-        try:
-            sitemap_content = sitemap_path.read_text(encoding="utf-8")
-            root = ET.fromstring(sitemap_content)
-        except Exception as exc:
-            errors.append(
-                f"Invalid XML in MkDocs sitemap {sitemap_path.as_posix()}: {exc}"
-            )
-        else:
-            loc_entries = [
-                (elem.text or "").strip()
-                for elem in root.iter()
-                if (elem.tag == "loc" or elem.tag.endswith("}loc"))
-                and (elem.text or "").strip()
-            ]
-            if not loc_entries:
-                errors.append(
-                    f"MkDocs sitemap contains no <loc> entries: {sitemap_path.as_posix()}"
-                )
-
-    return errors
+    return validate_mkdocs_site_artifacts(
+        site_dir, canonical_site_url=canonical_site_url
+    )
 
 
 def main():

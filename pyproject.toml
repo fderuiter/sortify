@@ -252,7 +252,7 @@ pythonpath = [
 timeout = 360
 addopts = "-n auto --dist=loadgroup"
 markers = [
-    "slow: marks tests as slow / heavy ML, snapshot, or integration tests (deselect with '-m \"not slow\"')",
+    "slow: marks tests as slow / heavy ML, full-repository gate, or integration tests (deselect with '-m \"not slow\"')",
     "integration: marks integration tests",
     "ml: marks machine learning model tests",
     "real_db_worker: run against the real asynchronous DBWorker write queue instead of the synchronous test stand-in",
@@ -322,10 +322,10 @@ show_missing = true
 "scripts/auto_merge_controller.py" = 4
 "scripts/build.py" = 1
 "scripts/diagram_toolchain.py" = 8
-"scripts/generate_docs.py" = 24
+"scripts/generate_docs.py" = 22
 "scripts/install_offline.py" = 2
 "scripts/prompt_manifest.py" = 3
-"scripts/remediate_vulnerabilities.py" = 27
+"scripts/remediate_vulnerabilities.py" = 25
 "scripts/snapshot_merge_driver.py" = 12
 "scripts/test_cli.py" = 1
 "scripts/validate_architecture.py" = 2
