@@ -660,15 +660,31 @@ class IncrementalAnalyzer:
 
             existing_hashes: dict[str, str] = {}
             if self.db:
+                grouped_by_root: dict[str, list[tuple[str, str]]] = {}
+                for fp in filepaths:
+                    if "::" in str(fp):
+                        s_root, rel_p = str(fp).split("::", 1)
+                        grouped_by_root.setdefault(s_root, []).append((fp, rel_p))
+                    else:
+                        grouped_by_root.setdefault(base_dir, []).append((fp, fp))
                 if hasattr(self.db, "get_document_hashes"):
-                    existing_hashes = (
-                        self.db.get_document_hashes(base_dir, filepaths) or {}
-                    )
+                    for root_dir, pairs in grouped_by_root.items():
+                        rel_list = [rel_p for _, rel_p in pairs]
+                        root_hashes = (
+                            self.db.get_document_hashes(root_dir, rel_list) or {}
+                        )
+                        for orig_fp, rel_p in pairs:
+                            matched_h = root_hashes.get(rel_p) or root_hashes.get(
+                                rel_p.replace("\\", "/")
+                            )
+                            if matched_h:
+                                existing_hashes[orig_fp] = matched_h
                 else:
-                    for fp in filepaths:
-                        doc = self.db.get_document(base_dir, fp)
-                        if doc and doc.get("file_hash"):
-                            existing_hashes[fp] = doc.get("file_hash")
+                    for root_dir, pairs in grouped_by_root.items():
+                        for orig_fp, rel_p in pairs:
+                            doc = self.db.get_document(root_dir, rel_p)
+                            if doc and doc.get("file_hash"):
+                                existing_hashes[orig_fp] = doc.get("file_hash")
 
             documents_to_upsert = []
             for filepath, text, file_hash in zip(filepaths, texts, hashes):
@@ -1195,11 +1211,28 @@ class IncrementalAnalyzer:
 
         norm_target_paths = None
         if target_paths is not None:
+            from app.core.mover import is_subpath_or_equal
+
             norm_target_paths = set()
             for p in target_paths:
                 if not p:
                     continue
-                if os.path.isabs(p) and base_dir and p.startswith(base_dir):
+                if "::" in p:
+                    s_root, rel_part = p.split("::", 1)
+                    norm_s = os.path.normpath(os.path.abspath(s_root))
+                    norm_r = rel_part.replace("\\", "/")
+                    norm_r_clean = os.path.normpath(norm_r).replace("\\", "/")
+                    norm_target_paths.add(p)
+                    norm_target_paths.add(p.replace("\\", "/"))
+                    norm_target_paths.add(f"{s_root}::{norm_r}")
+                    norm_target_paths.add(f"{norm_s}::{norm_r}")
+                    norm_target_paths.add(f"{s_root}::{norm_r_clean}")
+                    norm_target_paths.add(f"{norm_s}::{norm_r_clean}")
+                    if not source_dirs or len(source_dirs) <= 1:
+                        norm_target_paths.add(norm_r)
+                        norm_target_paths.add(norm_r_clean)
+                    continue
+                if os.path.isabs(p) and base_dir and is_subpath_or_equal(p, base_dir):
                     rel = safe_relpath(p, base_dir).replace("\\", "/")
                 else:
                     rel = p.replace("\\", "/")
@@ -2044,11 +2077,14 @@ class IncrementalAnalyzer:
                                 SharedModelRegistry.get_instance().get_jev_classifier()
                             )
                             if jev_engine:
-                                abs_f = (
-                                    os.path.join(base_dir, f)
-                                    if base_dir and not os.path.isabs(f)
-                                    else f
-                                )
+                                abs_f = abs_paths_map.get(f)
+                                if not abs_f:
+                                    s_r, r_f = parse_item_identifier(f, base_dir)
+                                    abs_f = (
+                                        os.path.join(s_r, r_f)
+                                        if s_r and not os.path.isabs(r_f)
+                                        else r_f
+                                    )
                                 doc_text = (
                                     ai_documents[idx]
                                     if idx < len(ai_documents)

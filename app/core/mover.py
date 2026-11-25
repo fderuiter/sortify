@@ -10,6 +10,7 @@ import os
 import threading
 import unicodedata
 import uuid
+from collections.abc import Sequence
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -1503,6 +1504,47 @@ def _process_move_group(
     return results
 
 
+def _normalize_allowed_roots(
+    base_dir: str, source_dirs: Sequence[str] | None = None
+) -> list[str]:
+    """Return deduplicated normalized root paths starting with ``base_dir``."""
+    roots: list[str] = []
+    seen: set[str] = set()
+    for raw in [base_dir, *(source_dirs or ())]:
+        if not raw or not isinstance(raw, (str, os.PathLike)):
+            continue
+        norm = os.path.normpath(os.path.abspath(str(raw)))
+        key = os.path.normcase(norm)
+        if key not in seen:
+            seen.add(key)
+            roots.append(norm)
+    return roots
+
+
+def _is_within_allowed_roots(
+    path: str, base_dir: str, allowed_roots: Sequence[str] | None = None
+) -> bool:
+    """Return True when ``path`` resolves within ``base_dir`` or any configured ``source_dirs`` root."""
+    roots = allowed_roots if allowed_roots else ([base_dir] if base_dir else [])
+    return any(is_subpath_or_equal(path, r) for r in roots if r)
+
+
+def _best_matching_root(
+    path: str, base_dir: str, allowed_roots: Sequence[str] | None = None
+) -> str:
+    """Return the deepest matching root from ``allowed_roots`` for ``path``, falling back to ``base_dir``."""
+    if not path or not allowed_roots:
+        return base_dir
+    best: str | None = None
+    for cand in allowed_roots:
+        if cand and is_subpath_or_equal(path, cand):
+            if best is None or len(os.path.normcase(os.path.abspath(cand))) > len(
+                os.path.normcase(os.path.abspath(best))
+            ):
+                best = cand
+    return best or base_dir
+
+
 def _resolve_prepared_destination(
     *,
     base_dir: str,
@@ -1513,6 +1555,7 @@ def _resolve_prepared_destination(
     db_updates_batch: list,
     pending_links: list | None,
     reserved_dests: set[str] | None = None,
+    allowed_roots: Sequence[str] | None = None,
 ) -> str:
     """Resolve collision policy, boundary safety, quarantine staging, and link tracking for a prepared item.
 
@@ -1570,7 +1613,7 @@ def _resolve_prepared_destination(
         dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
     dest_path = unicodedata.normalize("NFC", dest_path)
 
-    if not is_subpath_or_equal(dest_path, base_dir):
+    if not _is_within_allowed_roots(dest_path, base_dir, allowed_roots):
         msg = f"Runtime boundary violation: Destination path '{dest_path}' attempts to escape target base directory '{base_dir}'."
         logging.error(msg)
         raise ValueError(msg)
@@ -1579,7 +1622,8 @@ def _resolve_prepared_destination(
         reserved_dests.add(os.path.normcase(os.path.abspath(dest_path)))
     _update_path_map_entry(path_map, source_path, dest_path, lock=db_lock)
 
-    rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
+    eff_dest_root = str(prepared.get("item_dest_root") or base_dir)
+    rel_dest = safe_relpath(dest_path, eff_dest_root).replace("\\", "/")
     abs_dest_path = os.path.abspath(dest_path)
     prepared["dest_path"] = dest_path
     prepared["collision"] = collision
@@ -1679,14 +1723,19 @@ def _resolve_prepared_destination(
                 ],
             )
         if prepared["file_hash"] and not prepared["is_quarantine_dest"]:
+            verified_folder = safe_relpath(prepared["dest_dir"], eff_dest_root).replace(
+                "\\", "/"
+            )
+            if verified_folder == ".":
+                verified_folder = ""
             with db_lock:
                 db_updates_batch.append(
                     {
                         "type": "verified_target",
                         "args": (
-                            base_dir,
+                            eff_dest_root,
                             prepared["file_hash"],
-                            prepared["current_dest"].replace("\\", "/"),
+                            verified_folder,
                         ),
                     }
                 )
@@ -1814,6 +1863,7 @@ def _prepare_chunk_move_item(
     runtime_settings: Any,
     db_lock: threading.Lock,
     chunk_hash_map: dict[str, str] | None = None,
+    allowed_roots: Sequence[str] | None = None,
 ) -> dict[str, Any] | None:
     """Pre-compute source metadata, sensitivity routing, and pre-move SHA-256 off-thread without DB writes."""
     source_path = item["source_path"]
@@ -1859,7 +1909,10 @@ def _prepare_chunk_move_item(
         or "_Compliance_Quarantine"
     )
 
-    abs_base_dir = os.path.abspath(base_dir) if base_dir else ""
+    item_src_root = _best_matching_root(source_path, base_dir, allowed_roots)
+    cand_dest_dir = os.path.normpath(os.path.join(base_dir, current_dest))
+    item_dest_root = _best_matching_root(cand_dest_dir, base_dir, allowed_roots)
+    abs_base_dir = os.path.abspath(item_dest_root) if item_dest_root else ""
     candidate_sha256: str | None = None
     is_approved_release = False
     if sens_rating_str in auto_ratings or policy_action == "quarantine":
@@ -1900,7 +1953,7 @@ def _prepare_chunk_move_item(
             )
         active_dest = quarantine_dir_name
 
-    dest_dir = os.path.normpath(os.path.join(base_dir, active_dest))
+    dest_dir = os.path.normpath(os.path.join(item_dest_root, active_dest))
     dest_dir = unicodedata.normalize("NFC", dest_dir)
 
     node_overwrite = bool(
@@ -1920,15 +1973,16 @@ def _prepare_chunk_move_item(
     else:
         conflict_policy = "rename"
 
-    source_rel_path = safe_relpath(source_path, base_dir).replace("\\", "/")
+    source_rel_path = safe_relpath(source_path, item_dest_root).replace("\\", "/")
 
-    if chunk_hash_map is not None:
+    if chunk_hash_map is not None and item_dest_root == base_dir:
         file_hash = chunk_hash_map.get(source_rel_path) or ""
     else:
         doc = None
         if db and hasattr(db, "get_document"):
+            src_lookup_rel = safe_relpath(source_path, item_src_root).replace("\\", "/")
             with db_lock:
-                doc = db.get_document(base_dir, source_rel_path)
+                doc = db.get_document(item_src_root, src_lookup_rel)
         file_hash = doc.get("file_hash") if (doc and isinstance(doc, dict)) else ""
 
     pre_hash = ""
@@ -1992,6 +2046,8 @@ def _prepare_chunk_move_item(
         "dest_dir": dest_dir,
         "conflict_policy": conflict_policy,
         "source_rel_path": source_rel_path,
+        "item_src_root": item_src_root,
+        "item_dest_root": item_dest_root,
         "abs_base_dir": abs_base_dir,
         "is_sensitivity_hold": is_sensitivity_hold,
         "sens_rating_str": sens_rating_str,
@@ -2042,6 +2098,9 @@ def _execute_special_policy_move(
     conflict_policy = prepared["conflict_policy"]
     collision = bool(prepared.get("collision", False))
     source_rel_path = prepared["source_rel_path"]
+    eff_dest_root = str(prepared.get("item_dest_root") or base_dir)
+    eff_src_root = str(prepared.get("item_src_root") or eff_dest_root)
+    src_doc_rel = safe_relpath(source_path, eff_src_root).replace("\\", "/")
     quarantine_dir_name = prepared["quarantine_dir_name"]
     file_hash = prepared["file_hash"]
     pre_hash = prepared["pre_hash"]
@@ -2059,7 +2118,7 @@ def _execute_special_policy_move(
         from app.core.resilient_file_ops import resilient_rmtree
 
         extract_stage_dir = os.path.join(
-            overwrite_backup_dir(base_dir, session_id),
+            overwrite_backup_dir(eff_dest_root, session_id),
             "unarchive_children",
             uuid.uuid4().hex[:12],
         )
@@ -2070,21 +2129,21 @@ def _execute_special_policy_move(
             )
         except (ArchiveSafetyError, zipfile.BadZipFile, tarfile.TarError) as ase:
             resilient_rmtree(extract_stage_dir)
-            q_dir = os.path.normpath(os.path.join(base_dir, quarantine_dir_name))
+            q_dir = os.path.normpath(os.path.join(eff_dest_root, quarantine_dir_name))
             os.makedirs(q_dir, exist_ok=True)
             q_dst = get_safe_path(q_dir, os.path.basename(source_path), source_path)
             actual_q_dst = q_dst
             post_q_hash = pre_hash
             if not _is_same_path(source_path, q_dst):
                 actual_q_dst, post_q_hash = _execute_ledger_move(
-                    moves, session_id, base_dir, source_path, q_dst, pre_hash
+                    moves, session_id, eff_dest_root, source_path, q_dst, pre_hash
                 )
             _update_path_map_entry(path_map, source_path, actual_q_dst, lock=db_lock)
             err_msg = f"Archive safety violation during unarchive: {ase}"
             _record_policy_quarantine_audit(
                 db,
                 db_lock,
-                base_dir=base_dir,
+                base_dir=eff_dest_root,
                 original_filepath=source_rel_path,
                 staged_filepath=os.path.abspath(actual_q_dst),
                 file_hash=pre_hash or file_hash,
@@ -2118,25 +2177,25 @@ def _execute_special_policy_move(
         archive_final_path = source_path
         if post_unarchive_action in ("move", "archive", "relocate"):
             raw_arch_sub = str(post_unarchive_target or "Archive").strip() or "Archive"
-            arch_dir = os.path.normpath(os.path.join(base_dir, raw_arch_sub))
-            if not is_subpath_or_equal(arch_dir, base_dir):
-                arch_dir = os.path.normpath(os.path.join(base_dir, "Archive"))
+            arch_dir = os.path.normpath(os.path.join(eff_dest_root, raw_arch_sub))
+            if not is_subpath_or_equal(arch_dir, eff_dest_root):
+                arch_dir = os.path.normpath(os.path.join(eff_dest_root, "Archive"))
             os.makedirs(arch_dir, exist_ok=True)
             arch_dst = get_safe_path(
                 arch_dir, os.path.basename(source_path), source_path
             )
             if not _is_same_path(source_path, arch_dst):
                 archive_final_path, _ = _execute_ledger_move(
-                    moves, session_id, base_dir, source_path, arch_dst, pre_hash
+                    moves, session_id, eff_dest_root, source_path, arch_dst, pre_hash
                 )
-                rel_arch_dst = safe_relpath(archive_final_path, base_dir).replace(
+                rel_arch_dst = safe_relpath(archive_final_path, eff_dest_root).replace(
                     "\\", "/"
                 )
                 with db_lock:
                     db_updates_batch.append(
                         {
                             "type": "document_path",
-                            "args": (base_dir, source_rel_path, rel_arch_dst),
+                            "args": (eff_dest_root, source_rel_path, rel_arch_dst),
                         }
                     )
             _update_path_map_entry(
@@ -2146,12 +2205,12 @@ def _execute_special_policy_move(
             archive_final_path = source_path
         else:
             backup_zip_dst = os.path.join(
-                overwrite_backup_dir(base_dir, session_id),
+                overwrite_backup_dir(eff_dest_root, session_id),
                 "unarchive_src",
-                source_rel_path,
+                src_doc_rel,
             )
             archive_final_path, _ = _execute_ledger_move(
-                moves, session_id, base_dir, source_path, backup_zip_dst, pre_hash
+                moves, session_id, eff_dest_root, source_path, backup_zip_dst, pre_hash
             )
             _update_path_map_entry(
                 path_map, source_path, archive_final_path, lock=db_lock
@@ -2168,7 +2227,7 @@ def _execute_special_policy_move(
                             with conn:
                                 conn.execute(
                                     "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                    (base_dir, source_rel_path, source_rel_path),
+                                    (eff_src_root, src_doc_rel, src_doc_rel),
                                 )
 
                         db.worker.execute_write(_delete_archive_doc)
@@ -2189,7 +2248,7 @@ def _execute_special_policy_move(
                 if child_sub_dir
                 else dest_dir
             )
-            if not is_subpath_or_equal(child_dest_dir, base_dir):
+            if not is_subpath_or_equal(child_dest_dir, eff_dest_root):
                 continue
             os.makedirs(child_dest_dir, exist_ok=True)
             child_dst_candidate = get_safe_path(
@@ -2203,7 +2262,7 @@ def _execute_special_policy_move(
             actual_child_dst, _ = _execute_ledger_move(
                 moves,
                 session_id,
-                base_dir,
+                eff_dest_root,
                 staged_child,
                 child_dst_candidate,
                 child_hash,
@@ -2214,13 +2273,13 @@ def _execute_special_policy_move(
             with db_lock:
                 unarchived_children_out.extend(placed_children)
 
-        dest_sub_display = safe_relpath(dest_dir, base_dir).replace("\\", "/")
+        dest_sub_display = safe_relpath(dest_dir, eff_dest_root).replace("\\", "/")
         if dest_sub_display == ".":
             dest_sub_display = ""
         _record_policy_quarantine_audit(
             db,
             db_lock,
-            base_dir=base_dir,
+            base_dir=eff_dest_root,
             original_filepath=source_rel_path,
             staged_filepath=os.path.abspath(archive_final_path),
             file_hash=pre_hash or file_hash,
@@ -2268,7 +2327,7 @@ def _execute_special_policy_move(
         )
 
         staged_redacted_path = os.path.join(
-            overwrite_backup_dir(base_dir, session_id),
+            overwrite_backup_dir(eff_dest_root, session_id),
             "redact_out",
             f"{uuid.uuid4().hex[:8]}_{filename}",
         )
@@ -2281,28 +2340,28 @@ def _execute_special_policy_move(
             if os.path.exists(staged_redacted_path):
                 with contextlib.suppress(OSError):
                     resilient_remove(staged_redacted_path)
-            q_dir = os.path.normpath(os.path.join(base_dir, quarantine_dir_name))
+            q_dir = os.path.normpath(os.path.join(eff_dest_root, quarantine_dir_name))
             os.makedirs(q_dir, exist_ok=True)
             q_dst = get_safe_path(q_dir, filename, source_path)
             actual_q_dst = q_dst
             post_q_hash = pre_hash
             if not _is_same_path(source_path, q_dst):
                 actual_q_dst, post_q_hash = _execute_ledger_move(
-                    moves, session_id, base_dir, source_path, q_dst, pre_hash
+                    moves, session_id, eff_dest_root, source_path, q_dst, pre_hash
                 )
             _update_path_map_entry(path_map, source_path, actual_q_dst, lock=db_lock)
-            rel_q_dst = safe_relpath(actual_q_dst, base_dir).replace("\\", "/")
+            rel_q_dst = safe_relpath(actual_q_dst, eff_dest_root).replace("\\", "/")
             with db_lock:
                 db_updates_batch.append(
                     {
                         "type": "document_path",
-                        "args": (base_dir, source_rel_path, rel_q_dst),
+                        "args": (eff_dest_root, source_rel_path, rel_q_dst),
                     }
                 )
             _record_policy_quarantine_audit(
                 db,
                 db_lock,
-                base_dir=base_dir,
+                base_dir=eff_dest_root,
                 original_filepath=source_rel_path,
                 staged_filepath=os.path.abspath(actual_q_dst),
                 file_hash=pre_hash or file_hash,
@@ -2344,12 +2403,12 @@ def _execute_special_policy_move(
 
         # Move 1: displace unredacted original into session backup so undo restores original bytes
         backup_orig_dst = os.path.join(
-            overwrite_backup_dir(base_dir, session_id),
+            overwrite_backup_dir(eff_dest_root, session_id),
             "redact_orig",
-            source_rel_path,
+            src_doc_rel,
         )
         _execute_ledger_move(
-            moves, session_id, base_dir, source_path, backup_orig_dst, pre_hash
+            moves, session_id, eff_dest_root, source_path, backup_orig_dst, pre_hash
         )
 
         # Move 2: place scrubbed output into target destination
@@ -2363,14 +2422,14 @@ def _execute_special_policy_move(
         actual_redacted_dst, post_redacted_hash = _execute_ledger_move(
             moves,
             session_id,
-            base_dir,
+            eff_dest_root,
             staged_redacted_path,
             redacted_dest_candidate,
             redacted_hash,
             allow_overwrite=allow_ow,
         )
         _update_path_map_entry(path_map, source_path, actual_redacted_dst, lock=db_lock)
-        rel_redacted_dst = safe_relpath(actual_redacted_dst, base_dir).replace(
+        rel_redacted_dst = safe_relpath(actual_redacted_dst, eff_dest_root).replace(
             "\\", "/"
         )
 
@@ -2378,11 +2437,17 @@ def _execute_special_policy_move(
             with db_lock:
                 try:
                     if hasattr(db, "_purge_document_vector"):
-                        db._purge_document_vector(base_dir, source_rel_path)
-                        if rel_redacted_dst != source_rel_path:
-                            db._purge_document_vector(base_dir, rel_redacted_dst)
+                        db._purge_document_vector(eff_src_root, src_doc_rel)
+                        if (
+                            eff_dest_root != eff_src_root
+                            or rel_redacted_dst != src_doc_rel
+                        ):
+                            db._purge_document_vector(eff_dest_root, rel_redacted_dst)
                     if (
-                        rel_redacted_dst != source_rel_path
+                        (
+                            eff_dest_root != eff_src_root
+                            or rel_redacted_dst != src_doc_rel
+                        )
                         and hasattr(db, "worker")
                         and getattr(db, "db_path", None)
                     ):
@@ -2395,13 +2460,13 @@ def _execute_special_policy_move(
                             with conn:
                                 conn.execute(
                                     "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                    (base_dir, source_rel_path, source_rel_path),
+                                    (eff_src_root, src_doc_rel, src_doc_rel),
                                 )
 
                         db.worker.execute_write(_delete_orig_doc)
                     if hasattr(db, "upsert_document"):
                         db.upsert_document(
-                            base_dir,
+                            eff_dest_root,
                             rel_redacted_dst,
                             post_redacted_hash or redacted_hash,
                             scrubbed_text,
@@ -2414,7 +2479,7 @@ def _execute_special_policy_move(
         _record_policy_quarantine_audit(
             db,
             db_lock,
-            base_dir=base_dir,
+            base_dir=eff_dest_root,
             original_filepath=source_rel_path,
             staged_filepath=os.path.abspath(actual_redacted_dst),
             file_hash=post_redacted_hash or redacted_hash,
@@ -2484,6 +2549,7 @@ def _execute_prepared_move_group(
         file_hash = p["file_hash"]
         link_info = p["link_info"]
 
+        item_dest_root = str(p.get("item_dest_root") or base_dir)
         displaced_path = None
         overwritten_path = None
         try:
@@ -2495,7 +2561,7 @@ def _execute_prepared_move_group(
                 overwritten_path = dest_path
                 displaced_path = _displace_for_overwrite(
                     dest_path,
-                    base_dir,
+                    item_dest_root,
                     session_id,
                     journal=lambda path, seq=move_seq: _record_move_state(
                         moves_ledger,
@@ -2516,7 +2582,7 @@ def _execute_prepared_move_group(
                     if p.get("link_entry") is not None:
                         with db_lock:
                             p["link_entry"]["dest_path"] = dest_path
-                rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
+                rel_dest = safe_relpath(dest_path, item_dest_root).replace("\\", "/")
             except Exception as err:
                 logging.error(
                     f"Failed to move file {source_path} to {dest_path}: {err}"
@@ -2641,20 +2707,25 @@ def _execute_prepared_move_group(
 
         item_db_updates: list[dict[str, Any]] = []
         if file_hash and not p["is_quarantine_dest"]:
+            verified_folder = safe_relpath(p["dest_dir"], item_dest_root).replace(
+                "\\", "/"
+            )
+            if verified_folder == ".":
+                verified_folder = ""
             item_db_updates.append(
                 {
                     "type": "verified_target",
                     "args": (
-                        base_dir,
+                        item_dest_root,
                         file_hash,
-                        p["current_dest"].replace("\\", "/"),
+                        verified_folder,
                     ),
                 }
             )
         item_db_updates.append(
             {
                 "type": "document_path",
-                "args": (base_dir, p["source_rel_path"], rel_dest),
+                "args": (item_dest_root, p["source_rel_path"], rel_dest),
             }
         )
 
@@ -3250,11 +3321,30 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                 if not _is_absolute_path(raw_empty_rel):
                     validate_target_path(raw_empty_rel)
 
+            raw_source_dirs = kwargs.get("source_dirs")
+            if raw_source_dirs is None and pipeline is not None:
+                raw_source_dirs = getattr(
+                    getattr(pipeline, "session", None), "source_dirs", None
+                )
+            configured_source_dirs = (
+                [
+                    str(d)
+                    for d in raw_source_dirs
+                    if isinstance(d, (str, os.PathLike)) and str(d)
+                ]
+                if isinstance(raw_source_dirs, (list, tuple, set))
+                else None
+            )
+            allowed_roots = _normalize_allowed_roots(base_dir, configured_source_dirs)
+
             active_conflict_policy = str(
                 getattr(runtime_settings, "CONFLICT_POLICY", "rename") or "rename"
             ).lower()
             integrity_result = VerificationEngine.verify_plan_integrity(
-                base_dir, plan, conflict_policy=active_conflict_policy
+                base_dir,
+                plan,
+                conflict_policy=active_conflict_policy,
+                source_dirs=configured_source_dirs,
             )
             if (
                 integrity_result.get("invalid_renames")
@@ -3626,6 +3716,7 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                                 runtime_settings,
                                 db_lock,
                                 chunk_hash_map,
+                                allowed_roots,
                             )
                             for item in chunk
                         ],
@@ -3651,6 +3742,7 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                                 db_updates_batch=db_updates_batch,
                                 pending_links=pending_links,
                                 reserved_dests=reserved_dests,
+                                allowed_roots=allowed_roots,
                             )
                         except Exception as res_err:
                             if not is_partial_commit:
@@ -4011,11 +4103,16 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                         moved_sources = [
                             src for src in path_map if not os.path.lexists(src)
                         ]
-                    _prune_emptied_dirs(
-                        {os.path.dirname(src) for src in moved_sources},
-                        base_dir,
-                        protected_paths,
-                    )
+                    emptied_parent_dirs = {
+                        os.path.dirname(src) for src in moved_sources
+                    }
+                    for prune_root in allowed_roots:
+                        if prune_root and os.path.exists(prune_root):
+                            _prune_emptied_dirs(
+                                emptied_parent_dirs,
+                                prune_root,
+                                protected_paths,
+                            )
                 else:
                     for node in dirs_to_process:
                         summary["protected_folders"] += 1
@@ -4071,7 +4168,16 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                     and hasattr(history_manager, "complete_session")
                 ):
                     try:
-                        history_manager.complete_session(session_id)
+                        if len(allowed_roots) > 1:
+                            try:
+                                history_manager.complete_session(
+                                    session_id,
+                                    metadata={"batch_roots": allowed_roots},
+                                )
+                            except TypeError:
+                                history_manager.complete_session(session_id)
+                        else:
+                            history_manager.complete_session(session_id)
                     except Exception as complete_err:
                         logging.warning(
                             f"Failed to mark session {session_id} completed: {complete_err}"

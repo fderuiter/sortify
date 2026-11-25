@@ -4,6 +4,7 @@ import contextlib
 import logging
 import os
 import re
+from collections.abc import Sequence
 from typing import Any
 
 from pydantic import BaseModel
@@ -254,7 +255,10 @@ class VerificationEngine:
 
     @staticmethod
     def verify_plan_integrity(
-        base_dir: str, plan: Any, conflict_policy: str = "skip"
+        base_dir: str,
+        plan: Any,
+        conflict_policy: str = "skip",
+        source_dirs: Sequence[str] | None = None,
     ) -> dict:
         """Run complete virtual filesystem simulation and integrity check."""
         try:
@@ -280,7 +284,10 @@ class VerificationEngine:
 
             tracker = VirtualFilesystemTracker()
             result = tracker.verify_integrity(
-                base_dir, plan_dict, conflict_policy=conflict_policy
+                base_dir,
+                plan_dict,
+                conflict_policy=conflict_policy,
+                source_dirs=source_dirs,
             )
 
             all_warnings = sanitization_warnings + result.get("warnings", [])
@@ -1493,13 +1500,25 @@ class VirtualFilesystemTracker:
         return broken_links
 
     def verify_integrity(
-        self, base_dir: str, plan: dict, conflict_policy: str = "skip"
+        self,
+        base_dir: str,
+        plan: dict,
+        conflict_policy: str = "skip",
+        source_dirs: Sequence[str] | None = None,
     ) -> dict:
         """Run complete virtual filesystem simulation and integrity check."""
         moves_list = VerificationEngine.get_moves(base_dir, plan)
 
         # Populate initial VFS state
         self.populate_from_disk(base_dir)
+        for extra_root in source_dirs or ():
+            if (
+                extra_root
+                and os.path.isdir(extra_root)
+                and os.path.normcase(os.path.abspath(extra_root))
+                != os.path.normcase(os.path.abspath(base_dir))
+            ):
+                self.populate_from_disk(extra_root)
         self.populate_from_moves(moves_list)
 
         # Trace and analyze issues
@@ -1554,7 +1573,9 @@ class VirtualFilesystemTracker:
                 )
 
         # Check escaping target paths
-        escaping_paths = self.check_escaping_paths(moves_list, base_dir)
+        escaping_paths = self.check_escaping_paths(
+            moves_list, base_dir, source_dirs=source_dirs
+        )
 
         # Check rename proposals
         invalid_renames, unconfirmed_renames = self.check_rename_proposals(
@@ -1616,16 +1637,29 @@ class VirtualFilesystemTracker:
             "warnings": unique_warnings,
         }
 
-    def check_escaping_paths(self, moves_list: list, base_dir: str) -> list:
-        """Validate that all destination target paths resolve strictly within base_dir."""
+    def check_escaping_paths(
+        self,
+        moves_list: list,
+        base_dir: str,
+        source_dirs: Sequence[str] | None = None,
+    ) -> list:
+        """Validate that all destination target paths resolve strictly within base_dir or configured source_dirs."""
         from app.core.mover import is_subpath_or_equal
 
         escaping_paths = []
         base_dir_abs = os.path.abspath(base_dir) if base_dir else ""
+        allowed_roots = [base_dir_abs] if base_dir_abs else []
+        for extra_root in source_dirs or ():
+            if extra_root:
+                extra_abs = os.path.abspath(extra_root)
+                if extra_abs not in allowed_roots:
+                    allowed_roots.append(extra_abs)
 
         for rel_path, src, dst in moves_list:
             abs_dst = os.path.abspath(dst)
-            if not is_subpath_or_equal(abs_dst, base_dir_abs):
+            if not any(
+                is_subpath_or_equal(abs_dst, root_abs) for root_abs in allowed_roots
+            ):
                 message = f"Destination path '{abs_dst}' attempts to escape target base directory '{base_dir_abs}'."
                 escaping_paths.append(
                     {

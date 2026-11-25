@@ -1712,8 +1712,10 @@ class AutoSorterTUI(
                 dest_used = res.get("destination_dir")
                 if dest_used and not self.base_dir and os.path.isdir(dest_used):
                     self.base_dir = dest_used
-                    if not self.source_dirs:
-                        self.source_dirs = [dest_used]
+                    self.source_dirs = [dest_used]
+                    self._active_folder_settings = self.get_active_settings()
+                    self._update_onboarding_cta_visibility()
+                    self.update_status()
                 self.announce(f"DropZone triage finished: {cnt} item(s) organized.")
                 scan_dir = dest_used or self.base_dir
                 if scan_dir and os.path.exists(scan_dir) and self.base_dir:

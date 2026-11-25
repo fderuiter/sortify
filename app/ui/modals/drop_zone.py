@@ -1537,16 +1537,29 @@ class DropZoneModal(ResponsiveModalScreen[dict[str, Any] | None]):
             )
             self._coordinator = coordinator
             self._pending_batch_plan = batch_plan
-            self._pending_drop = [
-                {
-                    "path": grp.source_root,
-                    "session": grp.session,
-                    "plan": grp.plan,
-                    "file_count": len(grp.rel_files),
-                    "re_rooted": grp.re_rooted,
-                }
-                for grp in batch_plan.groups
-            ]
+            if batch_plan.groups:
+                primary_session = batch_plan.groups[0].session
+                unified_plan = (
+                    batch_plan.unified_plan
+                    if batch_plan.unified_plan is not None
+                    else batch_plan.groups[0].plan
+                )
+                self._pending_drop = [
+                    {
+                        "path": batch_plan.resolved_dest
+                        or batch_plan.groups[0].source_root,
+                        "source_dirs": [grp.source_root for grp in batch_plan.groups],
+                        "destination_dir": batch_plan.resolved_dest,
+                        "session": primary_session,
+                        "plan": unified_plan,
+                        "file_count": sum(
+                            len(grp.rel_files) for grp in batch_plan.groups
+                        ),
+                        "re_rooted": any(grp.re_rooted for grp in batch_plan.groups),
+                    }
+                ]
+            else:
+                self._pending_drop = []
             if app_ref:
                 app_ref.call_from_thread(self._confirm_pending_drop)
             else:
@@ -1587,9 +1600,13 @@ class DropZoneModal(ResponsiveModalScreen[dict[str, Any] | None]):
             dup_groups: list[dict[str, Any]] = []
             plan_targets: list[tuple[str, dict[str, Any]]] = []
             if batch_plan is not None:
-                if batch_plan.resolved_dest and batch_plan.unified_plan is not None:
+                if batch_plan.unified_plan is not None and batch_plan.groups:
                     plan_targets.append(
-                        (batch_plan.resolved_dest, batch_plan.unified_plan)
+                        (
+                            batch_plan.resolved_dest
+                            or batch_plan.groups[0].source_root,
+                            batch_plan.unified_plan,
+                        )
                     )
                 else:
                     for grp in batch_plan.groups:
@@ -1670,8 +1687,22 @@ class DropZoneModal(ResponsiveModalScreen[dict[str, Any] | None]):
 
         lines: list[str] = []
         total_files = total_folders = total_staged = total_trashed = 0
-        for item in self._pending_drop:
-            plan = _make_json_serializable(item["plan"])
+        preview_sections: list[tuple[str, Any]] = []
+        if (
+            batch_plan is not None
+            and not batch_plan.resolved_dest
+            and len(batch_plan.groups) > 1
+        ):
+            preview_sections = [
+                (grp.source_root, grp.plan) for grp in batch_plan.groups
+            ]
+        else:
+            preview_sections = [
+                (item["session"].base_dir, item["plan"]) for item in self._pending_drop
+            ]
+
+        for section_base, raw_section_plan in preview_sections:
+            plan = _make_json_serializable(raw_section_plan)
             tree, n_files, n_folders = format_plan_tree(plan)
             p_counts = count_plan_actions(plan)
             item_staged = p_counts["staged"]
@@ -1682,7 +1713,7 @@ class DropZoneModal(ResponsiveModalScreen[dict[str, Any] | None]):
             total_folders += n_folders
             total_staged += item_staged
             total_trashed += item_trashed
-            lines.append(f"In {item['session'].base_dir}:")
+            lines.append(f"In {section_base}:")
             lines.extend(f"  {line}" for line in tree)
 
         if batch_plan is not None and batch_plan.plan_lines and not lines:
@@ -1838,10 +1869,15 @@ class DropZoneModal(ResponsiveModalScreen[dict[str, Any] | None]):
                             lambda: notify(warn_note, type="warning")
                         )
 
+                effective_dest_dir = batch_result.resolved_dest or (
+                    batch_plan.groups[0].source_root
+                    if len(batch_plan.groups) == 1
+                    else None
+                )
                 result_dict = {
                     "status": status,
                     "session_id": batch_result.session_id,
-                    "destination_dir": batch_result.resolved_dest,
+                    "destination_dir": effective_dest_dir,
                     "processed_count": succeeded_files,
                     "moved_count": batch_result.moved_count,
                     "staged_count": batch_result.staged_count,
@@ -1972,8 +2008,15 @@ class DropZoneModal(ResponsiveModalScreen[dict[str, Any] | None]):
 
                     app_ref.call_from_thread(lambda: notify(fb_warn, type="warning"))
 
+            fallback_dest_dir = None
+            if pending:
+                fallback_dest_dir = pending[0].get("destination_dir") or (
+                    pending[0]["session"].base_dir if len(pending) == 1 else None
+                )
             result_dict = {
                 "status": status,
+                "session_id": outcomes[-1].session_id if outcomes else None,
+                "destination_dir": fallback_dest_dir,
                 "processed_count": succeeded_files,
                 "failed_files": failed_files,
                 "items": processed_items,

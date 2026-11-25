@@ -1037,3 +1037,150 @@ def test_sort_conflict_policy_overwrite_displaces_existing_file_and_undo_restore
         src_invoice.read_text()
         == "NEW_INVOICE_FROM_ROOT quarterly invoice payment billing"
     )
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_drop_subcommand_pathless_tui_and_interactive_vs_headless_error(
+    tmp_path, monkeypatch
+):
+    """drop --tui and drop --interactive work without positional paths (exit 0), while headless empty drop exits 1."""
+    import app.ui.tui
+
+    captured: list[dict] = []
+
+    def fake_run_tui(settings, initial_dir=None, **kwargs):
+        captured.append({"initial_dir": initial_dir, **kwargs})
+
+    monkeypatch.setattr(app.ui.tui, "run_tui", fake_run_tui)
+    env = {"AUTOSORTER_APP_DIR": str(tmp_path / "app_pathless_drop")}
+
+    # 1. Pathless `drop --tui` launches TUI Drop Zone and exits 0
+    c_tui, _, err_tui = run_cli(["drop", "--tui", "--skip-wizard"], env=env)
+    assert c_tui == 0, err_tui
+    assert len(captured) == 1
+    assert captured[0]["open_dropzone"] is True
+    assert captured[0]["initial_drop_paths"] == []
+    assert captured[0]["initial_dir"] is None
+    assert captured[0].get("initial_dest_dir") is None
+
+    # 2. Pathless `drop --interactive` (and optional --dest-dir) launches TUI Drop Zone and exits 0
+    dest_dir = tmp_path / "target_dest"
+    dest_dir.mkdir()
+    c_int, _, err_int = run_cli(
+        ["drop", "--interactive", "--dest-dir", str(dest_dir), "--skip-wizard"],
+        env=env,
+    )
+    assert c_int == 0, err_int
+    assert len(captured) == 2
+    assert captured[1]["open_dropzone"] is True
+    assert captured[1]["initial_drop_paths"] == []
+    assert captured[1]["initial_dir"] == str(dest_dir.resolve())
+    assert captured[1]["initial_dest_dir"] == str(dest_dir.resolve())
+
+    # 3. Headless empty `drop` (both plain and --json) rejects with exit code 1
+    c_plain, out_plain, err_plain = run_cli(["drop"], env=env)
+    assert c_plain == 1
+    assert "no target paths provided" in (out_plain + err_plain).lower()
+
+    c_json, out_json, err_json = run_cli(["drop", "--json"], env=env)
+    assert c_json == 1
+    err_payload = json.loads(out_json or err_json)
+    assert err_payload["status"] == "error"
+    assert len(captured) == 2
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_drop_subcommand_multi_path_single_session_cross_folder_clustering_and_undo(
+    tmp_path,
+):
+    """CLI drop across multiple folders/files produces one session, preserves JSON contract, clusters .md/.html together, and restores all files on undo --latest."""
+    from app.core.services import acquire_services
+    from app.core.store import open_store
+
+    app_dir = tmp_path / "app_multi_cli_drop"
+    env = {"AUTOSORTER_APP_DIR": str(app_dir)}
+    dir_1 = tmp_path / "drop_dir_1"
+    dir_2 = tmp_path / "drop_dir_2"
+    standalone_parent = tmp_path / "standalone_src"
+    dest_dir = tmp_path / "cli_unified_dest"
+    (dir_1 / "deep").mkdir(parents=True)
+    dir_2.mkdir()
+    standalone_parent.mkdir()
+    dest_dir.mkdir()
+
+    astro_md = dir_1 / "deep" / "exoplanet_transit_spectroscopy.md"
+    astro_html = dir_2 / "exoplanet_orbital_photometry.html"
+    marine_md = dir_1 / "coral_reef_calcification.md"
+    marine_txt = standalone_parent / "coral_reef_symbiosis.txt"
+
+    astro_md.write_text(
+        "# Exoplanet Spectroscopy\nExoplanet transit spectroscopy stellar photometry orbital telescope wavelength.\n",
+        encoding="utf-8",
+    )
+    astro_html.write_text(
+        "<html><body><h1>Orbital Photometry</h1><p>Exoplanet transit spectroscopy stellar photometry orbital telescope wavelength.</p></body></html>",
+        encoding="utf-8",
+    )
+    marine_md.write_text(
+        "# Coral Reefs\nCoral reef calcification marine oceanography algae symbiosis carbonate.\n",
+        encoding="utf-8",
+    )
+    marine_txt.write_text(
+        "Coral reef calcification marine oceanography algae symbiosis carbonate.\n",
+        encoding="utf-8",
+    )
+
+    code, stdout, stderr = run_cli(
+        [
+            "drop",
+            str(dir_1),
+            str(dir_2),
+            str(marine_txt),
+            "--dest-dir",
+            str(dest_dir),
+            "--json",
+        ],
+        env=env,
+    )
+    assert code == 0, f"CLI drop failed ({code}): {stderr}"
+    payload = json.loads(stdout)
+    assert payload["status"] == "success"
+    assert payload["command"] == "drop"
+    assert payload["dry_run"] is False
+    assert payload["processed_count"] == 3
+    assert len(payload["results"]) == 3
+    assert payload["session_id"]
+
+    # Cross-folder .md and .html exoplanet docs share one destination topic folder
+    placed = {p.name: p.parent for p in dest_dir.rglob("*") if p.is_file()}
+    assert set(placed.keys()) == {
+        "exoplanet_transit_spectroscopy.md",
+        "exoplanet_orbital_photometry.html",
+        "coral_reef_calcification.md",
+        "coral_reef_symbiosis.txt",
+    }
+    assert (
+        placed["exoplanet_transit_spectroscopy.md"]
+        == placed["exoplanet_orbital_photometry.html"]
+    )
+    assert placed["coral_reef_calcification.md"] == placed["coral_reef_symbiosis.txt"]
+    # Emptied nested subfolder pruned; dropped source roots preserved
+    assert not (dir_1 / "deep").exists()
+    assert dir_1.is_dir()
+    assert dir_2.is_dir()
+
+    # HistoryLedger shows a single session for the entire multi-path drop
+    store = open_store(app_dir, legacy_session_root=tmp_path / "no_legacy")
+    with acquire_services(store) as svc:
+        sessions = svc.history.get_sessions()
+    assert len(sessions) == 1
+    assert sessions[0]["session_id"] == payload["session_id"]
+
+    # One `undo --latest` restores all 4 files to their original paths
+    u_code, u_out, u_err = run_cli(["undo", "--latest", "--json"], env=env)
+    assert u_code == 0, u_err
+    assert json.loads(u_out)["status"] == "success"
+    assert astro_md.exists()
+    assert astro_html.exists()
+    assert marine_md.exists()
+    assert marine_txt.exists()

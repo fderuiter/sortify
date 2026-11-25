@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "05b164f98c0c78fc009b6d349f40338571aeea4215d28c2da327802434810ff9"
+    "checksum": "821096a20b1b26aa9c6f26f9470e40f989120f75bddd17e201d6d9392a399e73"
   },
   "cli": [
     {
@@ -520,7 +520,7 @@
       "caller": "parser_drop",
       "keywords": {
         "help": "Target file or directory paths to process",
-        "nargs": "+",
+        "nargs": "*",
         "type": "str"
       },
       "method": "add_argument"

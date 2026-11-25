@@ -1101,3 +1101,173 @@ async def test_dropzone_queue_priority_preview_overrides_workspace_sync_and_ctrl
         await _wait_for(tui, pilot, lambda: f_a.exists() and f_b.exists())
         assert f_a.read_text() == "one"
         assert f_b.read_text() == "two"
+
+
+@pytest.mark.anyio
+async def test_dropzone_two_folder_unified_batch_workspace_sync_and_single_ctrl_z_undo(
+    tmp_path, monkeypatch
+):
+    """Two-folder DropZoneModal drop creates one unified plan & session, clusters .md/.html across folders, syncs base_dir & source_dirs on empty workspace, and undoes all files on one Ctrl+Z."""
+    from textual.widgets import Input
+
+    from app.core.pipeline import SortPipeline
+    from app.core.services import acquire_services
+    from app.ui.tui import RollbackConfirmModal
+
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path / "app_dz_unified"))
+    settings = DummySettings(tmp_path)
+    settings.AI_CONSENT_GRANTED = False
+
+    dir_alpha = tmp_path / "alpha_inbox"
+    dir_beta = tmp_path / "beta_inbox"
+    dest_dir = tmp_path / "populated_workspace"
+    dir_alpha.mkdir()
+    dir_beta.mkdir()
+    dest_dir.mkdir()
+
+    neuro_md = dir_alpha / "synaptic_plasticity_cortex.md"
+    neuro_html = dir_beta / "synaptic_neurotransmitter_axon.html"
+    solar_md = dir_alpha / "photovoltaic_inverter_grid.md"
+    solar_txt = dir_beta / "photovoltaic_solar_irradiance.txt"
+
+    neuro_md.write_text(
+        "# Neuroscience\nSynaptic plasticity cortex neurotransmitter axon dendrite neuron action potential.\n",
+        encoding="utf-8",
+    )
+    neuro_html.write_text(
+        "<html><body><h1>Axon Signaling</h1><p>Synaptic plasticity cortex neurotransmitter axon dendrite neuron action potential.</p></body></html>",
+        encoding="utf-8",
+    )
+    solar_md.write_text(
+        "# Solar Grid\nPhotovoltaic solar irradiance inverter grid kilowatt battery array panel.\n",
+        encoding="utf-8",
+    )
+    solar_txt.write_text(
+        "Photovoltaic solar irradiance inverter grid kilowatt battery array panel.\n",
+        encoding="utf-8",
+    )
+
+    plan_calls = 0
+    exec_calls = 0
+    orig_plan = SortPipeline.plan
+    orig_execute = SortPipeline.execute
+
+    def spy_plan(self, *args, **kwargs):
+        nonlocal plan_calls
+        plan_calls += 1
+        return orig_plan(self, *args, **kwargs)
+
+    def spy_execute(self, *args, **kwargs):
+        nonlocal exec_calls
+        exec_calls += 1
+        return orig_execute(self, *args, **kwargs)
+
+    monkeypatch.setattr(SortPipeline, "plan", spy_plan)
+    monkeypatch.setattr(SortPipeline, "execute", spy_execute)
+
+    tui = AutoSorterTUI(
+        settings=settings,
+        base_dir="",
+        skip_wizard=True,
+    )
+    # Simulate stale/pre-populated source_dirs while base_dir is still empty
+    tui.source_dirs = [str(tmp_path / "stale_unscanned")]
+
+    scan_snapshots: list[tuple[str, list[str]]] = []
+    orig_scan = tui.action_scan_directory
+
+    def spy_scan():
+        scan_snapshots.append((tui.base_dir, list(tui.source_dirs)))
+        return orig_scan()
+
+    monkeypatch.setattr(tui, "action_scan_directory", spy_scan)
+
+    async with tui.run_test(size=(120, 50)) as pilot:
+        await pilot.pause()
+        tui.action_open_dropzone()
+        await _wait_for(tui, pilot, lambda: isinstance(tui.screen, DropZoneModal))
+        dropzone = tui.screen
+        assert isinstance(dropzone, DropZoneModal)
+
+        dropzone.stage_paths(f"{dir_alpha}\n{dir_beta}")
+        await pilot.pause()
+        dropzone.query_one("#input-dest-dir", Input).value = str(dest_dir)
+        await pilot.pause()
+
+        dropzone.trigger_drop_triage()
+        await _wait_for(
+            tui, pilot, lambda: isinstance(tui.screen, DropPlanConfirmModal)
+        )
+
+        # Single planning pass, single pending drop entry, single confirmation prompt
+        assert plan_calls == 1
+        assert len(dropzone._pending_drop) == 1
+
+        confirm_modal = tui.screen
+        assert isinstance(confirm_modal, DropPlanConfirmModal)
+        confirm_modal.query_one("#btn-confirm-drop-plan", Button).press()
+        await _wait_for(
+            tui,
+            pilot,
+            lambda: (
+                not isinstance(tui.screen, DropZoneModal)
+                and not isinstance(tui.screen, DropPlanConfirmModal)
+            ),
+        )
+        await pilot.pause()
+
+        # Single move execution pass & destination_dir returned from worker
+        assert exec_calls == 1
+        assert dropzone.processed_result is not None
+        assert dropzone.processed_result["destination_dir"] == str(dest_dir.resolve())
+
+        # Empty workspace base_dir AND source_dirs synced to destination_dir before scanning
+        resolved_dest_str = str(dest_dir.resolve())
+        assert tui.base_dir == resolved_dest_str
+        assert tui.source_dirs == [resolved_dest_str]
+        assert (resolved_dest_str, [resolved_dest_str]) in scan_snapshots
+
+        # Cross-folder .md and .html files clustered into matching topic directories
+        placed = {p.name: p.parent for p in dest_dir.rglob("*") if p.is_file()}
+        assert set(placed.keys()) == {
+            "synaptic_plasticity_cortex.md",
+            "synaptic_neurotransmitter_axon.html",
+            "photovoltaic_inverter_grid.md",
+            "photovoltaic_solar_irradiance.txt",
+        }
+        assert (
+            placed["synaptic_plasticity_cortex.md"]
+            == placed["synaptic_neurotransmitter_axon.html"]
+        )
+        assert (
+            placed["photovoltaic_inverter_grid.md"]
+            == placed["photovoltaic_solar_irradiance.txt"]
+        )
+
+        # Wait for background scan worker to finish before undo
+        await _wait_for(tui, pilot, lambda: not any(w.is_running for w in tui.workers))
+
+        with acquire_services() as svc:
+            sessions = svc.history.get_sessions()
+            assert len(sessions) == 1
+
+        # Single Ctrl+Z restores all 4 files across both dropped folders
+        await pilot.press("ctrl+z")
+        await _wait_for(
+            tui, pilot, lambda: isinstance(tui.screen, RollbackConfirmModal)
+        )
+        tui.screen.query_one("#btn-confirm-rollback", Button).press()
+        await _wait_for(
+            tui,
+            pilot,
+            lambda: (
+                neuro_md.exists()
+                and neuro_html.exists()
+                and solar_md.exists()
+                and solar_txt.exists()
+            ),
+        )
+        assert neuro_md.exists()
+        assert neuro_html.exists()
+        assert solar_md.exists()
+        assert solar_txt.exists()

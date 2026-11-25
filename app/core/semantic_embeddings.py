@@ -770,66 +770,100 @@ class SemanticEmbeddingManager:
         if not base_dir or not filepaths:
             return {}
 
-        filepaths_norm = [fp.replace("\\", "/") for fp in filepaths]
+        # Map caller-normalized key -> (effective_root, relative_filepath)
+        key_to_root_rel: dict[str, tuple[str, str]] = {}
+        rels_by_root: dict[str, list[str]] = {}
+        root_rel_to_keys: dict[tuple[str, str], list[str]] = {}
+        filepaths_norm: list[str] = []
 
-        # 1. Chunk the query to the DB's batch vector retrieval in groups of 50
-        retrieved_vectors = {}
+        for raw_fp in filepaths:
+            if "::" in raw_fp:
+                s_root, rel_part = raw_fp.split("::", 1)
+                eff_root = s_root or base_dir
+                rel_norm = rel_part.replace("\\", "/")
+                caller_key = f"{s_root.replace(chr(92), '/')}::{rel_norm}"
+            else:
+                eff_root = base_dir
+                rel_norm = raw_fp.replace("\\", "/")
+                caller_key = rel_norm
+            filepaths_norm.append(caller_key)
+            key_to_root_rel[caller_key] = (eff_root, rel_norm)
+            bucket = rels_by_root.setdefault(eff_root, [])
+            if rel_norm not in bucket:
+                bucket.append(rel_norm)
+            root_rel_to_keys.setdefault((eff_root, rel_norm), []).append(caller_key)
+
+        # 1. Chunk the query to the DB's batch vector retrieval in groups of 50 per root
+        retrieved_vectors: dict[str, list[float]] = {}
         chunk_size = 50
-        for i in range(0, len(filepaths_norm), chunk_size):
-            chunk = filepaths_norm[i : i + chunk_size]
-            batch_result = self.db.get_document_vectors_batch(base_dir, chunk)
-            retrieved_vectors.update(batch_result)
+        for eff_root, rel_list in rels_by_root.items():
+            for i in range(0, len(rel_list), chunk_size):
+                chunk = rel_list[i : i + chunk_size]
+                batch_result = self.db.get_document_vectors_batch(eff_root, chunk)
+                for rel_fp, vec in batch_result.items():
+                    norm_rel = rel_fp.replace("\\", "/")
+                    for caller_key in root_rel_to_keys.get((eff_root, norm_rel), ()):
+                        retrieved_vectors[caller_key] = vec
 
         # 2. Identify missing or invalid vectors
-        missing_or_invalid = []
-        for fp in filepaths_norm:
-            vec = retrieved_vectors.get(fp)
-            if not self.validate_vector_dimension(vec):
-                missing_or_invalid.append(fp)
+        missing_or_invalid: list[str] = []
+        for caller_key in filepaths_norm:
+            vec = retrieved_vectors.get(caller_key)
+            if (
+                not self.validate_vector_dimension(vec)
+                and caller_key not in missing_or_invalid
+            ):
+                missing_or_invalid.append(caller_key)
 
         if not missing_or_invalid:
             return retrieved_vectors
 
         if not regenerate:
-            for fp in missing_or_invalid:
-                retrieved_vectors.pop(fp, None)
+            for caller_key in missing_or_invalid:
+                retrieved_vectors.pop(caller_key, None)
             return retrieved_vectors
 
-        # 3. For missing/invalid, prioritize reading from the local thread-locked decrypted cache in self.db
-        # Call _populate_cache_if_needed beforehand to warm the cache if needed
-        self.db._populate_cache_if_needed(base_dir)
+        # 3. Resolve texts per root from cache first, then DB in chunks of 50
+        missing_by_root: dict[str, list[tuple[str, str]]] = {}
+        for caller_key in missing_or_invalid:
+            eff_root, rel_norm = key_to_root_rel[caller_key]
+            missing_by_root.setdefault(eff_root, []).append((caller_key, rel_norm))
 
-        cache_texts = {}
-        with self.db._cache_lock:
-            if (
-                self.db._cached_base_dir == base_dir
-                and self.db._cached_documents is not None
-            ):
-                # Cache contains tuples: (filepath, decrypted_text, file_hash, user_verified_target_path)
-                # Let's map filepath to decrypted_text
-                for row in self.db._cached_documents:
-                    cache_texts[row[0]] = row[1]
+        resolved_texts: dict[str, str] = {}
+        for eff_root, pairs in missing_by_root.items():
+            self.db._populate_cache_if_needed(eff_root)
+            cache_texts: dict[str, str] = {}
+            with self.db._cache_lock:
+                if (
+                    self.db._cached_base_dir == eff_root
+                    and self.db._cached_documents is not None
+                ):
+                    for row in self.db._cached_documents:
+                        cache_texts[row[0]] = row[1]
 
-        still_missing = []
-        resolved_texts = {}
-        for fp in missing_or_invalid:
-            if fp in cache_texts:
-                resolved_texts[fp] = cache_texts[fp]
-            else:
-                still_missing.append(fp)
+            still_missing_rels: list[str] = []
+            rel_to_caller_keys: dict[str, list[str]] = {}
+            for caller_key, rel_norm in pairs:
+                if rel_norm in cache_texts:
+                    resolved_texts[caller_key] = cache_texts[rel_norm]
+                else:
+                    if rel_norm not in still_missing_rels:
+                        still_missing_rels.append(rel_norm)
+                    rel_to_caller_keys.setdefault(rel_norm, []).append(caller_key)
 
-        # 4. For any files still missing from cache, load them from disk in chunks of 50
-        if still_missing:
-            for i in range(0, len(still_missing), chunk_size):
-                chunk = still_missing[i : i + chunk_size]
-                disk_docs = self.db.get_documents_by_filepaths(base_dir, chunk)
-                for dfp, text in disk_docs:
-                    resolved_texts[dfp.replace("\\", "/")] = text
+            if still_missing_rels:
+                for i in range(0, len(still_missing_rels), chunk_size):
+                    chunk = still_missing_rels[i : i + chunk_size]
+                    disk_docs = self.db.get_documents_by_filepaths(eff_root, chunk)
+                    for dfp, text in disk_docs:
+                        norm_dfp = dfp.replace("\\", "/")
+                        for caller_key in rel_to_caller_keys.get(norm_dfp, ()):
+                            resolved_texts[caller_key] = text
 
         # 5. Generate vector embeddings locally on-the-fly
-        # 6. Securely upsert newly generated embeddings back to the database in chunks of 50
-        new_vectors_to_upsert = []
-        for fp, text in resolved_texts.items():
+        # 6. Securely upsert newly generated embeddings back to the database per root in chunks of 50
+        upserts_by_root: dict[str, list[tuple[str, list[float]]]] = {}
+        for caller_key, text in resolved_texts.items():
             try:
                 vec = self.generate_embedding(text)
                 if (
@@ -837,18 +871,20 @@ class SemanticEmbeddingManager:
                     and self.validate_vector_dimension(vec)
                     and not getattr(self, "is_degraded", False)
                 ):
-                    retrieved_vectors[fp] = vec
-                    new_vectors_to_upsert.append((fp, vec))
+                    retrieved_vectors[caller_key] = vec
+                    eff_root, rel_norm = key_to_root_rel[caller_key]
+                    upserts_by_root.setdefault(eff_root, []).append((rel_norm, vec))
             except Exception as e:
                 logging.error(
-                    f"Failed to generate embedding for {fp}: {e}", exc_info=True
+                    f"Failed to generate embedding for {caller_key}: {e}",
+                    exc_info=True,
                 )
 
-        if new_vectors_to_upsert:
-            for i in range(0, len(new_vectors_to_upsert), chunk_size):
-                chunk_upsert = new_vectors_to_upsert[i : i + chunk_size]
+        for eff_root, root_upserts in upserts_by_root.items():
+            for i in range(0, len(root_upserts), chunk_size):
+                chunk_upsert = root_upserts[i : i + chunk_size]
                 self.db.upsert_document_vectors(
-                    base_dir, chunk_upsert, model_signature=self.signature
+                    eff_root, chunk_upsert, model_signature=self.signature
                 )
 
         return retrieved_vectors

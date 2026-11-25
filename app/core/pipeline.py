@@ -228,7 +228,12 @@ def _bind_plan_sources(
             )
         )
         if is_file_leaf:
-            eff_source_dir = source_dir or str(_get_val(content, "source_root") or "")
+            leaf_src_root = str(_get_val(content, "source_root") or "")
+            if not leaf_src_root and "::" in str(key):
+                from app.core.scanner import parse_item_identifier
+
+                leaf_src_root, _ = parse_item_identifier(str(key), source_dir)
+            eff_source_dir = leaf_src_root or source_dir
             if content is None:
                 if eff_source_dir:
                     resolved = _resolve_source_path(
@@ -305,7 +310,7 @@ def reroot_plan(
     for key, value in plan_items:
         node_type = _get_val(value, "node_type") or _get_val(value, "__type__")
         is_root_file = value is None or node_type == "file"
-        if os.path.isabs(key):
+        if os.path.isabs(key) and "::" not in str(key) and not is_root_file:
             re_rooted_plan[key] = value
         elif is_root_file:
             if isinstance(value, dict) and not value.get("destination_override"):
@@ -1314,6 +1319,7 @@ class SortPipeline(LifecycleTelemetryMixin):
                 )
                 raise ValueError(f"Session not found: {session_id}")
             session_backup_dir = overwrite_backup_dir(base_dir, session_id)
+            backup_marker = f".sortify_overwrite_backups/{session_id}"
             ephemeral_paths: set[str] = set()
             moves = []
             trashed_moves = []
@@ -1328,7 +1334,9 @@ class SortPipeline(LifecycleTelemetryMixin):
                     continue
                 norm_src = os.path.normcase(os.path.abspath(m.src))
                 norm_dst = os.path.normcase(os.path.abspath(m.dst))
-                if is_subpath_or_equal(m.src, session_backup_dir):
+                if is_subpath_or_equal(
+                    m.src, session_backup_dir
+                ) or backup_marker in str(m.src).replace("\\", "/"):
                     ephemeral_paths.add(norm_dst)
                     continue
                 if norm_src in ephemeral_paths:
@@ -1560,20 +1568,27 @@ def _annotate_drop_plan_nodes(
                 else (dict(content) if isinstance(content, dict) else {})
             )
             copied.setdefault("__type__", "file")
-            copied.setdefault("source_root", source_root)
-            _, rel_key = parse_item_identifier(str(key), source_root)
+            leaf_root = str(copied.get("source_root") or "")
+            if not leaf_root and "::" in str(key):
+                leaf_root, rel_key = parse_item_identifier(str(key), source_root)
+            else:
+                _, rel_key = parse_item_identifier(str(key), leaf_root or source_root)
+            eff_root = os.path.normpath(leaf_root or source_root)
+            copied["source_root"] = eff_root
             raw_sp = copied.get("source_path")
-            if raw_sp and os.path.isabs(str(raw_sp)):
+            if raw_sp and os.path.isabs(str(raw_sp)) and "::" not in str(raw_sp):
                 abs_sp = os.path.normpath(str(raw_sp))
             else:
                 rel_sp = str(copied.get("relative_source") or rel_key)
-                _, clean_rel = parse_item_identifier(rel_sp, source_root)
-                abs_sp = os.path.normpath(os.path.join(source_root, clean_rel))
+                _, clean_rel = parse_item_identifier(rel_sp, eff_root)
+                abs_sp = os.path.normpath(os.path.join(eff_root, clean_rel))
             copied["source_path"] = abs_sp
-            if not copied.get("relative_source"):
+            if not copied.get("relative_source") or "::" in str(
+                copied.get("relative_source")
+            ):
                 try:
                     copied["relative_source"] = os.path.relpath(
-                        abs_sp, source_root
+                        abs_sp, eff_root
                     ).replace("\\", "/")
                 except ValueError:
                     copied["relative_source"] = rel_key
@@ -1669,6 +1684,94 @@ def _collect_all_leaf_nodes(
     return found
 
 
+def _slice_plan_for_source_root(
+    node: Any,
+    target_root: str,
+    *,
+    in_place_dest_root: str | None = None,
+    current_folder: str = "",
+) -> dict[str, Any]:
+    """Extract a per-source-root plan view sharing exact leaf dict references with ``node``."""
+    from app.core.scanner import parse_item_identifier
+
+    if not isinstance(node, dict):
+        return {}
+    norm_target = os.path.normcase(os.path.abspath(target_root))
+    sliced: dict[str, Any] = {}
+    meta_entries: dict[str, Any] = {}
+
+    for key, content in node.items():
+        if str(key).startswith("__"):
+            meta_entries[str(key)] = content
+            continue
+        if _is_file_leaf_node(content) and isinstance(content, dict):
+            leaf_root = str(content.get("source_root") or "")
+            if not leaf_root and "::" in str(key):
+                leaf_root, _ = parse_item_identifier(str(key), target_root)
+            if not leaf_root:
+                leaf_root = target_root
+            if os.path.normcase(os.path.abspath(leaf_root)) != norm_target:
+                continue
+
+            _, rel_key = parse_item_identifier(str(key), target_root)
+            if in_place_dest_root:
+                src_p = str(
+                    content.get("source_path") or os.path.join(target_root, rel_key)
+                )
+                tgt_fn = str(
+                    content.get("target_filename") or os.path.basename(rel_key)
+                )
+                dest_override = content.get("destination_override")
+                eff_folder = (
+                    str(dest_override)
+                    if dest_override
+                    else (
+                        os.path.join(in_place_dest_root, current_folder)
+                        if current_folder
+                        else in_place_dest_root
+                    )
+                )
+                cand_dst = os.path.normpath(os.path.join(eff_folder, tgt_fn))
+                keep_special = bool(content.get("policy_action")) or content.get(
+                    "duplicate_action"
+                ) in ("stage", "trash")
+                if not keep_special and os.path.normcase(
+                    os.path.abspath(src_p)
+                ) == os.path.normcase(os.path.abspath(cand_dst)):
+                    continue
+
+            clean_key = rel_key
+            if clean_key in sliced:
+                suffix = 1
+                while f"{clean_key}#{suffix}" in sliced:
+                    suffix += 1
+                clean_key = f"{clean_key}#{suffix}"
+            sliced[clean_key] = content
+        elif isinstance(content, dict):
+            next_folder = (
+                str(key)
+                if (not current_folder and os.path.isabs(str(key)))
+                else (
+                    os.path.join(current_folder, str(key))
+                    if current_folder
+                    else str(key)
+                )
+            )
+            sub = _slice_plan_for_source_root(
+                content,
+                target_root,
+                in_place_dest_root=in_place_dest_root,
+                current_folder=next_folder,
+            )
+            if sub:
+                sliced[str(key)] = sub
+
+    if sliced and meta_entries:
+        for mk, mv in meta_entries.items():
+            sliced.setdefault(mk, mv)
+    return sliced
+
+
 class DropBatchCoordinator:
     """Single orchestration coordinator for CLI and TUI drop triage batches."""
 
@@ -1681,12 +1784,35 @@ class DropBatchCoordinator:
         self.settings = settings
         self._session_factory = session_factory
 
-    def _create_session(self, base_dir: str) -> Any:
+    def _create_session(
+        self, base_dir: str, source_dirs: Sequence[str] | None = None
+    ) -> Any:
+        norm_sources = [os.path.normpath(str(d)) for d in (source_dirs or ()) if d]
         if self._session_factory is not None:
-            return self._session_factory(self.settings, base_dir=base_dir)
+            try:
+                sig = inspect.signature(self._session_factory)
+                has_var_kw = any(
+                    p.kind == inspect.Parameter.VAR_KEYWORD
+                    for p in sig.parameters.values()
+                )
+                if norm_sources and (has_var_kw or "source_dirs" in sig.parameters):
+                    return self._session_factory(
+                        self.settings, base_dir=base_dir, source_dirs=norm_sources
+                    )
+            except (TypeError, ValueError):
+                pass
+            sess = self._session_factory(self.settings, base_dir=base_dir)
+            if norm_sources:
+                sess.source_dirs = list(norm_sources)
+                sess.base_dir = norm_sources[0]
+            return sess
         from app.core.session import AppSession
 
-        return AppSession(self.settings, base_dir=base_dir)
+        return AppSession(
+            self.settings,
+            base_dir=base_dir,
+            source_dirs=norm_sources or None,
+        )
 
     def validate(
         self,
@@ -1772,78 +1898,101 @@ class DropBatchCoordinator:
                     bucket.append(rel_f)
 
         groups: list[DropBatchGroupPlan] = []
-        total_groups = max(1, len(group_files))
-        try:
-            for idx, (group_root, rel_files) in enumerate(group_files.items()):
-                if cancel_check and cancel_check():
-                    break
-                session = self._create_session(group_root)
+        unified_plan: dict[str, Any] | None = None
+        session: Any = None
+        if group_files and not (cancel_check and cancel_check()):
+            source_dirs = list(group_files.keys())
+            multi_root = len(source_dirs) > 1
+            plan_items: list[str] = []
+            for group_root, rel_files in group_files.items():
+                for rel_f in rel_files:
+                    plan_items.append(f"{group_root}::{rel_f}" if multi_root else rel_f)
+
+            session = self._create_session(source_dirs[0], source_dirs=source_dirs)
+            try:
                 pipeline = SortPipeline(session)
-
-                def _group_progress(
-                    info: Any, _idx: int = idx, _total: int = total_groups
-                ) -> None:
-                    if progress_callback is None:
-                        return
-                    if isinstance(info, dict):
-                        scaled = dict(info)
-                        raw_p = float(info.get("progress", 0.0) or 0.0)
-                        scaled["progress"] = (_idx + raw_p) / _total
-                        progress_callback(scaled)
-                    else:
-                        progress_callback(info)
-
                 raw_plan = pipeline.plan(
-                    rel_files,
-                    progress_callback=_group_progress
-                    if progress_callback is not None
-                    else None,
+                    plan_items,
+                    progress_callback=progress_callback,
                     cancel_check=cancel_check,
                     dest_dir=resolved_dest,
                 )
                 plan_dict = _unwrap_plan_dict(raw_plan)
-                bound_plan = _bind_plan_sources(plan_dict, group_root)
+                bound_plan = _bind_plan_sources(
+                    plan_dict, "" if multi_root else source_dirs[0]
+                )
                 annotated_plan = _annotate_drop_plan_nodes(
                     bound_plan,
-                    source_root=group_root,
+                    source_root=source_dirs[0],
                     queue_priority_by_abs=queue_priority_by_abs,
                     conflict_policy=conflict_policy,
                 )
-                final_plan, re_rooted = apply_drop_reroot(
-                    session,
-                    annotated_plan,
-                    group_root,
-                    resolved_dest,
-                    force_reroot=resolved_dest is not None,
-                )
-                groups.append(
-                    DropBatchGroupPlan(
-                        source_root=group_root,
-                        rel_files=rel_files,
-                        target_paths=group_targets.get(group_root, []),
-                        session=session,
-                        pipeline=pipeline,
-                        plan=_unwrap_plan_dict(final_plan),
-                        re_rooted=re_rooted,
-                        was_dir=group_was_dir.get(group_root, False),
+
+                if resolved_dest is not None:
+                    rerooted_all, _ = apply_drop_reroot(
+                        session,
+                        annotated_plan,
+                        source_dirs[0],
+                        resolved_dest,
+                        force_reroot=True,
                     )
-                )
-        except Exception:
-            for grp in groups:
+                    unified_plan = _unwrap_plan_dict(rerooted_all)
+                    for group_root, rel_files in group_files.items():
+                        grp_plan = _slice_plan_for_source_root(unified_plan, group_root)
+                        groups.append(
+                            DropBatchGroupPlan(
+                                source_root=group_root,
+                                rel_files=rel_files,
+                                target_paths=group_targets.get(group_root, []),
+                                session=session,
+                                pipeline=pipeline,
+                                plan=grp_plan,
+                                re_rooted=is_rerooted_destination(
+                                    group_root, resolved_dest
+                                ),
+                                was_dir=group_was_dir.get(group_root, False),
+                            )
+                        )
+                else:
+                    for group_root, rel_files in group_files.items():
+                        grp_plan = _slice_plan_for_source_root(
+                            annotated_plan,
+                            group_root,
+                            in_place_dest_root=group_root if multi_root else None,
+                        )
+                        groups.append(
+                            DropBatchGroupPlan(
+                                source_root=group_root,
+                                rel_files=rel_files,
+                                target_paths=group_targets.get(group_root, []),
+                                session=session,
+                                pipeline=pipeline,
+                                plan=grp_plan,
+                                re_rooted=False,
+                                was_dir=group_was_dir.get(group_root, False),
+                            )
+                        )
+                    unified_plan = (
+                        groups[0].plan
+                        if len(groups) == 1
+                        else {grp.source_root: grp.plan for grp in groups}
+                    )
+            except Exception:
                 try:
-                    grp.session.close()
+                    session.close()
                 except Exception as close_err:  # noqa: BLE001
                     logger.debug(
                         "Failed to close session after batch plan error: %s",
                         close_err,
                     )
-            raise
+                raise
 
         batch_plan = DropBatchPlan(
             validated_paths=validated_paths,
             issues=issues,
             resolved_dest=resolved_dest,
             groups=groups,
+            unified_plan=unified_plan,
             conflict_policy=default_policy,
         )
         self.refresh_verification(batch_plan)
@@ -1872,8 +2021,11 @@ class DropBatchCoordinator:
                 batch_plan.resolved_dest,
                 unified,
                 conflict_policy=batch_plan.conflict_policy,
+                source_dirs=[grp.source_root for grp in batch_plan.groups],
             )
             batch_plan.unified_plan = unified
+            for grp in batch_plan.groups:
+                grp.plan = _slice_plan_for_source_root(unified, grp.source_root)
             all_warnings.extend(vres.get("warnings") or [])
             all_collisions.extend(vres.get("collisions") or [])
             cgroups = VerificationEngine.get_collision_groups(
@@ -1882,7 +2034,6 @@ class DropBatchCoordinator:
             all_collision_groups.extend(cgroups)
             leaf_records = _collect_all_leaf_nodes(unified, batch_plan.resolved_dest)
         else:
-            batch_plan.unified_plan = None
             leaf_records = []
             for grp in batch_plan.groups:
                 vres = VerificationEngine.verify_plan_integrity(
@@ -1897,6 +2048,14 @@ class DropBatchCoordinator:
                 )
                 all_collision_groups.extend(cgroups)
                 leaf_records.extend(_collect_all_leaf_nodes(grp.plan, grp.source_root))
+            if len(batch_plan.groups) == 1:
+                batch_plan.unified_plan = batch_plan.groups[0].plan
+            elif len(batch_plan.groups) > 1:
+                batch_plan.unified_plan = {
+                    grp.source_root: grp.plan for grp in batch_plan.groups
+                }
+            else:
+                batch_plan.unified_plan = None
 
         for col in all_collisions:
             src_c = col.get("source")
@@ -2119,9 +2278,14 @@ class DropBatchCoordinator:
         if batch_plan.closed:
             return
         batch_plan.closed = True
+        closed_ids: set[int] = set()
         for grp in batch_plan.groups:
+            sess = grp.session
+            if id(sess) in closed_ids:
+                continue
+            closed_ids.add(id(sess))
             try:
-                grp.session.close()
+                sess.close()
             except Exception as close_err:  # noqa: BLE001
                 logger.debug("Failed to close batch session: %s", close_err)
 
@@ -2137,9 +2301,9 @@ class DropBatchCoordinator:
         cancel_check: Callable[[], bool] | None = None,
         close_sessions: bool = True,
     ) -> DropBatchResult:
-        """Execute ``batch_plan`` under sorted folder locks and a single shared undo ``session_id``."""
+        """Execute ``batch_plan`` through one ``SortPipeline`` boundary and one ``MoveLedger`` session."""
         from app.core.domain_contracts import _make_json_serializable
-        from app.core.mover import DUPLICATE_STAGING_DIR, execute_moves
+        from app.core.mover import DUPLICATE_STAGING_DIR
         from app.core.moves import DONE, EXPORTED_TO_TRASH, VERIFIED
         from app.core.session import AppSession
 
@@ -2208,233 +2372,130 @@ class DropBatchCoordinator:
                 os.makedirs(batch_plan.resolved_dest, exist_ok=True)
                 lock_targets.append(batch_plan.resolved_dest)
 
-            primary_session = batch_plan.groups[0].session
+            primary_group = batch_plan.groups[0]
+            primary_session = primary_group.session
+            primary_pipeline = primary_group.pipeline
             lock_timeout = float(
                 getattr(primary_session, "folder_lock_timeout", 10.0) or 10.0
             )
             history_manager = getattr(primary_session, "history_manager", None)
-            db = getattr(primary_session, "db", None)
-
             active_items = [it for it in batch_plan.items if not it.is_excluded]
-            batch_base_dir = (
-                batch_plan.resolved_dest
-                if batch_plan.resolved_dest
-                else batch_plan.groups[0].source_root
+            source_roots = [grp.source_root for grp in batch_plan.groups]
+            if batch_plan.resolved_dest:
+                primary_session.base_dir = batch_plan.resolved_dest
+
+            exec_plan: dict[str, Any]
+            if batch_plan.unified_plan is not None:
+                exec_plan = batch_plan.unified_plan
+            elif batch_plan.resolved_dest:
+                exec_plan = _merge_rerooted_plans_into_dest(batch_plan.groups)
+            elif len(batch_plan.groups) == 1:
+                exec_plan = primary_group.plan
+            else:
+                exec_plan = {grp.source_root: grp.plan for grp in batch_plan.groups}
+
+            outcome = primary_pipeline.execute(
+                exec_plan,
+                move_context=lambda _p: AppSession.lock_folders(
+                    lock_targets, timeout=lock_timeout
+                ),
+                acquire_locks=False,
+                source_dirs=source_roots,
+                priority="queue",
+                progress_callback=progress_callback,
+                cancel_check=cancel_check,
+                flush_trash=flush_trash,
+                flush_trashed_only=flush_trashed_only,
+                trash_fn=trash_fn,
             )
-            batch_roots: list[str] = []
-            for r in lock_targets:
-                if r and r not in batch_roots:
-                    batch_roots.append(r)
 
-            with AppSession.lock_folders(lock_targets, timeout=lock_timeout):
-                shared_session_id: str | None = None
-                if active_items and history_manager is not None:
-                    shared_session_id = history_manager.start_session(batch_base_dir)
+            summary = dict(outcome.summary or {})
+            cancelled = bool(outcome.cancelled or summary.get("cancelled"))
+            report = summary.get("audit_report") or {}
+            audit_records: list[dict[str, Any]] = list(report.get("records") or [])
+            failed_count = int(report.get("mismatch_fail_count", 0) or 0) + len(
+                report.get("failed_items") or []
+            )
+            if not failed_count and outcome.failed:
+                failed_count = len(outcome.failed)
+            trash_report = summary.get("trash_handoff")
 
-                audit_records: list[dict[str, Any]] = []
-                failed_count = 0
-                cancelled = False
-                group_summaries: dict[str, dict[str, Any]] = {}
+            real_move_count = 0
+            staged_count = 0
+            trashed_count = 0
+            raw_session_id = outcome.session_id
+            if raw_session_id and history_manager is not None:
+                ledger = getattr(history_manager, "moves", None)
+                if ledger is not None and hasattr(ledger, "list_moves"):
+                    recorded = ledger.list_moves(raw_session_id)
+                    for m in recorded:
+                        st = getattr(m, "state", None)
+                        dst_parts = [
+                            p
+                            for p in str(getattr(m, "dst", "") or "")
+                            .replace("\\", "/")
+                            .split("/")
+                            if p
+                        ]
+                        if st == EXPORTED_TO_TRASH:
+                            trashed_count += 1
+                        elif st in (DONE, VERIFIED):
+                            if DUPLICATE_STAGING_DIR in dst_parts:
+                                staged_count += 1
+                            else:
+                                real_move_count += 1
+                else:
+                    real_move_count = len(outcome.moved) + len(outcome.quarantined)
+                    staged_count = len(outcome.staged)
+                    trashed_count = len(outcome.trashed)
+            else:
+                real_move_count = len(outcome.moved) + len(outcome.quarantined)
+                staged_count = len(outcome.staged)
+                trashed_count = len(outcome.trashed)
 
-                try:
-                    if batch_plan.resolved_dest and batch_plan.unified_plan is not None:
-                        summary = dict(
-                            execute_moves(
-                                batch_plan.resolved_dest,
-                                batch_plan.unified_plan,
-                                db,
-                                history_manager,
-                                self.settings,
-                                priority="queue",
-                                progress_callback=progress_callback,
-                                cancel_check=cancel_check,
-                                session_id=shared_session_id,
-                                manage_session_lifecycle=False,
-                            )
-                        )
-                        cancelled = bool(summary.get("cancelled"))
-                        report = summary.get("audit_report") or {}
-                        audit_records.extend(report.get("records") or [])
-                        failed_count += int(report.get("mismatch_fail_count", 0) or 0)
-                        failed_count += len(report.get("failed_items") or [])
-                        for grp in batch_plan.groups:
-                            group_summaries[grp.source_root] = dict(summary)
-                    else:
-                        total_groups = max(1, len(batch_plan.groups))
-                        for idx, grp in enumerate(batch_plan.groups):
-                            if cancel_check and cancel_check():
-                                cancelled = True
-                                break
+            total_recorded = real_move_count + staged_count + trashed_count
+            final_session_id = raw_session_id if total_recorded > 0 else None
 
-                            def _exec_progress(
-                                info: Any, _idx: int = idx, _total: int = total_groups
-                            ) -> None:
-                                if progress_callback is None:
-                                    return
-                                if isinstance(info, dict):
-                                    scaled = dict(info)
-                                    raw_p = float(info.get("progress", 0.0) or 0.0)
-                                    scaled["progress"] = (_idx + raw_p) / _total
-                                    progress_callback(scaled)
-                                else:
-                                    progress_callback(info)
+            for grp in batch_plan.groups:
+                restore_rerooted_source_dir(
+                    grp.source_root,
+                    was_dir=grp.was_dir,
+                    re_rooted=grp.re_rooted,
+                )
 
-                            summary = dict(
-                                grp.session.execute_moves(
-                                    grp.plan,
-                                    acquire_locks=False,
-                                    priority="queue",
-                                    progress_callback=_exec_progress
-                                    if progress_callback is not None
-                                    else None,
-                                    cancel_check=cancel_check,
-                                    session_id=shared_session_id,
-                                    manage_session_lifecycle=False,
-                                )
-                            )
-                            group_summaries[grp.source_root] = summary
-                            if summary.get("cancelled"):
-                                cancelled = True
-                                break
-                            report = summary.get("audit_report") or {}
-                            audit_records.extend(report.get("records") or [])
-                            failed_count += int(
-                                report.get("mismatch_fail_count", 0) or 0
-                            )
-                            failed_count += len(report.get("failed_items") or [])
-                except Exception:
-                    if (
-                        shared_session_id
-                        and history_manager is not None
-                        and hasattr(history_manager, "unwind_session")
-                    ):
-                        try:
-                            history_manager.unwind_session(shared_session_id, db=db)
-                        except Exception as unwind_err:  # noqa: BLE001
-                            logger.error(
-                                "Batch rollback failed for session %s: %s",
-                                shared_session_id,
-                                unwind_err,
-                            )
-                    raise
-
-                trash_report: dict[str, Any] | None = None
-                if (
-                    flush_trash
-                    and not cancelled
-                    and failed_count == 0
-                    and shared_session_id
-                    and history_manager is not None
-                    and hasattr(history_manager, "flush_staged_duplicates")
-                ):
-                    trash_report = history_manager.flush_staged_duplicates(
-                        session_id=shared_session_id,
-                        base_dir=batch_base_dir,
-                        trashed_only=flush_trashed_only,
-                        trash_fn=trash_fn,
+            target_results = []
+            for grp in batch_plan.groups:
+                grp_sum = dict(summary)
+                grp_sum["session_id"] = final_session_id
+                if trash_report is not None:
+                    grp_sum["trash_handoff"] = trash_report
+                serializable_plan = _make_json_serializable(grp.plan)
+                targets = grp.target_paths or [grp.source_root]
+                for tgt in targets:
+                    target_results.append(
+                        {
+                            "target": tgt,
+                            "base_dir": grp.source_root,
+                            "plan": serializable_plan,
+                            "summary": _make_json_serializable(grp_sum),
+                        }
                     )
 
-                real_move_count = 0
-                staged_count = 0
-                trashed_count = 0
-                if shared_session_id and history_manager is not None:
-                    ledger = getattr(history_manager, "moves", None)
-                    if ledger is not None and hasattr(ledger, "list_moves"):
-                        recorded = ledger.list_moves(shared_session_id)
-                        for m in recorded:
-                            st = getattr(m, "state", None)
-                            dst_parts = [
-                                p
-                                for p in str(getattr(m, "dst", "") or "")
-                                .replace("\\", "/")
-                                .split("/")
-                                if p
-                            ]
-                            if st == EXPORTED_TO_TRASH:
-                                trashed_count += 1
-                            elif st in (DONE, VERIFIED):
-                                if DUPLICATE_STAGING_DIR in dst_parts:
-                                    staged_count += 1
-                                else:
-                                    real_move_count += 1
-
-                total_recorded = real_move_count + staged_count + trashed_count
-                final_session_id = shared_session_id
-                if shared_session_id and history_manager is not None:
-                    if total_recorded > 0:
-                        try:
-                            history_manager.complete_session(
-                                shared_session_id,
-                                metadata={"batch_roots": batch_roots},
-                            )
-                        except TypeError:
-                            history_manager.complete_session(shared_session_id)
-                    else:
-                        try:
-                            hm_db = getattr(history_manager, "db", None)
-                            hm_worker = getattr(hm_db, "worker", None)
-                            if hm_worker is not None and hasattr(
-                                hm_worker, "execute_write"
-                            ):
-                                hm_worker.execute_write(
-                                    lambda: history_manager._transition_session_status(
-                                        shared_session_id, "abandoned"
-                                    )
-                                )
-                            elif hasattr(history_manager, "_transition_session_status"):
-                                history_manager._transition_session_status(
-                                    shared_session_id, "abandoned"
-                                )
-                        except Exception as ab_err:  # noqa: BLE001
-                            logger.debug(
-                                "Failed to mark empty batch session %s abandoned: %s",
-                                shared_session_id,
-                                ab_err,
-                            )
-                        final_session_id = None
-
-                for grp in batch_plan.groups:
-                    restore_rerooted_source_dir(
-                        grp.source_root,
-                        was_dir=grp.was_dir,
-                        re_rooted=grp.re_rooted,
-                    )
-
-                target_results = []
-                for grp in batch_plan.groups:
-                    grp_sum = dict(group_summaries.get(grp.source_root) or {})
-                    grp_sum["session_id"] = final_session_id
-                    if trash_report is not None:
-                        grp_sum["trash_handoff"] = trash_report
-                    serializable_plan = _make_json_serializable(grp.plan)
-                    targets = grp.target_paths or [grp.source_root]
-                    for tgt in targets:
-                        target_results.append(
-                            {
-                                "target": tgt,
-                                "base_dir": grp.source_root,
-                                "plan": serializable_plan,
-                                "summary": _make_json_serializable(grp_sum),
-                            }
-                        )
-
-                skipped_count = max(
-                    0, len(active_items) - total_recorded - failed_count
-                )
-                return DropBatchResult(
-                    session_id=final_session_id,
-                    resolved_dest=batch_plan.resolved_dest,
-                    moved_count=real_move_count,
-                    staged_count=staged_count,
-                    trashed_count=trashed_count,
-                    failed_count=failed_count,
-                    skipped_count=skipped_count,
-                    cancelled=cancelled,
-                    dry_run=False,
-                    target_results=target_results,
-                    audit_records=audit_records,
-                    trash_handoff=trash_report,
-                )
+            skipped_count = max(0, len(active_items) - total_recorded - failed_count)
+            return DropBatchResult(
+                session_id=final_session_id,
+                resolved_dest=batch_plan.resolved_dest,
+                moved_count=real_move_count,
+                staged_count=staged_count,
+                trashed_count=trashed_count,
+                failed_count=failed_count,
+                skipped_count=skipped_count,
+                cancelled=cancelled,
+                dry_run=False,
+                target_results=target_results,
+                audit_records=audit_records,
+                trash_handoff=trash_report,
+            )
         finally:
             if close_sessions:
                 self.close_batch(batch_plan)

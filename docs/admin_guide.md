@@ -985,7 +985,7 @@ usage: smart-autosorter drop [-h] [--dest-dir DEST_DIR] [--dry-run]
                              [--skip-wizard] [--non-interactive]
                              [--export-report EXPORT_REPORT]
                              [--report-format {html,json}]
-                             paths [paths ...]
+                             [paths ...]
 
 positional arguments:
   paths                 Target file or directory paths to process

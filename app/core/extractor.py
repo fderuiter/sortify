@@ -826,10 +826,17 @@ def build_corpus_generator(
                         )
 
                         item_text_str = str(item_text)
+                        display_name = (
+                            item_name.split("::", 1)[1]
+                            if "::" in str(item_name)
+                            else str(item_name)
+                        )
                         chunk[item_name] = {
                             "text": item_text_str
-                            if item_text_str.startswith(("[STATUS:", item_name + " "))
-                            else item_name + " " + item_text_str,
+                            if item_text_str.startswith(
+                                ("[STATUS:", display_name + " ", str(item_name) + " ")
+                            )
+                            else display_name + " " + item_text_str,
                             "hash": file_hash,
                         }
                 else:
@@ -871,10 +878,17 @@ def build_corpus_generator(
                             future.cancel()
 
                         item_text_str = str(item_text)
+                        display_name = (
+                            item_name.split("::", 1)[1]
+                            if "::" in str(item_name)
+                            else str(item_name)
+                        )
                         chunk[item_name] = {
                             "text": item_text_str
-                            if item_text_str.startswith(("[STATUS:", item_name + " "))
-                            else item_name + " " + item_text_str,
+                            if item_text_str.startswith(
+                                ("[STATUS:", display_name + " ", str(item_name) + " ")
+                            )
+                            else display_name + " " + item_text_str,
                             "hash": file_hash,
                         }
 

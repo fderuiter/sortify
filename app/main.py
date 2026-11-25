@@ -1831,7 +1831,7 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
     )
     parser_drop.add_argument(
         "paths",
-        nargs="+",
+        nargs="*",
         type=str,
         help="Target file or directory paths to process",
     )

@@ -851,3 +851,142 @@ def test_app_session_lock_folders_sorted_canonical_order(tmp_path, monkeypatch):
         assert entered == sorted(
             [os.path.realpath(str(a_dir)), os.path.realpath(str(z_dir))]
         )
+
+
+def test_drop_batch_unified_single_plan_cross_folder_clustering_and_pruning(
+    tmp_path, monkeypatch
+):
+    """DropBatchCoordinator plans and executes multi-folder drops in one SortPipeline pass, clusters .md/.html across folders, prunes nested dirs, recreates source roots, and undoes in one step."""
+    import os
+
+    from app.core.pipeline import DropBatchCoordinator
+    from app.core.services import acquire_services
+
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path / "app_unified_drop"))
+    settings = AppSettings()
+    settings.AI_CONSENT_GRANTED = False
+    settings.CONTEXTUAL_RENAMING = False
+
+    folder_a = tmp_path / "source_alpha"
+    folder_b = tmp_path / "source_beta"
+    sub_a = folder_a / "nested_a"
+    sub_b = folder_b / "nested_b"
+    dest_dir = tmp_path / "unified_dest"
+    sub_a.mkdir(parents=True)
+    sub_b.mkdir(parents=True)
+    dest_dir.mkdir()
+
+    # Split two distinct topics across two separate folders using .md and .html files
+    quantum_md = sub_a / "quantum_circuit_gates.md"
+    quantum_html = sub_b / "quantum_qubit_entanglement.html"
+    bakery_md = folder_a / "sourdough_fermentation_recipe.md"
+    bakery_html = folder_b / "sourdough_starter_hydration.html"
+
+    quantum_md.write_text(
+        "# Quantum Computing\nQuantum qubit entanglement superconducting circuit gates hamiltonian coherence.\n",
+        encoding="utf-8",
+    )
+    quantum_html.write_text(
+        "<html><body><h1>Quantum Entanglement</h1><p>Quantum qubit entanglement superconducting circuit gates hamiltonian coherence.</p></body></html>",
+        encoding="utf-8",
+    )
+    bakery_md.write_text(
+        "# Artisan Bakery\nSourdough fermentation levain bread flour hydration crust crumb baking oven.\n",
+        encoding="utf-8",
+    )
+    bakery_html.write_text(
+        "<html><body><h1>Sourdough Starter</h1><p>Sourdough fermentation levain bread flour hydration crust crumb baking oven.</p></body></html>",
+        encoding="utf-8",
+    )
+
+    plan_calls = 0
+    exec_calls = 0
+    orig_plan = SortPipeline.plan
+    orig_execute = SortPipeline.execute
+
+    def spy_plan(self, *args, **kwargs):
+        nonlocal plan_calls
+        plan_calls += 1
+        return orig_plan(self, *args, **kwargs)
+
+    def spy_execute(self, *args, **kwargs):
+        nonlocal exec_calls
+        exec_calls += 1
+        return orig_execute(self, *args, **kwargs)
+
+    monkeypatch.setattr(SortPipeline, "plan", spy_plan)
+    monkeypatch.setattr(SortPipeline, "execute", spy_execute)
+
+    coord = DropBatchCoordinator(settings)
+    bplan = coord.plan_batch([str(folder_a), str(folder_b)], dest_dir=str(dest_dir))
+    assert plan_calls == 1
+    assert len(bplan.groups) == 2
+    assert bplan.groups[0].session is bplan.groups[1].session
+
+    # Cross-folder topic clustering puts the two quantum files in one shared folder
+    # and the two sourdough files in another shared folder.
+    by_name = {os.path.basename(it.source_path): it for it in bplan.items}
+    assert (
+        by_name["quantum_circuit_gates.md"].target_folder
+        == by_name["quantum_qubit_entanglement.html"].target_folder
+    )
+    assert (
+        by_name["sourdough_fermentation_recipe.md"].target_folder
+        == by_name["sourdough_starter_hydration.html"].target_folder
+    )
+    assert (
+        by_name["quantum_circuit_gates.md"].target_folder
+        != by_name["sourdough_fermentation_recipe.md"].target_folder
+    )
+
+    bres = coord.execute_batch(bplan)
+    assert exec_calls == 1
+    assert bres.session_id is not None
+    assert bres.moved_count == 4
+
+    # Emptied nested subfolders are pruned, while emptied dropped source roots are recreated
+    assert not sub_a.exists()
+    assert not sub_b.exists()
+    assert folder_a.is_dir()
+    assert folder_b.is_dir()
+
+    # Exactly one session recorded in history
+    with acquire_services() as svc:
+        sessions = svc.history.get_sessions()
+        assert len(sessions) == 1
+        assert sessions[0]["session_id"] == bres.session_id
+
+    # Single undo restores all 4 files across both folders and prunes created dest folders
+    undo_res = SortPipeline(None, settings=settings).undo(bres.session_id)
+    assert undo_res.ok
+    assert quantum_md.exists()
+    assert quantum_html.exists()
+    assert bakery_md.exists()
+    assert bakery_html.exists()
+    assert [p for p in dest_dir.iterdir() if not p.name.startswith(".")] == []
+
+    # Also verify in-place multi-folder drop uses 1 plan pass + 1 execute pass + 1 undo
+    plan_calls = 0
+    exec_calls = 0
+    in_place_plan = coord.plan_batch([str(folder_a), str(folder_b)], dest_dir=None)
+    assert plan_calls == 1
+    in_place_by_name = {
+        os.path.basename(it.source_path): it for it in in_place_plan.items
+    }
+    assert (
+        in_place_by_name["quantum_circuit_gates.md"].target_folder
+        == in_place_by_name["quantum_qubit_entanglement.html"].target_folder
+    )
+    in_place_res = coord.execute_batch(in_place_plan)
+    assert exec_calls == 1
+    assert in_place_res.moved_count == 4
+    assert not sub_a.exists()
+    assert not sub_b.exists()
+
+    assert in_place_res.session_id is not None
+    in_place_undo = SortPipeline(None, settings=settings).undo(in_place_res.session_id)
+    assert in_place_undo.ok
+    assert quantum_md.exists()
+    assert quantum_html.exists()
+    assert bakery_md.exists()
+    assert bakery_html.exists()

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "18dc5d18a44dfb67d0510da508caf88b18bbdd1731d22aa7af422a96d54a6630"
+    "checksum": "9a4a8080f324dbb6ba1e324caf6cd8f9064d97d14e5748ee6c8118713a53867e"
   },
   "classes": [
     {
@@ -248,6 +248,11 @@
               "annotation": "str",
               "default": "'skip'",
               "name": "conflict_policy"
+            },
+            {
+              "annotation": "Sequence[str] | None",
+              "default": "None",
+              "name": "source_dirs"
             }
           ],
           "returns": "dict"
@@ -364,6 +369,11 @@
               "annotation": "str",
               "default": null,
               "name": "base_dir"
+            },
+            {
+              "annotation": "Sequence[str] | None",
+              "default": "None",
+              "name": "source_dirs"
             }
           ],
           "returns": "list"
@@ -469,6 +479,11 @@
               "annotation": "str",
               "default": "'skip'",
               "name": "conflict_policy"
+            },
+            {
+              "annotation": "Sequence[str] | None",
+              "default": "None",
+              "name": "source_dirs"
             }
           ],
           "returns": "dict"
