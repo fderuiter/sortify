@@ -436,7 +436,14 @@ def test_search_input_escape_clears_filter_and_focuses_tree(temp_workspace):
             await set_filter(app, pilot, "doc")
             assert search_input.value == "doc"
 
-            # Press Escape while search_input is focused
+            # First Escape moves focus from search_input to plan-tree while keeping filter active
+            await pilot.press("escape")
+            await pilot.pause(0.05)
+
+            assert search_input.value == "doc"
+            assert tree.has_focus
+
+            # Second Escape on plan-tree clears query and keeps tree focused
             await pilot.press("escape")
             await pilot.pause(0.05)
 
@@ -505,7 +512,13 @@ def test_search_filter_preserves_cursor_and_restores_folder_expansion_state(
             # Active file selection key preserved
             assert app._last_cursor_key == file_a_path
 
-            # Clear search filter by pressing Escape
+            # First Escape focuses plan-tree while keeping active filter
+            await pilot.press("escape")
+            await pilot.pause(0.05)
+            assert search_input.value == "report"
+            assert tree.has_focus
+
+            # Second Escape on plan-tree clears search filter and restores full tree
             await pilot.press("escape")
             await pilot.pause(0.05)
 
@@ -1103,5 +1116,332 @@ def test_invalid_locks_parity_across_tree_and_inspector(temp_workspace):
             assert "Dict plan lock error" in app._update_inspector(
                 clean_node, announce=False
             )
+
+    asyncio.run(_test())
+
+
+@pytest.mark.parametrize("handoff_key", ["enter", "down", "escape"])
+def test_search_input_handoff_keys_flush_timer_keep_filter_and_enable_tree_actions(
+    temp_workspace, handoff_key
+):
+    """Enter, Down, and Escape in #tree-search-input flush pending debounce, keep query, focus #plan-tree, and scope single-key actions to visible matches."""
+    from app.ui.modals.edit import ReassignModal
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+        async with app.run_test() as pilot:
+            inv_path = os.path.join(temp_workspace, "invoice_2026.pdf")
+            note_path = os.path.join(temp_workspace, "notes_draft.txt")
+            app.plan = {
+                "Finance": {
+                    "invoice_2026.pdf": {
+                        "__type__": "file",
+                        "filepath": inv_path,
+                        "target_filename": "invoice_2026.pdf",
+                        "proposed_folder": "Finance",
+                        "is_checked": True,
+                        "is_excluded": False,
+                    },
+                    "notes_draft.txt": {
+                        "__type__": "file",
+                        "filepath": note_path,
+                        "target_filename": "notes_draft.txt",
+                        "proposed_folder": "Finance",
+                        "is_checked": True,
+                        "is_excluded": False,
+                    },
+                }
+            }
+            app.rebuild_tree(run_validation=False)
+            await pilot.pause(0.05)
+
+            search_input = app.query_one("#tree-search-input", Input)
+            tree = app.query_one("#plan-tree", Tree)
+
+            # Focus search input and type without waiting for 150ms debounce timer
+            search_input.focus()
+            await pilot.pause(0.02)
+            await pilot.press("i", "n", "v", handoff_key)
+            await pilot.pause(0.02)
+
+            assert app._tree_filter_timer is None
+            assert search_input.value == "inv"
+            assert tree.has_focus
+
+            # Only invoice_2026.pdf is rendered under Finance
+            finance_node = tree.root.children[0]
+            assert len(finance_node.children) == 1
+            assert "invoice_2026.pdf" in str(finance_node.children[0].label)
+
+            # Focus cursor on the matched file node and run single-key actions
+            tree.select_node(finance_node.children[0])
+            await pilot.pause(0.02)
+
+            await pilot.press("space")
+            await pilot.pause(0.02)
+            assert app.plan["Finance"]["invoice_2026.pdf"]["is_checked"] is False
+            assert app.plan["Finance"]["notes_draft.txt"]["is_checked"] is True
+
+            await pilot.press("x")
+            await pilot.pause(0.02)
+            assert app.plan["Finance"]["invoice_2026.pdf"]["is_excluded"] is True
+            assert app.plan["Finance"]["notes_draft.txt"]["is_excluded"] is False
+
+            # Respect Ctrl+Alt+K / ENABLE_CHARACTER_KEY_SHORTCUTS after returning to #plan-tree
+            await pilot.press("ctrl+alt+k")
+            await pilot.pause(0.02)
+            assert app.settings.ENABLE_CHARACTER_KEY_SHORTCUTS is False
+            await pilot.press("i")
+            await pilot.pause(0.02)
+            assert app.plan["Finance"]["invoice_2026.pdf"]["is_excluded"] is True
+
+            await pilot.press("ctrl+alt+k")
+            await pilot.pause(0.02)
+            assert app.settings.ENABLE_CHARACTER_KEY_SHORTCUTS is True
+            await pilot.press("i")
+            await pilot.pause(0.02)
+            assert app.plan["Finance"]["invoice_2026.pdf"]["is_excluded"] is False
+            assert app.plan["Finance"]["invoice_2026.pdf"]["is_checked"] is True
+            assert app.plan["Finance"]["notes_draft.txt"]["is_excluded"] is False
+
+            # Select/Deselect All ('a') only affects visible filtered matches
+            await pilot.press("a")
+            await pilot.pause(0.02)
+            assert app.plan["Finance"]["invoice_2026.pdf"]["is_checked"] is False
+            assert app.plan["Finance"]["notes_draft.txt"]["is_checked"] is True
+
+            # Reassign ('r') opens ReassignModal and Escape closes modal without clearing search filter
+            await pilot.press("r")
+            await pilot.pause(0.05)
+            assert isinstance(app.screen, ReassignModal)
+            await pilot.press("escape")
+            await pilot.pause(0.05)
+            assert not isinstance(app.screen, ReassignModal)
+            assert search_input.value == "inv"
+
+    asyncio.run(_test())
+
+
+def test_folder_actions_during_active_filter_only_affect_visible_matches(
+    temp_workspace,
+):
+    """Nested folder Space and 'x' while a search filter is active only mutate visible matching files and preserve resolved paths."""
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+        async with app.run_test() as pilot:
+            inv_path = os.path.join(temp_workspace, "invoice_2026.pdf")
+            note_path = os.path.join(temp_workspace, "notes_draft.txt")
+            with open(inv_path, "w", encoding="utf-8") as fh:
+                fh.write("inv")
+            with open(note_path, "w", encoding="utf-8") as fh:
+                fh.write("note")
+
+            app.plan = {
+                "Finance": {
+                    "Q1": {
+                        "invoice_2026.pdf": {
+                            "__type__": "file",
+                            "relative_source": "../../invoice_2026.pdf",
+                            "target_filename": "invoice_2026.pdf",
+                            "is_checked": True,
+                            "is_excluded": False,
+                        },
+                        "notes_draft.txt": {
+                            "__type__": "file",
+                            "relative_source": "../../notes_draft.txt",
+                            "target_filename": "notes_draft.txt",
+                            "is_checked": True,
+                            "is_excluded": False,
+                        },
+                    }
+                }
+            }
+            app.rebuild_tree(run_validation=False)
+            await pilot.pause(0.05)
+
+            await set_filter(app, pilot, "invoice")
+            tree = app.query_one("#plan-tree", Tree)
+            tree.focus()
+            finance_node = tree.root.children[0]
+            tree.select_node(finance_node)
+            await pilot.pause(0.05)
+
+            await pilot.press("space")
+            await pilot.pause(0.05)
+            assert app.plan["Finance"]["Q1"]["invoice_2026.pdf"]["is_checked"] is False
+            assert app.plan["Finance"]["Q1"]["notes_draft.txt"]["is_checked"] is True
+
+            await pilot.press("x")
+            await pilot.pause(0.05)
+            assert app.plan["Finance"]["Q1"]["invoice_2026.pdf"]["is_excluded"] is True
+            assert app.plan["Finance"]["Q1"]["notes_draft.txt"]["is_excluded"] is False
+
+    asyncio.run(_test())
+
+
+def test_plan_tree_escape_respects_visual_select_before_clearing_search_filter(
+    temp_workspace,
+):
+    """Escape on #plan-tree does not clear an active search filter while visual_select_active is True, and clears it once visual_select_active is False."""
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+        async with app.run_test() as pilot:
+            doc_path = os.path.join(temp_workspace, "doc_alpha.pdf")
+            other_path = os.path.join(temp_workspace, "sheet_beta.xlsx")
+            app.plan = {
+                "Docs": {
+                    "doc_alpha.pdf": {
+                        "__type__": "file",
+                        "filepath": doc_path,
+                        "target_filename": "doc_alpha.pdf",
+                    },
+                    "sheet_beta.xlsx": {
+                        "__type__": "file",
+                        "filepath": other_path,
+                        "target_filename": "sheet_beta.xlsx",
+                    },
+                }
+            }
+            app.rebuild_tree(run_validation=False)
+            await pilot.pause(0.05)
+
+            search_input = app.query_one("#tree-search-input", Input)
+            tree = app.query_one("#plan-tree", Tree)
+            search_input.focus()
+            await set_filter(app, pilot, "doc_alpha")
+            await pilot.press("enter")
+            await pilot.pause(0.05)
+
+            assert tree.has_focus
+            assert search_input.value == "doc_alpha"
+            assert len(tree.root.children[0].children) == 1
+
+            # Enter visual select mode on #plan-tree
+            await pilot.press("v")
+            await pilot.pause(0.05)
+            assert app.visual_select_active is True
+
+            # Escape while visual_select_active is True does NOT clear the search filter
+            await pilot.press("escape")
+            await pilot.pause(0.05)
+            assert search_input.value == "doc_alpha"
+            assert len(tree.root.children[0].children) == 1
+
+            # Exit visual select mode, then Escape clears filter and restores all plan nodes
+            await pilot.press("v")
+            await pilot.pause(0.05)
+            assert app.visual_select_active is False
+
+            await pilot.press("escape")
+            await pilot.pause(0.05)
+            assert search_input.value == ""
+            assert len(tree.root.children[0].children) == 2
+
+    asyncio.run(_test())
+
+
+def test_status_bar_and_meta_details_preserve_literal_brackets_and_rich_labels(
+    temp_workspace,
+):
+    """#status-bar disables markup parsing and #meta-details escapes dynamic values/badges (including resolved real source paths) while keeping bold/color label tags intact."""
+    import re
+
+    from textual.widgets import Static
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            inbox_dir = os.path.join(temp_workspace, "inbox_[raw]")
+            os.makedirs(inbox_dir, exist_ok=True)
+            bracket_name = "report_[draft]_[2026].pdf"
+            file_path = os.path.join(inbox_dir, bracket_name)
+            with open(file_path, "w", encoding="utf-8") as fh:
+                fh.write("sample")
+
+            app.locked_files[bracket_name] = "Finance_[Q1]"
+            app.collision_paths.add(file_path)
+            app.plan = {
+                "Finance_[Q1]": {
+                    bracket_name: {
+                        "__type__": "file",
+                        "relative_source": f"../inbox_[raw]/{bracket_name}",
+                        "target_filename": "2026_report_[final].pdf",
+                        "routed_by": "rule_[G]",
+                        "match": "Rule_[G] -> Finance_[Q1]",
+                        "category": "Tax_[2026]",
+                        "policy_action": "route_[PASS]",
+                        "is_locked": True,
+                    }
+                },
+                "invalid_locks": {file_path.replace("\\", "/"): "Broken [LOCK] target"},
+            }
+            app.rebuild_tree(run_validation=False)
+            await pilot.pause(0.05)
+
+            # Select the file node (with collision metadata active) to populate #meta-details
+            tree = app.query_one("#plan-tree", Tree)
+            folder_node = tree.root.children[0]
+            file_node = folder_node.children[0]
+            assert isinstance(file_node.data, dict)
+            file_node.data["is_collision"] = True
+            file_node.data["conflict_policy"] = "rename"
+            tree.select_node(file_node)
+            await pilot.pause(0.05)
+
+            # Verify #status-bar preserves literal bracket tokens via update_status
+            status_bar = app.query_one("#status-bar", Static)
+            status_tail = f"Toggled [G] [x] [Locked] [100%] {bracket_name}"
+            app.update_status(status_tail)
+            await pilot.pause(0.05)
+            rendered_status = str(status_bar.render())
+            assert status_tail in rendered_status
+            assert "[AI:" in rendered_status
+            assert "[Daemon:" in rendered_status
+
+            meta_rendered = str(app.query_one("#meta-details", Static).render())
+            for expected_literal in (
+                bracket_name,
+                "inbox_[raw]",
+                "Finance_[Q1]",
+                "2026_report_[final].pdf",
+                "Yes [LOCKED]",
+                "Broken [LOCK] target",
+                "rule_[G]",
+                "Rule_[G] -> Finance_[Q1]",
+                "Tax_[2026]",
+                "route_[PASS]",
+                "[COLLISION: RENAME]",
+            ):
+                assert expected_literal in meta_rendered
+
+            # Label styling tags must be parsed as styles, not leaked as literal markup tags
+            for style_tag in (
+                "[bold accent]",
+                "[bold error]",
+                "[bold warning]",
+                "[/bold]",
+            ):
+                assert style_tag not in meta_rendered
+
+            svg_text = re.sub(r"<[^>]+>", "", app.export_screenshot()).replace(
+                "&#160;", " "
+            )
+            assert "[G] [x] [Locked] [100%]" in svg_text
+            assert "Yes [LOCKED]" in svg_text
+            assert "[COLLISION: RENAME]" in svg_text
 
     asyncio.run(_test())
