@@ -2,7 +2,6 @@
 
 import asyncio
 import os
-import re
 
 import pytest
 
@@ -17,114 +16,18 @@ from app.ui.tui import (
     SettingsModal,
     WizardModal,
 )
+from tests.svg_snapshot_harness import sanitize_svg, verify_svg_snapshot
 
-pytestmark = [pytest.mark.slow, pytest.mark.xdist_group(name="tui")]
+pytestmark = [pytest.mark.xdist_group(name="tui")]
 
 SNAPSHOT_DIR = os.path.join(os.path.dirname(__file__), "snapshots", "tui_svg")
 # The Quit binding, which the footer shows in every snapshot.
 FOOTER_MARKER = "&#160;^q&#160;"
 
 
-def sanitize_svg(svg: str) -> str:
-    """Sanitize and canonicalize dynamic elements in Textual rendered SVG output.
-
-    Normalizes Rich's auto-generated unique element ID prefixes, clock timestamps,
-    Windows path separators, drive letters, filters out unused CSS style declarations,
-    and sorts active style declarations to ensure deterministic baseline snapshot
-    comparisons across operating systems and test execution order.
-    """
-    svg = svg.replace("\r\n", "\n")
-    svg = re.sub(r"terminal-[a-zA-Z0-9]+-", "terminal-test-", svg)
-    svg = re.sub(r"\b\d{2}:\d{2}:\d{2}\b", "00:00:00", svg)
-    # Normalize cursor blink dim fill color #495259 to standard text fill color #a0a3a6
-    svg = svg.replace("fill: #495259", "fill: #a0a3a6")
-
-    # Normalize line heights across platforms
-    svg = re.sub(r"line-height:\s*[\d.]+px;?", "line-height: 24.4px;", svg)
-    svg = re.sub(r'height="24\.\d+"', 'height="24.65"', svg)
-
-    # Normalize Windows drive letters, backslashes, and HTML entities in test paths
-    svg = (
-        svg.replace("&#92;", "\\")
-        .replace("&bsol;", "\\")
-        .replace("&#x5C;", "\\")
-        .replace("&#x5c;", "\\")
-        .replace("&#47;", "/")
-        .replace("&sol;", "/")
-        .replace("&#x2F;", "/")
-        .replace("&#x2f;", "/")
-    )
-    svg = re.sub(r"<tspan[^>]*>[A-Za-z]:</tspan>", "", svg)
-    svg = re.sub(r"(?:[A-Za-z]:)?[/\\]+dummy", "/dummy", svg)
-    svg = re.sub(
-        r"/dummy([^<\"]*)",
-        lambda m: "/dummy" + m.group(1).replace("\\", "/"),
-        svg,
-    )
-    svg = re.sub(r"\b[A-Za-z]:[/\\]", "/", svg)
-    svg = svg.replace("\\", "/")
-
-    style_match = re.search(r"<style>(.*?)</style>", svg, re.DOTALL)
-    if style_match:
-        css_text = style_match.group(1)
-        rules = re.findall(r"\.(terminal-test-r\w+)\s*\{(.*?)\}", css_text)
-        if rules:
-            body_without_style = svg.replace(style_match.group(0), "")
-            used_rules = [
-                (cls, body)
-                for cls, body in rules
-                if re.search(r"\b" + re.escape(cls) + r"\b", body_without_style)
-            ]
-
-            style_map = {}
-            sorted_unique_styles = sorted(set(body.strip() for cls, body in used_rules))
-
-            for old_class, style_body in used_rules:
-                style_index = sorted_unique_styles.index(style_body.strip())
-                style_map[old_class] = f"terminal-test-c{style_index}"
-
-            new_css_lines = [
-                f"    .terminal-test-c{idx} {{ {body} }}"
-                for idx, body in enumerate(sorted_unique_styles)
-            ]
-            new_css = "\n" + "\n".join(new_css_lines) + "\n    "
-            svg = svg.replace(css_text, new_css)
-
-            for old_class, new_class in sorted(
-                style_map.items(), key=lambda x: len(x[0]), reverse=True
-            ):
-                svg = re.sub(r"\b" + old_class + r"\b", new_class, svg)
-
-    return svg
-
-
 def assert_svg_snapshot(snapshot_name: str, actual_svg: str) -> None:
     """Assert actual rendered SVG string matches stored reference snapshot file."""
-    os.makedirs(SNAPSHOT_DIR, exist_ok=True)
-    snapshot_path = os.path.join(SNAPSHOT_DIR, f"{snapshot_name}.svg")
-    sanitized_actual = sanitize_svg(actual_svg)
-
-    update_snapshots = os.environ.get("UPDATE_SNAPSHOTS") == "1"
-
-    if not os.path.exists(snapshot_path) or update_snapshots:
-        with open(snapshot_path, "w", encoding="utf-8", newline="\n") as f:
-            f.write(sanitized_actual)
-        if not update_snapshots:
-            pytest.fail(
-                f"SVG snapshot '{snapshot_name}' generated for the first time at {snapshot_path}. Run again to verify."
-            )
-        return
-
-    with open(snapshot_path, encoding="utf-8", newline="\n") as f:
-        expected_svg = f.read().replace("\r\n", "\n")
-
-    if sanitized_actual != expected_svg:
-        with open(snapshot_path + ".actual", "w", encoding="utf-8", newline="\n") as f:
-            f.write(sanitized_actual)
-
-    assert sanitized_actual == expected_svg, (
-        f"SVG visual snapshot mismatch for '{snapshot_name}'. Set UPDATE_SNAPSHOTS=1 to re-baseline."
-    )
+    verify_svg_snapshot(snapshot_name, actual_svg, snapshot_dir=SNAPSHOT_DIR)
 
 
 async def settled_screenshot(app, pilot, max_pauses: int = 100) -> str:
@@ -190,7 +93,6 @@ def isolated_app_dir(monkeypatch, tmp_path):
         monkeypatch.delattr(app.config, "settings", raising=False)
 
 
-@pytest.mark.slow
 def test_tui_main_screen_snapshot():
     """Verify visual layout of default AutoSorterTUI main screen."""
 
@@ -205,7 +107,6 @@ def test_tui_main_screen_snapshot():
     asyncio.run(_test())
 
 
-@pytest.mark.slow
 def test_tui_populated_plan_snapshot():
     """Verify visual layout of AutoSorterTUI with a populated tree plan."""
 
@@ -248,7 +149,6 @@ def test_tui_populated_plan_snapshot():
     asyncio.run(_test())
 
 
-@pytest.mark.slow
 def test_wizard_modal_snapshot():
     """Verify visual layout of WizardModal onboarding screen."""
 
@@ -264,7 +164,6 @@ def test_wizard_modal_snapshot():
     asyncio.run(_test())
 
 
-@pytest.mark.slow
 def test_settings_modal_snapshot():
     """Verify visual layout of SettingsModal screen."""
 
@@ -284,7 +183,6 @@ def test_settings_modal_snapshot():
     asyncio.run(_test())
 
 
-@pytest.mark.slow
 def test_rename_modal_snapshot():
     """Verify visual layout of RenameModal screen."""
 
@@ -305,7 +203,6 @@ def test_rename_modal_snapshot():
     asyncio.run(_test())
 
 
-@pytest.mark.slow
 def test_cro_forensic_modal_snapshot():
     """Verify visual layout of CROForensicModal screen."""
 
@@ -325,7 +222,6 @@ def test_cro_forensic_modal_snapshot():
     asyncio.run(_test())
 
 
-@pytest.mark.slow
 def test_new_folder_modal_snapshot():
     """Verify visual layout of NewFolderModal screen."""
 
@@ -341,7 +237,6 @@ def test_new_folder_modal_snapshot():
     asyncio.run(_test())
 
 
-@pytest.mark.slow
 def test_directory_select_modal_snapshot():
     """Verify visual layout of DirectorySelectModal screen."""
 
@@ -357,7 +252,6 @@ def test_directory_select_modal_snapshot():
     asyncio.run(_test())
 
 
-@pytest.mark.slow
 def test_extraction_preview_modal_snapshot(tmp_path):
     """Verify visual layout of ExtractionPreviewModal screen."""
 

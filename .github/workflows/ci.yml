@@ -215,6 +215,12 @@ jobs:
       run: |
         uv run python scripts/validate_config.py --check
 
+    - name: Audit TUI Component Catalog Accessibility
+      env:
+        PYTHON_KEYRING_BACKEND: keyring.backends.fail.Keyring
+      run: |
+        uv run python -m app.ui.catalog --audit-only
+
     - name: Validate Documentation and Integrity
       env:
         EVENT_NAME: ${{ github.event_name }}
@@ -227,7 +233,7 @@ jobs:
           if [ -n "$BASE_SHA" ] && [ -n "$HEAD_SHA" ] \
             && MERGE_BASE="$(git merge-base "$BASE_SHA" "$HEAD_SHA" 2>/dev/null)" \
             && CHANGED_FILES="$(git diff --name-only --no-renames "$MERGE_BASE" "$HEAD_SHA" 2>/dev/null)"; then
-            if ! printf '%s\n' "$CHANGED_FILES" | grep -Eq '^(docs/|mkdocs\.yml$|[^/]+\.[mM][dD]$|scripts/generate_docs\.py$)'; then
+            if ! printf '%s\n' "$CHANGED_FILES" | grep -Eq '^(docs/|mkdocs\.yml$|[^/]+\.[mM][dD]$|scripts/(generate_docs|mkdocs_site_validator)\.py$)'; then
               BUILD_FLAG="--no-build"
             fi
           fi
@@ -278,20 +284,6 @@ jobs:
       run: |
         uv sync --frozen --group dev --group build
 
-    - name: Terminal Interface Snapshot Validation
-      run: |
-        uv run pytest tests/test_visual_snapshots.py -n 0
-
-    - name: Upload Snapshot Mismatch Artifacts
-      if: failure()
-      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-      with:
-        name: snapshot-mismatches-${{ matrix.os }}
-        path: |
-          tests/snapshots/tui_svg/*.actual
-          tests/snapshots/*.actual
-        retention-days: 7
-
     - name: CLI Smoke Tests
       run: |
         uv run python scripts/test_cli.py
@@ -316,6 +308,16 @@ jobs:
           fi
           exit 1
         fi
+
+    - name: Upload Snapshot Mismatch Artifacts
+      if: failure()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: snapshot-mismatches-${{ matrix.os }}
+        path: |
+          tests/snapshots/tui_svg/*.actual
+          tests/snapshots/*.actual
+        retention-days: 7
 
     - name: Check Data-Safety Coverage Floors
       if: matrix.os == 'ubuntu-latest'

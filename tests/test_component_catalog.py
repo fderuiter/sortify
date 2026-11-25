@@ -1,5 +1,7 @@
 """Automated unit tests for Component Catalog CLI and accessibility gate."""
 
+import pytest
+
 from app.ui.a11y import A11yViolation
 from app.ui.catalog import get_catalog_registry, main
 
@@ -37,9 +39,16 @@ def test_catalog_cli_list(capsys):
     assert "rename_modal" in captured.out
 
 
+@pytest.mark.slow
 def test_catalog_cli_audit_only_all():
     """Verify --audit-only scans all registered TUI components without exceptions and passes."""
     code = main(["--audit-only"])
+    assert code == 0
+
+
+def test_catalog_cli_audit_only_autosorter_tui():
+    """Verify --audit-only --component autosorter_tui scans the root TUI screen directly."""
+    code = main(["--audit-only", "--component", "autosorter_tui"])
     assert code == 0
 
 
