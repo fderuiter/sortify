@@ -71,9 +71,8 @@ async def test_command_palette_ctrl_k_binding(tmp_path):
     ]
     assert len(ctrl_c_bindings) == 0
 
-    # Verify open_cro_forensic shortcut is cleared in catalog
-    cro_cmd = next(c for c in DEFAULT_COMMAND_CATALOG if c.id == "open_cro_forensic")
-    assert cro_cmd.shortcut == ""
+    # Verify open_cro_forensic is absent from default catalog unless clinical plugin is enabled
+    assert not any(c.id == "open_cro_forensic" for c in DEFAULT_COMMAND_CATALOG)
 
     async with app.run_test() as pilot:
         await pilot.pause()
@@ -85,11 +84,22 @@ async def test_command_palette_ctrl_k_binding(tmp_path):
 
 @pytest.mark.anyio
 async def test_command_palette_cro_forensic_routing(tmp_path):
-    """Verify CRO forensic ingest modal launches from command palette and not ctrl+c."""
+    """Verify CRO forensic ingest modal is hidden by default and launches when clinical_compliance is enabled."""
     from app.plugins.clinical_compliance.tui_views import CROForensicModal
+    from app.ui.modals.command_palette import build_command_catalog
+
+    default_settings = AppSettings()
+    assert not any(
+        c.id == "open_cro_forensic" for c in build_command_catalog(default_settings)
+    )
 
     settings = AppSettings()
     settings._settings_model.AI_CONSENT_GRANTED = True
+    settings._settings_model.PLUGINS = ["clinical_compliance"]
+    enabled_catalog = build_command_catalog(settings)
+    cro_cmd = next(c for c in enabled_catalog if c.id == "open_cro_forensic")
+    assert cro_cmd.shortcut == ""
+
     app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
 
     async with app.run_test() as pilot:
@@ -323,7 +333,10 @@ async def test_command_palette_launch_template_gallery(tmp_path):
         await pilot.pause()
 
         assert isinstance(app.screen, TemplateGalleryModal)
-        assert app.screen.settings is app.settings
+        assert (
+            getattr(app.screen.settings, "root_settings", app.screen.settings)
+            is app.settings
+        )
 
         # Closing modal returns focus to #plan-tree
         await pilot.press("escape")
@@ -352,7 +365,10 @@ async def test_command_palette_launch_export_rules(tmp_path):
         await pilot.pause()
 
         assert isinstance(app.screen, ExportRulesModal)
-        assert app.screen.settings is app.settings
+        assert (
+            getattr(app.screen.settings, "root_settings", app.screen.settings)
+            is app.settings
+        )
 
         # Closing modal returns focus to #plan-tree
         await pilot.press("escape")
@@ -381,7 +397,10 @@ async def test_command_palette_launch_import_rules(tmp_path):
         await pilot.pause()
 
         assert isinstance(app.screen, RuleImportModal)
-        assert app.screen.settings is app.settings
+        assert (
+            getattr(app.screen.settings, "root_settings", app.screen.settings)
+            is app.settings
+        )
 
         # Closing modal returns focus to #plan-tree
         await pilot.press("escape")
@@ -464,7 +483,10 @@ async def test_tui_direct_rule_actions(tmp_path):
         app.action_open_template_gallery()
         await pilot.pause()
         assert isinstance(app.screen, TemplateGalleryModal)
-        assert app.screen.settings is app.settings
+        assert (
+            getattr(app.screen.settings, "root_settings", app.screen.settings)
+            is app.settings
+        )
         await pilot.press("escape")
         await pilot.pause()
 
@@ -472,7 +494,10 @@ async def test_tui_direct_rule_actions(tmp_path):
         app.action_export_rules()
         await pilot.pause()
         assert isinstance(app.screen, ExportRulesModal)
-        assert app.screen.settings is app.settings
+        assert (
+            getattr(app.screen.settings, "root_settings", app.screen.settings)
+            is app.settings
+        )
         await pilot.press("escape")
         await pilot.pause()
 
@@ -480,7 +505,10 @@ async def test_tui_direct_rule_actions(tmp_path):
         app.action_import_rules()
         await pilot.pause()
         assert isinstance(app.screen, RuleImportModal)
-        assert app.screen.settings is app.settings
+        assert (
+            getattr(app.screen.settings, "root_settings", app.screen.settings)
+            is app.settings
+        )
         await pilot.press("escape")
         await pilot.pause()
 
@@ -519,22 +547,24 @@ async def test_model_manager_ctrl_g_binding_and_catalog_entry(tmp_path):
 
 
 @pytest.mark.anyio
-async def test_command_palette_renders_literal_category_prefixes_for_all_23_entries(
+async def test_command_palette_renders_literal_category_prefixes_for_all_entries(
     tmp_path,
 ):
-    """Verify all 23 entries in #palette-list preserve literal [Category] prefixes and filter across all fields."""
+    """Verify #palette-list preserves literal [Category] prefixes across 22 core entries by default and 23 with clinical opt-in."""
     import re
 
     from textual.content import Content
 
-    assert len(DEFAULT_COMMAND_CATALOG) == 23
+    assert len(DEFAULT_COMMAND_CATALOG) == 22
 
     settings = AppSettings(filepath=str(tmp_path / "settings.json"))
     settings._settings_model.AI_CONSENT_GRANTED = True
     app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
 
-    def _svg_text() -> str:
-        return re.sub(r"<[^>]+>", "", app.export_screenshot()).replace("&#160;", " ")
+    def _svg_text(target_app: AutoSorterTUI) -> str:
+        return re.sub(r"<[^>]+>", "", target_app.export_screenshot()).replace(
+            "&#160;", " "
+        )
 
     async with app.run_test(size=(120, 45)) as pilot:
         await pilot.pause()
@@ -545,7 +575,7 @@ async def test_command_palette_renders_literal_category_prefixes_for_all_23_entr
         modal = app.screen
         inp = modal.query_one("#palette-input", Input)
         lst = modal.query_one("#palette-list", OptionList)
-        assert lst.option_count == 23
+        assert lst.option_count == 22
 
         for idx, cmd in enumerate(DEFAULT_COMMAND_CATALOG):
             opt = lst.get_option_at_index(idx)
@@ -554,15 +584,14 @@ async def test_command_palette_renders_literal_category_prefixes_for_all_23_entr
             assert cmd.title in opt.prompt.plain
 
         # Visible viewport renders literal bracketed categories instead of stripping them
-        top_svg = _svg_text()
+        top_svg = _svg_text(app)
         assert "[Workspace]" in top_svg
         assert "[Settings]" in top_svg
         assert "[Rules]" in top_svg
 
-        # Filter by title, category, description (including aligned undo copy), and shortcut
+        # Filter core entries by title, description, and shortcut
         queries_and_expected = [
             ("Starter Rule Templates", "open_template_gallery", "[Rules]"),
-            ("Compliance", "open_cro_forensic", "[Compliance]"),
             ("undo sorts", "open_history", "[History]"),
             ("Ctrl+G", "open_model_manager", "[Models]"),
         ]
@@ -577,5 +606,36 @@ async def test_command_palette_renders_literal_category_prefixes_for_all_23_entr
             first_opt = lst.get_option_at_index(0)
             assert isinstance(first_opt.prompt, Content)
             assert first_opt.prompt.plain.startswith(expected_prefix)
-            rendered_svg = _svg_text().replace("&amp;", "&")
+            rendered_svg = _svg_text(app).replace("&amp;", "&")
             assert expected_prefix in rendered_svg
+
+    opt_in_settings = AppSettings(filepath=str(tmp_path / "settings_opt_in.json"))
+    opt_in_settings._settings_model.AI_CONSENT_GRANTED = True
+    opt_in_settings._settings_model.PLUGINS = ["clinical_compliance"]
+    opt_in_app = AutoSorterTUI(settings=opt_in_settings, base_dir=str(tmp_path))
+
+    async with opt_in_app.run_test(size=(120, 45)) as pilot:
+        await pilot.pause()
+        opt_in_app.action_open_command_palette()
+        await pilot.pause()
+
+        assert isinstance(opt_in_app.screen, CommandPaletteModal)
+        modal_en = opt_in_app.screen
+        inp_en = modal_en.query_one("#palette-input", Input)
+        lst_en = modal_en.query_one("#palette-list", OptionList)
+        assert lst_en.option_count == 23
+
+        inp_en.value = "Compliance"
+        await pilot.pause()
+        matched_ids_en = [
+            lst_en.get_option_at_index(i).id for i in range(lst_en.option_count)
+        ]
+        assert "open_cro_forensic" in matched_ids_en
+        cro_opt = next(
+            lst_en.get_option_at_index(i)
+            for i in range(lst_en.option_count)
+            if lst_en.get_option_at_index(i).id == "open_cro_forensic"
+        )
+        assert isinstance(cro_opt.prompt, Content)
+        assert cro_opt.prompt.plain.startswith("[Compliance]")
+        assert "[Compliance]" in _svg_text(opt_in_app).replace("&amp;", "&")

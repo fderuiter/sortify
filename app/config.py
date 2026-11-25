@@ -722,6 +722,13 @@ class Settings(BaseSettings):
             "or system modules are forbidden."
         ),
     )
+    PLUGIN_SETTINGS: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Dictionary mapping plugin-owned configuration keys to their persisted user values "
+            "for optional domain plugins enabled in PLUGINS."
+        ),
+    )
 
     @field_validator("PLUGINS", mode="before")
     @classmethod
@@ -844,28 +851,8 @@ class Settings(BaseSettings):
         default="default",
         description=(
             "Document clustering and taxonomy strategy identifier (for example 'default' "
-            "TF-IDF/embedding clustering, 'generative', 'clinical_tmf', or 'clinical_isf')."
-        ),
-    )
-    CLINICAL_SMART_RENAMING: bool = Field(
-        default=False,
-        description=(
-            "Whether clinical sorting strategies standardize filenames using Trial "
-            "Master File (TMF/ISF) study, artifact, and date metadata."
-        ),
-    )
-    CLINICAL_GENERATE_AUDIT_REPORT: bool = Field(
-        default=True,
-        description=(
-            "Whether clinical compliance runs automatically generate a regulatory "
-            "audit trail report upon completion."
-        ),
-    )
-    CLINICAL_SUPPRESS_DUPLICATES: bool = Field(
-        default=False,
-        description=(
-            "Whether clinical multi-study ingestion skips copying byte-verified duplicate "
-            "artifacts instead of creating numbered _1 copies while preserving manifest lineage."
+            "TF-IDF/embedding clustering, 'generative', or a strategy identifier registered "
+            "by an enabled plugin)."
         ),
     )
     COHERENCE_THRESHOLD: float = Field(
@@ -1630,6 +1617,17 @@ class Settings(BaseSettings):
         validate_assignment=True,
     )
 
+    def get_plugin_setting(self, key: str, default: Any = None) -> Any:
+        """Return a plugin-owned setting from ``PLUGIN_SETTINGS`` or active plugin defaults."""
+        if key in self.PLUGIN_SETTINGS:
+            return self.PLUGIN_SETTINGS[key]
+        from app.core.plugin_registry import PluginRegistry
+
+        defaults = PluginRegistry.get_instance().get_config_defaults()
+        if key in defaults:
+            return defaults[key]
+        return default
+
 
 def app_env_file() -> Path:
     """Return the optional `.env` file that may hold SORTIFY_ settings."""
@@ -1702,11 +1700,17 @@ class AppSettings:
             sys.exit(1)
 
         self.load()
+        from app.core.plugin_registry import PluginRegistry
+
+        PluginRegistry.get_instance().load_plugins_from_settings(self)
 
     def load(self):
         """Load settings from the configuration file."""
         self._validation_errors = []
         if not os.path.exists(self._filepath):
+            from app.core.plugin_registry import PluginRegistry
+
+            PluginRegistry.get_instance().load_plugins_from_settings(self)
             self._trigger_save()
             return
 
@@ -1717,6 +1721,12 @@ class AppSettings:
             with file_lock:
                 with open(self._filepath, encoding="utf-8") as f:
                     data = json.load(f)
+
+            if isinstance(data, dict):
+                from app.core.plugin_registry import PluginRegistry
+
+                if PluginRegistry.migrate_legacy_settings_data(data):
+                    needs_migration = True
 
             # Decrypt PROXY setting if encrypted, or mark for migration if legacy plaintext
             if isinstance(data, dict) and "PROXY" in data:
@@ -1786,6 +1796,10 @@ class AppSettings:
             else:
                 self._has_validation_errors = False
 
+            from app.core.plugin_registry import PluginRegistry
+
+            PluginRegistry.get_instance().load_plugins_from_settings(self)
+
             if needs_migration and not has_validation_errors:
                 self._trigger_save()
 
@@ -1833,17 +1847,58 @@ class AppSettings:
             timer.cancel()
             self._save()
 
+    def get_plugin_setting(self, key: str, default: Any = None) -> Any:
+        """Return a plugin-owned setting from ``PLUGIN_SETTINGS`` or active plugin defaults."""
+        return self._settings_model.get_plugin_setting(key, default)
+
+    def set_plugin_setting(self, key: str, value: Any) -> None:
+        """Persist a plugin-owned setting inside ``PLUGIN_SETTINGS`` and notify observers."""
+        if "PLUGIN_SETTINGS" in self._transient_values and isinstance(
+            self._transient_values["PLUGIN_SETTINGS"], dict
+        ):
+            persisted_map = dict(self._transient_values["PLUGIN_SETTINGS"])
+            persisted_map[key] = value
+            self._transient_values["PLUGIN_SETTINGS"] = persisted_map
+        updated = dict(self._settings_model.PLUGIN_SETTINGS)
+        updated[key] = value
+        self._env_sourced_keys.discard("PLUGIN_SETTINGS")
+        setattr(self._settings_model, "PLUGIN_SETTINGS", updated)
+        self.revalidate()
+        self._notify_observers(key, value)
+
     def override(self, name: str, value: Any) -> None:
         """Apply a value for this run only, without persisting it.
 
         A later explicit assignment (``settings.NAME = value``) persists as usual.
         """
-        if name not in self._transient_values:
-            self._transient_values[name] = self._settings_model.model_dump(
-                mode="json"
-            ).get(name)
+        if hasattr(self._settings_model, name):
+            if name not in self._transient_values:
+                self._transient_values[name] = self._settings_model.model_dump(
+                    mode="json"
+                ).get(name)
+            setattr(self._settings_model, name, value)
+            if name == "PLUGINS":
+                from app.core.plugin_registry import PluginRegistry
+
+                PluginRegistry.get_instance().load_plugins_from_settings(self)
+            self._notify_observers(name, getattr(self._settings_model, name, value))
+            return
+
+        from app.core.plugin_registry import PluginRegistry
+
+        plugin_defaults = PluginRegistry.get_instance().get_config_defaults()
+        if name in self._settings_model.PLUGIN_SETTINGS or name in plugin_defaults:
+            if "PLUGIN_SETTINGS" not in self._transient_values:
+                self._transient_values["PLUGIN_SETTINGS"] = dict(
+                    self._settings_model.PLUGIN_SETTINGS
+                )
+            updated = dict(self._settings_model.PLUGIN_SETTINGS)
+            updated[name] = value
+            setattr(self._settings_model, "PLUGIN_SETTINGS", updated)
+            self._notify_observers(name, value)
+            return
+
         setattr(self._settings_model, name, value)
-        self._notify_observers(name, getattr(self._settings_model, name, value))
 
     def _save(self):
         current_thread = threading.current_thread()
@@ -2079,11 +2134,19 @@ class AppSettings:
         )
 
     def __getattr__(self, name):
-        """Get attribute dynamically from the settings model."""
+        """Get attribute dynamically from the settings model or active plugin defaults."""
         if name == "MAX_AUDIO_WORKERS":
             return getattr(self._settings_model, "AUDIO_MAX_WORKERS", 2)
         if hasattr(self._settings_model, name):
             return getattr(self._settings_model, name)
+        plugin_settings = getattr(self._settings_model, "PLUGIN_SETTINGS", None)
+        if isinstance(plugin_settings, dict) and name in plugin_settings:
+            return plugin_settings[name]
+        from app.core.plugin_registry import PluginRegistry
+
+        plugin_defaults = PluginRegistry.get_instance().get_config_defaults()
+        if name in plugin_defaults:
+            return plugin_defaults[name]
         raise AttributeError(
             f"'{self.__class__.__name__}' object has no attribute '{name}'"
         )
@@ -2107,9 +2170,23 @@ class AppSettings:
         else:
             if name == "MAX_AUDIO_WORKERS":
                 name = "AUDIO_MAX_WORKERS"
+            if not hasattr(self._settings_model, name):
+                from app.core.plugin_registry import PluginRegistry
+
+                plugin_defaults = PluginRegistry.get_instance().get_config_defaults()
+                if (
+                    name in self._settings_model.PLUGIN_SETTINGS
+                    or name in plugin_defaults
+                ):
+                    self.set_plugin_setting(name, value)
+                    return
             self._transient_values.pop(name, None)
             self._env_sourced_keys.discard(name)
             setattr(self._settings_model, name, value)
+            if name == "PLUGINS":
+                from app.core.plugin_registry import PluginRegistry
+
+                PluginRegistry.get_instance().load_plugins_from_settings(self)
             self.revalidate()
             new_val = getattr(self._settings_model, name, value)
             self._notify_observers(name, new_val)

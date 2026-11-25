@@ -1,9 +1,22 @@
 {
   "_metadata": {
-    "checksum": "47b753ddebf9f11e8bc3a116674231547fff113111c5b7a36eb0ec5dab37c6b9"
+    "checksum": "82885b68d0053d6b4cc2ada95d0be96a6f0a7b8fe3c4318f7e73acf21308637d"
   },
   "classes": [],
   "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "migrate_legacy_settings",
+      "parameters": [
+        {
+          "annotation": "dict[str, Any]",
+          "default": null,
+          "name": "data"
+        }
+      ],
+      "returns": "bool"
+    },
     {
       "async": false,
       "decorators": [],
@@ -26,6 +39,29 @@
         }
       ],
       "returns": "None"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "read_clinical_setting",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "settings"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "key"
+        },
+        {
+          "annotation": "Any",
+          "default": "None",
+          "name": "default"
+        }
+      ],
+      "returns": "Any"
     },
     {
       "async": false,

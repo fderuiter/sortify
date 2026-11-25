@@ -1,0 +1,81 @@
+{
+  "_metadata": {
+    "checksum": "d5eabfe94b289c17df5ced055becc3e0fb9b4476cdc6c6e1edb4cc7096f1230c"
+  },
+  "classes": [],
+  "cli": [],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "apply_plugin_config_cli_set",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "settings"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "key_upper"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "raw_value"
+        },
+        {
+          "annotation": "Callable[[str, str, Any], Any]",
+          "default": null,
+          "name": "parse_value_fn"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "extract_cli_settings_source_flags",
+      "parameters": [
+        {
+          "annotation": "list[str]",
+          "default": null,
+          "name": "raw_argv"
+        }
+      ],
+      "returns": "tuple[str | None, str | None]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_available_cli_strategies",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": "None",
+          "name": "settings"
+        }
+      ],
+      "returns": "list[str]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "load_cli_plugins_readonly",
+      "parameters": [
+        {
+          "annotation": "list[str] | None",
+          "default": "None",
+          "name": "raw_argv"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "reset_if_source_explicit"
+        }
+      ],
+      "returns": "None"
+    }
+  ]
+}

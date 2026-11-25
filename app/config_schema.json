@@ -504,6 +504,12 @@
       "title": "Plugins",
       "type": "array"
     },
+    "PLUGIN_SETTINGS": {
+      "additionalProperties": true,
+      "description": "Dictionary mapping plugin-owned configuration keys to their persisted user values for optional domain plugins enabled in PLUGINS.",
+      "title": "Plugin Settings",
+      "type": "object"
+    },
     "OCR_LANGUAGES": {
       "default": "en",
       "description": "Comma-separated list of non-empty OCR language codes (alphanumeric characters and underscores only, such as 'en' or 'ch_sim,en').",
@@ -572,27 +578,9 @@
     },
     "SORTING_STRATEGY": {
       "default": "default",
-      "description": "Document clustering and taxonomy strategy identifier (for example 'default' TF-IDF/embedding clustering, 'generative', 'clinical_tmf', or 'clinical_isf').",
+      "description": "Document clustering and taxonomy strategy identifier (for example 'default' TF-IDF/embedding clustering, 'generative', or a strategy identifier registered by an enabled plugin).",
       "title": "Sorting Strategy",
       "type": "string"
-    },
-    "CLINICAL_SMART_RENAMING": {
-      "default": false,
-      "description": "Whether clinical sorting strategies standardize filenames using Trial Master File (TMF/ISF) study, artifact, and date metadata.",
-      "title": "Clinical Smart Renaming",
-      "type": "boolean"
-    },
-    "CLINICAL_GENERATE_AUDIT_REPORT": {
-      "default": true,
-      "description": "Whether clinical compliance runs automatically generate a regulatory audit trail report upon completion.",
-      "title": "Clinical Generate Audit Report",
-      "type": "boolean"
-    },
-    "CLINICAL_SUPPRESS_DUPLICATES": {
-      "default": false,
-      "description": "Whether clinical multi-study ingestion skips copying byte-verified duplicate artifacts instead of creating numbered _1 copies while preserving manifest lineage.",
-      "title": "Clinical Suppress Duplicates",
-      "type": "boolean"
     },
     "COHERENCE_THRESHOLD": {
       "default": 0.5,

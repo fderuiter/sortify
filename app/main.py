@@ -1043,6 +1043,8 @@ def handle_config_command(args: argparse.Namespace, settings: AppSettings):
     apply_config_overrides(settings, args)
 
     if getattr(args, "set", None):
+        from app.cli.plugin_cli import apply_plugin_config_cli_set
+
         for key, value in args.set:
             key_upper = key.upper()
             if hasattr(settings._settings_model, key_upper):
@@ -1058,11 +1060,25 @@ def handle_config_command(args: argparse.Namespace, settings: AppSettings):
                         exit_code=1,
                     )
             else:
-                emit_cli_error(
-                    f"Error: Unknown configuration key '{key}'.",
-                    json_mode=getattr(args, "json", False),
-                    exit_code=1,
-                )
+                try:
+                    handled = apply_plugin_config_cli_set(
+                        settings,
+                        key_upper,
+                        value,
+                        _parse_config_cli_value,
+                    )
+                except (ValueError, TypeError, OSError) as ex:
+                    emit_cli_error(
+                        f"Error: Failed to set configuration key '{key_upper}' to '{value}': {ex}",
+                        json_mode=getattr(args, "json", False),
+                        exit_code=1,
+                    )
+                if not handled:
+                    emit_cli_error(
+                        f"Error: Unknown configuration key '{key}'.",
+                        json_mode=getattr(args, "json", False),
+                        exit_code=1,
+                    )
 
     quiet = getattr(args, "quiet", False)
     settings_dict = settings._settings_model.model_dump(mode="json")
@@ -1555,6 +1571,10 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
 
     subparsers = parser.add_subparsers(dest="subcommand", help="Available subcommands")
 
+    from app.cli.plugin_cli import get_available_cli_strategies
+
+    strategy_choices = get_available_cli_strategies()
+
     def add_common_override_args(subparser):
         add_settings_source_args(subparser, suppress_default=True)
         subparser.add_argument(
@@ -1581,7 +1601,7 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         subparser.add_argument(
             "--strategy",
             type=str,
-            choices=["default", "generative", "clinical_tmf", "clinical_isf"],
+            choices=strategy_choices,
             default=None,
             help="Sorting strategy",
         )
@@ -1884,6 +1904,9 @@ def _main_impl():
     prepare_frozen_windows_runtime()
     multiprocessing.freeze_support()
 
+    from app.cli.plugin_cli import load_cli_plugins_readonly
+
+    load_cli_plugins_readonly(sys.argv[1:], reset_if_source_explicit=True)
     parser = build_parser()
 
     known_subcommands = (

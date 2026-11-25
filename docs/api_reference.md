@@ -24,6 +24,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.cli.model_cli
 
+## `app.cli.plugin_cli`
+
+::: app.cli.plugin_cli
+
 ## `app.cli.quarantine_cli`
 
 ::: app.cli.quarantine_cli

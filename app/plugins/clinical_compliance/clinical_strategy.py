@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 class ClinicalTMFStrategy(IsolatedStrategyMixin):
     """Strategy that classifies documents into clinical trial regulatory structures."""
 
+    requires_embeddings: bool = False
+
     def __init__(
         self,
         mode: str = "tmf",

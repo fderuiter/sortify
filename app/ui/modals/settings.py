@@ -498,7 +498,13 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
                         sw_id = sw_cfg.get("id", f"switch-{sw_key.lower()}")
                         sw_lbl = sw_cfg.get("label", f" {sw_key}")
                         sw_tip = sw_cfg.get("tooltip", "")
-                        sw_val = bool(getattr(self.settings, sw_key, False))
+                        sw_default = bool(sw_cfg.get("default", False))
+                        getter = getattr(self.settings, "get_plugin_setting", None)
+                        sw_val = bool(
+                            getter(sw_key, sw_default)
+                            if callable(getter)
+                            else sw_default
+                        )
                         yield LabeledSwitch(
                             label=sw_lbl,
                             value=sw_val,
@@ -967,12 +973,26 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
         if strat == Select.BLANK:
             strat = "default"
 
-        try:
-            clin_renaming = self.query_one("#switch-clinical-renaming", Switch).value
-        except Exception:
-            clin_renaming = bool(
-                getattr(self.settings, "CLINICAL_SMART_RENAMING", False)
-            )
+        from app.core.plugin_registry import PluginRegistry
+
+        reg = PluginRegistry.get_instance()
+        reg.load_plugins_from_settings(self.settings)
+        plugin_switch_values: dict[str, bool] = {}
+        getter = getattr(self.settings, "get_plugin_setting", None)
+        for sw_cfg in reg.get_tui_switches():
+            sw_key = str(sw_cfg.get("key", "")).strip()
+            if not sw_key:
+                continue
+            sw_id = sw_cfg.get("id", f"switch-{sw_key.lower()}")
+            sw_default = bool(sw_cfg.get("default", False))
+            try:
+                plugin_switch_values[sw_key] = bool(
+                    self.query_one(f"#{sw_id}", Switch).value
+                )
+            except Exception:
+                plugin_switch_values[sw_key] = bool(
+                    getter(sw_key, sw_default) if callable(getter) else sw_default
+                )
         try:
             ctx_renaming = self.query_one("#switch-contextual-renaming", Switch).value
         except Exception:
@@ -1160,6 +1180,14 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
             )
         )
 
+        raw_existing_plugin_settings = getattr(self.settings, "PLUGIN_SETTINGS", None)
+        merged_plugin_settings: dict[str, Any] = (
+            dict(raw_existing_plugin_settings)
+            if isinstance(raw_existing_plugin_settings, dict)
+            else {}
+        )
+        merged_plugin_settings.update(plugin_switch_values)
+
         res = {
             "PROTECTED_PATHS": p_list,
             "IGNORED_EXTENSIONS": i_list,
@@ -1171,7 +1199,6 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
             "DETECT_ORIGINAL_BY": detect_original_by,
             "SORTING_STRATEGY": strat,
             "AI_ASSISTED_NAMING": ai_assisted_naming,
-            "CLINICAL_SMART_RENAMING": clin_renaming,
             "CONTEXTUAL_RENAMING": ctx_renaming,
             "RENAME_PATTERN": rename_pat_raw,
             "AI_CONSENT_GRANTED": ai_consent,
@@ -1182,6 +1209,8 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
             "SCAN_MAX_DEPTH": scan_max_depth,
             "AUTO_QUARANTINE_RATINGS": auto_quarantine_ratings,
             "QUARANTINE_DIR_NAME": q_dir_str,
+            "PLUGIN_SETTINGS": merged_plugin_settings,
+            **plugin_switch_values,
         }
         self.announce("Saved application settings.")
         self.dismiss(res)

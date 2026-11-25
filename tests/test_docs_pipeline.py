@@ -1979,7 +1979,13 @@ def test_user_guide_command_palette_section():
     assert "search filtering" in content.lower() or "filter" in content.lower()
 
     # Workflows without dedicated shortcuts
-    from app.ui.modals.command_palette import DEFAULT_COMMAND_CATALOG
+    from types import SimpleNamespace
+
+    from app.core.plugin_registry import PluginRegistry
+    from app.ui.modals.command_palette import (
+        DEFAULT_COMMAND_CATALOG,
+        build_command_catalog,
+    )
 
     unbound_section = content.split("### Workflows Without Dedicated Shortcuts")[
         1
@@ -1987,9 +1993,20 @@ def test_user_guide_command_palette_section():
     assert "Model Manager" in unbound_section
     assert "[Ctrl+G]" in unbound_section
 
-    expected_unbound_titles = [
+    core_unbound_titles = [
         cmd.title for cmd in DEFAULT_COMMAND_CATALOG if not cmd.shortcut
     ]
+    assert len(core_unbound_titles) == 4
+    try:
+        expected_unbound_titles = [
+            cmd.title
+            for cmd in build_command_catalog(
+                SimpleNamespace(PLUGINS=["clinical_compliance"])
+            )
+            if not cmd.shortcut
+        ]
+    finally:
+        PluginRegistry.reset_instance()
     assert len(expected_unbound_titles) == 5
     bullet_lines = [
         line for line in unbound_section.splitlines() if line.strip().startswith("- ")

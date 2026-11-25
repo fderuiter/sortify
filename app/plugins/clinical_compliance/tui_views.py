@@ -238,12 +238,23 @@ class CROForensicModal(ResponsiveModalScreen[None]):
                 CROMultiStudyPipeline,
                 CROPipelineState,
             )
+            from app.plugins.clinical_compliance.plugin import read_clinical_setting
 
             pipeline = CROMultiStudyPipeline(
                 mode="tmf",
-                smart_renaming=getattr(self.settings, "CLINICAL_SMART_RENAMING", True),
+                smart_renaming=bool(
+                    read_clinical_setting(
+                        self.settings,
+                        "CLINICAL_SMART_RENAMING",
+                        default=True,
+                    )
+                ),
                 suppress_duplicates=bool(
-                    getattr(self.settings, "CLINICAL_SUPPRESS_DUPLICATES", False)
+                    read_clinical_setting(
+                        self.settings,
+                        "CLINICAL_SUPPRESS_DUPLICATES",
+                        default=False,
+                    )
                 ),
             )
 

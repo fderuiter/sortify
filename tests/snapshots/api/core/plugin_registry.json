@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "1025ee8844ce40dc8c4cd90527153fa6d4bf060bc64a588ac8a3cc0184650c5e"
+    "checksum": "b36a235bfd2e05b9d6ff189a9839536ec9aac83e7df5644804b9fc676ea18718"
   },
   "classes": [
     {
@@ -16,9 +16,75 @@
               "annotation": null,
               "default": null,
               "name": "self"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "isolated"
             }
           ],
-          "returns": null
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "configure_strategy",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "strategy_name"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "strategy"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "settings"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "base_dir"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "discover_catalog_entries_isolated",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            }
+          ],
+          "returns": "list[dict[str, Any]]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_cli_strategies",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "list[str]"
         },
         {
           "async": false,
@@ -40,6 +106,19 @@
         },
         {
           "async": false,
+          "decorators": [],
+          "name": "get_config_defaults",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "dict[str, Any]"
+        },
+        {
+          "async": false,
           "decorators": [
             "@classmethod"
           ],
@@ -52,6 +131,50 @@
             }
           ],
           "returns": "'PluginRegistry'"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_tui_action",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "action_name"
+            }
+          ],
+          "returns": "Callable[[Any], None] | None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_tui_catalog_entries",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "list[dict[str, Any]]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_tui_commands",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "list[dict[str, Any]]"
         },
         {
           "async": false,
@@ -135,6 +258,44 @@
         },
         {
           "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "migrate_legacy_settings_data",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "dict[str, Any]",
+              "default": null,
+              "name": "data"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "register_cli_strategies",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "list[str]",
+              "default": null,
+              "name": "strategy_names"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
           "decorators": [],
           "name": "register_clustering_strategy",
           "parameters": [
@@ -159,6 +320,24 @@
         {
           "async": false,
           "decorators": [],
+          "name": "register_config_defaults",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "dict[str, Any]",
+              "default": null,
+              "name": "defaults"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
           "name": "register_quarantine_scan_hook",
           "parameters": [
             {
@@ -170,6 +349,88 @@
               "annotation": "Callable",
               "default": null,
               "name": "hook_fn"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "register_strategy_configurator",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "strategy_name"
+            },
+            {
+              "annotation": "Callable[..., None]",
+              "default": null,
+              "name": "configurator_fn"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "register_tui_action",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "action_name"
+            },
+            {
+              "annotation": "Callable[[Any], None]",
+              "default": null,
+              "name": "handler_fn"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "register_tui_catalog_entry",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "dict[str, Any]",
+              "default": null,
+              "name": "entry"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "register_tui_command",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "dict[str, Any]",
+              "default": null,
+              "name": "command_config"
             }
           ],
           "returns": "None"

@@ -2496,12 +2496,20 @@ class IncrementalAnalyzer:
             self._last_reconstruction_error = 0.0
 
             active_strategy_name = self.strategy_name if not fast_path_only else None
-            if (
-                active_strategy_name
-                and active_strategy_name != "generative"
-                and self.embedding_manager.is_mock
+            strategy = (
+                clustering_registry.get_strategy(active_strategy_name)
+                if active_strategy_name
+                else None
+            )
+            if active_strategy_name and (
+                strategy is None
+                or (
+                    self.embedding_manager.is_mock
+                    and bool(getattr(strategy, "requires_embeddings", True))
+                )
             ):
                 active_strategy_name = "default"
+                strategy = clustering_registry.get_strategy("default")
 
             if active_strategy_name:
                 max_depth = (
@@ -2513,7 +2521,6 @@ class IncrementalAnalyzer:
                     else 3
                 )
 
-                strategy = clustering_registry.get_strategy(active_strategy_name)
                 if strategy:
                     if hasattr(strategy, "set_db_context"):
                         cast(Any, strategy).set_db_context(self.db, base_dir)
@@ -2521,7 +2528,9 @@ class IncrementalAnalyzer:
                         cast(Any, strategy).db = self.db
                         cast(Any, strategy).base_dir = base_dir
 
-                    use_semantic = not self.embedding_manager.is_mock
+                    use_semantic = not self.embedding_manager.is_mock and bool(
+                        getattr(strategy, "requires_embeddings", True)
+                    )
                     pre_fetched_vectors = None
 
                     if use_semantic and ai_filenames:
@@ -3512,9 +3521,8 @@ class IncrementalAnalyzer:
             if primary_group_map or primary_by_abs:
                 _tag_byte_duplicates(clean_plan)
 
-            if runtime_settings and (
-                getattr(runtime_settings, "CONTEXTUAL_RENAMING", False)
-                or getattr(runtime_settings, "CLINICAL_SMART_RENAMING", False)
+            if runtime_settings and getattr(
+                runtime_settings, "CONTEXTUAL_RENAMING", False
             ):
                 try:
                     import gc
@@ -3557,13 +3565,6 @@ class IncrementalAnalyzer:
         finally:
             try:
                 active_strategy_name = self.strategy_name
-                if (
-                    self.strategy_name
-                    and self.strategy_name != "generative"
-                    and getattr(self, "embedding_manager", None)
-                    and self.embedding_manager.is_mock
-                ):
-                    active_strategy_name = "default"
                 if active_strategy_name:
                     import app.core.analyzer_strategies
 
@@ -3572,6 +3573,14 @@ class IncrementalAnalyzer:
                             active_strategy_name
                         )
                     )
+                    if strategy is None or (
+                        getattr(self, "embedding_manager", None)
+                        and self.embedding_manager.is_mock
+                        and bool(getattr(strategy, "requires_embeddings", True))
+                    ):
+                        strategy = app.core.analyzer_strategies.clustering_registry.get_strategy(
+                            "default"
+                        )
                     if strategy and hasattr(strategy, "clear_isolated_state"):
                         cast(Any, strategy).clear_isolated_state()
             except Exception:

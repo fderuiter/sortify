@@ -35,7 +35,6 @@ def _write_app_settings(
     settings.PRESERVE_HIERARCHY = preserve_hierarchy
     settings.CONFLICT_POLICY = conflict_policy
     settings.CONTEXTUAL_RENAMING = False
-    settings.CLINICAL_SMART_RENAMING = False
     if keyword_rules is not None:
         settings.KEYWORD_RULES = keyword_rules
     settings.flush()

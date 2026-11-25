@@ -687,6 +687,8 @@ def recursive_kmeans_worker_main(
 class ClusteringStrategy(Protocol):
     """Protocol for defining document clustering strategies."""
 
+    requires_embeddings: bool
+
     def generate_plan(
         self,
         filenames: list[str],
@@ -709,6 +711,7 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
     # Clustering runs in a spawned child process so a cancel can kill it and
     # its memory is reclaimed. Set False to cluster in this process instead.
     run_in_subprocess: bool = True
+    requires_embeddings: bool = True
 
     def _generate_plan_inline(
         self,
@@ -1579,6 +1582,8 @@ def cooperative_queue_get(q, timeout=8.0):
 
 class GenerativeNamingStrategy(RecursiveKMeansStrategy):
     """Strategy that uses a generative model to create descriptive folder names."""
+
+    requires_embeddings: bool = False
 
     @thread_isolated_execution
     def generate_plan(
@@ -3535,6 +3540,10 @@ class ClusteringRegistry:
     def register(self, name: str, strategy: ClusteringStrategy):
         """Register a new clustering strategy under the given name."""
         self._strategies[name] = strategy
+
+    def unregister(self, name: str) -> None:
+        """Remove a registered clustering strategy by name if present."""
+        self._strategies.pop(name, None)
 
     def get_strategy(self, name: str) -> ClusteringStrategy | None:
         """Retrieve a clustering strategy by name."""

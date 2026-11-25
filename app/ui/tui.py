@@ -1397,7 +1397,6 @@ class AutoSorterTUI(
                 "MAX_FOLDERS",
                 "SORTING_STRATEGY",
                 "AI_ASSISTED_NAMING",
-                "CLINICAL_SMART_RENAMING",
                 "CONTEXTUAL_RENAMING",
                 "SPEAK_ANNOUNCEMENTS",
                 "ENABLE_CHARACTER_KEY_SHORTCUTS",
@@ -1439,6 +1438,15 @@ class AutoSorterTUI(
                             exc_info=True,
                         )
                         validation_errors.append(f"{key}: {exc}")
+
+            plugin_updates = res.get("PLUGIN_SETTINGS")
+            if isinstance(plugin_updates, dict):
+                setter = getattr(self.settings, "set_plugin_setting", None)
+                for p_key, p_val in plugin_updates.items():
+                    if callable(setter):
+                        setter(str(p_key), p_val)
+                    else:
+                        setattr(self.settings, str(p_key), p_val)
 
             if validation_errors:
                 err_msg = f"Failed to save settings ({'; '.join(validation_errors)})."
@@ -1559,13 +1567,17 @@ class AutoSorterTUI(
                     res = handler()
                     if inspect.iscoroutine(res):
                         self.run_worker(res)
+            elif self.run_plugin_action(cmd.action_name):
+                return
             else:
                 self.announce(
                     f"Action '{cmd.action_name}' is not supported.",
                     priority="assertive",
                 )
 
-        self.push_screen(CommandPaletteModal(), on_command_selected)
+        self.push_screen(
+            CommandPaletteModal(settings=self.settings), on_command_selected
+        )
 
     def action_open_active_rules(self) -> None:
         """Open active rule manager modal screen [Ctrl+R]."""
@@ -1650,19 +1662,19 @@ class AutoSorterTUI(
             return
         self.push_screen(WizardModal(self.settings, current_dir=self.base_dir))
 
-    def action_open_cro_forensic(self) -> None:
-        """Open CRO multi-study forensic ingestion modal screen."""
-        if self._is_text_control_focused(allow_tree_search=True):
-            return
+    def run_plugin_action(self, action_name: str) -> bool:
+        """Invoke a dynamic TUI action registered by an active plugin if available."""
         from app.core.plugin_registry import PluginRegistry
 
         reg = PluginRegistry.get_instance()
         reg.load_plugins_from_settings(self.settings)
-        view_cls = reg.get_tui_view("cro_forensic")
-        if view_cls:
-            self.push_screen(view_cls(self.settings, base_dir=self.base_dir))
-        else:
-            self.announce("CRO Forensic ingestion plugin is not enabled.")
+        plugin_handler = reg.get_tui_action(action_name)
+        if not callable(plugin_handler):
+            return False
+        res = plugin_handler(self)
+        if inspect.iscoroutine(res):
+            self.run_worker(res)
+        return True
 
     def action_open_cheat_sheet(self, from_character: bool | None = None) -> None:
         """Open keyboard shortcut cheat sheet modal screen."""

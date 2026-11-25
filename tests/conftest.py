@@ -134,6 +134,7 @@ def reset_shared_registry():
     from app.core.db_conn import clear_connection_cache
     from app.core.downloader import _VERIFICATION_CACHE, DownloadManager
     from app.core.network_guard import _thread_local
+    from app.core.plugin_registry import PluginRegistry
     from app.core.shared_registry import SharedModelRegistry, SharedWorkerPool
 
     def _cleanup_test_app_dir():
@@ -174,6 +175,7 @@ def reset_shared_registry():
 
     _cleanup_test_app_dir()
     AppSettings.clear_observers()
+    PluginRegistry.reset_instance()
     DownloadManager.reset_instance()
     SharedModelRegistry._instance = None
     _thread_local.sandboxed = False
@@ -187,6 +189,7 @@ def reset_shared_registry():
     yield
     _cleanup_test_app_dir()
     AppSettings.clear_observers()
+    PluginRegistry.reset_instance()
     DownloadManager.reset_instance()
     SharedModelRegistry._instance = None
     _thread_local.sandboxed = False
