@@ -29,6 +29,7 @@ from app.core.path_utils import safe_relpath
 from app.core.pipeline import SortPipeline, drop_scope, validate_drop_paths
 from app.core.quarantine_interceptor import QuarantineInterceptorService
 from app.core.resilient_file_ops import resilient_remove
+from app.core.rule_scopes import resolve_scoped_settings
 from app.core.scanner import get_files_recursively
 from app.core.session import AppSession
 
@@ -1049,13 +1050,14 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             return
 
         # Phase 0: Quarantine Interceptor Staging & Compliance Policy Evaluation
-        policies = getattr(self.settings, "POLICIES", [])
+        scoped_settings = resolve_scoped_settings(self.settings, self.base_dir)
+        policies = getattr(scoped_settings, "POLICIES", [])
         worker_timeout = getattr(self.settings, "WORKER_TIMEOUT", 300.0)
         interceptor = QuarantineInterceptorService(
             db=app_session.db,
             policies=policies,
             worker_timeout=worker_timeout,
-            runtime_settings=self.settings,
+            runtime_settings=scoped_settings,
         )
 
         try:

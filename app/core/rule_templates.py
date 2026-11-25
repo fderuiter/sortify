@@ -178,20 +178,31 @@ def get_starter_template_by_id(pack_id: str) -> StarterTemplatePack | None:
 
 
 def apply_starter_templates(
-    settings: Any, pack_ids: list[str]
+    settings: Any,
+    pack_ids: list[str],
+    *,
+    folder: str | Path | None = None,
 ) -> tuple[dict[str, str], list[dict[str, Any]]]:
     """Merge selected starter template packs into settings without overwriting existing custom rules.
 
     Args:
-        settings: Application settings object (`AppSettings`).
+        settings: Application settings object (`AppSettings` or `ScopedSettingsView`).
         pack_ids: List of template pack IDs to apply.
+        folder: Optional target workspace folder path to scope starter templates to.
 
     Returns
     -------
         Tuple of updated (KEYWORD_RULES dict, POLICIES list).
     """
-    existing_keywords = dict(getattr(settings, "KEYWORD_RULES", {}) or {})
-    existing_policies = list(getattr(settings, "POLICIES", []) or [])
+    from app.core.rule_scopes import resolve_scoped_settings
+
+    target_settings = (
+        resolve_scoped_settings(settings, folder, fallback_to_global=True)
+        if folder is not None
+        else settings
+    )
+    existing_keywords = dict(getattr(target_settings, "KEYWORD_RULES", {}) or {})
+    existing_policies = list(getattr(target_settings, "POLICIES", []) or [])
 
     new_keywords = dict(existing_keywords)
     new_policies = [dict(p) for p in existing_policies]
@@ -219,11 +230,11 @@ def apply_starter_templates(
                 new_policies.append(dict(policy))
 
     # Apply to settings
-    setattr(settings, "KEYWORD_RULES", new_keywords)
-    setattr(settings, "POLICIES", new_policies)
+    setattr(target_settings, "KEYWORD_RULES", new_keywords)
+    setattr(target_settings, "POLICIES", new_policies)
 
-    if hasattr(settings, "_save"):
-        settings._save()
+    if hasattr(target_settings, "_save"):
+        target_settings._save()
 
     return new_keywords, new_policies
 
@@ -240,6 +251,7 @@ class _ExportPolicyEntry:
     rename_pattern: str
     enabled: bool
     is_unarchive: bool
+    is_trash: bool
     match_mode: str
     has_explicit_match_mode: bool
     negate: bool
@@ -262,10 +274,13 @@ def _iter_export_policies(
         p_type = str(pol.get("type", "keyword")).strip().lower()
         p_action = str(pol.get("action", "") or "").strip().lower()
         p_expr = str(pol.get("expression", "")).strip()
+        p_target = str(pol.get("target_path", "")).strip()
         raw_conds = pol.get("conditions")
         conds = (
             raw_conds if (isinstance(raw_conds, list) and len(raw_conds) > 0) else None
         )
+        if not p_expr and p_type == "duplicate":
+            p_expr = "*"
         if not p_expr and conds is None:
             continue
         yield _ExportPolicyEntry(
@@ -273,10 +288,11 @@ def _iter_export_policies(
             policy_type=p_type,
             action=p_action,
             expression=p_expr,
-            target_path=str(pol.get("target_path", "")).strip(),
+            target_path=p_target,
             rename_pattern=str(pol.get("rename_pattern", "") or "").strip(),
             enabled=bool(pol.get("enabled", True)),
             is_unarchive=(p_action == "unarchive" or p_type == "unarchive"),
+            is_trash=(p_action == "trash" or (p_type == "duplicate" and not p_target)),
             match_mode=str(pol.get("match_mode", "all") or "all").strip().lower(),
             has_explicit_match_mode=("match_mode" in pol),
             negate=bool(pol.get("negate", False)),
@@ -296,7 +312,7 @@ def _build_hazel_policy_condition(
         cond_target = "Extension" if ("." in p_expr and "*" not in p_expr) else "Name"
         return cond_target, "matches", p_expr
     if p_type == "duplicate":
-        return "Duplicate", "is", p_expr
+        return "Duplicate", "is", ("true" if p_expr in ("*", "") else p_expr)
     if p_type in ("size", "age", "modified_date", "created_date", "exif_date"):
         target_map = {
             "size": "Size",
@@ -406,13 +422,16 @@ def export_active_rules(
     settings: Any,
     target_format: str,
     destination_path: str | Path,
+    *,
+    folder: str | Path | None = None,
 ) -> Path:
     """Serialize rules from active settings into the selected target format and save to disk.
 
     Args:
-        settings: Application settings object (`AppSettings`) containing active rules.
+        settings: Application settings object (`AppSettings` or `ScopedSettingsView`).
         target_format: Selected export format ('sortify_json', 'hazel', or 'dropit_ini').
         destination_path: File path on disk where rules should be exported.
+        folder: Optional workspace folder path to export folder-scoped rules for.
 
     Returns
     -------
@@ -455,27 +474,67 @@ def export_active_rules(
     if dest_path.exists() and not os.access(dest_path, os.W_OK):
         raise OSError(f"Destination file '{dest_path}' is not writable.")
 
-    # Non-destructive: extract rules without mutating settings
-    keyword_rules = dict(getattr(settings, "KEYWORD_RULES", {}) or {})
-    policies = [
-        copy.deepcopy(dict(p)) for p in (getattr(settings, "POLICIES", []) or [])
-    ]
+    from app.core.rule_scopes import resolve_scoped_settings
 
     fmt_clean = str(target_format).strip().lower().replace(" ", "_").replace(".", "")
 
     if "sortify" in fmt_clean or fmt_clean in ("json", "sortify_json"):
+        if folder is not None and str(folder).strip():
+            eff_source = resolve_scoped_settings(
+                settings, folder, fallback_to_global=False
+            )
+            exported_scopes: dict[str, dict[str, Any]] = {}
+        else:
+            eff_source = getattr(settings, "root_settings", settings)
+            raw_scopes = getattr(eff_source, "FOLDER_RULE_SCOPES", {}) or {}
+            exported_scopes = (
+                copy.deepcopy(dict(raw_scopes)) if isinstance(raw_scopes, dict) else {}
+            )
+
+        keyword_rules = dict(getattr(eff_source, "KEYWORD_RULES", {}) or {})
+        disabled_keyword_rules = dict(
+            getattr(eff_source, "DISABLED_KEYWORD_RULES", {}) or {}
+        )
+        learned_rules = dict(getattr(eff_source, "LEARNED_RULES", {}) or {})
+        disabled_learned_rules = dict(
+            getattr(eff_source, "DISABLED_LEARNED_RULES", {}) or {}
+        )
+        raw_ext_cats = getattr(eff_source, "EXTENSION_CATEGORIES", {}) or {}
+        extension_categories = (
+            copy.deepcopy(dict(raw_ext_cats)) if isinstance(raw_ext_cats, dict) else {}
+        )
+        policies = [
+            copy.deepcopy(dict(p)) for p in (getattr(eff_source, "POLICIES", []) or [])
+        ]
+
         payload = {
             "format": "sortify",
-            "version": 1,
+            "version": 2,
             "KEYWORD_RULES": keyword_rules,
+            "DISABLED_KEYWORD_RULES": disabled_keyword_rules,
+            "LEARNED_RULES": learned_rules,
+            "DISABLED_LEARNED_RULES": disabled_learned_rules,
+            "EXTENSION_CATEGORIES": extension_categories,
             "POLICIES": policies,
+            "FOLDER_RULE_SCOPES": exported_scopes,
         }
         dest_path.write_text(
             json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
         )
         return dest_path
 
-    elif "hazel" in fmt_clean or fmt_clean in ("hazelrules",):
+    # Non-destructive: extract rules without mutating settings
+    ext_source = (
+        resolve_scoped_settings(settings, folder, fallback_to_global=True)
+        if folder is not None and str(folder).strip()
+        else settings
+    )
+    keyword_rules = dict(getattr(ext_source, "KEYWORD_RULES", {}) or {})
+    policies = [
+        copy.deepcopy(dict(p)) for p in (getattr(ext_source, "POLICIES", []) or [])
+    ]
+
+    if "hazel" in fmt_clean or fmt_clean in ("hazelrules",):
         hazel_field_map = {
             "name": "Name",
             "extension": "Extension",
@@ -563,7 +622,7 @@ def export_active_rules(
             )
 
         for entry in _iter_export_policies(policies):
-            if entry.action == "trash":
+            if entry.is_trash:
                 hazel_act_type = "NSRuleActionTrash"
             elif entry.is_unarchive:
                 hazel_act_type = "NSRuleActionUnarchive"
@@ -573,10 +632,10 @@ def export_active_rules(
             rule_actions: list[dict[str, Any]] = [
                 {
                     "NSRuleActionType": hazel_act_type,
-                    "DestinationPath": entry.target_path,
+                    "DestinationPath": "" if entry.is_trash else entry.target_path,
                 }
             ]
-            if entry.rename_pattern and entry.action != "trash":
+            if entry.rename_pattern and not entry.is_trash:
                 rule_actions.append(
                     {
                         "NSRuleActionType": "NSRuleActionRename",
@@ -660,12 +719,17 @@ def export_active_rules(
             assoc_idx += 1
 
         for entry in _iter_export_policies(policies):
-            if entry.action == "trash":
+            if not entry.enabled:
+                continue
+            if entry.is_trash:
                 dropit_act = "Delete"
+                dropit_dest = ""
             elif entry.is_unarchive:
                 dropit_act = "Extract"
+                dropit_dest = entry.target_path
             else:
                 dropit_act = "Move"
+                dropit_dest = entry.target_path
 
             rules_val, needs_structured_meta = _format_dropit_compound_rules(entry)
             has_conds = entry.conditions is not None
@@ -675,7 +739,7 @@ def export_active_rules(
                 "Name": entry.expression,
                 "Rules": rules_val,
                 "Action": dropit_act,
-                "Destination": entry.target_path,
+                "Destination": dropit_dest,
             }
             if entry.regex:
                 sec_dict["Regex"] = "true"

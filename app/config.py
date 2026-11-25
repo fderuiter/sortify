@@ -31,6 +31,24 @@ from app.core.policy_engine import (
     validate_policy_conditions,
     validate_safe_regex,
 )
+from app.core.rule_scopes import (
+    FOLDER_SCOPE_RULE_KEYS as FOLDER_SCOPE_RULE_KEYS,
+)
+from app.core.rule_scopes import (
+    ScopedSettingsView as ScopedSettingsView,
+)
+from app.core.rule_scopes import (
+    normalize_folder_scope_key as normalize_folder_scope_key,
+)
+from app.core.rule_scopes import (
+    resolve_cli_settings_filepath as resolve_cli_settings_filepath,
+)
+from app.core.rule_scopes import (
+    resolve_profile_settings_path as resolve_profile_settings_path,
+)
+from app.core.rule_scopes import (
+    resolve_scoped_settings as resolve_scoped_settings,
+)
 
 _SCHEMA_VALIDATOR = None
 _SCHEMA_VALIDATOR_LOCK = threading.Lock()
@@ -506,11 +524,28 @@ class Settings(BaseSettings):
             "learned from interactive reassignments, validated with the same relative path rules as KEYWORD_RULES."
         ),
     )
+    DISABLED_LEARNED_RULES: dict = Field(
+        default_factory=dict,
+        description=(
+            "Mapping of temporarily disabled learned keyword patterns to relative target folder paths, "
+            "preserving separator-normalized learned rule semantics while inactive and enforcing the same "
+            "relative target path validation as LEARNED_RULES."
+        ),
+    )
     EXTENSION_CATEGORIES: dict = Field(
         default_factory=dict,
         description=(
-            "Custom mapping of category folder names to lists of file extensions or "
-            "extension overrides used for fallback file-type routing."
+            "Custom mapping of file extensions to relative category folder paths (or category folder "
+            "paths to lists of file extensions) used for fallback file-type routing."
+        ),
+    )
+    FOLDER_RULE_SCOPES: dict = Field(
+        default_factory=dict,
+        description=(
+            "Mapping of canonicalized workspace folder paths to per-folder rule scope dictionaries "
+            "containing optional KEYWORD_RULES, DISABLED_KEYWORD_RULES, LEARNED_RULES, "
+            "DISABLED_LEARNED_RULES, EXTENSION_CATEGORIES, and POLICIES entries, all validated against "
+            "relative target path and policy constraints."
         ),
     )
     POLICIES: list[PolicyRule] = Field(
@@ -1076,14 +1111,24 @@ class Settings(BaseSettings):
             raise ValueError("RENAME_PATTERN contains illegal filename characters.")
         return cleaned
 
-    @field_validator("KEYWORD_RULES", "LEARNED_RULES", "DISABLED_KEYWORD_RULES")
+    @field_validator(
+        "KEYWORD_RULES",
+        "LEARNED_RULES",
+        "DISABLED_KEYWORD_RULES",
+        "DISABLED_LEARNED_RULES",
+    )
     @classmethod
     def validate_keyword_rules(cls, v: dict) -> dict:
         """Validate that keyword routing rules and learned rules have valid target paths."""
         from app.core.path_utils import validate_target_path
         from app.core.pattern_formatter import PatternTokenFormatter
 
+        if not isinstance(v, dict):
+            raise ValueError("Keyword and learned rule tables must be dictionaries.")
+
         for keyword, target_path in v.items():
+            if not isinstance(keyword, str) or not keyword.strip():
+                raise ValueError("Rule pattern keys must be non-empty strings.")
             validate_target_path(target_path, keyword=keyword)
             if isinstance(target_path, str) and "{" in target_path:
                 PatternTokenFormatter.format_target_path(
@@ -1097,6 +1142,100 @@ class Settings(BaseSettings):
                     seq=1,
                 )
         return v
+
+    @field_validator("EXTENSION_CATEGORIES")
+    @classmethod
+    def validate_extension_categories(cls, v: dict) -> dict:
+        """Validate that custom extension category mappings use safe relative target folder paths."""
+        from app.core.path_utils import validate_target_path
+
+        if not isinstance(v, dict):
+            raise ValueError("EXTENSION_CATEGORIES must be a dictionary.")
+
+        for key, target in v.items():
+            if not isinstance(key, str) or not key.strip():
+                raise ValueError("EXTENSION_CATEGORIES keys must be non-empty strings.")
+            if isinstance(target, str):
+                validate_target_path(target, keyword=key)
+            elif isinstance(target, (list, tuple, set)):
+                validate_target_path(key, keyword=key)
+                for ext_item in target:
+                    if not isinstance(ext_item, str) or not ext_item.strip():
+                        raise ValueError(
+                            f"Extension list for category '{key}' must contain non-empty strings."
+                        )
+            else:
+                raise ValueError(
+                    f"EXTENSION_CATEGORIES value for '{key}' must be a relative target folder string or list of extensions."
+                )
+        return v
+
+    @field_validator("FOLDER_RULE_SCOPES", mode="before")
+    @classmethod
+    def validate_folder_rule_scopes(cls, v: Any) -> dict[str, dict[str, Any]]:
+        """Validate per-folder rule scopes and canonicalize folder keys."""
+        if not isinstance(v, dict):
+            raise ValueError("FOLDER_RULE_SCOPES must be a dictionary.")
+
+        allowed_keys = set(FOLDER_SCOPE_RULE_KEYS)
+        normalized_scopes: dict[str, dict[str, Any]] = {}
+
+        for raw_folder, raw_scope in v.items():
+            norm_folder = normalize_folder_scope_key(raw_folder)
+            if not isinstance(raw_scope, dict):
+                raise ValueError(
+                    f"Folder rule scope for '{raw_folder}' must be a dictionary."
+                )
+            unknown_keys = set(raw_scope.keys()) - allowed_keys
+            if unknown_keys:
+                unknown_sorted = ", ".join(sorted(str(k) for k in unknown_keys))
+                raise ValueError(
+                    f"Unsupported key(s) in FOLDER_RULE_SCOPES['{raw_folder}']: {unknown_sorted}."
+                )
+
+            validated_entry: dict[str, Any] = dict(
+                normalized_scopes.get(norm_folder, {})
+            )
+            for table_name in (
+                "KEYWORD_RULES",
+                "DISABLED_KEYWORD_RULES",
+                "LEARNED_RULES",
+                "DISABLED_LEARNED_RULES",
+            ):
+                if table_name in raw_scope:
+                    validated_map = dict(
+                        cls.validate_keyword_rules(raw_scope[table_name])
+                    )
+                    if table_name in validated_entry:
+                        merged_map = dict(validated_entry[table_name])
+                        merged_map.update(validated_map)
+                        validated_entry[table_name] = merged_map
+                    else:
+                        validated_entry[table_name] = validated_map
+
+            if "EXTENSION_CATEGORIES" in raw_scope:
+                validated_ext = dict(
+                    cls.validate_extension_categories(raw_scope["EXTENSION_CATEGORIES"])
+                )
+                if "EXTENSION_CATEGORIES" in validated_entry:
+                    merged_ext = dict(validated_entry["EXTENSION_CATEGORIES"])
+                    merged_ext.update(validated_ext)
+                    validated_entry["EXTENSION_CATEGORIES"] = merged_ext
+                else:
+                    validated_entry["EXTENSION_CATEGORIES"] = validated_ext
+
+            if "POLICIES" in raw_scope:
+                validated_pols = list(cls.validate_policies(raw_scope["POLICIES"]))
+                if "POLICIES" in validated_entry:
+                    existing_pols = list(validated_entry["POLICIES"])
+                    existing_pols.extend(validated_pols)
+                    validated_entry["POLICIES"] = cls.validate_policies(existing_pols)
+                else:
+                    validated_entry["POLICIES"] = validated_pols
+
+            normalized_scopes[norm_folder] = validated_entry
+
+        return normalized_scopes
 
     @field_validator("POLICIES", mode="before")
     @classmethod
@@ -1524,7 +1663,11 @@ class AppSettings:
                 cls._active_file_timers.pop(norm_path, None)
 
     def __init__(self, filepath=None):
-        self._filepath = filepath or str(get_app_dir() / "settings.json")
+        self._filepath = (
+            os.path.abspath(os.path.expanduser(str(filepath)))
+            if filepath
+            else str(get_app_dir() / "settings.json")
+        )
         self._save_timer = None
         self._lock = threading.Lock()
         # Per-run overrides (CLI flags): name -> the persisted JSON value that
@@ -1898,6 +2041,29 @@ class AppSettings:
                     callback(key, value)
                 except TypeError:
                     callback()
+
+    @property
+    def filepath(self) -> str:
+        """Return the active configuration JSON file path."""
+        return self._filepath
+
+    def for_folder(
+        self,
+        folder_path: str | os.PathLike[str] | None,
+        *,
+        fallback_to_global: bool = True,
+    ) -> Any:
+        """Return a folder-scoped view over this ``AppSettings`` instance."""
+        if folder_path is None:
+            return self
+        raw = os.fspath(folder_path).strip()
+        if not raw:
+            return self
+        return ScopedSettingsView(
+            self,
+            raw,
+            fallback_to_global=fallback_to_global,
+        )
 
     def __getattr__(self, name):
         """Get attribute dynamically from the settings model."""

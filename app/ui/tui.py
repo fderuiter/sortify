@@ -387,6 +387,7 @@ class AutoSorterTUI(
         else:
             self.base_dir = ""
             self.source_dirs = []
+        self._active_folder_settings: Any = self.get_active_settings()
         self.skip_wizard = skip_wizard
         self.non_interactive = non_interactive
         self.open_dropzone = bool(open_dropzone)
@@ -1167,6 +1168,18 @@ class AutoSorterTUI(
 
     # --- Actions ---
 
+    def get_active_settings(self, *, fallback_to_global: bool = True) -> Any:
+        """Return a folder-scoped settings view for ``base_dir`` when selected."""
+        from app.config import resolve_scoped_settings
+
+        if getattr(self, "base_dir", None):
+            return resolve_scoped_settings(
+                self.settings,
+                self.base_dir,
+                fallback_to_global=fallback_to_global,
+            )
+        return self.settings
+
     def action_select_dir(self) -> None:
         """Open directory selection modal."""
         if self._is_text_control_focused(allow_tree_search=True):
@@ -1192,6 +1205,7 @@ class AutoSorterTUI(
                     self.collision_paths.clear()
                 self.source_dirs = valid_paths
                 self.base_dir = valid_paths[0]
+                self._active_folder_settings = self.get_active_settings()
                 self._update_onboarding_cta_visibility()
                 self.update_status()
                 self.run_worker(
@@ -1211,6 +1225,7 @@ class AutoSorterTUI(
             DirectorySelectModal(
                 current_dir=self.base_dir,
                 source_dirs=getattr(self, "source_dirs", None),
+                settings=self.settings,
             ),
             on_selected,
         )
@@ -1569,7 +1584,9 @@ class AutoSorterTUI(
                 if self.base_dir:
                     self.action_scan_directory()
 
-        self.push_screen(ActiveRuleManagerModal(self.settings), on_rules_closed)
+        self.push_screen(
+            ActiveRuleManagerModal(self.get_active_settings()), on_rules_closed
+        )
 
     def action_open_template_gallery(self) -> None:
         """Open starter rule template gallery modal screen."""
@@ -1582,7 +1599,9 @@ class AutoSorterTUI(
             except Exception:
                 pass
 
-        self.push_screen(TemplateGalleryModal(self.settings), on_gallery_closed)
+        self.push_screen(
+            TemplateGalleryModal(self.get_active_settings()), on_gallery_closed
+        )
 
     def action_export_rules(self) -> None:
         """Open active rule export modal screen."""
@@ -1595,7 +1614,7 @@ class AutoSorterTUI(
             except Exception:
                 pass
 
-        self.push_screen(ExportRulesModal(self.settings), on_export_closed)
+        self.push_screen(ExportRulesModal(self.get_active_settings()), on_export_closed)
 
     def action_import_rules(self) -> None:
         """Open external rule import modal screen."""
@@ -1612,7 +1631,7 @@ class AutoSorterTUI(
             except Exception:
                 pass
 
-        self.push_screen(RuleImportModal(self.settings), on_import_closed)
+        self.push_screen(RuleImportModal(self.get_active_settings()), on_import_closed)
 
     action_browse_rule_templates = action_open_template_gallery
     action_open_export_rules = action_export_rules

@@ -54,6 +54,7 @@ flowchart TD
     end
     subgraph execution_operations ["Policy, Validation & File Operations (app.core)"]
         core_policy_engine{app.core.policy_engine}
+        core_rule_scopes["app.core.rule_scopes"]
         core_rule_templates["app.core.rule_templates"]
         core_rule_importers["app.core.rule_importers"]
         core_quarantine_interceptor["app.core.quarantine_interceptor"]
@@ -85,6 +86,7 @@ flowchart TD
     app_main --> app_tui
     app_main --> core_pipeline
     core_pipeline --> core_lifecycle
+    core_pipeline --> core_rule_scopes
     core_daemon --> core_pipeline
     core_pipeline --> core_session
     core_session --> core_folder_lock

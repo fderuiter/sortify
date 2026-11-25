@@ -32,6 +32,14 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.cli.rules_cli
 
+## `app.cli.rules_crud`
+
+::: app.cli.rules_crud
+
+## `app.cli.settings_args`
+
+::: app.cli.settings_args
+
 ## `app.config`
 
 ::: app.config
@@ -215,6 +223,10 @@ This document is automatically generated. Do not edit manually.
 ## `app.core.rule_importers`
 
 ::: app.core.rule_importers
+
+## `app.core.rule_scopes`
+
+::: app.core.rule_scopes
 
 ## `app.core.rule_templates`
 

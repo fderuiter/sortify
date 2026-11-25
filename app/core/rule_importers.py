@@ -1093,7 +1093,10 @@ class RuleConflictAnalyzer:
             existing_kw_map[str(k).strip().lower()] = (k, v)
 
         keyword_rules = getattr(import_result, "keyword_rules", {}) or {}
-        for kw, target_path in keyword_rules.items():
+        disabled_kw_rules = getattr(import_result, "disabled_keyword_rules", {}) or {}
+        combined_incoming_kw = dict(disabled_kw_rules)
+        combined_incoming_kw.update(keyword_rules)
+        for kw, target_path in combined_incoming_kw.items():
             kw_clean = str(kw).strip()
             if not kw_clean:
                 continue
@@ -1164,41 +1167,57 @@ class RuleConflictAnalyzer:
 
 @dataclass
 class ImportResult:
-    """Data container holding extracted keyword rules, policies, and warnings."""
+    """Data container holding extracted keyword rules, policies, scopes, and warnings."""
 
     keyword_rules: dict[str, str] = field(default_factory=dict)
     policies: list[dict[str, Any]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     unsupported: list[dict[str, Any]] = field(default_factory=list)
     source_format: str = "Unknown"
+    disabled_keyword_rules: dict[str, str] = field(default_factory=dict)
+    learned_rules: dict[str, str] = field(default_factory=dict)
+    disabled_learned_rules: dict[str, str] = field(default_factory=dict)
+    extension_categories: dict[str, Any] = field(default_factory=dict)
+    folder_rule_scopes: dict[str, dict[str, Any]] = field(default_factory=dict)
+    preserve_states: bool = False
 
     def merge_into_settings(
         self,
         settings: Any,
         resolutions: dict[str, str] | None = None,
         default_strategy: str = "keep_existing",
-        import_disabled: bool = False,
+        import_disabled: bool | None = False,
+        *,
+        force_enable: bool = False,
     ) -> tuple[dict[str, str], list[dict[str, Any]]]:
         """Safely merge extracted rules into settings according to resolution choices.
 
         Parameters
         ----------
         settings : Any
-            The AppSettings configuration object.
+            The AppSettings or ScopedSettingsView configuration object.
         resolutions : dict[str, str] | None, optional
             Map of rule identifier to conflict resolution choice
             (``'keep_existing'``, ``'overwrite'``, ``'skip_conflicting'``).
         default_strategy : str, optional
             Default bulk resolution strategy if identifier is not specified.
-        import_disabled : bool, optional
-            When True, stage newly added keyword rules in ``DISABLED_KEYWORD_RULES``
-            and newly added policies with ``enabled=False`` until reviewed.
+        import_disabled : bool | None, optional
+            When True, stage newly added rules as disabled. When False or None,
+            preserve native enabled/disabled states for Sortify JSON backups (or
+            activate external rules unless ``force_enable=True`` overrides disabled
+            Sortify JSON rules to active).
+        force_enable : bool, optional
+            When True, force even disabled rules in a Sortify JSON backup to be
+            activated immediately.
 
         Returns
         -------
         tuple[dict[str, str], list[dict[str, Any]]]
             Tuple of updated ``(KEYWORD_RULES, POLICIES)``.
         """
+        from app.core.rule_scopes import normalize_folder_scope_key
+
+        stage_disabled = bool(import_disabled)
         resolutions = resolutions or {}
         conflicts = RuleConflictAnalyzer.analyze(self, settings)
         kw_conflicts = {
@@ -1219,24 +1238,28 @@ class ImportResult:
         existing_kw_lower = {k.lower(): k for k in existing_keywords.keys()}
         existing_dis_lower = {k.lower(): k for k in existing_disabled.keys()}
 
-        for kw, target_path in self.keyword_rules.items():
-            kw_clean = str(kw).strip()
+        def _merge_kw_entry(
+            raw_kw: str,
+            raw_target: str,
+            *,
+            as_disabled: bool,
+            from_disabled_source: bool = False,
+        ) -> None:
+            kw_clean = str(raw_kw).strip()
             if not kw_clean:
-                continue
+                return
 
-            norm_target, was_conv, err = normalize_imported_target_path(
-                str(target_path)
-            )
+            norm_target, was_conv, err = normalize_imported_target_path(str(raw_target))
             if err is not None or not norm_target:
                 reason = err or "Empty destination folder"
                 self.warnings.append(
                     f"Keyword rule '{kw_clean}' skipped before merge: {reason}"
                 )
                 self.unsupported.append({"rule": kw_clean, "reason": reason})
-                continue
+                return
             if was_conv:
                 self.warnings.append(
-                    f"Keyword rule '{kw_clean}': converted destination path '{target_path}' -> '{norm_target}'."
+                    f"Keyword rule '{kw_clean}': converted destination path '{raw_target}' -> '{norm_target}'."
                 )
 
             kw_lower = kw_clean.lower()
@@ -1251,7 +1274,18 @@ class ImportResult:
                         ),
                     )
                     if res == "overwrite":
-                        new_keywords[ex_kw] = norm_target
+                        if from_disabled_source and as_disabled:
+                            new_keywords.pop(ex_kw, None)
+                            new_disabled[ex_kw] = norm_target
+                        else:
+                            new_keywords[ex_kw] = norm_target
+                elif (
+                    from_disabled_source
+                    and as_disabled
+                    and default_strategy == "overwrite"
+                ):
+                    new_keywords.pop(ex_kw, None)
+                    new_disabled[ex_kw] = norm_target
             elif kw_lower in existing_dis_lower:
                 ex_dis_kw = existing_dis_lower[kw_lower]
                 if kw_lower in kw_conflicts:
@@ -1263,19 +1297,35 @@ class ImportResult:
                         ),
                     )
                     if res == "overwrite":
-                        if import_disabled:
+                        if as_disabled:
                             new_disabled[ex_dis_kw] = norm_target
                         else:
                             new_disabled.pop(ex_dis_kw, None)
                             new_keywords[ex_dis_kw] = norm_target
-                elif not import_disabled:
+                elif not as_disabled:
                     new_disabled.pop(ex_dis_kw, None)
                     new_keywords[ex_dis_kw] = norm_target
             else:
-                if import_disabled:
+                if as_disabled:
                     new_disabled[kw_clean] = norm_target
                 else:
                     new_keywords[kw_clean] = norm_target
+
+        for kw, target_path in self.keyword_rules.items():
+            _merge_kw_entry(
+                kw,
+                target_path,
+                as_disabled=stage_disabled,
+                from_disabled_source=False,
+            )
+
+        for kw, target_path in self.disabled_keyword_rules.items():
+            _merge_kw_entry(
+                kw,
+                target_path,
+                as_disabled=(stage_disabled or not force_enable),
+                from_disabled_source=True,
+            )
 
         for policy in self.policies:
             p_type = str(policy.get("type", "")).strip().lower()
@@ -1361,23 +1411,234 @@ class ImportResult:
                         ),
                     )
                     if res == "overwrite":
-                        if (
+                        if force_enable:
+                            pol_entry["enabled"] = True
+                        elif (
                             "enabled" not in pol_entry
                             and "enabled" in new_policies[matching_idx]
                         ):
                             pol_entry["enabled"] = new_policies[matching_idx]["enabled"]
+                        elif stage_disabled and "enabled" not in pol_entry:
+                            pol_entry["enabled"] = False
                         new_policies[matching_idx] = pol_entry
+                elif default_strategy == "overwrite":
+                    if force_enable:
+                        new_policies[matching_idx]["enabled"] = True
+                    elif "enabled" in pol_entry:
+                        new_policies[matching_idx]["enabled"] = pol_entry["enabled"]
             else:
-                if import_disabled:
+                if stage_disabled:
                     pol_entry["enabled"] = False
+                elif force_enable:
+                    pol_entry["enabled"] = True
                 new_policies.append(pol_entry)
 
         setattr(settings, "KEYWORD_RULES", new_keywords)
-        if import_disabled or hasattr(settings, "DISABLED_KEYWORD_RULES"):
+        if (
+            stage_disabled
+            or bool(self.disabled_keyword_rules)
+            or hasattr(settings, "DISABLED_KEYWORD_RULES")
+        ):
             setattr(settings, "DISABLED_KEYWORD_RULES", new_disabled)
         setattr(settings, "POLICIES", new_policies)
 
-        if not import_disabled and hasattr(settings, "DUPLICATE_ACTION"):
+        if self.learned_rules or self.disabled_learned_rules:
+            new_learned = dict(getattr(settings, "LEARNED_RULES", {}) or {})
+            new_dis_learned = dict(
+                getattr(settings, "DISABLED_LEARNED_RULES", {}) or {}
+            )
+
+            def _merge_learned_entry(
+                raw_pat: str, raw_target: str, *, as_disabled: bool
+            ) -> None:
+                pat_clean = str(raw_pat).strip()
+                if not pat_clean:
+                    return
+                norm_target, was_conv, err = normalize_imported_target_path(
+                    str(raw_target)
+                )
+                if err is not None or not norm_target:
+                    reason = err or "Empty destination folder"
+                    self.warnings.append(
+                        f"Learned rule '{pat_clean}' skipped before merge: {reason}"
+                    )
+                    self.unsupported.append({"rule": pat_clean, "reason": reason})
+                    return
+                if was_conv:
+                    self.warnings.append(
+                        f"Learned rule '{pat_clean}': converted destination path '{raw_target}' -> '{norm_target}'."
+                    )
+                if pat_clean in new_learned:
+                    if default_strategy == "overwrite":
+                        if as_disabled:
+                            new_learned.pop(pat_clean, None)
+                            new_dis_learned[pat_clean] = norm_target
+                        else:
+                            new_learned[pat_clean] = norm_target
+                elif pat_clean in new_dis_learned:
+                    if default_strategy == "overwrite":
+                        if as_disabled:
+                            new_dis_learned[pat_clean] = norm_target
+                        else:
+                            new_dis_learned.pop(pat_clean, None)
+                            new_learned[pat_clean] = norm_target
+                    elif not as_disabled:
+                        new_dis_learned.pop(pat_clean, None)
+                        new_learned[pat_clean] = norm_target
+                else:
+                    if as_disabled:
+                        new_dis_learned[pat_clean] = norm_target
+                    else:
+                        new_learned[pat_clean] = norm_target
+
+            for pat, target_path in self.learned_rules.items():
+                _merge_learned_entry(pat, target_path, as_disabled=stage_disabled)
+            for pat, target_path in self.disabled_learned_rules.items():
+                _merge_learned_entry(
+                    pat,
+                    target_path,
+                    as_disabled=(stage_disabled or not force_enable),
+                )
+
+            setattr(settings, "LEARNED_RULES", new_learned)
+            setattr(settings, "DISABLED_LEARNED_RULES", new_dis_learned)
+
+        if self.extension_categories:
+            existing_ext = copy.deepcopy(
+                dict(getattr(settings, "EXTENSION_CATEGORIES", {}) or {})
+            )
+            for ext_key, ext_val in self.extension_categories.items():
+                if ext_key not in existing_ext or default_strategy == "overwrite":
+                    existing_ext[ext_key] = copy.deepcopy(ext_val)
+                elif isinstance(existing_ext[ext_key], list) and isinstance(
+                    ext_val, list
+                ):
+                    merged_exts = list(existing_ext[ext_key])
+                    for e_item in ext_val:
+                        if e_item not in merged_exts:
+                            merged_exts.append(e_item)
+                    existing_ext[ext_key] = merged_exts
+            setattr(settings, "EXTENSION_CATEGORIES", existing_ext)
+
+        if self.folder_rule_scopes:
+            root_target = getattr(settings, "root_settings", settings)
+            raw_existing_scopes = getattr(root_target, "FOLDER_RULE_SCOPES", {}) or {}
+            merged_scopes: dict[str, dict[str, Any]] = (
+                copy.deepcopy(dict(raw_existing_scopes))
+                if isinstance(raw_existing_scopes, dict)
+                else {}
+            )
+            for raw_scope_dir, scope_payload in self.folder_rule_scopes.items():
+                if not isinstance(scope_payload, dict):
+                    continue
+                try:
+                    norm_scope_dir = normalize_folder_scope_key(str(raw_scope_dir))
+                except ValueError as scope_err:
+                    self.warnings.append(
+                        f"Folder scope '{raw_scope_dir}' skipped before merge: {scope_err}"
+                    )
+                    continue
+
+                dest_scope = copy.deepcopy(
+                    dict(merged_scopes.get(norm_scope_dir, {}) or {})
+                )
+                s_kw = dict(dest_scope.get("KEYWORD_RULES", {}) or {})
+                s_dis_kw = dict(dest_scope.get("DISABLED_KEYWORD_RULES", {}) or {})
+                s_learned = dict(dest_scope.get("LEARNED_RULES", {}) or {})
+                s_dis_learned = dict(dest_scope.get("DISABLED_LEARNED_RULES", {}) or {})
+                s_ext = copy.deepcopy(
+                    dict(dest_scope.get("EXTENSION_CATEGORIES", {}) or {})
+                )
+                s_pols = [
+                    copy.deepcopy(dict(p))
+                    for p in (dest_scope.get("POLICIES", []) or [])
+                ]
+
+                for k, v in (scope_payload.get("KEYWORD_RULES", {}) or {}).items():
+                    if stage_disabled:
+                        if k not in s_dis_kw or default_strategy == "overwrite":
+                            if default_strategy == "overwrite":
+                                s_kw.pop(k, None)
+                            s_dis_kw[k] = v
+                    else:
+                        if k not in s_kw or default_strategy == "overwrite":
+                            s_dis_kw.pop(k, None)
+                            s_kw[k] = v
+                for k, v in (
+                    scope_payload.get("DISABLED_KEYWORD_RULES", {}) or {}
+                ).items():
+                    if force_enable and not stage_disabled:
+                        if k not in s_kw or default_strategy == "overwrite":
+                            s_dis_kw.pop(k, None)
+                            s_kw[k] = v
+                    else:
+                        if k not in s_dis_kw or default_strategy == "overwrite":
+                            if default_strategy == "overwrite":
+                                s_kw.pop(k, None)
+                            s_dis_kw[k] = v
+
+                for k, v in (scope_payload.get("LEARNED_RULES", {}) or {}).items():
+                    if stage_disabled:
+                        if k not in s_dis_learned or default_strategy == "overwrite":
+                            if default_strategy == "overwrite":
+                                s_learned.pop(k, None)
+                            s_dis_learned[k] = v
+                    else:
+                        if k not in s_learned or default_strategy == "overwrite":
+                            s_dis_learned.pop(k, None)
+                            s_learned[k] = v
+                for k, v in (
+                    scope_payload.get("DISABLED_LEARNED_RULES", {}) or {}
+                ).items():
+                    if force_enable and not stage_disabled:
+                        if k not in s_learned or default_strategy == "overwrite":
+                            s_dis_learned.pop(k, None)
+                            s_learned[k] = v
+                    else:
+                        if k not in s_dis_learned or default_strategy == "overwrite":
+                            if default_strategy == "overwrite":
+                                s_learned.pop(k, None)
+                            s_dis_learned[k] = v
+
+                for k, v in (
+                    scope_payload.get("EXTENSION_CATEGORIES", {}) or {}
+                ).items():
+                    if k not in s_ext or default_strategy == "overwrite":
+                        s_ext[k] = copy.deepcopy(v)
+
+                for p_in in scope_payload.get("POLICIES", []) or []:
+                    if not isinstance(p_in, dict):
+                        continue
+                    p_copy = copy.deepcopy(dict(p_in))
+                    if stage_disabled:
+                        p_copy["enabled"] = False
+                    elif force_enable:
+                        p_copy["enabled"] = True
+                    existing_idx = _find_matching_policy_index(s_pols, p_copy)
+                    if existing_idx is None:
+                        s_pols.append(p_copy)
+                    elif default_strategy == "overwrite":
+                        s_pols[existing_idx] = p_copy
+
+                rebuilt_scope: dict[str, Any] = {}
+                if s_kw:
+                    rebuilt_scope["KEYWORD_RULES"] = s_kw
+                if s_dis_kw:
+                    rebuilt_scope["DISABLED_KEYWORD_RULES"] = s_dis_kw
+                if s_learned:
+                    rebuilt_scope["LEARNED_RULES"] = s_learned
+                if s_dis_learned:
+                    rebuilt_scope["DISABLED_LEARNED_RULES"] = s_dis_learned
+                if s_ext:
+                    rebuilt_scope["EXTENSION_CATEGORIES"] = s_ext
+                if s_pols:
+                    rebuilt_scope["POLICIES"] = s_pols
+                if rebuilt_scope:
+                    merged_scopes[norm_scope_dir] = rebuilt_scope
+
+            setattr(root_target, "FOLDER_RULE_SCOPES", merged_scopes)
+
+        if not stage_disabled and hasattr(settings, "DUPLICATE_ACTION"):
             for pol_item in new_policies:
                 if (
                     str(pol_item.get("type", "")).strip().lower() == "duplicate"
@@ -4183,6 +4444,16 @@ class TagSpacesRuleImporter(BaseRuleImporter):
 class SortifyRuleImporter(BaseRuleImporter):
     """Importer strategy for native Sortify JSON rule backup packages."""
 
+    _SORTIFY_RULE_KEYS = (
+        "KEYWORD_RULES",
+        "DISABLED_KEYWORD_RULES",
+        "LEARNED_RULES",
+        "DISABLED_LEARNED_RULES",
+        "EXTENSION_CATEGORIES",
+        "POLICIES",
+        "FOLDER_RULE_SCOPES",
+    )
+
     def can_import(self, file_path: str | Path) -> bool:
         """Return True if file is a Sortify JSON rule backup file."""
         p = Path(file_path)
@@ -4194,10 +4465,8 @@ class SortifyRuleImporter(BaseRuleImporter):
             with open(p, encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, dict):
-                if (
-                    "KEYWORD_RULES" in data
-                    or "POLICIES" in data
-                    or data.get("format") == "sortify"
+                if data.get("format") == "sortify" or any(
+                    k in data for k in self._SORTIFY_RULE_KEYS
                 ):
                     return True
                 if "keyword_rules" in data and (
@@ -4208,9 +4477,200 @@ class SortifyRuleImporter(BaseRuleImporter):
             return False
         return False
 
+    def _parse_rule_map(
+        self,
+        raw_map: Any,
+        result: ImportResult,
+        label: str,
+        *,
+        lowercase_keys: bool,
+    ) -> dict[str, str]:
+        """Validate a keyword or learned rule mapping into safe relative target folders."""
+        parsed: dict[str, str] = {}
+        if not isinstance(raw_map, dict):
+            return parsed
+        for k, v in raw_map.items():
+            k_clean = str(k).strip()
+            if not k_clean:
+                continue
+            v_safe = self._resolve_safe_destination(str(v), k_clean, result, label)
+            if v_safe:
+                parsed[k_clean.lower() if lowercase_keys else k_clean] = v_safe
+        return parsed
+
+    def _parse_extension_categories(
+        self, raw_ext: Any, result: ImportResult, label: str
+    ) -> dict[str, Any]:
+        """Validate EXTENSION_CATEGORIES in either {'.ext': 'Folder'} or {'Folder': ['.ext']} shape."""
+        parsed: dict[str, Any] = {}
+        if not isinstance(raw_ext, dict):
+            return parsed
+        for k, v in raw_ext.items():
+            k_clean = str(k).strip()
+            if not k_clean:
+                continue
+            if isinstance(v, str):
+                ext_norm = (
+                    k_clean.lower()
+                    if k_clean.startswith(".")
+                    else f".{k_clean.lower()}"
+                )
+                v_safe = self._resolve_safe_destination(v, ext_norm, result, label)
+                if v_safe:
+                    parsed[ext_norm] = v_safe
+            elif isinstance(v, (list, tuple, set)):
+                cat_safe = self._resolve_safe_destination(
+                    k_clean, k_clean, result, label
+                )
+                if not cat_safe:
+                    continue
+                exts_out: list[str] = []
+                for ext_item in v:
+                    if not isinstance(ext_item, str) or not ext_item.strip():
+                        continue
+                    e_clean = ext_item.strip().lower()
+                    if not e_clean.startswith("."):
+                        e_clean = f".{e_clean}"
+                    if e_clean not in exts_out:
+                        exts_out.append(e_clean)
+                parsed[cat_safe] = exts_out
+        return parsed
+
+    def _parse_policies_list(
+        self, raw_pol: Any, result: ImportResult, label: str
+    ) -> list[dict[str, Any]]:
+        """Validate a list of Sortify policy dictionaries while preserving compound clauses and enabled flags."""
+        parsed: list[dict[str, Any]] = []
+        if not isinstance(raw_pol, list):
+            return parsed
+        for pol in raw_pol:
+            if not isinstance(pol, dict):
+                continue
+            p_type = str(pol.get("type", "keyword")).strip().lower()
+            raw_mm = pol.get("match_mode")
+            norm_mm: str | None = None
+            if raw_mm is not None:
+                if (
+                    not isinstance(raw_mm, str)
+                    or raw_mm.strip().lower() not in VALID_MATCH_MODES
+                ):
+                    result.warnings.append(
+                        f"{label} skipped: invalid match_mode '{raw_mm}'."
+                    )
+                    result.unsupported.append(
+                        {
+                            "rule": str(pol.get("expression", "")),
+                            "reason": f"Invalid match_mode '{raw_mm}'.",
+                        }
+                    )
+                    continue
+                norm_mm = raw_mm.strip().lower()
+
+            norm_conds: list[dict[str, Any]] | None = None
+            if pol.get("conditions") is not None:
+                try:
+                    norm_conds = validate_policy_conditions(pol["conditions"])
+                except ValueError as exc:
+                    result.warnings.append(f"{label} skipped invalid conditions: {exc}")
+                    result.unsupported.append(
+                        {
+                            "rule": str(pol.get("expression", "")),
+                            "reason": str(exc),
+                        }
+                    )
+                    continue
+
+            p_expr = str(pol.get("expression", "")).strip()
+            if not p_expr and norm_conds:
+                p_expr = summarize_policy_conditions(
+                    norm_conds,
+                    match_mode=norm_mm or "all",
+                    negate=bool(pol.get("negate", False)),
+                )
+            if not p_expr and p_type == "duplicate":
+                p_expr = "*"
+            if not p_expr:
+                continue
+
+            if bool(pol.get("regex", False)) and not norm_conds:
+                try:
+                    validate_safe_regex(
+                        p_expr,
+                        case_sensitive=bool(pol.get("case_sensitive", False)),
+                    )
+                except ValueError as exc:
+                    result.warnings.append(
+                        f"{label} '{p_expr}' skipped unsafe/invalid regex: {exc}"
+                    )
+                    result.unsupported.append({"rule": p_expr, "reason": str(exc)})
+                    continue
+
+            p_act = str(pol.get("action", "")).strip().lower()
+            raw_target_val = str(pol.get("target_path", ""))
+            if not raw_target_val.strip() and (
+                p_act == "trash" or p_type == "duplicate"
+            ):
+                p_target = ""
+            else:
+                resolved_target = self._resolve_safe_destination(
+                    raw_target_val,
+                    p_expr,
+                    result,
+                    label,
+                )
+                if not resolved_target:
+                    continue
+                p_target = resolved_target
+            p_prio = pol.get("priority", 75)
+            p_halt = bool(pol.get("halting", False))
+            pol_out: dict[str, Any] = {
+                "type": p_type,
+                "expression": p_expr,
+                "target_path": p_target,
+                "priority": int(p_prio) if p_prio is not None else 75,
+                "halting": p_halt,
+            }
+            if norm_mm is not None:
+                pol_out["match_mode"] = norm_mm
+            if norm_conds is not None:
+                pol_out["conditions"] = norm_conds
+            for bool_key in ("negate", "regex", "case_sensitive"):
+                if isinstance(pol.get(bool_key), bool):
+                    pol_out[bool_key] = pol[bool_key]
+            if isinstance(pol.get("action"), str) and pol["action"].strip():
+                pol_out["action"] = pol["action"].strip().lower()
+            if isinstance(pol.get("enabled"), bool):
+                pol_out["enabled"] = pol["enabled"]
+            if isinstance(pol.get("post_unarchive_action"), str):
+                pol_out["post_unarchive_action"] = pol["post_unarchive_action"]
+            if isinstance(pol.get("post_unarchive_target"), str):
+                pol_out["post_unarchive_target"] = pol["post_unarchive_target"]
+            if (
+                isinstance(pol.get("detect_original_by"), str)
+                and pol["detect_original_by"].strip()
+            ):
+                pol_out["detect_original_by"] = pol["detect_original_by"].strip()
+            if (
+                isinstance(pol.get("rename_pattern"), str)
+                and pol["rename_pattern"].strip()
+            ):
+                norm_ren, ren_err = _normalize_imported_rename_pattern(
+                    pol["rename_pattern"]
+                )
+                if ren_err is not None:
+                    result.warnings.append(
+                        f"{label} '{p_expr}' skipped invalid rename pattern: {ren_err}"
+                    )
+                elif norm_ren:
+                    pol_out["rename_pattern"] = norm_ren
+            parsed.append(pol_out)
+        return parsed
+
     def parse_file(self, file_path: str | Path) -> ImportResult:
-        """Parse Sortify JSON backup file into Sortify rules."""
-        result = ImportResult(source_format="Sortify JSON")
+        """Parse Sortify JSON backup file (v1 or v2) into Sortify rules."""
+        from app.core.rule_scopes import normalize_folder_scope_key
+
+        result = ImportResult(source_format="Sortify JSON", preserve_states=True)
         p = Path(file_path)
 
         if not p.exists():
@@ -4242,147 +4702,130 @@ class SortifyRuleImporter(BaseRuleImporter):
             )
             return result
 
-        raw_kw = data.get("KEYWORD_RULES") or data.get("keyword_rules") or {}
-        if isinstance(raw_kw, dict):
-            for k, v in raw_kw.items():
-                k_clean = str(k).strip()
-                if not k_clean:
+        raw_kw = data.get("KEYWORD_RULES")
+        if raw_kw is None:
+            raw_kw = data.get("keyword_rules") or {}
+        result.keyword_rules = self._parse_rule_map(
+            raw_kw, result, "Sortify keyword rule", lowercase_keys=True
+        )
+
+        raw_dis_kw = data.get("DISABLED_KEYWORD_RULES")
+        if raw_dis_kw is None:
+            raw_dis_kw = data.get("disabled_keyword_rules") or {}
+        result.disabled_keyword_rules = self._parse_rule_map(
+            raw_dis_kw, result, "Sortify disabled keyword rule", lowercase_keys=True
+        )
+
+        raw_learned = data.get("LEARNED_RULES")
+        if raw_learned is None:
+            raw_learned = data.get("learned_rules") or {}
+        result.learned_rules = self._parse_rule_map(
+            raw_learned, result, "Sortify learned rule", lowercase_keys=False
+        )
+
+        raw_dis_learned = data.get("DISABLED_LEARNED_RULES")
+        if raw_dis_learned is None:
+            raw_dis_learned = data.get("disabled_learned_rules") or {}
+        result.disabled_learned_rules = self._parse_rule_map(
+            raw_dis_learned,
+            result,
+            "Sortify disabled learned rule",
+            lowercase_keys=False,
+        )
+
+        raw_ext_cats = data.get("EXTENSION_CATEGORIES")
+        if raw_ext_cats is None:
+            raw_ext_cats = data.get("extension_categories") or {}
+        result.extension_categories = self._parse_extension_categories(
+            raw_ext_cats, result, "Sortify extension category"
+        )
+
+        raw_pol = data.get("POLICIES")
+        if raw_pol is None:
+            raw_pol = data.get("policies") or []
+        result.policies = self._parse_policies_list(
+            raw_pol, result, "Sortify policy rule"
+        )
+
+        raw_scopes = data.get("FOLDER_RULE_SCOPES")
+        if raw_scopes is None:
+            raw_scopes = data.get("folder_rule_scopes") or {}
+        if isinstance(raw_scopes, dict):
+            for raw_folder, raw_scope in raw_scopes.items():
+                if not isinstance(raw_scope, dict):
+                    result.warnings.append(
+                        f"Folder scope '{raw_folder}' skipped: expected dictionary."
+                    )
                     continue
-                v_safe = self._resolve_safe_destination(
-                    str(v), k_clean, result, "Sortify keyword rule"
+                try:
+                    norm_folder = normalize_folder_scope_key(str(raw_folder))
+                except ValueError as scope_err:
+                    result.warnings.append(
+                        f"Folder scope '{raw_folder}' skipped: {scope_err}"
+                    )
+                    continue
+                scope_out: dict[str, Any] = {}
+                s_kw = self._parse_rule_map(
+                    raw_scope.get("KEYWORD_RULES", {}),
+                    result,
+                    f"Sortify scoped keyword rule ({norm_folder})",
+                    lowercase_keys=True,
                 )
-                if v_safe:
-                    result.keyword_rules[k_clean.lower()] = v_safe
+                if s_kw:
+                    scope_out["KEYWORD_RULES"] = s_kw
+                s_dis_kw = self._parse_rule_map(
+                    raw_scope.get("DISABLED_KEYWORD_RULES", {}),
+                    result,
+                    f"Sortify scoped disabled keyword rule ({norm_folder})",
+                    lowercase_keys=True,
+                )
+                if s_dis_kw:
+                    scope_out["DISABLED_KEYWORD_RULES"] = s_dis_kw
+                s_learned = self._parse_rule_map(
+                    raw_scope.get("LEARNED_RULES", {}),
+                    result,
+                    f"Sortify scoped learned rule ({norm_folder})",
+                    lowercase_keys=False,
+                )
+                if s_learned:
+                    scope_out["LEARNED_RULES"] = s_learned
+                s_dis_learned = self._parse_rule_map(
+                    raw_scope.get("DISABLED_LEARNED_RULES", {}),
+                    result,
+                    f"Sortify scoped disabled learned rule ({norm_folder})",
+                    lowercase_keys=False,
+                )
+                if s_dis_learned:
+                    scope_out["DISABLED_LEARNED_RULES"] = s_dis_learned
+                s_ext = self._parse_extension_categories(
+                    raw_scope.get("EXTENSION_CATEGORIES", {}),
+                    result,
+                    f"Sortify scoped extension category ({norm_folder})",
+                )
+                if s_ext:
+                    scope_out["EXTENSION_CATEGORIES"] = s_ext
+                s_pol = self._parse_policies_list(
+                    raw_scope.get("POLICIES", []),
+                    result,
+                    f"Sortify scoped policy rule ({norm_folder})",
+                )
+                if s_pol:
+                    scope_out["POLICIES"] = s_pol
+                if scope_out:
+                    result.folder_rule_scopes[norm_folder] = scope_out
 
-        raw_pol = data.get("POLICIES") or data.get("policies") or []
-        if isinstance(raw_pol, list):
-            for pol in raw_pol:
-                if isinstance(pol, dict):
-                    p_type = str(pol.get("type", "keyword")).strip().lower()
-                    raw_mm = pol.get("match_mode")
-                    norm_mm: str | None = None
-                    if raw_mm is not None:
-                        if (
-                            not isinstance(raw_mm, str)
-                            or raw_mm.strip().lower() not in VALID_MATCH_MODES
-                        ):
-                            result.warnings.append(
-                                f"Sortify policy rule skipped: invalid match_mode '{raw_mm}'."
-                            )
-                            result.unsupported.append(
-                                {
-                                    "rule": str(pol.get("expression", "")),
-                                    "reason": f"Invalid match_mode '{raw_mm}'.",
-                                }
-                            )
-                            continue
-                        norm_mm = raw_mm.strip().lower()
-
-                    norm_conds: list[dict[str, Any]] | None = None
-                    if pol.get("conditions") is not None:
-                        try:
-                            norm_conds = validate_policy_conditions(pol["conditions"])
-                        except ValueError as exc:
-                            result.warnings.append(
-                                f"Sortify policy rule skipped invalid conditions: {exc}"
-                            )
-                            result.unsupported.append(
-                                {
-                                    "rule": str(pol.get("expression", "")),
-                                    "reason": str(exc),
-                                }
-                            )
-                            continue
-
-                    p_expr = str(pol.get("expression", "")).strip()
-                    if not p_expr and norm_conds:
-                        p_expr = summarize_policy_conditions(
-                            norm_conds,
-                            match_mode=norm_mm or "all",
-                            negate=bool(pol.get("negate", False)),
-                        )
-                    if not p_expr and p_type == "duplicate":
-                        p_expr = "*"
-                    if not p_expr:
-                        continue
-
-                    if bool(pol.get("regex", False)) and not norm_conds:
-                        try:
-                            validate_safe_regex(
-                                p_expr,
-                                case_sensitive=bool(pol.get("case_sensitive", False)),
-                            )
-                        except ValueError as exc:
-                            result.warnings.append(
-                                f"Sortify policy rule '{p_expr}' skipped unsafe/invalid regex: {exc}"
-                            )
-                            result.unsupported.append(
-                                {"rule": p_expr, "reason": str(exc)}
-                            )
-                            continue
-
-                    p_act = str(pol.get("action", "")).strip().lower()
-                    raw_target_val = str(pol.get("target_path", ""))
-                    if not raw_target_val.strip() and (
-                        p_act == "trash" or p_type == "duplicate"
-                    ):
-                        p_target = ""
-                    else:
-                        p_target = self._resolve_safe_destination(
-                            raw_target_val,
-                            p_expr,
-                            result,
-                            "Sortify policy rule",
-                        )
-                        if not p_target:
-                            continue
-                    p_prio = pol.get("priority", 75)
-                    p_halt = bool(pol.get("halting", False))
-                    pol_out: dict[str, Any] = {
-                        "type": p_type,
-                        "expression": p_expr,
-                        "target_path": p_target,
-                        "priority": int(p_prio) if p_prio is not None else 75,
-                        "halting": p_halt,
-                    }
-                    if norm_mm is not None:
-                        pol_out["match_mode"] = norm_mm
-                    if norm_conds is not None:
-                        pol_out["conditions"] = norm_conds
-                    for bool_key in ("negate", "regex", "case_sensitive"):
-                        if isinstance(pol.get(bool_key), bool):
-                            pol_out[bool_key] = pol[bool_key]
-                    if isinstance(pol.get("action"), str) and pol["action"].strip():
-                        pol_out["action"] = pol["action"].strip().lower()
-                    if isinstance(pol.get("enabled"), bool):
-                        pol_out["enabled"] = pol["enabled"]
-                    if isinstance(pol.get("post_unarchive_action"), str):
-                        pol_out["post_unarchive_action"] = pol["post_unarchive_action"]
-                    if isinstance(pol.get("post_unarchive_target"), str):
-                        pol_out["post_unarchive_target"] = pol["post_unarchive_target"]
-                    if (
-                        isinstance(pol.get("detect_original_by"), str)
-                        and pol["detect_original_by"].strip()
-                    ):
-                        pol_out["detect_original_by"] = pol[
-                            "detect_original_by"
-                        ].strip()
-                    if (
-                        isinstance(pol.get("rename_pattern"), str)
-                        and pol["rename_pattern"].strip()
-                    ):
-                        norm_ren, ren_err = _normalize_imported_rename_pattern(
-                            pol["rename_pattern"]
-                        )
-                        if ren_err is not None:
-                            result.warnings.append(
-                                f"Sortify policy rule '{p_expr}' skipped invalid rename pattern: {ren_err}"
-                            )
-                        elif norm_ren:
-                            pol_out["rename_pattern"] = norm_ren
-                    result.policies.append(pol_out)
-
-        if not result.keyword_rules and not result.policies and not result.warnings:
+        has_any_rules = any(
+            (
+                result.keyword_rules,
+                result.disabled_keyword_rules,
+                result.learned_rules,
+                result.disabled_learned_rules,
+                result.extension_categories,
+                result.policies,
+                result.folder_rule_scopes,
+            )
+        )
+        if not has_any_rules and not result.warnings:
             result.warnings.append(f"Sortify rule package '{p.name}' is empty.")
 
         return result

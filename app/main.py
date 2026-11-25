@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, NoReturn, cast
 
 from app.cli.error_emitter import emit_cli_error
+from app.cli.settings_args import add_settings_source_args
 from app.config import AppSettings
 from app.core.domain_contracts import _make_json_serializable
 from app.core.path_utils import is_packaged
@@ -1656,6 +1657,7 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         default=False,
         help="Run in non-interactive mode and bypass interactive modal dialogs",
     )
+    add_settings_source_args(parser, suppress_default=False)
     parser.add_argument(
         "--duplicates",
         type=str,
@@ -1683,6 +1685,7 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
     subparsers = parser.add_subparsers(dest="subcommand", help="Available subcommands")
 
     def add_common_override_args(subparser):
+        add_settings_source_args(subparser, suppress_default=True)
         subparser.add_argument(
             "-q",
             "--quiet",
@@ -2014,13 +2017,26 @@ def _main_impl():
         "undo",
         "drop",
     )
-    # `smart-autosorter [flags] DIR`: a directory with no subcommand. Every
-    # top-level option is a flag, so the first non-flag argument is either a
-    # subcommand or that directory, wherever it appears among the flags.
+    # `smart-autosorter [flags] DIR`: a directory with no subcommand. Skip
+    # values belonging to top-level options so flag arguments are not mistaken
+    # for the legacy positional directory.
+    top_level_value_flags = {
+        "--settings-file",
+        "--profile",
+        "--duplicates",
+        "--detect-original-by",
+    }
     legacy_directory = None
+    skip_next = False
     for index, arg in enumerate(sys.argv[1:], start=1):
+        if skip_next:
+            skip_next = False
+            continue
         if arg == "--":
             break
+        if arg in top_level_value_flags:
+            skip_next = True
+            continue
         if arg.startswith("-"):
             continue
         if arg not in known_subcommands:
@@ -2279,6 +2295,21 @@ def _configure_settings_and_logging(
         def emit(self, record: logging.LogRecord) -> None:
             self.records.append(record)
 
+    raw_sf = getattr(args, "settings_file", None)
+    raw_prof = getattr(args, "profile", None)
+    settings_filepath: str | None = None
+    if raw_sf is not None or raw_prof is not None:
+        from app.config import resolve_cli_settings_filepath
+
+        try:
+            settings_filepath = resolve_cli_settings_filepath(
+                settings_file=raw_sf,
+                profile=raw_prof,
+            )
+        except ValueError as err:
+            is_json = bool(getattr(args, "json", False) or "--json" in sys.argv)
+            emit_cli_error(f"Error: {err}", json_mode=is_json, exit_code=2)
+
     root_logger = logging.getLogger()
     pre_existing_handlers = set(root_logger.handlers)
     prev_root_level = root_logger.level
@@ -2289,7 +2320,11 @@ def _configure_settings_and_logging(
     ):
         root_logger.setLevel(logging.INFO)
     try:
-        settings = AppSettings()
+        settings = (
+            AppSettings(filepath=settings_filepath)
+            if settings_filepath
+            else AppSettings()
+        )
         apply_config_overrides(settings, args)
     finally:
         root_logger.removeHandler(startup_buffer)

@@ -561,6 +561,7 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Any | None]):
         self.conflicts: list[Any] = []
         self.conflict_resolutions: dict[str, str] = {}
         self.import_disabled: bool = True
+        self._auto_setting_import_disabled: bool = False
 
     def compose(self) -> ComposeResult:
         """Compose rule import modal children."""
@@ -723,6 +724,8 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Any | None]):
     def _on_import_disabled_changed(self, event: Checkbox.Changed) -> None:
         """Toggle whether newly imported rules are staged disabled for review."""
         self.import_disabled = bool(event.value)
+        if self._auto_setting_import_disabled:
+            return
         mode_text = (
             "disabled for review" if self.import_disabled else "enabled immediately"
         )
@@ -832,6 +835,20 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Any | None]):
             return
 
         res = self.current_result
+        try:
+            chk = self.query_one("#chk-import-disabled", Checkbox)
+            preserve_native = bool(getattr(res, "preserve_states", False))
+            desired_chk = not preserve_native
+            if chk.value != desired_chk:
+                self._auto_setting_import_disabled = True
+                try:
+                    chk.value = desired_chk
+                finally:
+                    self._auto_setting_import_disabled = False
+            self.import_disabled = desired_chk
+        except Exception:
+            pass
+
         dt_kw = self.query_one("#dt-imported-keywords", DataTable)
         dt_pol = self.query_one("#dt-imported-policies", DataTable)
         btn_merge = self.query_one("#btn-merge-imported-rules", Button)
@@ -841,6 +858,16 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Any | None]):
 
         for kw, target_dir in res.keyword_rules.items():
             dt_kw.add_row(kw, target_dir)
+        for kw, target_dir in (
+            getattr(res, "disabled_keyword_rules", {}) or {}
+        ).items():
+            dt_kw.add_row(f"{kw} [disabled]", target_dir)
+        for kw, target_dir in (getattr(res, "learned_rules", {}) or {}).items():
+            dt_kw.add_row(f"{kw} [learned]", target_dir)
+        for kw, target_dir in (
+            getattr(res, "disabled_learned_rules", {}) or {}
+        ).items():
+            dt_kw.add_row(f"{kw} [learned, disabled]", target_dir)
 
         for pol in res.policies:
             pol_type_label = _format_policy_type_badge(pol)
@@ -866,7 +893,14 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Any | None]):
         for warn in res.warnings:
             warn_container.mount(Label(f"⚠️ {warn}", classes="warning-text"))
 
-        total_rules = len(res.keyword_rules) + len(res.policies)
+        extra_count = (
+            len(getattr(res, "disabled_keyword_rules", {}) or {})
+            + len(getattr(res, "learned_rules", {}) or {})
+            + len(getattr(res, "disabled_learned_rules", {}) or {})
+            + len(getattr(res, "extension_categories", {}) or {})
+            + len(getattr(res, "folder_rule_scopes", {}) or {})
+        )
+        total_rules = len(res.keyword_rules) + len(res.policies) + extra_count
         lbl_status.update(
             f"Parsed {res.source_format}: {len(res.keyword_rules)} keyword rules, "
             f"{len(res.policies)} policies, {len(self.conflicts)} conflict(s), "
@@ -966,12 +1000,21 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Any | None]):
         except Exception:
             pass
 
+        preserve_native = bool(getattr(self.current_result, "preserve_states", False))
+        effective_import_disabled: bool | None
+        if stage_disabled:
+            effective_import_disabled = True
+        elif preserve_native:
+            effective_import_disabled = None
+        else:
+            effective_import_disabled = False
+
         try:
             new_kw, new_pol = self.current_result.merge_into_settings(
                 self.settings,
                 resolutions=self.conflict_resolutions,
                 default_strategy=bulk_strategy,
-                import_disabled=stage_disabled,
+                import_disabled=effective_import_disabled,
             )
         except Exception as exc:
             err_msg = f"Failed to save imported rules: {exc}"
@@ -1977,10 +2020,9 @@ class RuleEditModal(ResponsiveModalScreen[dict | None]):
                 filename_only if status_tag else f"{filename_only} {doc_lower}"
             )
             if kind == "learned":
-                try:
-                    return bool(re.search(pattern, text_to_search, re.IGNORECASE))
-                except re.error:
-                    return pattern.lower() in text_to_search
+                from app.core.metadata import matches_learned_rule_pattern
+
+                return matches_learned_rule_pattern(pattern, text_to_search)
             return pattern.lower() in text_to_search
 
     def _refresh_preview(self, announce_change: bool = False) -> None:
@@ -2951,6 +2993,22 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
                 }
             )
 
+        dis_learned_rules = getattr(self.settings, "DISABLED_LEARNED_RULES", {}) or {}
+        for kw, target in sorted(dis_learned_rules.items()):
+            rules.append(
+                {
+                    "kind": "learned",
+                    "status": "Disabled",
+                    "enabled": False,
+                    "type": "learned",
+                    "action": "move",
+                    "pattern": str(kw),
+                    "target_folder": str(target),
+                    "priority": 0,
+                    "original_key": kw,
+                }
+            )
+
         policies = getattr(self.settings, "POLICIES", []) or []
         enabled_indexed = [
             (idx, pol)
@@ -3090,14 +3148,22 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
         elif rule["kind"] == "learned":
             kw = rule["original_key"]
             learned_rules = dict(getattr(self.settings, "LEARNED_RULES", {}) or {})
-            dis_rules = dict(getattr(self.settings, "DISABLED_KEYWORD_RULES", {}) or {})
-            target = learned_rules.pop(kw, rule["target_folder"])
-            dis_rules[kw] = target
+            dis_learned = dict(
+                getattr(self.settings, "DISABLED_LEARNED_RULES", {}) or {}
+            )
+            if rule.get("enabled", rule["status"] == "Active"):
+                target = learned_rules.pop(kw, rule["target_folder"])
+                dis_learned[kw] = target
+                new_status = "Disabled"
+            else:
+                target = dis_learned.pop(kw, rule["target_folder"])
+                learned_rules[kw] = target
+                new_status = "Active"
             self.settings.LEARNED_RULES = learned_rules
-            self.settings.DISABLED_KEYWORD_RULES = dis_rules
+            self.settings.DISABLED_LEARNED_RULES = dis_learned
             if hasattr(self.settings, "flush"):
                 self.settings.flush()
-            msg = f"Toggled learned rule '{kw}' to Disabled."
+            msg = f"Toggled learned rule '{kw}' to {new_status}."
         elif rule["kind"] == "policy":
             policies = [
                 copy.deepcopy(p) for p in getattr(self.settings, "POLICIES", []) or []
@@ -3241,17 +3307,14 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
                     return
             elif rule["kind"] in ("keyword", "learned") and res_kind == "policy":
                 old_key = rule["original_key"]
-                is_active = True
+                is_active = bool(rule.get("enabled", rule["status"] == "Active"))
                 if rule["kind"] == "learned":
-                    l_dict = dict(getattr(self.settings, "LEARNED_RULES", {}) or {})
-                    l_dict.pop(old_key, None)
-                    self.settings.LEARNED_RULES = l_dict
+                    d_name = "LEARNED_RULES" if is_active else "DISABLED_LEARNED_RULES"
                 else:
-                    is_active = bool(rule.get("enabled", rule["status"] == "Active"))
                     d_name = "KEYWORD_RULES" if is_active else "DISABLED_KEYWORD_RULES"
-                    r_dict = dict(getattr(self.settings, d_name, {}) or {})
-                    r_dict.pop(old_key, None)
-                    setattr(self.settings, d_name, r_dict)
+                r_dict = dict(getattr(self.settings, d_name, {}) or {})
+                r_dict.pop(old_key, None)
+                setattr(self.settings, d_name, r_dict)
                 policies = [
                     copy.deepcopy(p)
                     for p in getattr(self.settings, "POLICIES", []) or []
@@ -3298,14 +3361,29 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
                 msg = f"Updated rule '{new_pattern}' target folder to '{new_target}'."
             elif rule["kind"] == "learned":
                 old_key = rule["original_key"]
-                learned_dict = dict(getattr(self.settings, "LEARNED_RULES", {}) or {})
-                if old_key in learned_dict and old_key != new_pattern:
-                    del learned_dict[old_key]
-                learned_dict[new_pattern] = new_target
-                self.settings.LEARNED_RULES = learned_dict
+                is_active = bool(rule.get("enabled", rule["status"] == "Active"))
+                src_dict_name = (
+                    "LEARNED_RULES" if is_active else "DISABLED_LEARNED_RULES"
+                )
+                learned_dict = dict(getattr(self.settings, src_dict_name, {}) or {})
+                if res_kind == "keyword":
+                    learned_dict.pop(old_key, None)
+                    setattr(self.settings, src_dict_name, learned_dict)
+                    dst_dict_name = (
+                        "KEYWORD_RULES" if is_active else "DISABLED_KEYWORD_RULES"
+                    )
+                    kw_dict = dict(getattr(self.settings, dst_dict_name, {}) or {})
+                    kw_dict[new_pattern] = new_target
+                    setattr(self.settings, dst_dict_name, kw_dict)
+                    msg = f"Converted learned rule '{new_pattern}' into a keyword rule."
+                else:
+                    if old_key in learned_dict and old_key != new_pattern:
+                        del learned_dict[old_key]
+                    learned_dict[new_pattern] = new_target
+                    setattr(self.settings, src_dict_name, learned_dict)
+                    msg = f"Updated learned rule '{new_pattern}' target folder to '{new_target}'."
                 if hasattr(self.settings, "flush"):
                     self.settings.flush()
-                msg = f"Updated learned rule '{new_pattern}' target folder to '{new_target}'."
             else:
                 return
 
@@ -3368,9 +3446,11 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
                 msg = f"Deleted rule '{pattern}' from settings."
             elif rule["kind"] == "learned":
                 key = rule["original_key"]
-                learned_dict = dict(getattr(self.settings, "LEARNED_RULES", {}) or {})
+                is_active = bool(rule.get("enabled", rule["status"] == "Active"))
+                dict_name = "LEARNED_RULES" if is_active else "DISABLED_LEARNED_RULES"
+                learned_dict = dict(getattr(self.settings, dict_name, {}) or {})
                 learned_dict.pop(key, None)
-                self.settings.LEARNED_RULES = learned_dict
+                setattr(self.settings, dict_name, learned_dict)
                 if hasattr(self.settings, "flush"):
                     self.settings.flush()
                 msg = f"Deleted learned rule '{pattern}' from settings."
@@ -3469,6 +3549,8 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
         before_snapshot = (
             dict(getattr(self.settings, "KEYWORD_RULES", {}) or {}),
             dict(getattr(self.settings, "DISABLED_KEYWORD_RULES", {}) or {}),
+            dict(getattr(self.settings, "LEARNED_RULES", {}) or {}),
+            dict(getattr(self.settings, "DISABLED_LEARNED_RULES", {}) or {}),
             [dict(p) for p in (getattr(self.settings, "POLICIES", []) or [])],
         )
 
@@ -3476,6 +3558,8 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
             after_snapshot = (
                 dict(getattr(self.settings, "KEYWORD_RULES", {}) or {}),
                 dict(getattr(self.settings, "DISABLED_KEYWORD_RULES", {}) or {}),
+                dict(getattr(self.settings, "LEARNED_RULES", {}) or {}),
+                dict(getattr(self.settings, "DISABLED_LEARNED_RULES", {}) or {}),
                 [dict(p) for p in (getattr(self.settings, "POLICIES", []) or [])],
             )
             if after_snapshot != before_snapshot:

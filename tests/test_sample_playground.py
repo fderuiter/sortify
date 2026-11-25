@@ -215,7 +215,8 @@ def test_sample_playground_syncs_packs_and_folder_with_wizard_without_stale_over
             await pilot.pause(0.1)
 
             assert app.base_dir == os.path.abspath(chosen_ws)
-            kw_targets = set(settings.KEYWORD_RULES.values())
+            scoped = settings.for_folder(app.base_dir)
+            kw_targets = set(scoped.KEYWORD_RULES.values())
             assert "Legal/Contracts" in kw_targets
             assert "HR/Resumes" in kw_targets
 
