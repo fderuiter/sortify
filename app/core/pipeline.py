@@ -2090,9 +2090,6 @@ class DropBatchCoordinator:
                                 priority="queue",
                                 progress_callback=progress_callback,
                                 cancel_check=cancel_check,
-                                source_dirs=[
-                                    grp.source_root for grp in batch_plan.groups
-                                ],
                                 session_id=shared_session_id,
                                 manage_session_lifecycle=False,
                             )

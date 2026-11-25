@@ -17,7 +17,6 @@ from app.core.extractor import (
 )
 from app.core.history import HistoryManager
 from app.core.mover import (
-    _remove_empty_dirs,
     execute_moves,
     get_safe_path,
 )
@@ -296,22 +295,6 @@ def test_mover_get_safe_path_source_missing(tmp_path):
     assert safe == str(dest / "file_1.txt")
 
 
-def test_mover_remove_empty_dirs_not_dir(tmp_path):
-    f1 = tmp_path / "file.txt"
-    f1.write_text("data")
-    _remove_empty_dirs(str(f1))
-    assert f1.read_text() == "data"
-
-
-def test_mover_remove_empty_dirs_with_files(tmp_path):
-    d1 = tmp_path / "dir"
-    d1.mkdir()
-    f1 = d1 / "file.txt"
-    f1.write_text("data")
-    _remove_empty_dirs(str(d1))
-    assert d1.exists()
-
-
 class _CleanupSettings:
     CLEANUP_EMPTY_FOLDERS = True
     PROTECTED_PATHS: list[str] = []
@@ -437,15 +420,6 @@ def test_mover_optional_pylnk3_import_falls_back_to_none(tmp_path):
         timeout=120,
     )
     assert result.returncode == 0, result.stderr
-
-
-def test_mover_remove_empty_dirs_recursive(tmp_path):
-    d1 = tmp_path / "dir1"
-    d1.mkdir()
-    d2 = d1 / "dir2"
-    d2.mkdir()
-    _remove_empty_dirs(str(d1))
-    assert not d1.exists()
 
 
 def test_execute_moves_renames_tracked_document(tmp_path):
