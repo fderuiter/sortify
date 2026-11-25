@@ -2,7 +2,6 @@
 
 import os
 import shutil
-import time
 from unittest.mock import patch
 
 import pytest
@@ -115,16 +114,13 @@ def test_transition_matrix_invalid_transitions_raise_domain_exception():
 
 
 def test_transition_validation_performance():
-    """Verify transition validation executes in well under 5ms (<5ms constraint)."""
+    """Verify transition validation is a pure in-memory matrix lookup with zero DB calls."""
     sm = SessionStateMachine()
-    start = time.perf_counter()
-    for _ in range(1000):
-        sm.validate_transition(ACTIVE, COMPLETED)
-        sm.validate_transition(COMPLETED, ROLLED_BACK)
-    elapsed = time.perf_counter() - start
-    avg_ms = (elapsed / 2000) * 1000
-    # Each validation must be far below 5ms
-    assert avg_ms < 0.1, f"Validation too slow: {avg_ms:.4f} ms per call"
+    with patch("app.core.db_conn.get_db_connection") as mock_get_conn:
+        for _ in range(100):
+            assert sm.validate_transition(ACTIVE, COMPLETED) is None
+            assert sm.validate_transition(COMPLETED, ROLLED_BACK) is None
+    assert mock_get_conn.call_count == 0
 
 
 def test_step_unwind_failure_transitions_to_failed_in_db(lifecycle_env):

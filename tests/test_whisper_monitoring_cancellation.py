@@ -1,14 +1,28 @@
 import sys
 import time
+import wave
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from app.core.extractor_strategies import AudioExtractor, get_audio_duration
 
 
+def _write_valid_riff_wav(path: Path) -> None:
+    """Write a compliant 44-byte 16 kHz 16-bit mono PCM RIFF WAV header."""
+    with wave.open(str(path), "wb") as wav_out:
+        wav_out.setnchannels(1)
+        wav_out.setsampwidth(2)
+        wav_out.setframerate(16000)
+        wav_out.writeframes(b"")
+
+
 def test_get_audio_duration_fallbacks(tmp_path):
-    # Test WAV duration
+    # Test WAV duration on empty and 44-byte zero-frame RIFF WAV
     wav_file = tmp_path / "test.wav"
     wav_file.touch()  # Empty WAV
+    assert get_audio_duration(str(wav_file)) == 0.0
+    _write_valid_riff_wav(wav_file)
+    assert wav_file.stat().st_size == 44
     assert get_audio_duration(str(wav_file)) == 0.0
 
     mp3_file = tmp_path / "test.mp3"
@@ -25,9 +39,9 @@ def test_get_audio_duration_fallbacks(tmp_path):
 
 
 def test_audio_extractor_real_time_progress_and_cancellation(tmp_path):
-    # Create a dummy audio file
+    # Create a compliant 44-byte RIFF WAV audio file
     dummy_wav = tmp_path / "test.wav"
-    dummy_wav.touch()
+    _write_valid_riff_wav(dummy_wav)
 
     # Create a mock Whisper python script that simulates Whisper outputting progress
     mock_script = tmp_path / "mock_whisper.py"
@@ -100,7 +114,7 @@ print("[00:15.000 --> 00:20.000] Hello segment 4", flush=True)
 
 def test_audio_extractor_active_cancellation(tmp_path):
     dummy_wav = tmp_path / "test.wav"
-    dummy_wav.touch()
+    _write_valid_riff_wav(dummy_wav)
 
     mock_script = tmp_path / "mock_whisper_cancel.py"
     with open(mock_script, "w") as f:
@@ -179,7 +193,7 @@ def test_audio_extractor_gpu_device_and_fallback(tmp_path):
     from unittest.mock import patch
 
     dummy_wav = tmp_path / "test.wav"
-    dummy_wav.touch()
+    _write_valid_riff_wav(dummy_wav)
 
     extractor = AudioExtractor()
     settings = MagicMock()

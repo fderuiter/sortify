@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "a5ffceffd9b4f2e9cbdd7bc6bc5e65a3b24e20f3f660f3a65973080c7b67c1d8"
+    "checksum": "e5094f3e5a327cbab6d8fc1fd6c1261c1abd2e3a469ab03a1d88de1aac74f480"
   },
   "classes": [
     {
@@ -41,6 +41,16 @@
               "annotation": "str | None | _Unspecified",
               "default": "_UNSPECIFIED",
               "name": "model_path"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "embedding_manager"
+            },
+            {
+              "annotation": "Callable[[str], list[float]] | None",
+              "default": "None",
+              "name": "embedding_provider"
             }
           ],
           "returns": "None"

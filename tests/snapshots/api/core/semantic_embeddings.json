@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "465f410a3915c9371ba157c90b855dc3722f2307e2a6eb399ddaf2b345665902"
+    "checksum": "e2a9b675aafd0f1f99b37ca032271e92354223edee4d2d8aa9350c49db87abcf"
   },
   "classes": [
     {
@@ -51,6 +51,11 @@
               "annotation": "bool",
               "default": "False",
               "name": "force_validation"
+            },
+            {
+              "annotation": "Callable[[str], list[float]] | None",
+              "default": "None",
+              "name": "embedding_provider"
             }
           ],
           "returns": null
@@ -147,7 +152,7 @@
           "decorators": [
             "@property"
           ],
-          "name": "is_mock",
+          "name": "has_verified_model",
           "parameters": [
             {
               "annotation": null,

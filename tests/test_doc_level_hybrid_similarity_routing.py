@@ -86,9 +86,9 @@ def test_per_comparison_hybrid_routing(mocker):
 
     # Mock semantic manager properties
     mocker.patch(
-        "app.core.semantic_embeddings.SemanticEmbeddingManager.is_mock",
+        "app.core.semantic_embeddings.SemanticEmbeddingManager.has_verified_model",
         new_callable=mocker.PropertyMock,
-        return_value=False,
+        return_value=True,
     )
     analyzer.embedding_manager.is_model_valid = True
     analyzer.embedding_manager.dimensions = 384
@@ -150,9 +150,9 @@ def test_similarity_score_merging_range(mocker):
     )
 
     mocker.patch(
-        "app.core.semantic_embeddings.SemanticEmbeddingManager.is_mock",
+        "app.core.semantic_embeddings.SemanticEmbeddingManager.has_verified_model",
         new_callable=mocker.PropertyMock,
-        return_value=False,
+        return_value=True,
     )
     analyzer.embedding_manager.is_model_valid = True
     analyzer.embedding_manager.dimensions = 384

@@ -1109,9 +1109,13 @@ def audit_privacy_policy(content=None, doc_path="PRIVACY.md"):
             return [f"Could not read privacy policy document {doc_path}: {e}"]
 
     try:
+        import inspect
+
         from app.core import db_conn
 
-        fail_closed = bool(getattr(db_conn, "_disable_pytest_win_fallback", True))
+        sig = inspect.signature(db_conn.get_db_connection)
+        param = sig.parameters.get("require_sqlcipher")
+        fail_closed = True if param is None else bool(param.default)
     except Exception:
         fail_closed = True
 
@@ -1143,7 +1147,7 @@ def audit_privacy_policy(content=None, doc_path="PRIVACY.md"):
     else:
         if claims_fail_closed and not affirmative_fallback_re.search(content):
             errors.append(
-                f"Privacy policy ({doc_path}) claims fail-closed SQLCipher behavior, but app.core.db_conn._disable_pytest_win_fallback is False"
+                f"Privacy policy ({doc_path}) claims fail-closed SQLCipher behavior, but app.core.db_conn.get_db_connection default require_sqlcipher is False"
             )
 
     for token in REQUIRED_PRIVACY_HOST_TOKENS:

@@ -12,6 +12,7 @@ from typing import Any
 
 import keyring
 from cryptography.fernet import Fernet
+from keyring.errors import KeyringError
 
 from app.core.exceptions import CryptoError
 
@@ -130,6 +131,43 @@ def secure_delete_dir(dir_path: Path):
 def _norm_cache_path(path: Path | str) -> str:
     """Normalize a filesystem path string for case-aware cache lookups."""
     return os.path.normcase(str(Path(os.path.abspath(os.fspath(path)))))
+
+
+_PERSISTENT_KEYRING_MODULE_PREFIXES = (
+    "keyring.backends.SecretService",
+    "keyring.backends.Windows",
+    "keyring.backends.macOS",
+    "keyring.backends.kwallet",
+    "keyring.backends.libsecret",
+    "keyrings.alt.file",
+    "keyrings.cryptfile",
+)
+
+
+def _is_backend_obj_persistent(backend: Any) -> bool:
+    """Return True if a keyring backend instance uses persistent OS or file storage."""
+    if backend is None:
+        return False
+    mod_name = getattr(type(backend), "__module__", "") or ""
+    if mod_name.startswith("keyring.backends.chainer"):
+        sub_backends = getattr(backend, "backends", ()) or ()
+        return any(_is_backend_obj_persistent(b) for b in sub_backends)
+    return mod_name.startswith(_PERSISTENT_KEYRING_MODULE_PREFIXES)
+
+
+def _is_persistent_keyring_backend() -> bool:
+    """Return True only when the active keyring backend persists across child processes."""
+    env_backend = os.environ.get("PYTHON_KEYRING_BACKEND", "").strip()
+    if env_backend in (
+        "keyring.backends.fail.Keyring",
+        "keyring.backends.null.Keyring",
+    ):
+        return False
+    try:
+        backend = keyring.get_keyring()
+    except (KeyringError, OSError, RuntimeError):
+        return False
+    return _is_backend_obj_persistent(backend)
 
 
 def _current_keyring_token() -> tuple[int, int, int, int, str]:
@@ -725,7 +763,7 @@ class SessionCrypto:
                     if verify_str and verify_str.encode("utf-8") == key:
                         saved_to_keyring = True
 
-                if not saved_to_keyring:
+                if not saved_to_keyring or not _is_persistent_keyring_backend():
                     # Fallback to isolated fallback key path with secure permissions
                     self.isolated_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
                     try:

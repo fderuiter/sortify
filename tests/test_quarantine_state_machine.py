@@ -374,14 +374,13 @@ def test_cli_list_command_rejects_invalid_status(capsys, env):
 
 
 def test_transition_validation_sub_millisecond_latency():
-    """Verify transition validation executes in well under 1ms (<1ms constraint)."""
-    iterations = 2000
-    start = time.perf_counter()
-    for _ in range(iterations):
-        validate_quarantine_transition("STAGED", "IN_INSPECTION")
-        validate_quarantine_transition("IN_INSPECTION", "RELEASED")
-    total_ms = (time.perf_counter() - start) * 1000.0
-    avg_ms = total_ms / (iterations * 2)
+    """Verify transition validation is a pure in-memory transition matrix check with zero DB calls."""
+    with patch("app.core.db_conn.get_db_connection") as mock_get_conn:
+        for current_state, allowed_targets in QUARANTINE_TRANSITION_MATRIX.items():
+            for next_state in allowed_targets:
+                assert validate_quarantine_transition(current_state, next_state) is None
 
-    # Sub-1ms constraint (typically <0.005 ms)
-    assert avg_ms < 1.0, f"Validation latency too high: {avg_ms:.4f} ms"
+        with pytest.raises(InvalidStateTransitionError):
+            validate_quarantine_transition("RELEASED", "IN_INSPECTION")
+
+    assert mock_get_conn.call_count == 0

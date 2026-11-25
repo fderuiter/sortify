@@ -10,7 +10,7 @@ from app.core.jev_classifier import JevClassifierEngine
 
 
 def test_in_memory_lru_cache_hit_zero_snippet_reads(tmp_path: Path):
-    """Verify in-memory BoundedMemoryCache returns results without re-reading file snippets from disk."""
+    """Verify in-memory BoundedMemoryCache returns results without DB queries or re-reading file snippets from disk."""
     engine = JevClassifierEngine(max_cache_size=100)
     test_file = tmp_path / "invoice_q3.csv"
     test_file.write_text("Invoice ID, Amount\n101, $250\n")
@@ -20,16 +20,22 @@ def test_in_memory_lru_cache_hit_zero_snippet_reads(tmp_path: Path):
     assert res1.is_classified is True
     assert "Financial" in res1.category
 
-    # Mock open to verify zero file reads on repeat classification within same session
-    with patch(
-        "builtins.open",
-        side_effect=AssertionError("Disk read should not occur on cached hit"),
+    # Verify zero file reads and zero DB lookups on repeat classification within same session
+    with (
+        patch(
+            "builtins.open",
+            side_effect=AssertionError("Disk read should not occur on cached hit"),
+        ) as mock_open,
+        patch.object(
+            engine,
+            "_get_from_db",
+            side_effect=AssertionError("DB lookup should not occur on L1 memory hit"),
+        ) as mock_db_get,
     ):
-        t0 = time.perf_counter()
         res2 = engine.classify(str(test_file))
-        latency_ms = (time.perf_counter() - t0) * 1000.0
 
-    assert latency_ms < 10.0  # Fast-path sub-10ms response time
+    assert mock_open.call_count == 0
+    assert mock_db_get.call_count == 0
     assert res2.is_classified is True
     assert res2.category == res1.category
 
@@ -55,12 +61,29 @@ def test_persistent_database_cache_hit_across_restarts(tmp_path: Path):
         engine2 = JevClassifierEngine(db_path=db_path, worker=worker)
         assert len(engine2.memory_cache) == 0
 
-        # Spy on snippet reading logic to confirm DB cache hit avoids re-reading snippets
-        t0 = time.perf_counter()
-        res2 = engine2.classify(str(test_file))
-        latency_ms = (time.perf_counter() - t0) * 1000.0
+        # Spy on DB cache lookup and assert zero snippet extraction / file open calls on L2 DB hit
+        with (
+            patch.object(
+                engine2, "_get_from_db", wraps=engine2._get_from_db
+            ) as spy_db_get,
+            patch(
+                "app.core.jev_classifier._extract_pdf_snippet",
+                side_effect=AssertionError(
+                    "PDF snippet extraction should not run on persistent DB cache hit"
+                ),
+            ) as mock_pdf_snippet,
+            patch(
+                "builtins.open",
+                side_effect=AssertionError(
+                    "Disk file open should not run on persistent DB cache hit"
+                ),
+            ) as mock_open,
+        ):
+            res2 = engine2.classify(str(test_file))
 
-        assert latency_ms < 10.0
+        assert spy_db_get.call_count == 1
+        assert mock_pdf_snippet.call_count == 0
+        assert mock_open.call_count == 0
         assert res2.is_classified is True
         assert res2.category == res1.category
         assert res2.sensitivity_rating == res1.sensitivity_rating

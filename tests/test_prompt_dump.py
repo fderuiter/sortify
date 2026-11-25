@@ -168,7 +168,7 @@ def test_prompt_dump_blocked_when_debug_off(tmp_path, monkeypatch):
     )
     expected_path = get_debug_log_dir() / dump_file
     assert not expected_path.exists()
-    assert res != "Mock Generated Folder Name"
+    assert res == ""
 
 
 def test_prompt_dump_success_under_debug(monkeypatch):
@@ -183,10 +183,17 @@ def test_prompt_dump_success_under_debug(monkeypatch):
         "Folder Name:"
     )
 
-    strategy = GenerativeNamingStrategy()
+    captured_prompts: list[str] = []
+    strategy = GenerativeNamingStrategy(prompt_sink=captured_prompts.append)
+    strategy.generator = None
+    strategy._gguf_active = False
     res = strategy._run_prompt(prompt_content, 15)
 
-    assert res == "Mock Generated Folder Name"
+    assert res == ""
+    assert len(captured_prompts) == 1
+    assert home_dir not in captured_prompts[0]
+    assert "[REDACTED_DOCUMENT_TEXT: 33 chars]" in captured_prompts[0]
+
     expected_path = get_debug_log_dir() / dump_filename
     assert expected_path.exists()
 
@@ -237,7 +244,6 @@ def test_get_cluster_keywords_succeeds_with_invalid_dump_path(
         keywords = strategy._get_cluster_keywords(["doc1.txt", "doc2.txt"])
 
     assert keywords is not None
-    assert keywords != "Mock Generated Folder Name"
     assert "Failed to write prompt dump" in caplog.text
 
 

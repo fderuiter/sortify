@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 import weakref
+from collections.abc import Callable
 
 import numpy as np
 
@@ -216,9 +217,11 @@ class SemanticEmbeddingManager:
         model_path: str | None = None,
         bypass_validation: bool = False,
         force_validation: bool = False,
+        embedding_provider: Callable[[str], list[float]] | None = None,
     ):
         self.db = db
         self.model_path = model_path
+        self.embedding_provider = embedding_provider
         self._reconstruction_thread = None
         self._reconstruction_active = False
         self._stop_requested = False
@@ -285,10 +288,12 @@ class SemanticEmbeddingManager:
         self.verify_active_model()
 
     @property
-    def is_mock(self) -> bool:
-        """Returns True if the engine is running in mock state (no valid physical model file exists)."""
-        if not self.model_path:
+    def has_verified_model(self) -> bool:
+        """Return True when an embedding provider is injected or a valid physical model file exists."""
+        if self.embedding_provider is not None:
             return True
+        if not self.model_path:
+            return False
 
         properties = get_active_model_properties(self.model_path)
         is_valid = getattr(properties, "is_valid", False)
@@ -301,7 +306,7 @@ class SemanticEmbeddingManager:
             if is_valid:
                 self.verify_active_model()
 
-        return not self.is_model_valid
+        return bool(self.is_model_valid)
 
     def verify_active_model(self):
         """Check active ONNX model signature/dimensions against stored metadata.
@@ -585,6 +590,9 @@ class SemanticEmbeddingManager:
         if not text or not text.strip():
             return self._generate_fallback_embedding(text)
 
+        if self.embedding_provider is not None:
+            return list(self.embedding_provider(text))
+
         # If model_path is provided, we must check local ONNX model
         if self.model_path is not None:
             if not getattr(self, "is_model_valid", True):
@@ -752,7 +760,7 @@ class SemanticEmbeddingManager:
                     raise ModelValidationError(msg) from e
                 return self._generate_fallback_embedding(text)
 
-        # If model_path is None, we run standard deterministic dummy generator (mock/test mode)
+        # Fall back to deterministic hash-projection embedding when no local ONNX model is configured
         return self._generate_fallback_embedding(text)
 
     def get_vector(self, base_dir: str, filepath: str) -> list[float] | None:

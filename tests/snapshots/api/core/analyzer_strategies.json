@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "321e47dc3491ea0eba9eba07e22b0b865284f48d8374be266fcd960ed80873e4"
+    "checksum": "b8f178f65d3cba956daed9a81444a4f7bfbca0755e98449cecaecda61d03dc0b"
   },
   "classes": [
     {
@@ -145,6 +145,16 @@
               "annotation": "str | None",
               "default": "None",
               "name": "model_path"
+            },
+            {
+              "annotation": "Callable[[str], None] | None",
+              "default": "None",
+              "name": "prompt_sink"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "embedding_manager"
             }
           ],
           "returns": null
@@ -283,7 +293,49 @@
       ]
     },
     {
-      "class_name": "InMemoryDBMock",
+      "class_name": "IsolatedStrategyMixin",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "clear_isolated_state",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    {
+      "class_name": "MetadataReader",
       "decorators": [],
       "methods": [
         {
@@ -341,48 +393,6 @@
               "annotation": null,
               "default": null,
               "name": "value"
-            }
-          ],
-          "returns": null
-        }
-      ]
-    },
-    {
-      "class_name": "IsolatedStrategyMixin",
-      "decorators": [],
-      "methods": [
-        {
-          "async": false,
-          "decorators": [],
-          "name": "__init__",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": null,
-              "default": null,
-              "name": "*args"
-            },
-            {
-              "annotation": null,
-              "default": null,
-              "name": "**kwargs"
-            }
-          ],
-          "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "clear_isolated_state",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
             }
           ],
           "returns": null

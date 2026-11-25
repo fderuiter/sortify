@@ -1268,10 +1268,6 @@ class AudioExtractor:
         def is_compliant_wav(path: str) -> bool:
             if not path.lower().endswith(".wav"):
                 return False
-            # To support existing unit tests that use 0-byte dummy WAV files:
-            with contextlib.suppress(OSError, ValueError):
-                if os.path.getsize(path) == 0:
-                    return True
             try:
                 with wave.open(path, "rb") as f:
                     return (

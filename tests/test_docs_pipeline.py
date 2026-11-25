@@ -165,9 +165,14 @@ def test_audit_privacy_policy_detects_missing_fail_closed_or_runtime_drift(
     errors = audit_privacy_policy(doc_path=str(bad_privacy))
     assert any("fails closed and raises an error" in e for e in errors)
 
-    monkeypatch.setattr(app.core.db_conn, "_disable_pytest_win_fallback", False)
+    def _non_strict_get_db_connection(db_path: str, *, require_sqlcipher: bool = False):
+        return None
+
+    monkeypatch.setattr(
+        app.core.db_conn, "get_db_connection", _non_strict_get_db_connection
+    )
     runtime_drift_errors = audit_privacy_policy(content=baseline, doc_path="PRIVACY.md")
-    assert any("_disable_pytest_win_fallback" in e for e in runtime_drift_errors)
+    assert any("require_sqlcipher" in e for e in runtime_drift_errors)
 
 
 @pytest.mark.parametrize(

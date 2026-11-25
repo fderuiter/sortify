@@ -9,6 +9,7 @@ import logging
 import os
 import re
 from collections import defaultdict
+from collections.abc import Callable
 from typing import Any, cast
 
 from pydantic import BaseModel
@@ -520,6 +521,8 @@ class IncrementalAnalyzer:
         db,
         strategy_name: str = "generative",
         model_path: str | None | _Unspecified = _UNSPECIFIED,
+        embedding_manager: Any = None,
+        embedding_provider: Callable[[str], list[float]] | None = None,
     ) -> None:
         self.db = db
         self.max_folders = max_folders
@@ -571,40 +574,63 @@ class IncrementalAnalyzer:
                 elif os.path.exists(user_bundle_path):
                     self.model_path = user_bundle_path
 
-        from app.core.semantic_embeddings import (
-            ModelValidationError,
-            SemanticEmbeddingManager,
-        )
+        if embedding_manager is not None:
+            self.embedding_manager = embedding_manager
+        else:
+            from app.core.semantic_embeddings import (
+                ModelValidationError,
+                SemanticEmbeddingManager,
+            )
 
-        try:
-            self.embedding_manager = SemanticEmbeddingManager(self.db, self.model_path)
-            if getattr(self.embedding_manager, "is_degraded", False):
-                self.model_path = self.embedding_manager.model_path
-        except ModelValidationError as val_err:
-            err_msg = str(val_err)
-            recovery_action = (
-                "INSTALL_ML_EXTRA"
-                if "onnxruntime" in err_msg.lower()
-                else "RE_DOWNLOAD_MODEL"
-            )
-            logging.warning(
-                "Falling back to TF-IDF clustering after model validation failure: %s",
-                err_msg,
-            )
-            from app.core.shared_registry import SharedModelRegistry
+            try:
+                if embedding_provider is not None:
+                    self.embedding_manager = SemanticEmbeddingManager(
+                        self.db,
+                        self.model_path,
+                        embedding_provider=embedding_provider,
+                    )
+                else:
+                    self.embedding_manager = SemanticEmbeddingManager(
+                        self.db,
+                        self.model_path,
+                    )
+                if getattr(self.embedding_manager, "is_degraded", False):
+                    self.model_path = self.embedding_manager.model_path
+            except ModelValidationError as val_err:
+                err_msg = str(val_err)
+                recovery_action = (
+                    "INSTALL_ML_EXTRA"
+                    if "onnxruntime" in err_msg.lower()
+                    else "RE_DOWNLOAD_MODEL"
+                )
+                logging.warning(
+                    "Falling back to TF-IDF clustering after model validation failure: %s",
+                    err_msg,
+                )
+                from app.core.shared_registry import SharedModelRegistry
 
-            SharedModelRegistry.get_instance().record_model_health(
-                "onnx_embeddings",
-                status="DEGRADED_FALLBACK",
-                failure_reason=err_msg,
-                suggested_recovery_action=recovery_action,
-            )
-            self.model_path = None
-            self.embedding_manager = SemanticEmbeddingManager(self.db, None)
-            self.embedding_manager.is_degraded = True
-            self.embedding_manager.degradation_state = "DEGRADED_FALLBACK"
-            self.embedding_manager.degradation_reason = err_msg
-            self.embedding_manager.suggested_recovery_action = recovery_action
+                SharedModelRegistry.get_instance().record_model_health(
+                    "onnx_embeddings",
+                    status="DEGRADED_FALLBACK",
+                    failure_reason=err_msg,
+                    suggested_recovery_action=recovery_action,
+                )
+                self.model_path = None
+                if embedding_provider is not None:
+                    self.embedding_manager = SemanticEmbeddingManager(
+                        self.db,
+                        None,
+                        embedding_provider=embedding_provider,
+                    )
+                else:
+                    self.embedding_manager = SemanticEmbeddingManager(
+                        self.db,
+                        None,
+                    )
+                self.embedding_manager.is_degraded = True
+                self.embedding_manager.degradation_state = "DEGRADED_FALLBACK"
+                self.embedding_manager.degradation_reason = err_msg
+                self.embedding_manager.suggested_recovery_action = recovery_action
 
     def close(self):
         """Terminate processes."""
@@ -859,7 +885,7 @@ class IncrementalAnalyzer:
         sims = tfidf_sims
         use_semantic = (
             getattr(self, "embedding_manager", None) is not None
-            and not self.embedding_manager.is_mock
+            and self.embedding_manager.has_verified_model
             and not self.embedding_manager.is_reconstruction_active()
         )
         if use_semantic and base_dir:
@@ -2100,12 +2126,12 @@ class IncrementalAnalyzer:
 
                     from app.core.db_conn import get_db_connection
 
-                    # Check if embedding reconstruction is active or mock state is detected
-                    is_mock = self.embedding_manager.is_mock
+                    # Check if a verified embedding model is available and reconstruction is idle
+                    has_verified = self.embedding_manager.has_verified_model
                     is_reconstruction_active = (
                         self.embedding_manager.is_reconstruction_active()
                     )
-                    use_semantic = not is_mock and not is_reconstruction_active
+                    use_semantic = has_verified and not is_reconstruction_active
 
                     # 1. Fetch existing vectors from DB batch-wise (regenerating active on-the-fly if semantic is enabled)
                     hist_filepaths = [doc["filepath"] for doc in historical_docs]
@@ -2437,7 +2463,7 @@ class IncrementalAnalyzer:
             if (
                 active_strategy_name
                 and active_strategy_name != "generative"
-                and self.embedding_manager.is_mock
+                and not self.embedding_manager.has_verified_model
             ):
                 active_strategy_name = "default"
 
@@ -2459,7 +2485,7 @@ class IncrementalAnalyzer:
                         cast(Any, strategy).db = self.db
                         cast(Any, strategy).base_dir = base_dir
 
-                    use_semantic = not self.embedding_manager.is_mock
+                    use_semantic = self.embedding_manager.has_verified_model
                     pre_fetched_vectors = None
 
                     if use_semantic and ai_filenames:
@@ -2534,11 +2560,15 @@ class IncrementalAnalyzer:
                                 is_prompt_dump_enabled,
                             )
 
+                            has_prompt_sink = bool(
+                                getattr(strategy, "_has_prompt_sink", lambda: False)()
+                                or is_prompt_dump_enabled()
+                            )
                             if (
                                 not getattr(strategy, "_model_initialized", False)
                                 and getattr(strategy, "_generator", None) is None
                                 and not getattr(strategy, "_gguf_active", False)
-                                and not is_prompt_dump_enabled()
+                                and not has_prompt_sink
                             ):
                                 m_path = getattr(strategy, "model_path", None)
                                 if not m_path or not os.path.exists(m_path):
@@ -3350,7 +3380,7 @@ class IncrementalAnalyzer:
                     self.strategy_name
                     and self.strategy_name != "generative"
                     and getattr(self, "embedding_manager", None)
-                    and self.embedding_manager.is_mock
+                    and not self.embedding_manager.has_verified_model
                 ):
                     active_strategy_name = "default"
                 if active_strategy_name:

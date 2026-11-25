@@ -1,16 +1,19 @@
+import contextlib
+import json
 import os
 import sys
 import tempfile
+import threading
 from pathlib import Path
 from unittest.mock import patch
+
+os.environ.setdefault("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
 
 import keyring
 import pytest
 from keyring.backend import KeyringBackend
 
 from app.core.db_conn import clear_connection_cache
-
-os.environ.setdefault("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
 
 # Clear pre-loaded standard database modules to prevent library collision
 for mod_name in list(sys.modules.keys()):
@@ -22,34 +25,147 @@ for mod_name in list(sys.modules.keys()):
     ) or mod_name.startswith(("sqlcipher3.", "sqlite3.", "pysqlcipher3.")):
         sys.modules.pop(mod_name, None)
 
+_REAL_OS_CHMOD = os.chmod
+_REAL_OS_OPEN = os.open
+_REAL_OS_FDOPEN = os.fdopen
+_REAL_OS_REPLACE = os.replace
+_REAL_OS_UNLINK = os.unlink
 
-class MemoryKeyring(KeyringBackend):
+
+class FileBackedKeyring(KeyringBackend):
+    """File-backed test keyring persisting entries under AUTOSORTER_KEYS_DIR."""
+
     priority = 1
 
-    def __init__(self):
-        self.passwords = {}
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+        self._bootstrap_dir: Path | None = None
 
-    def get_password(self, service, username):
-        return self.passwords.get(service, {}).get(username)
+    def _resolve_store_path(self) -> Path:
+        raw_dir = os.environ.get("SORTIFY_KEYS_DIR") or os.environ.get(
+            "AUTOSORTER_KEYS_DIR"
+        )
+        if raw_dir:
+            keys_dir = Path(raw_dir)
+        else:
+            if self._bootstrap_dir is None:
+                self._bootstrap_dir = Path(
+                    tempfile.mkdtemp(prefix="test_autosorter_keys_")
+                )
+            keys_dir = self._bootstrap_dir
+        keys_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        with contextlib.suppress(OSError):
+            _REAL_OS_CHMOD(keys_dir, 0o700)
+        return keys_dir / ".keyring_store.json"
 
-    def set_password(self, service, username, password):
-        self.passwords.setdefault(service, {})[username] = password
+    def _read_store(self) -> dict[str, dict[str, str]]:
+        store_path = self._resolve_store_path()
+        if not store_path.exists():
+            return {}
+        try:
+            fd = _REAL_OS_OPEN(str(store_path), os.O_RDONLY)
+            with _REAL_OS_FDOPEN(fd, "rb") as handle:
+                data = json.loads(handle.read().decode("utf-8"))
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
 
-    def delete_password(self, service, username):
-        if service in self.passwords and username in self.passwords[service]:
-            del self.passwords[service][username]
+    def _write_store(self, data: dict[str, dict[str, str]]) -> None:
+        store_path = self._resolve_store_path()
+        payload = json.dumps(data, sort_keys=True).encode("utf-8")
+        tmp_path = store_path.with_name(f"{store_path.name}.{os.getpid()}.tmp")
+        fd = _REAL_OS_OPEN(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            with _REAL_OS_FDOPEN(fd, "wb") as handle:
+                handle.write(payload)
+            with contextlib.suppress(OSError):
+                _REAL_OS_CHMOD(tmp_path, 0o600)
+            _REAL_OS_REPLACE(tmp_path, store_path)
+            with contextlib.suppress(OSError):
+                _REAL_OS_CHMOD(store_path, 0o600)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                _REAL_OS_UNLINK(tmp_path)
+            raise
 
-    def clear(self):
-        self.passwords.clear()
+    def get_password(self, service: str, username: str) -> str | None:
+        with self._lock:
+            return self._read_store().get(service, {}).get(username)
+
+    def set_password(self, service: str, username: str, password: str) -> None:
+        with self._lock:
+            store = self._read_store()
+            store.setdefault(service, {})[username] = password
+            self._write_store(store)
+
+    def delete_password(self, service: str, username: str) -> None:
+        with self._lock:
+            store = self._read_store()
+            if service in store and username in store[service]:
+                del store[service][username]
+                if not store[service]:
+                    del store[service]
+                self._write_store(store)
+
+    def clear(self) -> None:
+        with self._lock:
+            store_path = self._resolve_store_path()
+            with contextlib.suppress(OSError):
+                _REAL_OS_UNLINK(store_path)
 
 
-_memory_keyring = MemoryKeyring()
-keyring.set_keyring(_memory_keyring)
+_file_keyring = FileBackedKeyring()
+keyring.set_keyring(_file_keyring)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def isolate_module_keys_dir(request, isolate_test_environment):
+    """Scope AUTOSORTER_KEYS_DIR per test module under the session keys root so module fixtures stay isolated."""
+    from _pytest.monkeypatch import MonkeyPatch
+
+    base_keys_dir = Path(os.environ["AUTOSORTER_KEYS_DIR"])
+    mod_slug = (
+        request.node.nodeid.replace("/", "_").replace("::", "_").replace(".", "_")
+    )
+    mod_keys_dir = base_keys_dir / mod_slug
+    mod_keys_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with contextlib.suppress(OSError):
+        _REAL_OS_CHMOD(mod_keys_dir, 0o700)
+
+    mpatch = MonkeyPatch()
+    mpatch.setenv("AUTOSORTER_KEYS_DIR", str(mod_keys_dir))
+    try:
+        yield mod_keys_dir
+    finally:
+        mpatch.undo()
 
 
 @pytest.fixture(autouse=True)
 def reset_memory_keyring():
-    pass  # _memory_keyring.clear() removed to preserve session scoped keys in tests
+    """Restore per-test keyring and fallback key files to module-fixture baseline after each test."""
+    keys_dir_raw = os.environ.get("AUTOSORTER_KEYS_DIR")
+    keys_dir = Path(keys_dir_raw) if keys_dir_raw else None
+    before_store = _file_keyring._read_store()
+    before_files = (
+        {p.name for p in keys_dir.iterdir()}
+        if keys_dir is not None and keys_dir.exists()
+        else set()
+    )
+    yield
+    if keys_dir is not None and keys_dir.exists():
+        for entry in list(keys_dir.iterdir()):
+            if entry.name not in before_files and entry.name != ".keyring_store.json":
+                with contextlib.suppress(OSError):
+                    if entry.is_file() or entry.is_symlink():
+                        _REAL_OS_UNLINK(entry)
+        if before_store:
+            _file_keyring._write_store(before_store)
+        else:
+            _file_keyring.clear()
+    else:
+        _file_keyring.clear()
+    if "app.core.crypto" in sys.modules:
+        sys.modules["app.core.crypto"]._reset_keyring_probe_cache()
 
 
 @pytest.fixture(autouse=True)
@@ -59,17 +175,31 @@ def sync_db_worker(request):
     Mark a test ``real_db_worker`` to run it against the real asynchronous write queue.
     """
     from app.core.db_worker import DBWorker
+    from app.core.db_worker import logger as db_worker_logger
 
     if request.node.get_closest_marker("real_db_worker"):
         yield
         return
 
     def sync_execute(self, func, *args, **kwargs):
-        import threading
-
         if threading.current_thread() is getattr(self, "thread", None):
-            return func(*args, **kwargs)
-        return self.execute_write(func, *args, **kwargs)
+            try:
+                func(*args, **kwargs)
+            except Exception as e:
+                func_name = getattr(func, "__name__", str(func))
+                db_worker_logger.error(
+                    f"Task exception encountered in write operation '{func_name}': {e}",
+                    exc_info=True,
+                )
+            return
+        with self._lock:
+            if self._stopped:
+                return
+        try:
+            self.execute_write(func, *args, **kwargs)
+        except Exception:
+            # DBWorker._run already logged the task exception with exc_info=True
+            return
 
     with patch.object(DBWorker, "execute_write_async", sync_execute):
         yield
@@ -226,7 +356,12 @@ def isolate_test_environment(monkeypatch_session):
     from app.core.resilient_file_ops import resilient_rmtree
 
     temp_dir = tempfile.mkdtemp(prefix="test_autosorter_appdir_")
+    keys_dir = Path(temp_dir) / "keys"
+    keys_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with contextlib.suppress(OSError):
+        os.chmod(keys_dir, 0o700)
     monkeypatch_session.setenv("AUTOSORTER_APP_DIR", temp_dir)
+    monkeypatch_session.setenv("AUTOSORTER_KEYS_DIR", str(keys_dir))
 
     def mock_get_app_dir():
         app_dir = os.environ.get("AUTOSORTER_APP_DIR")
@@ -305,22 +440,51 @@ def socket_mock(monkeypatch):
     yield mock_connect, mock_connect_ex
 
 
+_failure_log_path: Path = Path("pytest_failures.txt")
+_recorded_failure_keys: set[tuple[str, str]] = set()
+
+
+def _is_xdist_worker(config=None) -> bool:
+    if "PYTEST_XDIST_WORKER" in os.environ:
+        return True
+    return config is not None and hasattr(config, "workerinput")
+
+
+def pytest_sessionstart(session):
+    """Truncate stale pytest_failures.txt on the controller before tests execute."""
+    global _failure_log_path
+    if _is_xdist_worker(session.config):
+        return
+    root_dir = (
+        getattr(session.config, "rootpath", None)
+        or Path(__file__).resolve().parent.parent
+    )
+    _failure_log_path = Path(root_dir) / "pytest_failures.txt"
+    _recorded_failure_keys.clear()
+    with contextlib.suppress(OSError):
+        _failure_log_path.unlink(missing_ok=True)
+
+
 def pytest_runtest_logreport(report):
-    """Intercept pytest failures across all phases and output them as GitHub Actions error annotations to capture raw tracebacks."""
-    if report.failed:
-        import sys
+    """Record deduplicated failure tracebacks on the controller and emit GitHub Actions annotations in CI."""
+    if not report.failed or _is_xdist_worker():
+        return
 
-        tb = str(report.longrepr)
-        message = f"Test Failed ({report.when}): {report.nodeid}\n\n{tb}"
+    failure_key = (report.nodeid, report.when)
+    if failure_key in _recorded_failure_keys:
+        return
+    _recorded_failure_keys.add(failure_key)
 
-        # Write to pytest_failures.txt
-        try:
-            with open("pytest_failures.txt", "a", encoding="utf-8") as f:
-                f.write(f"=== [{report.when}] {report.nodeid} ===\n{tb}\n\n")
-        except Exception:
-            pass
+    tb = str(report.longrepr)
+    message = f"Test Failed ({report.when}): {report.nodeid}\n\n{tb}"
 
-        # Write to uncaptured stdout to bypass pytest buffering
+    try:
+        with open(_failure_log_path, "a", encoding="utf-8") as f:
+            f.write(f"=== [{report.when}] {report.nodeid} ===\n{tb}\n\n")
+    except Exception:
+        pass
+
+    if os.environ.get("GITHUB_ACTIONS") == "true":
         try:
             message_escaped = message.replace("\r", "").replace("\n", "%0A")
             sys.__stdout__.write(f"\n::error:: {message_escaped}\n")

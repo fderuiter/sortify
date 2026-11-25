@@ -557,7 +557,7 @@ def test_semantic_keyphrase_naming_differs_from_tfidf_and_applies_date_template(
     class FakeActiveOnnxEmbeddingManager:
         """Deterministic non-mock embedding stub where 'quarterly tax' aligns with the document vector."""
 
-        is_mock = False
+        has_verified_model = True
         is_degraded = False
 
         def is_reconstruction_active(self) -> bool:

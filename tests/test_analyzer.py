@@ -458,11 +458,11 @@ def test_analyzer_no_n_plus_one_queries(mocker):
     spy_get_vector = mocker.spy(analyzer.embedding_manager, "get_vector")
     spy_get_vectors_batch = mocker.spy(analyzer.embedding_manager, "get_vectors_batch")
 
-    # Force the semantic path by mocking is_mock and is_model_valid
+    # Force the semantic path via has_verified_model and is_model_valid
     mocker.patch(
-        "app.core.semantic_embeddings.SemanticEmbeddingManager.is_mock",
+        "app.core.semantic_embeddings.SemanticEmbeddingManager.has_verified_model",
         new_callable=mocker.PropertyMock,
-        return_value=False,
+        return_value=True,
     )
     analyzer.embedding_manager.is_model_valid = True
 
@@ -640,23 +640,23 @@ def test_prefetch_semantic_ranking_order(mocker):
     assert fp_1 == "file_10.txt"
 
 
-def test_in_memory_db_mock():
-    """Verify InMemoryDBMock initialization and get/set metadata operations."""
-    from app.core.analyzer_strategies import InMemoryDBMock
+def test_metadata_reader():
+    """Verify MetadataReader initialization and get/set metadata operations."""
+    from app.core.analyzer_strategies import MetadataReader
 
     # 1. Test None metadata fallback
-    db_none = InMemoryDBMock(None)
+    db_none = MetadataReader(None)
     assert db_none.get_model_metadata("key1") is None
     db_none.set_model_metadata("key1", "val1")
     assert db_none.get_model_metadata("key1") == "val1"
 
     # 2. Test empty metadata dict
-    db_empty = InMemoryDBMock({})
+    db_empty = MetadataReader({})
     assert db_empty.get_model_metadata("key2") is None
 
     # 3. Test initialized metadata dict
     meta = {"model_name": "test_model", "dim": 384}
-    db_meta = InMemoryDBMock(meta)
+    db_meta = MetadataReader(meta)
     assert db_meta.get_model_metadata("model_name") == "test_model"
     assert db_meta.get_model_metadata("dim") == 384
     db_meta.set_model_metadata("version", 1)

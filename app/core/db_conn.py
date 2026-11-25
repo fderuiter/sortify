@@ -62,7 +62,6 @@ _raw_key_to_abs: dict[tuple[str, int], str] = {}
 _cache_lock = threading.RLock()
 _path_init_locks = {}
 _path_locks_lock = threading.Lock()
-_disable_pytest_win_fallback = True
 
 
 def _get_path_init_lock(abs_path: str):
@@ -146,14 +145,14 @@ def clear_dead_thread_connections():
             _raw_key_to_abs.pop(rk, None)
 
 
-def get_db_connection(db_path: str):
+def get_db_connection(db_path: str, require_sqlcipher: bool = True):
     """Create and configure a new database connection with performance parameters."""
     global _connection_cache
     raw_path = os.fspath(db_path)
     thread_id = threading.get_ident()
     is_abs_raw = isinstance(raw_path, str) and os.path.isabs(raw_path)
 
-    if is_abs_raw:
+    if is_abs_raw and (not require_sqlcipher or HAS_SQLCIPHER):
         with _cache_lock:
             cached_abs = _raw_key_to_abs.get((raw_path, thread_id))
             if cached_abs is not None and (cached_abs, thread_id) in _connection_cache:
@@ -163,7 +162,7 @@ def get_db_connection(db_path: str):
     cache_key = (abs_path, thread_id)
 
     with _cache_lock:
-        if cache_key in _connection_cache:
+        if cache_key in _connection_cache and (not require_sqlcipher or HAS_SQLCIPHER):
             if is_abs_raw:
                 _raw_key_to_abs[(raw_path, thread_id)] = abs_path
             return _connection_cache[cache_key]
@@ -177,18 +176,28 @@ def get_db_connection(db_path: str):
     # Windows. Cache hits never take this lock.
     with _get_path_init_lock(abs_path):
         with _cache_lock:
-            if cache_key in _connection_cache:
+            if cache_key in _connection_cache and (
+                not require_sqlcipher or HAS_SQLCIPHER
+            ):
                 if is_abs_raw:
                     _raw_key_to_abs[(raw_path, thread_id)] = abs_path
                 return _connection_cache[cache_key]
-        conn = _open_connection(db_path, abs_path, cache_key)
+        conn = _open_connection(
+            db_path, abs_path, cache_key, require_sqlcipher=require_sqlcipher
+        )
         if is_abs_raw:
             with _cache_lock:
                 _raw_key_to_abs[(raw_path, thread_id)] = abs_path
         return conn
 
 
-def _open_connection(db_path: str, abs_path: str, cache_key):
+def _open_connection(
+    db_path: str,
+    abs_path: str,
+    cache_key,
+    *,
+    require_sqlcipher: bool = True,
+):
     """Open, key and configure a connection, then cache it under cache_key."""
     from app.core.path_utils import resolve_db_crypto
 
@@ -196,7 +205,7 @@ def _open_connection(db_path: str, abs_path: str, cache_key):
     raw_key = crypto.get_raw_key()
 
     if not HAS_SQLCIPHER:
-        if _disable_pytest_win_fallback:
+        if require_sqlcipher:
             raise RuntimeError(
                 "SQLCipher library is missing, so the encrypted store can't be opened. "
                 "Reinstall Sortify, or run `pip install sqlcipher3-wheels`."
@@ -236,7 +245,7 @@ def _open_connection(db_path: str, abs_path: str, cache_key):
                     cursor.execute("PRAGMA cipher_version;")
                     version = cursor.fetchone()
                     if not version or not version[0]:
-                        if _disable_pytest_win_fallback:
+                        if require_sqlcipher:
                             raise RuntimeError(
                                 "SQLCipher is not active on this connection context."
                             )
@@ -245,7 +254,7 @@ def _open_connection(db_path: str, abs_path: str, cache_key):
                             "Operating in standard SQLite fallback mode."
                         )
             except Exception as cipher_err:
-                if _disable_pytest_win_fallback:
+                if require_sqlcipher:
                     raise RuntimeError(
                         "SQLCipher is not active on this connection context."
                     ) from cipher_err

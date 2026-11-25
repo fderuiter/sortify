@@ -430,6 +430,12 @@ def test_heavy_tests_runs_single_uv_sync_with_ml_extra():
     assert "uv sync" not in test_step.get("run", "")
     assert 'pytest -m "slow"' in test_step.get("run", "")
     assert steps.index(install_step) < steps.index(test_step)
+    assert (jobs["heavy-tests"].get("env") or {}).get(
+        "PYTHON_KEYRING_BACKEND"
+    ) == "keyring.backends.fail.Keyring"
+    assert (jobs["build-and-test"].get("env") or {}).get(
+        "PYTHON_KEYRING_BACKEND"
+    ) == "keyring.backends.fail.Keyring"
 
 
 def test_no_ci_job_executes_duplicate_uv_sync():

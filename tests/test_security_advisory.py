@@ -2,7 +2,6 @@
 
 import os
 import tempfile
-import time
 import urllib.error
 from unittest.mock import MagicMock, patch
 
@@ -66,20 +65,40 @@ def test_advisory_client_singleton_and_cache():
 
 
 def test_cached_lookup_latency_under_50ms():
-    """Verify that in-memory cached advisory lookups complete in under 50 milliseconds."""
-    client = SecurityAdvisoryClient.get_instance()
+    """Verify in-memory cached advisory lookups return directly from cache without network opener or disk settings reads."""
+    client = SecurityAdvisoryClient(ttl=3600.0)
     repo_id = "test-owner/test-model"
     res = SecurityAdvisoryResult(has_advisory=False, details="Clean")
     client.cache_advisory(repo_id, None, res)
 
-    start_time = time.perf_counter()
-    result = client.check_advisory(repo_id=repo_id, raise_on_advisory=False)
-    elapsed = time.perf_counter() - start_time
+    with (
+        patch.object(
+            client,
+            "_build_opener",
+            side_effect=AssertionError(
+                "Cached advisory lookup must not construct a network opener"
+            ),
+        ) as mock_opener,
+        patch(
+            "urllib.request.urlopen",
+            side_effect=AssertionError(
+                "Cached advisory lookup must not open network connections"
+            ),
+        ) as mock_urlopen,
+        patch(
+            "app.config.AppSettings",
+            side_effect=AssertionError(
+                "Cached advisory lookup must not load AppSettings from disk"
+            ),
+        ) as mock_settings,
+    ):
+        result = client.check_advisory(repo_id=repo_id, raise_on_advisory=False)
 
+    assert result is res
     assert result.has_advisory is False
-    assert elapsed < 0.050, (
-        f"Cached lookup took {elapsed * 1000:.2f}ms, exceeding 50ms SLA limit!"
-    )
+    assert mock_opener.call_count == 0
+    assert mock_urlopen.call_count == 0
+    assert mock_settings.call_count == 0
 
 
 def test_active_security_advisory_blocks_and_raises_verification_error():

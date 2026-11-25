@@ -367,13 +367,13 @@ def test_app_has_no_import_time_global_patches():
     assert errors == []
 
 
-def _detection_errors(source):
+def _detection_errors(source, filepath="app/core/x.py"):
     import ast
 
     from scripts.validate_architecture import validate_no_test_detection
 
     errors = []
-    validate_no_test_detection(errors, "app/core/x.py", ast.parse(source))
+    validate_no_test_detection(errors, filepath, ast.parse(source))
     return errors
 
 
@@ -381,29 +381,66 @@ def test_test_detection_flags_mock_checks_and_pytest_env():
     assert _detection_errors("import unittest.mock\n")
     assert _detection_errors("from unittest import mock\n")
     assert _detection_errors("from unittest.mock import MagicMock\n")
+    assert _detection_errors("from unittest.mock import AsyncMock, PropertyMock\n")
+    assert _detection_errors("import pytest\n")
+    assert _detection_errors("from pytest import MonkeyPatch\n")
+    assert _detection_errors("import _pytest.outcomes\n")
+    assert _detection_errors('import sys\n_ = "pytest" in sys.modules\n')
+    assert _detection_errors('import sys\n_ = sys.modules.get("pytest")\n')
+    assert _detection_errors('import sys\n_ = sys.modules["unittest.mock"]\n')
     assert _detection_errors("def f(x):\n    return isinstance(x, MagicMock)\n")
     assert _detection_errors("import unittest\nunittest.mock.NonCallableMock\n")
     assert _detection_errors('import os\nos.environ.get("PYTEST_CURRENT_TEST")\n')
+    assert _detection_errors('import os\nos.environ.get("PYTEST_XDIST_WORKER")\n')
     assert _detection_errors('hasattr(obj, "mock_add_spec")\n')
+    assert _detection_errors("if manager.is_mock:\n    pass\n")
+    assert _detection_errors("stub = InMemoryDBMock({})\n")
+    assert _detection_errors(
+        "def open_db(_disable_pytest_win_fallback=False):\n    pass\n"
+    )
+    assert _detection_errors('name = "Mock Generated Folder Name"\n')
+    assert _detection_errors("if _under_test:\n    pass\n")
+    assert _detection_errors("import pytest\n", filepath="scripts/helper.py")
 
 
 def test_test_detection_allows_ordinary_code():
     assert not _detection_errors("import unittest\nimport shutil\n")
     assert not _detection_errors('import os\nos.environ.get("SORTIFY_DEBUG")\n')
     assert not _detection_errors("mock_mode = False\n")
+    assert not _detection_errors(
+        'cmd = ["uv", "run", "pytest", "-q"]\n', filepath="scripts/runner.py"
+    )
 
 
-def test_app_has_no_test_detection():
+def test_app_and_scripts_have_no_test_detection():
     import ast
     from pathlib import Path
 
     from scripts.validate_architecture import validate_no_test_detection
 
     errors = []
-    for path in Path("app").rglob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        validate_no_test_detection(errors, str(path), tree)
+    for root in ("app", "scripts"):
+        for path in Path(root).rglob("*.py"):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            validate_no_test_detection(errors, str(path), tree)
     assert errors == []
+
+
+def test_validate_architecture_incremental_scripts_test_detection_violation(
+    monkeypatch, tmp_path
+):
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    bad_script = scripts_dir / "bad_script.py"
+    bad_script.write_text("import pytest\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys, "argv", ["validate_architecture.py", "scripts/bad_script.py"]
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
 
 
 def _ml_errors(source, filepath="app/core/example.py"):

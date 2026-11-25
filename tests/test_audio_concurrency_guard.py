@@ -128,11 +128,17 @@ def test_audio_concurrency_guard_restricts_active_tasks():
 
 def test_audio_extraction_batch_concurrency_limit(tmp_path):
     """Test that processing a batch with more audio files than limit restricts active transcriptions."""
-    # Create dummy audio wav files
+    import wave
+
+    # Create compliant 44-byte RIFF WAV files
     audio_files = []
     for i in range(6):
         p = tmp_path / f"audio_{i}.wav"
-        p.write_bytes(b"")  # 0-byte compliant wav test dummy
+        with wave.open(str(p), "wb") as wav_out:
+            wav_out.setnchannels(1)
+            wav_out.setsampwidth(2)
+            wav_out.setframerate(16000)
+            wav_out.writeframes(b"")
         audio_files.append(str(p))
 
     guard = AudioConcurrencyGuard.get_instance(limit=2)
@@ -201,10 +207,16 @@ def test_non_audio_files_not_blocked_by_audio_guard(tmp_path):
 
 def test_cancellation_while_waiting_for_guard(tmp_path):
     """Test that cancellation requests terminate tasks waiting for audio guard without deadlock."""
+    import wave
+
     guard = AudioConcurrencyGuard.get_instance(limit=1)
 
     wav_file = tmp_path / "test.wav"
-    wav_file.write_bytes(b"")
+    with wave.open(str(wav_file), "wb") as wav_out:
+        wav_out.setnchannels(1)
+        wav_out.setsampwidth(2)
+        wav_out.setframerate(16000)
+        wav_out.writeframes(b"")
 
     # Fill the guard slot
     guard.acquire_slot()
@@ -233,8 +245,14 @@ def test_cancellation_pre_flagged(tmp_path):
     guard = AudioConcurrencyGuard.get_instance(limit=2)
     extractor = AudioExtractor()
 
+    import wave
+
     wav_file = tmp_path / "test.wav"
-    wav_file.write_bytes(b"")
+    with wave.open(str(wav_file), "wb") as wav_out:
+        wav_out.setnchannels(1)
+        wav_out.setsampwidth(2)
+        wav_out.setframerate(16000)
+        wav_out.writeframes(b"")
 
     res = extractor.extract(str(wav_file), cancel_check=lambda: True)
     assert res == "[STATUS:CANCELLED]"

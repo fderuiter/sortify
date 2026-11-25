@@ -1,4 +1,4 @@
-import time
+import re
 from unittest.mock import MagicMock, patch
 
 from app.core.analyzer_strategies import GenerativeNamingStrategy
@@ -112,7 +112,7 @@ def test_policy_engine_secret_matching():
 
 
 def test_secret_sanitization_performance():
-    """Verify pattern matching logic runs in under 5ms per title."""
+    """Verify secret pattern matching reuses pre-compiled regexes with zero runtime re.compile calls."""
     candidate_titles = [
         "Project sk_live_51Nxabc123XYZ4567890abcdef Reports",
         "Quarterly Financial Statements 2026",
@@ -121,13 +121,21 @@ def test_secret_sanitization_performance():
         "AKIAIOSFODNN7EXAMPLE Data",
     ] * 20  # 100 titles
 
-    start_time = time.perf_counter()
-    for title in candidate_titles:
-        _ = sanitize_secret_patterns(title)
-    elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+    # Warm any one-time lazy initializers before verifying steady-state pre-compiled reuse
+    sanitize_secret_patterns("Warmup title")
 
-    avg_ms = elapsed_ms / len(candidate_titles)
-    assert avg_ms < 5.0, f"Average execution time {avg_ms:.3f}ms exceeded 5ms limit"
+    with patch("re.compile", wraps=re.compile) as spy_compile:
+        sanitized_titles = [
+            sanitize_secret_patterns(title) for title in candidate_titles
+        ]
+
+    assert spy_compile.call_count == 0
+    assert len(sanitized_titles) == 100
+    assert "sk_live_" not in sanitized_titles[0]
+    assert sanitized_titles[1] == "Quarterly Financial Statements 2026"
+    assert "ghp_" not in sanitized_titles[2]
+    assert sanitized_titles[3] == "Medical Records Phase 3"
+    assert "AKIAIOSFODNN7EXAMPLE" not in sanitized_titles[4]
 
 
 def test_legitimate_vocabulary_preserved():

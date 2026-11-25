@@ -9,6 +9,7 @@ import re
 import sys
 import threading
 from collections import defaultdict
+from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Protocol, cast
@@ -224,11 +225,11 @@ def get_decryption_executor():
     return SharedWorkerPool.get_instance()
 
 
-class InMemoryDBMock:
-    """In-memory database mock for querying pre-fetched model metadata in strategy evaluation."""
+class MetadataReader:
+    """In-memory metadata adapter for reading pre-fetched model metadata in strategy evaluation."""
 
     def __init__(self, meta: dict | None = None):
-        self._meta = meta or {}
+        self._meta = dict(meta) if meta else {}
 
     def get_model_metadata(self, key: str):
         """Retrieve model metadata value for key."""
@@ -1603,7 +1604,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             not getattr(self, "_model_initialized", False)
             and self._generator is None
             and not (self._gguf_active and not self._gguf_failed)
-            and not is_prompt_dump_enabled()
+            and not self._has_prompt_sink()
         ):
             if not self.model_path or not os.path.exists(self.model_path):
                 self._record_degraded_fallback(
@@ -1664,11 +1665,13 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             try:
                 from app.core.semantic_embeddings import SemanticEmbeddingManager
 
-                embedding_manager = SemanticEmbeddingManager(
-                    db, model_path=getattr(self, "model_path", None)
+                embedding_manager = getattr(self, "embedding_manager", None) or (
+                    SemanticEmbeddingManager(
+                        db, model_path=getattr(self, "model_path", None)
+                    )
                 )
                 if (
-                    not embedding_manager.is_mock
+                    embedding_manager.has_verified_model
                     and not embedding_manager.is_reconstruction_active()
                 ):
                     fetched = embedding_manager.get_vectors_batch(
@@ -1844,10 +1847,17 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             error,
         )
 
-    def __init__(self, model_path: str | None = None):
+    def __init__(
+        self,
+        model_path: str | None = None,
+        prompt_sink: Callable[[str], None] | None = None,
+        embedding_manager: Any = None,
+    ):
         self._generator = None
         self.task = None
         self.token_biases = {}
+        self.prompt_sink = prompt_sink
+        self.embedding_manager = embedding_manager
 
         from app.core.path_utils import get_base_path
 
@@ -2128,6 +2138,34 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
         self._init_pytorch_model()
 
+    def _has_prompt_sink(self) -> bool:
+        """Return True if an injected prompt sink or debug prompt dump is active."""
+        return (
+            getattr(self, "prompt_sink", None) is not None or is_prompt_dump_enabled()
+        )
+
+    def _emit_to_prompt_sink(self, prompt: str) -> None:
+        """Deliver a scrubbed prompt to the injected prompt sink and/or debug dump file."""
+        sink = getattr(self, "prompt_sink", None)
+        scrubbed_prompt: str | None = None
+        if sink is not None:
+            scrubbed_prompt = scrub_prompt_text(prompt)
+            sink(scrubbed_prompt)
+
+        if is_prompt_dump_enabled():
+            dump_file = os.environ.get("PROMPT_DUMP_FILE")
+            try:
+                target_path = validate_prompt_dump_path(dump_file)
+                if scrubbed_prompt is None:
+                    scrubbed_prompt = scrub_prompt_text(prompt)
+                parent_dir = target_path.parent
+                if parent_dir:
+                    parent_dir.mkdir(parents=True, exist_ok=True)
+                with open(target_path, "a", encoding="utf-8") as f:
+                    f.write(scrubbed_prompt + "\n===PROMPT_END===\n")
+            except Exception as e:
+                logging.warning(f"Failed to write prompt dump to '{dump_file}': {e}")
+
     def _init_pytorch_model(self):
         self._model_initialized = True
         if self._generator is not None:
@@ -2139,7 +2177,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 else "Offline generative model bundle not found in local or user directories."
             )
             logging.warning(reason)
-            if not is_prompt_dump_enabled():
+            if not self._has_prompt_sink():
                 self._record_degraded_fallback(reason)
             return
 
@@ -2149,7 +2187,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         try:
             generator, task, tokenizer = registry.get_generative_model(self.model_path)
             if generator is None:
-                if not is_prompt_dump_enabled():
+                if not self._has_prompt_sink():
                     self._record_degraded_fallback(
                         f"Failed to initialize generative model at '{self.model_path}'"
                     )
@@ -2166,7 +2204,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             registry.record_model_health("generative_naming", status="HEALTHY")
         except Exception as e:
             logging.error(f"Failed to load generative model via shared registry: {e}")
-            if not is_prompt_dump_enabled():
+            if not self._has_prompt_sink():
                 self._record_degraded_fallback(str(e))
             self._generator = None
 
@@ -2180,19 +2218,8 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
     ) -> str:
         stop_seqs = stop if stop is not None else stop_sequences
 
-        if is_prompt_dump_enabled():
-            dump_file = os.environ.get("PROMPT_DUMP_FILE")
-            try:
-                target_path = validate_prompt_dump_path(dump_file)
-                scrubbed_prompt = scrub_prompt_text(prompt)
-                parent_dir = target_path.parent
-                if parent_dir:
-                    parent_dir.mkdir(parents=True, exist_ok=True)
-                with open(target_path, "a", encoding="utf-8") as f:
-                    f.write(scrubbed_prompt + "\n===PROMPT_END===\n")
-                return "Mock Generated Folder Name"
-            except Exception as e:
-                logging.warning(f"Failed to write prompt dump to '{dump_file}': {e}")
+        if self._has_prompt_sink():
+            self._emit_to_prompt_sink(prompt)
 
         prompt = scrub_inference_prompt(prompt)
 
@@ -2334,12 +2361,14 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                             SemanticEmbeddingManager,
                         )
 
-                        dummy_db = InMemoryDBMock(model_metadata)
-                        embedding_manager = SemanticEmbeddingManager(
-                            dummy_db, model_path=self.model_path
+                        metadata_reader = MetadataReader(model_metadata)
+                        embedding_manager = getattr(
+                            self, "embedding_manager", None
+                        ) or SemanticEmbeddingManager(
+                            metadata_reader, model_path=self.model_path
                         )
                         if (
-                            not embedding_manager.is_mock
+                            embedding_manager.has_verified_model
                             and not embedding_manager.is_reconstruction_active()
                         ):
                             use_semantic = True
@@ -2351,11 +2380,13 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 try:
                     from app.core.semantic_embeddings import SemanticEmbeddingManager
 
-                    embedding_manager = SemanticEmbeddingManager(
-                        db, model_path=getattr(self, "model_path", None)
+                    embedding_manager = getattr(self, "embedding_manager", None) or (
+                        SemanticEmbeddingManager(
+                            db, model_path=getattr(self, "model_path", None)
+                        )
                     )
                     if (
-                        not embedding_manager.is_mock
+                        embedding_manager.has_verified_model
                         and not embedding_manager.is_reconstruction_active()
                     ):
                         use_semantic = True
@@ -2634,7 +2665,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if (
             self.generator is None
             and not (self._gguf_active and not self._gguf_failed)
-            and not is_prompt_dump_enabled()
+            and not self._has_prompt_sink()
         ):
             return super()._get_cluster_keywords(documents)
 
@@ -2660,12 +2691,14 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 try:
                     from app.core.semantic_embeddings import SemanticEmbeddingManager
 
-                    dummy_db = InMemoryDBMock(model_metadata)
-                    embedding_manager = SemanticEmbeddingManager(
-                        dummy_db, model_path=self.model_path
+                    metadata_reader = MetadataReader(model_metadata)
+                    embedding_manager = getattr(
+                        self, "embedding_manager", None
+                    ) or SemanticEmbeddingManager(
+                        metadata_reader, model_path=self.model_path
                     )
                     if (
-                        not embedding_manager.is_mock
+                        embedding_manager.has_verified_model
                         and not embedding_manager.is_reconstruction_active()
                     ):
                         use_semantic = True
@@ -2874,11 +2907,13 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             try:
                 from app.core.semantic_embeddings import SemanticEmbeddingManager
 
-                embedding_manager = SemanticEmbeddingManager(
-                    db, model_path=getattr(self, "model_path", None)
+                embedding_manager = getattr(self, "embedding_manager", None) or (
+                    SemanticEmbeddingManager(
+                        db, model_path=getattr(self, "model_path", None)
+                    )
                 )
                 if (
-                    not embedding_manager.is_mock
+                    embedding_manager.has_verified_model
                     and not embedding_manager.is_reconstruction_active()
                 ):
                     use_semantic = True

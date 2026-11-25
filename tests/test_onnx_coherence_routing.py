@@ -35,7 +35,7 @@ def test_coherence_routing_low_coherence():
 
     # Let's mock embedding_manager in the strategy
     mock_emb_mgr = MagicMock()
-    mock_emb_mgr.is_mock = False
+    mock_emb_mgr.has_verified_model = True
     mock_emb_mgr.is_reconstruction_active.return_value = False
 
     # We want three vectors whose average cosine similarity to their mean vector is < 0.3.
@@ -92,7 +92,7 @@ def test_coherence_routing_high_confidence_match():
     strategy.model_path = "dummy_path"
 
     mock_emb_mgr = MagicMock()
-    mock_emb_mgr.is_mock = False
+    mock_emb_mgr.has_verified_model = True
     mock_emb_mgr.is_reconstruction_active.return_value = False
     mock_emb_mgr.validate_vector_dimension.return_value = True
 
@@ -146,7 +146,7 @@ def test_coherence_routing_fallback_to_generative():
     strategy.generator = MagicMock()  # Mock generator to avoid skipping generative path
 
     mock_emb_mgr = MagicMock()
-    mock_emb_mgr.is_mock = False
+    mock_emb_mgr.has_verified_model = True
     mock_emb_mgr.is_reconstruction_active.return_value = False
     mock_emb_mgr.validate_vector_dimension.return_value = True
 
@@ -206,7 +206,7 @@ def test_coherence_routing_fallback_to_tfidf():
     )
 
     mock_emb_mgr = MagicMock()
-    mock_emb_mgr.is_mock = False
+    mock_emb_mgr.has_verified_model = True
     mock_emb_mgr.is_reconstruction_active.return_value = False
     mock_emb_mgr.validate_vector_dimension.return_value = True
 

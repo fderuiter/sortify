@@ -874,36 +874,117 @@ def validate_import_time_globals(errors: list, filepath: str, tree: ast.AST) -> 
         pending.extend(ast.iter_child_nodes(node))
 
 
+_TEST_DETECTION_MODULES = ("unittest.mock", "pytest", "_pytest")
+
 _TEST_DETECTION_NAMES = frozenset(
-    {"MagicMock", "NonCallableMock", "mock_add_spec", "PYTEST_CURRENT_TEST"}
+    {
+        "MagicMock",
+        "AsyncMock",
+        "PropertyMock",
+        "NonCallableMock",
+        "mock_add_spec",
+        "PYTEST_CURRENT_TEST",
+        "PYTEST_VERSION",
+        "PYTEST_XDIST_WORKER",
+        "is_mock",
+        "InMemoryDBMock",
+        "_disable_pytest_win_fallback",
+        "Mock Generated Folder Name",
+        "in_test",
+        "under_test",
+        "_in_test",
+        "_under_test",
+        "_test_mode",
+    }
 )
 
 
-def validate_no_test_detection(errors: list, filepath: str, tree: ast.AST) -> None:
-    """Flag production code that detects it is under test (#720).
+def _matches_test_module(name: str) -> bool:
+    return any(
+        name == mod or name.startswith(f"{mod}.") for mod in _TEST_DETECTION_MODULES
+    )
 
-    Branches on ``unittest.mock`` types or ``PYTEST_CURRENT_TEST`` mean tests
-    exercise a path production never runs; inject the dependency instead.
+
+def _is_sys_modules_expr(node: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "modules"
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "sys"
+    )
+
+
+def _sys_modules_test_lookup(node: ast.AST) -> str | None:
+    """Detect ``sys.modules['pytest']``, ``sys.modules.get('pytest')``, or ``'pytest' in sys.modules``."""
+    if isinstance(node, ast.Subscript) and _is_sys_modules_expr(node.value):
+        if (
+            isinstance(node.slice, ast.Constant)
+            and isinstance(node.slice.value, str)
+            and _matches_test_module(node.slice.value)
+        ):
+            return f"sys.modules[{node.slice.value!r}]"
+    elif (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "get"
+        and _is_sys_modules_expr(node.func.value)
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+        and isinstance(node.args[0].value, str)
+        and _matches_test_module(node.args[0].value)
+    ):
+        return f"sys.modules.get({node.args[0].value!r})"
+    elif isinstance(node, ast.Compare) and len(node.ops) == 1:
+        if (
+            isinstance(node.ops[0], (ast.In, ast.NotIn))
+            and _is_sys_modules_expr(node.comparators[0])
+            and isinstance(node.left, ast.Constant)
+            and isinstance(node.left.value, str)
+            and _matches_test_module(node.left.value)
+        ):
+            return f"{node.left.value!r} in sys.modules"
+    return None
+
+
+def validate_no_test_detection(errors: list, filepath: str, tree: ast.AST) -> None:
+    """Flag production or tooling code that detects it is under test (#720).
+
+    Branches on ``pytest``, ``unittest.mock``, or ad-hoc test-flag names mean
+    tests exercise a path production never runs; inject the dependency instead.
     """
+    norm_path = filepath.replace("\\", "/")
+    is_validator_self = norm_path.endswith("scripts/validate_architecture.py")
+
     for node in ast.walk(tree):
         found = None
         if isinstance(node, ast.Import):
             found = next(
-                (a.name for a in node.names if a.name.startswith("unittest.mock")),
+                (a.name for a in node.names if _matches_test_module(a.name)),
                 None,
             )
         elif isinstance(node, ast.ImportFrom):
-            if node.module and node.module.startswith("unittest.mock"):
+            if node.module and _matches_test_module(node.module):
                 found = node.module
             elif node.module == "unittest" and any(
                 a.name == "mock" for a in node.names
             ):
                 found = "unittest.mock"
+        elif sys_mod_hit := _sys_modules_test_lookup(node):
+            found = sys_mod_hit
         elif isinstance(node, ast.Name) and node.id in _TEST_DETECTION_NAMES:
             found = node.id
         elif isinstance(node, ast.Attribute) and node.attr in _TEST_DETECTION_NAMES:
             found = node.attr
-        elif isinstance(node, ast.Constant) and node.value in _TEST_DETECTION_NAMES:
+        elif (
+            isinstance(node, (ast.arg, ast.keyword))
+            and node.arg in _TEST_DETECTION_NAMES
+        ):
+            found = node.arg
+        elif (
+            not is_validator_self
+            and isinstance(node, ast.Constant)
+            and node.value in _TEST_DETECTION_NAMES
+        ):
             found = node.value
         if found:
             lineno = getattr(node, "lineno", 0)
@@ -1022,11 +1103,11 @@ def main():
             norm_f = f.replace("\\", "/")
             if norm_f.endswith(".py") and os.path.exists(norm_f):
                 rel = os.path.relpath(norm_f, ".").replace("\\", "/")
-                if rel.startswith("app/"):
+                if rel.startswith(("app/", "scripts/")):
                     staged_py_files.add(rel)
         if not staged_py_files:
             print(
-                "No relevant staged Python files under app/ to validate for architecture."
+                "No relevant staged Python files under app/ or scripts/ to validate for architecture."
             )
             sys.exit(0)
         target_files = staged_py_files
@@ -1034,8 +1115,22 @@ def main():
         target_files = None
 
     errors = []
-    declared_settings = declared_settings_keys()
-    parsed_files = _collect_parsed_app_files("app")
+    has_app_targets = is_full_scan or any(
+        f.startswith("app/") for f in (target_files or ())
+    )
+    has_script_targets = is_full_scan or any(
+        f.startswith("scripts/") for f in (target_files or ())
+    )
+    declared_settings = declared_settings_keys() if has_app_targets else set()
+    parsed_files = _collect_parsed_app_files("app") if has_app_targets else []
+    parsed_script_files = (
+        _collect_parsed_app_files("scripts") if has_script_targets else []
+    )
+
+    for script_filepath, script_tree in parsed_script_files:
+        if target_files is not None and script_filepath not in target_files:
+            continue
+        validate_no_test_detection(errors, script_filepath, script_tree)
 
     # Rule 1 & Rule 2: Async DB writes and UI blocking operations
     for filepath, tree in parsed_files:

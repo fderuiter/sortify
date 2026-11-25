@@ -1,7 +1,6 @@
 """Tests for TUI tree view multi-file checkbox selection toggles and bulk operations."""
 
 import asyncio
-import time
 
 import pytest
 
@@ -334,7 +333,9 @@ def test_verification_engine_skips_excluded():
 
 
 def test_performance_on_large_tree_500_nodes():
-    """Verify rendering and selection toggling performance on trees with 500+ nodes."""
+    """Verify node collection and selection toggling traverse 500+ nodes in a single pass without redundant recursion."""
+    from unittest.mock import patch
+
     app = AutoSorterTUI(settings=MockSettings(), base_dir="/app/sample")
     large_plan = {"LargeCategory": {}}
     for i in range(500):
@@ -347,11 +348,16 @@ def test_performance_on_large_tree_500_nodes():
         }
     app.plan = large_plan
 
-    start = time.perf_counter()
-    all_files = app._collect_file_nodes_from_dict(app.plan)
-    for f in all_files:
-        f["is_checked"] = False
-    elapsed = time.perf_counter() - start
+    with patch.object(
+        app, "_collect_file_nodes_from_dict", wraps=app._collect_file_nodes_from_dict
+    ) as spy_collect:
+        all_files = app._collect_file_nodes_from_dict(app.plan)
+        for f in all_files:
+            f["is_checked"] = False
 
-    assert elapsed < 0.05
+    # Root plan dict + 1 category dict = 2 recursive dictionary visits for all 500 leaf file nodes
+    assert spy_collect.call_count == 2
     assert len(all_files) == 500
+    assert all(f["is_checked"] is False for f in all_files)
+    assert app.plan["LargeCategory"]["file_0.txt"]["is_checked"] is False
+    assert app.plan["LargeCategory"]["file_499.txt"]["is_checked"] is False

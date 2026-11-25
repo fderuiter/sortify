@@ -45,25 +45,31 @@ def db(temp_dir, db_worker):
 
 def test_mock_state_detection(db, temp_dir):
     """
-    Requirement 1: System must detect if the active semantic engine is running in mock state
-    without a physical model file.
+    Requirement 1: System must detect whether a verified model or injected embedding provider is available.
     """
-    # Case A: model_path is None -> must be mock
+    # Case A: model_path is None -> no verified model
     manager_none = SemanticEmbeddingManager(db, model_path=None)
-    assert manager_none.is_mock is True
+    assert manager_none.has_verified_model is False
 
-    # Case B: model_path is a non-existent path -> must be mock
+    # Case B: model_path is a non-existent path -> no verified model
     non_existent_path = temp_dir / "non_existent_model"
     manager_non_existent = SemanticEmbeddingManager(
         db, model_path=str(non_existent_path)
     )
-    assert manager_non_existent.is_mock is True
+    assert manager_non_existent.has_verified_model is False
 
-    # Case C: model_path exists but is empty (no ONNX file) -> must be mock
+    # Case C: model_path exists but is empty (no ONNX file) -> no verified model
     empty_model_dir = temp_dir / "empty_model_dir"
     empty_model_dir.mkdir(parents=True, exist_ok=True)
     manager_empty = SemanticEmbeddingManager(db, model_path=str(empty_model_dir))
-    assert manager_empty.is_mock is True
+    assert manager_empty.has_verified_model is False
+
+    # Case D: injected embedding_provider -> verified model is available
+    manager_injected = SemanticEmbeddingManager(
+        db, model_path=None, embedding_provider=lambda _txt: [1.0] + [0.0] * 383
+    )
+    assert manager_injected.has_verified_model is True
+    assert manager_injected.generate_embedding("rocket science")[0] == 1.0
 
 
 def test_statistical_fallback_on_mock(db, temp_dir):
@@ -96,8 +102,8 @@ def test_statistical_fallback_on_mock(db, temp_dir):
         corpus = {"new_space.txt": new_text}
         analyzer.partial_fit(base_dir, corpus)
 
-        # Let's verify analyzer is running on mock
-        assert analyzer.embedding_manager.is_mock is True
+        # Verify analyzer has no verified physical model
+        assert analyzer.embedding_manager.has_verified_model is False
 
         # Spy on generate_embedding and trigger_reconstruction to ensure they aren't called
         with (
@@ -149,7 +155,7 @@ def test_dynamic_transition_to_semantic(db, temp_dir):
     )
 
     try:
-        assert analyzer.embedding_manager.is_mock is True
+        assert analyzer.embedding_manager.has_verified_model is False
 
         # Set up some documents
         base_dir = str(temp_dir)
@@ -194,12 +200,12 @@ def test_dynamic_transition_to_semantic(db, temp_dir):
                 side_effect=mock_gen_embedding,
             ) as mock_gen,
         ):
-            # Calling `is_mock` dynamically refreshes and detects that the engine is no longer in mock state
-            assert analyzer.embedding_manager.is_mock is False
+            # Calling `has_verified_model` dynamically refreshes and detects the active valid model
+            assert analyzer.embedding_manager.has_verified_model is True
             assert analyzer.embedding_manager.is_model_valid is True
             assert analyzer.embedding_manager.signature == "valid_mock_signature_abc123"
 
-            # We insert the hist vector in the DB *after* `is_mock` property checks so it doesn't get cleared by the purge
+            # Insert the hist vector in the DB after `has_verified_model` property check so it isn't cleared by metadata sync
             db.upsert_document_vectors(
                 base_dir, [("historical_space.txt", dummy_vector_hist)]
             )

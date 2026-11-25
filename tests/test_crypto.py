@@ -33,22 +33,136 @@ def _same_path(p1, p2) -> bool:
     )
 
 
-def test_key_generation_keyring(tmp_path):
-    key_path = tmp_path / "secret.key"
-    db_path = tmp_path / "autosorter.db"
+def test_key_generation_keyring(tmp_path, monkeypatch):
+    from keyring.backend import KeyringBackend
 
-    crypto = SessionCrypto(key_path, db_path)
+    class SimulatedOSKeyring(KeyringBackend):
+        priority = 10
 
-    # Trigger key generation
-    cipher = crypto.get_cipher()
-    assert cipher is not None
+        def __init__(self):
+            self._store = {}
 
-    assert not key_path.exists()
-    assert not crypto.isolated_key_path.exists()
+        def get_password(self, service, username):
+            return self._store.get((service, username))
 
-    # Check keyring
-    key = keyring.get_password(crypto.keyring_service, crypto.keyring_account)
-    assert key is not None
+        def set_password(self, service, username, password):
+            self._store[(service, username)] = password
+
+        def delete_password(self, service, username):
+            self._store.pop((service, username), None)
+
+    SimulatedOSKeyring.__module__ = "keyring.backends.SecretService"
+    os_backend = SimulatedOSKeyring()
+    prev_backend = keyring.get_keyring()
+    monkeypatch.delenv("PYTHON_KEYRING_BACKEND", raising=False)
+    keyring.set_keyring(os_backend)
+    try:
+        key_path = tmp_path / "secret.key"
+        db_path = tmp_path / "autosorter.db"
+
+        crypto = SessionCrypto(key_path, db_path)
+
+        # Trigger key generation against persistent OS keyring
+        cipher = crypto.get_cipher()
+        assert cipher is not None
+
+        assert not key_path.exists()
+        assert not crypto.isolated_key_path.exists()
+
+        # Check keyring
+        key = keyring.get_password(crypto.keyring_service, crypto.keyring_account)
+        assert key is not None
+    finally:
+        keyring.set_keyring(prev_backend)
+
+
+def test_non_persistent_keyring_writes_shared_key_and_child_opens_sqlcipher_db(
+    tmp_path,
+):
+    """Non-persistent keyring stand-ins also write isolated_key_path so child processes decrypt cleanly."""
+    import subprocess
+    import sys
+
+    from app.core.db_conn import clear_connection_cache, get_db_connection
+
+    db_path = tmp_path / "child_shared.db"
+    conn = get_db_connection(str(db_path))
+    with conn:
+        conn.execute("CREATE TABLE items (label TEXT)")
+        conn.execute("INSERT INTO items (label) VALUES ('parent_secret')")
+    clear_connection_cache(only_current_and_inactive=False)
+
+    crypto = SessionCrypto(tmp_path / "secret.key", db_path)
+    assert crypto.isolated_key_path.exists()
+    if os.name != "nt":
+        assert (os.stat(crypto.isolated_dir).st_mode & 0o777) == 0o700
+        assert (os.stat(crypto.isolated_key_path).st_mode & 0o777) == 0o600
+
+    child_code = (
+        "import sys\n"
+        "from app.core.db_conn import clear_connection_cache, get_db_connection\n"
+        f"conn = get_db_connection({str(db_path)!r})\n"
+        "row = conn.execute('SELECT label FROM items').fetchone()\n"
+        "clear_connection_cache(only_current_and_inactive=False)\n"
+        "assert row == ('parent_secret',), f'Unexpected row: {row}'\n"
+    )
+    repo_root = Path(__file__).resolve().parent.parent
+    proc = subprocess.run(
+        [sys.executable, "-c", child_code],
+        cwd=str(repo_root),
+        env=os.environ.copy(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+
+
+def test_persistent_keyring_backend_detection_branches(monkeypatch):
+    """Verify _is_backend_obj_persistent and _is_persistent_keyring_backend handle None, chainer, env overrides, and errors."""
+    from keyring.errors import KeyringError
+
+    from app.core.crypto import (
+        _is_backend_obj_persistent,
+        _is_persistent_keyring_backend,
+    )
+
+    assert _is_backend_obj_persistent(None) is False
+
+    class FakePersistent:
+        pass
+
+    FakePersistent.__module__ = "keyring.backends.SecretService"
+
+    class FakeEphemeral:
+        pass
+
+    FakeEphemeral.__module__ = "tests.conftest"
+
+    class FakeChainer:
+        def __init__(self, backends):
+            self.backends = backends
+
+    FakeChainer.__module__ = "keyring.backends.chainer"
+
+    assert _is_backend_obj_persistent(FakeChainer([FakeEphemeral()])) is False
+    assert (
+        _is_backend_obj_persistent(FakeChainer([FakeEphemeral(), FakePersistent()]))
+        is True
+    )
+
+    monkeypatch.setenv("PYTHON_KEYRING_BACKEND", "keyring.backends.null.Keyring")
+    assert _is_persistent_keyring_backend() is False
+
+    monkeypatch.delenv("PYTHON_KEYRING_BACKEND", raising=False)
+    monkeypatch.setattr(keyring, "get_keyring", lambda: FakeChainer([FakePersistent()]))
+    assert _is_persistent_keyring_backend() is True
+
+    def _raise_keyring_err():
+        raise KeyringError("probe boom")
+
+    monkeypatch.setattr(keyring, "get_keyring", _raise_keyring_err)
+    assert _is_persistent_keyring_backend() is False
 
 
 def test_key_generation_fallback(tmp_path, monkeypatch):
@@ -376,7 +490,6 @@ def test_standard_sqlite_fallback_rejection(tmp_path, monkeypatch):
     """Verify that standard SQLite fallback connections are completely rejected during initialization."""
     from app.core import db_conn
 
-    monkeypatch.setattr(db_conn, "_disable_pytest_win_fallback", True)
     monkeypatch.setattr(db_conn, "HAS_SQLCIPHER", False)
 
     db_path = tmp_path / "autosorter.db"
@@ -388,7 +501,6 @@ def test_missing_cipher_version_rejection(tmp_path, monkeypatch):
     """Verify that if the driver lacks cipher capability or returns empty version, we reject and close."""
     from app.core import db_conn
 
-    monkeypatch.setattr(db_conn, "_disable_pytest_win_fallback", True)
     monkeypatch.setattr(db_conn, "HAS_SQLCIPHER", True)
 
     # Mock sqlite3.connect to return a mock connection whose cursor returns empty for cipher_version
@@ -697,6 +809,9 @@ def test_session_crypto_legacy_md5_key_resolution_and_migration(tmp_path):
 def test_get_fallback_keys_dir_windows_and_posix(monkeypatch):
     """Verify fallback key store directory resolution for Windows and POSIX environments."""
     import pathlib
+
+    monkeypatch.delenv("SORTIFY_KEYS_DIR", raising=False)
+    monkeypatch.delenv("AUTOSORTER_KEYS_DIR", raising=False)
 
     # Use PurePath for cross-platform os.name mocking
     monkeypatch.setattr("app.core.crypto.Path", pathlib.PurePath)
