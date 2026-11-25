@@ -9,7 +9,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 # Statuses of a session whose moves never finished.
-UNFINISHED_STATUSES = ("active", "uncommitted", "failed", "partially_rolled_back")
+UNFINISHED_STATUSES = ("active", "uncommitted", "failed")
 
 
 def _count(conn, table: str, session_id: str) -> int:
@@ -55,22 +55,24 @@ def find_abandoned_sessions(store=None, session_root: Path | None = None) -> lis
     """Return the sessions a crash left unfinished, newest first.
 
     A session with recorded moves can be resumed or rolled back, and one
-    without moves is listed when it is in a failed/partially rolled-back state
-    or when files are still in its ``.branches`` safety folder.
+    without moves is listed when it is in a failed state or when files are
+    still trapped in its ``.branches`` safety folder (including a partially
+    rolled-back session whose branch folder was not drained).
     """
     from app.core.db_conn import get_db_connection
     from app.core.store import open_store
 
     store = store or open_store()
     abandoned = []
+    candidate_statuses = (*UNFINISHED_STATUSES, "partially_rolled_back")
 
     conn = get_db_connection(str(store.path))
-    placeholders = ", ".join("?" for _ in UNFINISHED_STATUSES)
+    placeholders = ", ".join("?" for _ in candidate_statuses)
     rows = list(
         conn.execute(
             "SELECT session_id, base_dir, status FROM sessions "
             f"WHERE status IN ({placeholders}) ORDER BY timestamp DESC",
-            UNFINISHED_STATUSES,
+            candidate_statuses,
         ).fetchall()
     )
     seen_sids = {sid for sid, _b, _s in rows}
@@ -95,11 +97,10 @@ def find_abandoned_sessions(store=None, session_root: Path | None = None) -> lis
         branch_dir = os.path.join(base_dir, ".branches", sid) if base_dir else ""
         has_trapped = bool(branch_dir) and os.path.isdir(branch_dir)
         has_trapped = has_trapped and _has_files(branch_dir)
-        if (
-            status not in ("failed", "partially_rolled_back")
-            and not steps[sid]
-            and not has_trapped
-        ):
+        if status == "partially_rolled_back":
+            if not has_trapped:
+                continue
+        elif status != "failed" and not steps[sid] and not has_trapped:
             continue
         entry = {
             "session_id": sid,
@@ -114,6 +115,48 @@ def find_abandoned_sessions(store=None, session_root: Path | None = None) -> lis
             )
         abandoned.append(entry)
     return abandoned
+
+
+def has_remaining_undo_moves(session_entry: dict[str, Any], store: Any = None) -> bool:
+    """Return True when ``session_entry`` is completed or partially reverted and still has undoable moves."""
+    status = str(session_entry.get("status", "")).lower()
+    if status not in ("completed", "partially_rolled_back"):
+        return False
+    if int(session_entry.get("step_count") or 0) <= 0:
+        return False
+    sid = session_entry.get("session_id")
+    if not sid:
+        return False
+    target_db_path = (
+        str(store.path)
+        if store is not None and getattr(store, "path", None)
+        else session_entry.get("history_db_path")
+    )
+    if isinstance(target_db_path, str) and os.path.exists(target_db_path):
+        try:
+            from app.core.db_conn import get_db_connection
+            from app.core.moves import _read_legacy_moves_for_session
+
+            conn = get_db_connection(target_db_path)
+            row = conn.execute(
+                "SELECT 1 FROM moves WHERE session_id = ? AND state IN ('done', 'verified') LIMIT 1",
+                (str(sid),),
+            ).fetchone()
+            if row is not None:
+                return True
+            any_moves_row = conn.execute(
+                "SELECT 1 FROM moves WHERE session_id = ? LIMIT 1",
+                (str(sid),),
+            ).fetchone()
+            if any_moves_row is not None:
+                return False
+            legacy_moves = _read_legacy_moves_for_session(conn, str(sid))
+            if legacy_moves:
+                return any(m.state in ("done", "verified") for m in legacy_moves)
+            return False
+        except Exception:  # noqa: BLE001 - fall back to step_count when legacy or temporary store cannot open
+            return True
+    return True
 
 
 def mark_session_abandoned(session_id: str, store=None) -> None:

@@ -64,6 +64,7 @@ flowchart TD
         core_audit_reporter["app.core.audit_reporter"]
         core_accessible_html["app.core.accessible_html"]
         core_mover["app.core.mover"]
+        core_move_retry["app.core.move_retry"]
         core_file_renamer["app.core.file_renamer"]
         core_resilient_file_ops["app.core.resilient_file_ops"]
         core_scanner["app.core.scanner"]
@@ -102,6 +103,7 @@ flowchart TD
     core_session --> core_policy_engine
     core_session --> core_verifier
     core_session --> core_mover
+    core_session --> core_move_retry
     core_daemon --> core_session
     core_daemon --> core_ipc
     core_extractor --> core_extractor_strategies
@@ -143,6 +145,8 @@ flowchart TD
     core_quarantine_interceptor --> core_domain_contracts
     core_policy_engine --> core_mover
     core_verifier --> core_mover
+    core_mover --> core_move_retry
+    core_move_retry --> core_moves
     core_mover --> core_file_renamer
     core_mover --> core_resilient_file_ops
     core_mover --> core_progress

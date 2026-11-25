@@ -866,30 +866,51 @@ class SortPipelineMixin:
 
             flush_trash = bool(self._pending_flush_trash)
             self._pending_flush_trash = False
+
+            settings_model = getattr(self.settings, "_settings_model", None)
+            fields_set = getattr(settings_model, "model_fields_set", set()) or set()
+            configured_policy = getattr(self.settings, "MOVE_ERROR_POLICY", None)
+            if "MOVE_ERROR_POLICY" in fields_set and configured_policy:
+                effective_error_policy = str(configured_policy)
+            elif (
+                isinstance(configured_policy, str)
+                and configured_policy.strip().lower() != "rollback"
+            ):
+                effective_error_policy = configured_policy
+            else:
+                effective_error_policy = "partial_commit"
+
             result = self.pipeline.execute(
                 exec_plan,
                 progress_callback=move_progress_cb,
                 flush_trash=flush_trash,
                 flush_trashed_only=flush_trash,
+                error_policy=effective_error_policy,
             )
             summary = result.summary
             if not (isinstance(summary, dict) and summary.get("cancelled")):
                 self._clear_manual_plan_edits()
-            reversible_count = (
-                len(result.moved) + len(result.quarantined) + len(result.staged)
-            )
-            if (
-                reversible_count == 0
-                and isinstance(summary, dict)
-                and not (summary.get("audit_report") or {}).get("records")
-            ):
-                raw_moves = int(summary.get("moves") or 0)
-                reversible_count = max(0, raw_moves - len(result.trashed))
-            undo_hint = " [Ctrl+Z] Undo available." if reversible_count > 0 else ""
-            msg = (
-                f"Execution completed successfully! {result.describe()}{undo_hint} "
-                f"Summary: {summary}"
-            )
+            if result.failed:
+                msg = (
+                    f"Execution completed with {len(result.failed)} failed item(s). "
+                    f"Verified moves preserved; retry available in verification report."
+                )
+            else:
+                reversible_count = (
+                    len(result.moved) + len(result.quarantined) + len(result.staged)
+                )
+                if (
+                    reversible_count == 0
+                    and isinstance(summary, dict)
+                    and not (summary.get("audit_report") or {}).get("records")
+                ):
+                    raw_moves = int(summary.get("moves") or 0)
+                    reversible_count = max(0, raw_moves - len(result.trashed))
+                undo_hint = " [Ctrl+Z] Undo available." if reversible_count > 0 else ""
+                msg = (
+                    f"Execution completed successfully! {result.describe()}{undo_hint} "
+                    f"Summary: {summary}"
+                )
             self.call_from_thread(self.announce, msg)
             from app.core.plan_format import format_trash_handoff_warning
 
@@ -909,10 +930,16 @@ class SortPipelineMixin:
                 or self.base_dir
                 or "."
             )
+            sess_id = (
+                summary.get("session_id")
+                if isinstance(summary, dict)
+                else result.session_id
+            )
             audit_report = resolve_audit_report(
                 summary.get("audit_report") if isinstance(summary, dict) else None,
                 base_dir,
                 exec_plan,
+                session_id=sess_id,
             )
 
             if audit_report:

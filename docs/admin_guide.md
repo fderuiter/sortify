@@ -269,6 +269,13 @@ Visual text and caption extraction backend: 'easyocr' for standard OCR or 'flore
 
 Resolution strategy when a destination file already exists: 'skip' leaves the source untouched, 'rename' appends a numeric suffix, and 'overwrite' replaces the target.
 
+### `MOVE_ERROR_POLICY`
+- **Type**: `str`
+- **Default**: `'rollback'`
+- **Allowed**: `rollback`, `partial_commit`
+
+Failure handling policy during physical file moves: 'rollback' unwinds the entire batch atomically on error (headless/CLI default), while 'partial_commit' preserves verified moves and records failed items for targeted retry.
+
 ### `DUPLICATE_ACTION`
 - **Type**: `str`
 - **Default**: `'off'`
@@ -882,7 +889,8 @@ options:
 ##### `undo`
 ```text
 usage: smart-autosorter undo [-h] [--session-id SESSION_ID] [--list]
-                             [--latest] [--force] [--json]
+                             [--latest] [--force] [--json] [--list-moves]
+                             [--dry-run] [--step-id STEP_IDS] [--file FILES]
                              [--settings-file SETTINGS_FILE | --profile PROFILE]
                              [-q] [--no-color] [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
@@ -906,6 +914,14 @@ options:
   --force               Force rollback even if original files are missing
   --json                Output session list or rollback status in structured
                         JSON format
+  --list-moves          List remaining undoable file moves for the target
+                        session
+  --dry-run             Preview rollback outcome and potential collisions
+                        without moving files
+  --step-id STEP_IDS    Specific move step ID to revert (repeatable for
+                        selective undo)
+  --file FILES          Source or destination file path/name to revert
+                        (repeatable for selective undo)
   --settings-file SETTINGS_FILE
                         Path to an explicit Sortify settings.json file
   --profile PROFILE     Named configuration profile under

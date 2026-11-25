@@ -10,7 +10,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Any, NoReturn, cast
+from typing import Any, NoReturn
 
 from app.cli.error_emitter import emit_cli_error
 from app.cli.settings_args import add_settings_source_args
@@ -21,7 +21,6 @@ from app.core.pipeline import reroot_plan
 from app.core.plan_format import (
     count_plan_actions,
     format_plan_tree,
-    format_trashed_unrestorable_warning,
     validate_duplicate_mode_for_headless,
 )
 from app.core.session_catalog import list_sessions
@@ -1193,142 +1192,14 @@ def handle_daemon_command(args: argparse.Namespace, settings: AppSettings):
 
 def handle_undo_command(args: argparse.Namespace, settings: AppSettings):
     """Execute undo subcommand for session rollback or listing history records."""
-    import json
-    import time
+    from app.cli.undo_cli import execute_undo_command
 
-    apply_config_overrides(settings, args)
-
-    list_flag = getattr(args, "list", False)
-    latest_flag = getattr(args, "latest", False)
-    session_id_arg = getattr(args, "session_id", None)
-    force_flag = getattr(args, "force", False)
-    json_output = getattr(args, "json", False)
-
-    # Constraint: Default to --latest when no session ID or subcommand flag specified
-    if not list_flag and not latest_flag and not session_id_arg:
-        latest_flag = True
-
-    all_sessions = list_sessions()
-
-    if list_flag:
-        if json_output:
-            sys.stdout.write(json.dumps(all_sessions, indent=2) + "\n")
-            sys.stdout.flush()
-        else:
-            if not all_sessions:
-                print("No historical sorting sessions found.", file=sys.stderr)
-            else:
-                quiet = getattr(args, "quiet", False)
-                if not quiet:
-                    print("Historical Sorting Sessions:", file=sys.stderr)
-                for s in all_sessions:
-                    ts = s.get("timestamp")
-                    ts_str = (
-                        time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
-                        if ts
-                        else "N/A"
-                    )
-                    print(
-                        f"  Session ID: {s['session_id']} | Base: {s.get('base_dir', 'N/A')} | Status: {s.get('status', 'N/A')} | Time: {ts_str}"
-                    )
-        sys.exit(0)
-
-    target_session: dict[str, Any] | None = None
-    if session_id_arg:
-        for s in all_sessions:
-            if s["session_id"] == session_id_arg:
-                target_session = s
-                break
-        if not target_session:
-            target_session = {
-                "session_id": session_id_arg,
-                "history_db_path": None,
-                "base_dir": None,
-            }
-    elif latest_flag:
-        # Skip sorts already undone or empty, while still catching trash-only completed sessions.
-        undoable = [
-            s
-            for s in all_sessions
-            if str(s.get("status", "")).lower() not in ("rolled_back", "abandoned")
-            and (
-                int(s.get("step_count") or 0) > 0
-                or int(s.get("trashed_count") or 0) > 0
-            )
-        ]
-        if undoable:
-            target_session = undoable[0]
-        else:
-            emit_cli_error(
-                "Error: No historical sorting sessions available to undo.",
-                json_mode=json_output,
-                exit_code=1,
-            )
-
-    # --latest is the default, so a branch above picked a session or exited.
-    target_session_id: str = cast(dict[str, Any], target_session)["session_id"]
-
-    try:
-        from app.core.pipeline import SortPipeline
-
-        undo_result = SortPipeline(None, settings=settings).undo(
-            target_session_id,
-            ignore_missing=force_flag,
-        )
-        if "error" in undo_result.summary:
-            raise RuntimeError(str(undo_result.summary["error"]))
-
-        restored_count = len(undo_result.moved)
-        trashed_remaining = int(
-            undo_result.summary.get("trashed_unrestorable")
-            or len(undo_result.trashed)
-            or 0
-        )
-        trash_warning = format_trashed_unrestorable_warning(
-            trashed_remaining, session_id=target_session_id
-        )
-
-        if restored_count == 0 and trashed_remaining > 0:
-            noun = "copy" if trashed_remaining == 1 else "copies"
-            verb_rem = "remains" if trashed_remaining == 1 else "remain"
-            msg = (
-                f"No reversible moves in session '{target_session_id}'; "
-                f"{trashed_remaining} duplicate {noun} {verb_rem} in OS Trash."
-            )
-        else:
-            msg = f"Successfully rolled back sorting session '{target_session_id}'."
-
-        result: dict[str, Any] = {
-            "status": "success",
-            "session_id": target_session_id,
-            "restored_count": restored_count,
-            "trashed_remaining": trashed_remaining,
-            "message": msg,
-        }
-        if trash_warning:
-            result["warnings"] = [trash_warning]
-
-        if json_output:
-            sys.stdout.write(json.dumps(result, indent=2) + "\n")
-            sys.stdout.flush()
-        else:
-            quiet = getattr(args, "quiet", False)
-            if not (restored_count == 0 and trashed_remaining > 0) and not quiet:
-                print(
-                    f"Rollback completed successfully for session '{target_session_id}'.",
-                    file=sys.stderr,
-                )
-            if trash_warning:
-                print(trash_warning, file=sys.stderr)
-
-        sys.exit(0)
-    except Exception as ex:
-        emit_cli_error(
-            f"Rollback failed for session '{target_session_id}': {ex}",
-            json_mode=json_output,
-            exit_code=1,
-            extra={"session_id": target_session_id},
-        )
+    execute_undo_command(
+        args,
+        settings,
+        apply_overrides_fn=apply_config_overrides,
+        list_sessions_fn=list_sessions,
+    )
 
 
 def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
@@ -1942,6 +1813,9 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         action="store_true",
         help="Output session list or rollback status in structured JSON format",
     )
+    from app.cli.undo_cli import extend_undo_parser
+
+    extend_undo_parser(parser_undo)
     add_common_override_args(parser_undo)
 
     # Subcommand: drop

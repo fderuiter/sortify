@@ -40,6 +40,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.cli.settings_args
 
+## `app.cli.undo_cli`
+
+::: app.cli.undo_cli
+
 ## `app.config`
 
 ::: app.config
@@ -163,6 +167,10 @@ This document is automatically generated. Do not edit manually.
 ## `app.core.model_registry`
 
 ::: app.core.model_registry
+
+## `app.core.move_retry`
+
+::: app.core.move_retry
 
 ## `app.core.mover`
 
