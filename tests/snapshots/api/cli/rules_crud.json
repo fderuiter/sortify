@@ -1,0 +1,420 @@
+{
+  "_metadata": {
+    "checksum": "e090051431cb7c6c8b468e167a2247a5d5d4eef7765174b8c45c18538e96a9cf"
+  },
+  "classes": [],
+  "cli": [
+    {
+      "args": [
+        "list"
+      ],
+      "caller": "rules_subparsers",
+      "keywords": {
+        "help": "List active and disabled rules in global or folder-scoped settings"
+      },
+      "method": "add_parser"
+    },
+    {
+      "args": [
+        "--kind"
+      ],
+      "caller": "p_list",
+      "keywords": {
+        "choices": "['all', *_VALID_RULE_KINDS]",
+        "default": "all",
+        "help": "Filter rules by kind (all, keyword, learned, extension, policy)",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--status"
+      ],
+      "caller": "p_list",
+      "keywords": {
+        "choices": [
+          "all",
+          "active",
+          "disabled"
+        ],
+        "default": "all",
+        "help": "Filter rules by state (all, active, disabled)",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "add"
+      ],
+      "caller": "rules_subparsers",
+      "keywords": {
+        "help": "Add or update a keyword, learned, extension, or policy rule"
+      },
+      "method": "add_parser"
+    },
+    {
+      "args": [
+        "pattern_pos"
+      ],
+      "caller": "p_add",
+      "keywords": {
+        "default": null,
+        "help": "Keyword, learned stem, comma-separated extensions, or policy expression",
+        "metavar": "PATTERN",
+        "nargs": "?"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "target_pos"
+      ],
+      "caller": "p_add",
+      "keywords": {
+        "default": null,
+        "help": "Relative destination folder path (e.g. Finances/Invoices)",
+        "metavar": "TARGET",
+        "nargs": "?"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--pattern"
+      ],
+      "caller": "p_add",
+      "keywords": {
+        "default": null,
+        "dest": "pattern_opt",
+        "help": "Rule pattern or expression",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--target"
+      ],
+      "caller": "p_add",
+      "keywords": {
+        "default": null,
+        "dest": "target_opt",
+        "help": "Relative destination folder path",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--kind"
+      ],
+      "caller": "p_add",
+      "keywords": {
+        "choices": "list(_VALID_RULE_KINDS)",
+        "default": "keyword",
+        "help": "Rule table kind (default: keyword)",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--type"
+      ],
+      "caller": "p_add",
+      "keywords": {
+        "choices": "list(_VALID_POLICY_TYPES)",
+        "default": "keyword",
+        "dest": "policy_type",
+        "help": "Condition type when --kind=policy (default: keyword)",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--action"
+      ],
+      "caller": "p_add",
+      "keywords": {
+        "choices": "list(_VALID_POLICY_ACTIONS)",
+        "default": null,
+        "dest": "policy_action",
+        "help": "Action when --kind=policy (e.g. move, copy, trash, quarantine)",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--priority"
+      ],
+      "caller": "p_add",
+      "keywords": {
+        "default": 75,
+        "help": "Evaluation priority (0-100) when --kind=policy (default: 75)",
+        "type": "int"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--no-halting"
+      ],
+      "caller": "p_add",
+      "keywords": {
+        "action": "store_false",
+        "default": true,
+        "dest": "halting",
+        "help": "Continue evaluating lower-priority policies after match"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--rename-pattern"
+      ],
+      "caller": "p_add",
+      "keywords": {
+        "default": null,
+        "help": "Optional rename template when --kind=policy",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--disabled"
+      ],
+      "caller": "p_add",
+      "keywords": {
+        "action": "store_true",
+        "default": false,
+        "help": "Create the rule in disabled state"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "remove"
+      ],
+      "caller": "rules_subparsers",
+      "keywords": {
+        "help": "Remove a rule by pattern or expression"
+      },
+      "method": "add_parser"
+    },
+    {
+      "args": [
+        "pattern_pos"
+      ],
+      "caller": "p_remove",
+      "keywords": {
+        "default": null,
+        "help": "Rule pattern, extension, category, or policy expression to remove",
+        "metavar": "PATTERN",
+        "nargs": "?"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--pattern"
+      ],
+      "caller": "p_remove",
+      "keywords": {
+        "default": null,
+        "dest": "pattern_opt",
+        "help": "Rule pattern, extension, category, or policy expression to remove",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--kind"
+      ],
+      "caller": "p_remove",
+      "keywords": {
+        "choices": "['all', *_VALID_RULE_KINDS]",
+        "default": "all",
+        "help": "Restrict removal to a specific rule kind (default: all)",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "enable"
+      ],
+      "caller": "rules_subparsers",
+      "keywords": {
+        "help": "Enable a disabled keyword, learned, or policy rule"
+      },
+      "method": "add_parser"
+    },
+    {
+      "args": [
+        "pattern_pos"
+      ],
+      "caller": "p_enable",
+      "keywords": {
+        "default": null,
+        "help": "Rule pattern or policy expression to enable",
+        "metavar": "PATTERN",
+        "nargs": "?"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--pattern"
+      ],
+      "caller": "p_enable",
+      "keywords": {
+        "default": null,
+        "dest": "pattern_opt",
+        "help": "Rule pattern or policy expression to enable",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--kind"
+      ],
+      "caller": "p_enable",
+      "keywords": {
+        "choices": [
+          "all",
+          "keyword",
+          "learned",
+          "policy"
+        ],
+        "default": "all",
+        "help": "Restrict enable operation to a specific rule kind (default: all)",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "disable"
+      ],
+      "caller": "rules_subparsers",
+      "keywords": {
+        "help": "Disable an active keyword, learned, or policy rule"
+      },
+      "method": "add_parser"
+    },
+    {
+      "args": [
+        "pattern_pos"
+      ],
+      "caller": "p_disable",
+      "keywords": {
+        "default": null,
+        "help": "Rule pattern or policy expression to disable",
+        "metavar": "PATTERN",
+        "nargs": "?"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--pattern"
+      ],
+      "caller": "p_disable",
+      "keywords": {
+        "default": null,
+        "dest": "pattern_opt",
+        "help": "Rule pattern or policy expression to disable",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--kind"
+      ],
+      "caller": "p_disable",
+      "keywords": {
+        "choices": [
+          "all",
+          "keyword",
+          "learned",
+          "policy"
+        ],
+        "default": "all",
+        "help": "Restrict disable operation to a specific rule kind (default: all)",
+        "type": "str"
+      },
+      "method": "add_argument"
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "handle_rules_crud_subcommand",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "rules_cmd"
+        },
+        {
+          "annotation": "argparse.Namespace",
+          "default": null,
+          "name": "args"
+        },
+        {
+          "annotation": "AppSettings",
+          "default": null,
+          "name": "root_settings"
+        },
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "target_view"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "scope_label"
+        },
+        {
+          "annotation": "bool",
+          "default": null,
+          "name": "is_json"
+        },
+        {
+          "annotation": "bool",
+          "default": null,
+          "name": "quiet"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "register_crud_subparsers",
+      "parameters": [
+        {
+          "annotation": "argparse._SubParsersAction",
+          "default": null,
+          "name": "rules_subparsers"
+        },
+        {
+          "annotation": "Callable[[argparse.ArgumentParser], None]",
+          "default": null,
+          "name": "add_rules_common"
+        }
+      ],
+      "returns": "None"
+    }
+  ]
+}

@@ -6,6 +6,7 @@ import logging
 import sys
 
 from app.cli.error_emitter import emit_cli_error
+from app.cli.settings_args import add_settings_source_args
 from app.config import AppSettings
 from app.core.domain_contracts import VALID_QUARANTINE_STATES
 from app.core.quarantine_interceptor import QuarantineInterceptorService
@@ -25,11 +26,13 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help="Output response in structured JSON format",
     )
+    add_settings_source_args(parser_quarantine, suppress_default=True)
     quarantine_subparsers = parser_quarantine.add_subparsers(
         dest="quarantine_command", help="Quarantine subcommands"
     )
 
     def add_quarantine_common(p: argparse.ArgumentParser) -> None:
+        add_settings_source_args(p, suppress_default=True)
         p.add_argument(
             "--db-path",
             type=str,

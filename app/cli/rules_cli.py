@@ -1,13 +1,23 @@
-"""CLI subcommand handler for headless external rule import and export workflows."""
+"""CLI subcommand handler for headless rule management, import, and export workflows."""
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
 
 from app.cli.error_emitter import emit_cli_error
-from app.config import AppSettings
+from app.cli.rules_crud import (
+    handle_rules_crud_subcommand,
+    register_crud_subparsers,
+)
+from app.cli.settings_args import add_settings_source_args
+from app.config import (
+    AppSettings,
+    normalize_folder_scope_key,
+    resolve_cli_settings_filepath,
+)
 from app.core.rule_importers import (
     ImportResult,
     RuleConflict,
@@ -29,12 +39,23 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
     """
     parser_rules = subparsers.add_parser(
         "rules",
-        help="Import or export routing rules (Hazel, DropIt, TagSpaces, Sortify JSON)",
+        help="Manage, import, or export routing rules (global or folder-scoped)",
     )
     parser_rules.add_argument(
         "--json",
         action="store_true",
         help="Output response in structured JSON format",
+    )
+    add_settings_source_args(
+        parser_rules,
+        suppress_default=True,
+        settings_help="Optional path to a specific Sortify settings.json file",
+    )
+    parser_rules.add_argument(
+        "--folder",
+        type=str,
+        default=None,
+        help="Scope rule inspection or updates to a specific target directory",
     )
     rules_subparsers = parser_rules.add_subparsers(
         dest="rules_command",
@@ -42,11 +63,16 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
     )
 
     def add_rules_common(target_parser: argparse.ArgumentParser) -> None:
+        add_settings_source_args(
+            target_parser,
+            suppress_default=True,
+            settings_help="Optional path to a specific Sortify settings.json file",
+        )
         target_parser.add_argument(
-            "--settings-file",
+            "--folder",
             type=str,
-            default=None,
-            help="Optional path to a specific Sortify settings.json file",
+            default=argparse.SUPPRESS,
+            help="Scope rule operation to a specific target directory",
         )
         target_parser.add_argument(
             "-q",
@@ -158,6 +184,8 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
         help="Preview rule counts and target format without writing export file",
     )
 
+    register_crud_subparsers(rules_subparsers, add_rules_common)
+
 
 def _parse_resolution_overrides(
     raw_items: list[str], *, json_mode: bool
@@ -212,15 +240,21 @@ def _print_human_import_report(
     *,
     dry_run: bool,
     import_disabled: bool,
+    force_enable: bool,
     quiet: bool,
-    settings: AppSettings,
+    settings: Any,
 ) -> None:
     """Render a readable CLI report for rule import preview or merge execution."""
     if quiet:
         return
 
     heading = "[DRY-RUN] Rule Import Preview" if dry_run else "Rule Import Summary"
-    stage_note = "disabled for review" if import_disabled else "enabled immediately"
+    if import_disabled:
+        stage_note = "disabled for review"
+    elif result.preserve_states and not force_enable:
+        stage_note = "preserved from backup"
+    else:
+        stage_note = "enabled immediately"
     print(f"{heading} ({result.source_format})")
     print(f"  New rule staging: {stage_note}")
     print(
@@ -305,8 +339,44 @@ def _infer_export_format(output_path: str, explicit_format: str | None) -> str:
     return "sortify_json"
 
 
+def _resolve_rules_target_settings(
+    args: argparse.Namespace,
+    default_settings: AppSettings,
+    *,
+    json_mode: bool,
+) -> tuple[AppSettings, Any, str | None]:
+    """Resolve root ``AppSettings``, optional ``ScopedSettingsView``, and canonical folder key."""
+    raw_sf = getattr(args, "settings_file", None)
+    raw_prof = getattr(args, "profile", None)
+    root_settings = default_settings
+    if raw_sf is not None or raw_prof is not None:
+        try:
+            resolved_fp = resolve_cli_settings_filepath(
+                settings_file=raw_sf,
+                profile=raw_prof,
+            )
+        except ValueError as err:
+            emit_cli_error(f"Error: {err}", json_mode=json_mode, exit_code=2)
+        if resolved_fp:
+            curr_fp = os.path.normcase(os.path.abspath(str(default_settings.filepath)))
+            want_fp = os.path.normcase(os.path.abspath(resolved_fp))
+            if curr_fp != want_fp:
+                root_settings = AppSettings(filepath=resolved_fp)
+
+    raw_folder = getattr(args, "folder", None)
+    if raw_folder is not None and str(raw_folder).strip():
+        try:
+            scope_key = normalize_folder_scope_key(str(raw_folder).strip())
+        except ValueError as err:
+            emit_cli_error(f"Error: {err}", json_mode=json_mode, exit_code=2)
+        target_view = root_settings.for_folder(scope_key, fallback_to_global=False)
+        return root_settings, target_view, scope_key
+
+    return root_settings, root_settings, None
+
+
 def handle_rules_command(args: argparse.Namespace, settings: AppSettings) -> bool:
-    """Execute ``rules import`` or ``rules export`` subcommands.
+    """Execute ``rules`` subcommands (``import``, ``export``, ``list``, ``add``, ``remove``, ``enable``, ``disable``).
 
     Parameters
     ----------
@@ -329,13 +399,17 @@ def handle_rules_command(args: argparse.Namespace, settings: AppSettings) -> boo
 
     if not rules_cmd:
         emit_cli_error(
-            "Error: Missing rules subcommand. Use 'import' or 'export'.",
+            "Error: Missing rules subcommand. Use 'list', 'add', 'remove', 'enable', 'disable', 'import', or 'export'.",
             json_mode=is_json,
             exit_code=2,
         )
 
-    settings_file = getattr(args, "settings_file", None)
-    target_settings = AppSettings(filepath=settings_file) if settings_file else settings
+    root_settings, target_view, scope_key = _resolve_rules_target_settings(
+        args,
+        settings,
+        json_mode=is_json,
+    )
+    scope_label = scope_key or "global"
 
     if rules_cmd == "import":
         raw_file = getattr(args, "file_opt", None) or getattr(args, "file_path", None)
@@ -358,7 +432,8 @@ def handle_rules_command(args: argparse.Namespace, settings: AppSettings) -> boo
         default_strategy = str(getattr(args, "conflict_strategy", "keep_existing"))
         raw_resolves = list(getattr(args, "resolve", None) or [])
         overrides = _parse_resolution_overrides(raw_resolves, json_mode=is_json)
-        import_disabled = not bool(getattr(args, "force_enabled", False))
+        force_disabled = bool(getattr(args, "force_disabled", False))
+        force_enabled = bool(getattr(args, "force_enabled", False))
 
         try:
             importer = get_rule_importer(rule_path)
@@ -370,9 +445,30 @@ def handle_rules_command(args: argparse.Namespace, settings: AppSettings) -> boo
                 exit_code=1,
             )
 
+        if force_disabled:
+            import_disabled = True
+            force_enable = False
+        elif force_enabled:
+            import_disabled = False
+            force_enable = True
+        elif import_res.preserve_states:
+            import_disabled = False
+            force_enable = False
+        else:
+            import_disabled = True
+            force_enable = False
+
+        has_any_rules = bool(
+            import_res.keyword_rules
+            or import_res.disabled_keyword_rules
+            or import_res.learned_rules
+            or import_res.disabled_learned_rules
+            or import_res.extension_categories
+            or import_res.policies
+            or import_res.folder_rule_scopes
+        )
         has_fatal_parse_error = (
-            not import_res.keyword_rules
-            and not import_res.policies
+            not has_any_rules
             and not import_res.unsupported
             and any(
                 w.startswith(
@@ -388,7 +484,7 @@ def handle_rules_command(args: argparse.Namespace, settings: AppSettings) -> boo
                 exit_code=1,
             )
 
-        conflicts = RuleConflictAnalyzer.analyze(import_res, target_settings)
+        conflicts = RuleConflictAnalyzer.analyze(import_res, target_view)
         conflict_rows = [
             _serialize_conflict(c, overrides, default_strategy) for c in conflicts
         ]
@@ -404,11 +500,13 @@ def handle_rules_command(args: argparse.Namespace, settings: AppSettings) -> boo
         if not dry_run:
             try:
                 import_res.merge_into_settings(
-                    target_settings,
+                    target_view,
                     resolutions=effective_resolutions,
                     default_strategy=default_strategy,
                     import_disabled=import_disabled,
+                    force_enable=force_enable,
                 )
+                root_settings.flush()
             except (OSError, ValueError) as exc:
                 emit_cli_error(
                     f"Error saving imported rules: {exc}",
@@ -418,29 +516,51 @@ def handle_rules_command(args: argparse.Namespace, settings: AppSettings) -> boo
 
         summary: dict[str, Any] = {
             "extracted_keywords": len(import_res.keyword_rules),
+            "extracted_disabled_keywords": len(import_res.disabled_keyword_rules),
+            "extracted_learned_rules": len(import_res.learned_rules),
+            "extracted_disabled_learned_rules": len(import_res.disabled_learned_rules),
+            "extracted_extension_categories": len(import_res.extension_categories),
             "extracted_policies": len(import_res.policies),
+            "extracted_folder_scopes": len(import_res.folder_rule_scopes),
             "conflicts": len(conflict_rows),
             "warnings": len(import_res.warnings),
             "unsupported": len(import_res.unsupported),
         }
         if not dry_run:
             summary["active_keyword_count"] = len(
-                getattr(target_settings, "KEYWORD_RULES", {}) or {}
+                getattr(target_view, "KEYWORD_RULES", {}) or {}
             )
             summary["disabled_keyword_count"] = len(
-                getattr(target_settings, "DISABLED_KEYWORD_RULES", {}) or {}
+                getattr(target_view, "DISABLED_KEYWORD_RULES", {}) or {}
             )
-            summary["policy_count"] = len(
-                getattr(target_settings, "POLICIES", []) or []
+            summary["learned_rule_count"] = len(
+                getattr(target_view, "LEARNED_RULES", {}) or {}
+            )
+            summary["disabled_learned_count"] = len(
+                getattr(target_view, "DISABLED_LEARNED_RULES", {}) or {}
+            )
+            summary["extension_category_count"] = len(
+                getattr(target_view, "EXTENSION_CATEGORIES", {}) or {}
+            )
+            summary["policy_count"] = len(getattr(target_view, "POLICIES", []) or [])
+            summary["folder_scope_count"] = len(
+                getattr(root_settings, "FOLDER_RULE_SCOPES", {}) or {}
             )
 
         payload = {
             "status": "preview" if dry_run else "merged",
             "dry_run": dry_run,
+            "scope": scope_label,
             "import_disabled": import_disabled,
+            "preserve_states": import_res.preserve_states,
             "source_format": import_res.source_format,
             "keyword_rules": import_res.keyword_rules,
+            "disabled_keyword_rules": import_res.disabled_keyword_rules,
+            "learned_rules": import_res.learned_rules,
+            "disabled_learned_rules": import_res.disabled_learned_rules,
+            "extension_categories": import_res.extension_categories,
             "policies": import_res.policies,
+            "folder_rule_scopes": import_res.folder_rule_scopes,
             "conflicts": conflict_rows,
             "warnings": import_res.warnings,
             "unsupported": import_res.unsupported,
@@ -456,8 +576,9 @@ def handle_rules_command(args: argparse.Namespace, settings: AppSettings) -> boo
                 conflict_rows,
                 dry_run=dry_run,
                 import_disabled=import_disabled,
+                force_enable=force_enable,
                 quiet=quiet,
-                settings=target_settings,
+                settings=target_view,
             )
 
         sys.exit(0)
@@ -479,14 +600,15 @@ def handle_rules_command(args: argparse.Namespace, settings: AppSettings) -> boo
         )
         dry_run = bool(getattr(args, "dry_run", False))
 
-        kw_count = len(getattr(target_settings, "KEYWORD_RULES", {}) or {})
-        pol_count = len(getattr(target_settings, "POLICIES", []) or [])
+        kw_count = len(getattr(target_view, "KEYWORD_RULES", {}) or {})
+        pol_count = len(getattr(target_view, "POLICIES", []) or [])
 
         if dry_run:
             dest_preview = str(Path(out_str).expanduser())
             payload = {
                 "status": "preview",
                 "dry_run": True,
+                "scope": scope_label,
                 "format": resolved_fmt,
                 "output_path": dest_preview,
                 "keyword_count": kw_count,
@@ -503,7 +625,12 @@ def handle_rules_command(args: argparse.Namespace, settings: AppSettings) -> boo
             sys.exit(0)
 
         try:
-            written_path = export_active_rules(target_settings, resolved_fmt, out_str)
+            written_path = export_active_rules(
+                root_settings,
+                resolved_fmt,
+                out_str,
+                folder=scope_key,
+            )
         except (ValueError, OSError) as exc:
             emit_cli_error(
                 f"Error exporting rules: {exc}",
@@ -514,6 +641,7 @@ def handle_rules_command(args: argparse.Namespace, settings: AppSettings) -> boo
         payload = {
             "status": "exported",
             "dry_run": False,
+            "scope": scope_label,
             "format": resolved_fmt,
             "output_path": str(written_path),
             "keyword_count": kw_count,
@@ -529,4 +657,12 @@ def handle_rules_command(args: argparse.Namespace, settings: AppSettings) -> boo
             )
         sys.exit(0)
 
-    return False
+    return handle_rules_crud_subcommand(
+        rules_cmd,
+        args,
+        root_settings=root_settings,
+        target_view=target_view,
+        scope_label=scope_label,
+        is_json=is_json,
+        quiet=quiet,
+    )

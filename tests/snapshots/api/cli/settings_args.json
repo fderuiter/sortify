@@ -1,0 +1,57 @@
+{
+  "_metadata": {
+    "checksum": "500c07826e0d73c07aa54b9adffcc1a89d8160255155515c05f73bafaa8956a5"
+  },
+  "classes": [],
+  "cli": [
+    {
+      "args": [
+        "--settings-file"
+      ],
+      "caller": "group",
+      "keywords": {
+        "default": "default_val",
+        "help": "settings_help",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--profile"
+      ],
+      "caller": "group",
+      "keywords": {
+        "default": "default_val",
+        "help": "Named configuration profile under ~/.autosorter/profiles/<name>.json",
+        "type": "str"
+      },
+      "method": "add_argument"
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "add_settings_source_args",
+      "parameters": [
+        {
+          "annotation": "argparse.ArgumentParser",
+          "default": null,
+          "name": "parser"
+        },
+        {
+          "annotation": "bool",
+          "default": "True",
+          "name": "suppress_default"
+        },
+        {
+          "annotation": "str",
+          "default": "'Path to an explicit Sortify settings.json file'",
+          "name": "settings_help"
+        }
+      ],
+      "returns": "None"
+    }
+  ]
+}

@@ -5,6 +5,7 @@ import json
 import sys
 
 from app.cli.error_emitter import emit_cli_error
+from app.cli.settings_args import add_settings_source_args
 from app.config import AppSettings
 from app.core.exceptions import AuditExportError
 from app.core.moves import MoveLedger
@@ -21,11 +22,13 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help="Output response in structured JSON format",
     )
+    add_settings_source_args(parser_ledger, suppress_default=True)
     ledger_subparsers = parser_ledger.add_subparsers(
         dest="ledger_command", help="Ledger subcommands"
     )
 
     def add_ledger_common(p: argparse.ArgumentParser) -> None:
+        add_settings_source_args(p, suppress_default=True)
         p.add_argument(
             "--ledger-db",
             type=str,
