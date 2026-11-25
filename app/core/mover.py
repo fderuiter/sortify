@@ -30,6 +30,8 @@ try:
 except ImportError:
     pylnk3 = None
 
+logger = logging.getLogger(__name__)
+
 
 class MoveEngineState(StrEnum):
     """Lifecycle states for AsyncMoveEngine."""
@@ -3300,8 +3302,13 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                             session_id = s["session_id"]
                             registered_session = True
                             break
-                except Exception:
-                    pass
+                except Exception as lookup_err:
+                    logger.warning(
+                        "Failed to look up active sort session while resuming %s: %s",
+                        base_dir,
+                        lookup_err,
+                        exc_info=True,
+                    )
                 if (
                     not session_id
                     and has_candidate_moves
@@ -3311,8 +3318,13 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                         session_id = history_manager.start_session(base_dir)
                         if session_id:
                             registered_session = True
-                    except Exception:
-                        pass
+                    except Exception as sess_err:
+                        logger.warning(
+                            "Failed to register sort session while resuming %s: %s",
+                            base_dir,
+                            sess_err,
+                            exc_info=True,
+                        )
 
             if not session_id and (resume or has_candidate_moves):
                 session_id = str(uuid.uuid4())
@@ -3374,8 +3386,13 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                         try:
                             if pipeline.state != PipelineLifecycleState.CANCELLED:
                                 pipeline.transition_to(PipelineLifecycleState.CANCELLED)
-                        except Exception:
-                            pass
+                        except Exception as trans_err:
+                            logger.warning(
+                                "Failed to transition pipeline to CANCELLED for session %s: %s",
+                                session_id,
+                                trans_err,
+                                exc_info=True,
+                            )
                     break
 
                 self.transition_to(
@@ -3920,8 +3937,13 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                     try:
                         db.execute_batch_updates(list(db_updates_batch))
                         db_updates_batch.clear()
-                    except Exception:
-                        pass
+                    except Exception as flush_err:
+                        logger.warning(
+                            "Failed to flush pending database updates before rollback for session %s: %s",
+                            session_id,
+                            flush_err,
+                            exc_info=True,
+                        )
 
             self.transition_to(MoveEngineState.FAILED)
             rollback_succeeded = False
@@ -3939,8 +3961,13 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                     try:
                         if pipeline.state != PipelineLifecycleState.ROLLING_BACK:
                             pipeline.transition_to(PipelineLifecycleState.ROLLING_BACK)
-                    except Exception:
-                        pass
+                    except Exception as trans_err:
+                        logger.warning(
+                            "Failed to transition pipeline to ROLLING_BACK for session %s: %s",
+                            session_id,
+                            trans_err,
+                            exc_info=True,
+                        )
                 try:
                     history_manager.unwind_session(session_id, db=db)
                     self.transition_to(MoveEngineState.ROLLED_BACK)
@@ -3961,8 +3988,13 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                     setattr(pipeline, "_rollback_completed", rollback_succeeded)
                     if pipeline.state != PipelineLifecycleState.FAILED:
                         pipeline.transition_to(PipelineLifecycleState.FAILED)
-                except Exception:
-                    pass
+                except Exception as trans_err:
+                    logger.warning(
+                        "Failed to transition pipeline to FAILED for session %s: %s",
+                        session_id,
+                        trans_err,
+                        exc_info=True,
+                    )
             raise e
 
 

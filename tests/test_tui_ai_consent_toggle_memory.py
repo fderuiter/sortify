@@ -206,3 +206,121 @@ async def test_changing_consent_state_updates_status_bar_badge_and_announcements
         await pilot.pause(0.1)
 
         assert "[AI: Disabled]" in str(sb.render())
+
+
+@pytest.mark.anyio
+async def test_unload_all_models_error_reports_failure_instead_of_unloaded_announcement(
+    tmp_path, caplog, monkeypatch
+):
+    """Verify _on_ai_consent_changed logs and announces model unload errors instead of claiming models unloaded."""
+    import logging
+    from unittest.mock import patch
+
+    settings_file = str(tmp_path / "settings.json")
+    settings = AppSettings(filepath=settings_file)
+    settings.AI_CONSENT_GRANTED = True
+
+    app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path), skip_wizard=True)
+    async with app.run_test() as pilot:
+        await pilot.pause(0.05)
+        announcements: list[tuple[str, dict]] = []
+        orig_announce = app.announce
+
+        def record_announce(message: str, **kwargs):
+            announcements.append((message, kwargs))
+            return orig_announce(message, **kwargs)
+
+        monkeypatch.setattr(app, "announce", record_announce)
+        notifications: list[tuple[str, dict]] = []
+        orig_notify = app.notify
+
+        def record_notify(message: str, **kwargs):
+            notifications.append((str(message), kwargs))
+            return orig_notify(message, **kwargs)
+
+        monkeypatch.setattr(app, "notify", record_notify)
+
+        caplog.set_level(logging.WARNING, logger="app.ui.tui")
+        registry = SharedModelRegistry.get_instance()
+        with patch.object(
+            registry,
+            "unload_all_models",
+            side_effect=RuntimeError("VRAM context busy"),
+        ):
+            app._on_ai_consent_changed(False)
+            await pilot.pause(0.05)
+
+        assert not any(
+            "In-memory AI models unloaded instantly" in msg for msg, _ in announcements
+        )
+        assert any(
+            "failed to unload in-memory AI models" in msg and "VRAM context busy" in msg
+            for msg, _ in announcements
+        )
+        assert any(
+            "VRAM context busy" in msg and kw.get("severity") == "error"
+            for msg, kw in notifications
+        )
+        assert any(
+            "Failed to unload in-memory AI models" in r.getMessage()
+            and r.exc_info is not None
+            for r in caplog.records
+        )
+
+
+@pytest.mark.anyio
+async def test_settings_on_saved_validation_error_notifies_and_skips_saved_announcement(
+    tmp_path, caplog, monkeypatch
+):
+    """Verify SettingsModal on_saved catches Pydantic ValidationError, notifies user, and skips saved announcement."""
+    import logging
+    from unittest.mock import patch
+
+    settings_file = str(tmp_path / "settings.json")
+    settings = AppSettings(filepath=settings_file)
+
+    app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path), skip_wizard=True)
+    with patch.object(AppSettings, "_save") as mock_save:
+        async with app.run_test() as pilot:
+            app.action_open_settings()
+            await pilot.pause(0.1)
+
+            modal = app.screen
+            assert isinstance(modal, SettingsModal)
+
+            announcements: list[str] = []
+            orig_announce = app.announce
+
+            def record_announce(message: str, **kwargs):
+                announcements.append(message)
+                return orig_announce(message, **kwargs)
+
+            monkeypatch.setattr(app, "announce", record_announce)
+            notifications: list[tuple[str, dict]] = []
+            orig_notify = app.notify
+
+            def record_notify(message: str, **kwargs):
+                notifications.append((str(message), kwargs))
+                return orig_notify(message, **kwargs)
+
+            monkeypatch.setattr(app, "notify", record_notify)
+
+            caplog.set_level(logging.WARNING, logger="app.ui.tui")
+            mock_save.reset_mock()
+            modal.dismiss({"MAX_FOLDERS": 999, "SCAN_MAX_DEPTH": 99})
+            await pilot.pause(0.1)
+
+            mock_save.assert_not_called()
+            assert "Settings updated and saved." not in announcements
+            assert any("Failed to save settings" in msg for msg in announcements)
+            assert any(
+                "Failed to save settings" in msg
+                and "MAX_FOLDERS" in msg
+                and kw.get("severity") == "error"
+                for msg, kw in notifications
+            )
+            assert any(
+                "Settings validation failed" in r.getMessage()
+                and r.exc_info is not None
+                for r in caplog.records
+            )

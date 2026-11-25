@@ -2,6 +2,7 @@
 
 import contextlib
 import json
+import logging
 import os
 import threading
 from typing import Any
@@ -9,6 +10,8 @@ from typing import Any
 from app.config import get_app_dir
 from app.core.analyzer import IncrementalAnalyzer
 from app.core.domain_contracts import _make_json_serializable
+
+logger = logging.getLogger(__name__)
 
 
 class AppSession:
@@ -68,12 +71,20 @@ class AppSession:
                     jev_engine = SharedModelRegistry.get_instance().get_jev_classifier()
                     jev_engine.set_database(str(self.store.path), self.db_worker)
                 except Exception:
-                    pass
+                    logger.warning(
+                        "Failed to attach database to JEV classifier for session %s",
+                        self.session_id,
+                        exc_info=True,
+                    )
 
             try:
                 self.history_manager.moves.reconcile_incomplete_transactions(db=self.db)
             except Exception:
-                pass
+                logger.warning(
+                    "Failed to reconcile incomplete move transactions during startup for session %s",
+                    self.session_id,
+                    exc_info=True,
+                )
 
             base_path = get_base_path(__file__)
 
@@ -439,8 +450,14 @@ class AppSession:
                 if pipeline is None and (
                     effective_pipeline is not None or hasattr(self, "lifecycle_state")
                 ):
-                    with contextlib.suppress(Exception):
+                    try:
                         _transition_exec_state(PipelineLifecycleState.FAILED)
+                    except Exception:
+                        logger.warning(
+                            "Failed to transition session %s lifecycle state to FAILED",
+                            getattr(self, "session_id", "<unknown>"),
+                            exc_info=True,
+                        )
                 raise
 
     @staticmethod

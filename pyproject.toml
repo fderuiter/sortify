@@ -127,26 +127,50 @@ convention = "numpy"
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["D", "F841", "RUF059", "E741", "BLE001", "S110", "SIM105"]
-"scripts/*" = ["D", "BLE001", "S110", "SIM105"]
-".agents/*" = ["BLE001", "S110", "SIM105"]
+"scripts/*" = ["D"]
 
-# Exception-handling baseline for #783: files that predate the rule. Fix a file
-# and delete its line; never add one.
-"app/cli/ledger_cli.py" = ["BLE001", "S110"]
+# Exception-handling baseline for #783: files that predate the rule, ratcheted
+# by scripts/check_ruff_exception_ceilings.py. Lower ceilings or delete entries
+# as files are cleaned up; never add wildcards or new files.
+".agents/skills/run-sortify/driver.py" = ["BLE001"]
 "app/core/analyzer_strategies.py" = ["BLE001", "S110", "SIM105"]
 "app/core/db.py" = ["BLE001", "S110", "SIM105"]
 "app/core/db_conn.py" = ["BLE001", "S110", "SIM105"]
-"app/core/db_worker.py" = ["BLE001", "S110", "SIM105"]
+"app/core/db_worker.py" = ["BLE001", "S110"]
 "app/core/history.py" = ["BLE001", "S110", "SIM105"]
 "app/core/ledger.py" = ["BLE001", "S110", "SIM105"]
 "app/core/mover.py" = ["BLE001", "S110", "SIM105"]
 "app/core/resilient_file_ops.py" = ["BLE001", "S110", "SIM105"]
-"app/core/session.py" = ["BLE001", "S110", "SIM105"]
 "app/main.py" = ["BLE001", "S110", "SIM105"]
 "app/ui/a11y.py" = ["BLE001", "S110", "SIM105"]
-"app/ui/modals/*.py" = ["BLE001", "S110", "SIM105"]
-"app/ui/mixins/*.py" = ["BLE001", "S110", "SIM105"]
+"app/ui/mixins/pipeline.py" = ["BLE001", "S110", "SIM105"]
+"app/ui/mixins/selection.py" = ["BLE001", "S110"]
+"app/ui/mixins/tree_view.py" = ["BLE001", "S110", "SIM105"]
+"app/ui/modals/drop_zone.py" = ["BLE001", "S110", "SIM105"]
+"app/ui/modals/edit.py" = ["BLE001", "S110", "SIM105"]
+"app/ui/modals/models.py" = ["BLE001", "S110", "SIM105"]
+"app/ui/modals/quarantine.py" = ["BLE001", "S110"]
+"app/ui/modals/reports.py" = ["BLE001", "S110"]
+"app/ui/modals/rules.py" = ["BLE001", "S110", "SIM105"]
+"app/ui/modals/sample_playground.py" = ["BLE001", "S110", "SIM105"]
+"app/ui/modals/session.py" = ["BLE001", "S110", "SIM105"]
+"app/ui/modals/settings.py" = ["BLE001", "S110"]
+"app/ui/modals/wizard.py" = ["BLE001", "S110", "SIM105"]
 "app/ui/tui.py" = ["BLE001", "S110", "SIM105"]
+"scripts/auto_merge_controller.py" = ["BLE001"]
+"scripts/build.py" = ["BLE001"]
+"scripts/diagram_toolchain.py" = ["BLE001"]
+"scripts/generate_docs.py" = ["BLE001", "S110"]
+"scripts/install_offline.py" = ["BLE001", "SIM105"]
+"scripts/prompt_manifest.py" = ["BLE001"]
+"scripts/remediate_vulnerabilities.py" = ["BLE001", "S110", "SIM105"]
+"scripts/snapshot_merge_driver.py" = ["BLE001", "S110"]
+"scripts/test_cli.py" = ["BLE001"]
+"scripts/validate_architecture.py" = ["BLE001"]
+"scripts/validate_config.py" = ["BLE001"]
+"scripts/validate_links.py" = ["BLE001"]
+"scripts/validate_signatures.py" = ["BLE001", "S110"]
+"scripts/verify_pe_dependencies.py" = ["BLE001"]
 
 [tool.ruff.format]
 docstring-code-format = true
@@ -272,3 +296,47 @@ show_missing = true
 # win32, enforced by scripts/check_ty_warnings.py. Ceilings and baseline entries
 # are forbidden for app/, scripts/, and .agents/; unlisted files must have 0 warnings.
 [tool.sortify.ty-warning-ceilings]
+
+# Shrink-only per-file ceilings for legacy Ruff BLE001/S110/SIM105 violations
+# across app/, scripts/, and .agents/, enforced by
+# scripts/check_ruff_exception_ceilings.py. Unlisted files must have 0 violations.
+[tool.sortify.ruff-exception-ceilings]
+".agents/skills/run-sortify/driver.py" = 1
+"app/core/analyzer_strategies.py" = 113
+"app/core/db.py" = 56
+"app/core/db_conn.py" = 32
+"app/core/db_worker.py" = 12
+"app/core/history.py" = 20
+"app/core/ledger.py" = 3
+"app/core/mover.py" = 43
+"app/core/resilient_file_ops.py" = 22
+"app/main.py" = 33
+"app/ui/a11y.py" = 31
+"app/ui/mixins/pipeline.py" = 17
+"app/ui/mixins/selection.py" = 2
+"app/ui/mixins/tree_view.py" = 22
+"app/ui/modals/drop_zone.py" = 69
+"app/ui/modals/edit.py" = 35
+"app/ui/modals/models.py" = 5
+"app/ui/modals/quarantine.py" = 13
+"app/ui/modals/reports.py" = 11
+"app/ui/modals/rules.py" = 89
+"app/ui/modals/sample_playground.py" = 13
+"app/ui/modals/session.py" = 41
+"app/ui/modals/settings.py" = 34
+"app/ui/modals/wizard.py" = 62
+"app/ui/tui.py" = 67
+"scripts/auto_merge_controller.py" = 4
+"scripts/build.py" = 1
+"scripts/diagram_toolchain.py" = 8
+"scripts/generate_docs.py" = 24
+"scripts/install_offline.py" = 2
+"scripts/prompt_manifest.py" = 3
+"scripts/remediate_vulnerabilities.py" = 27
+"scripts/snapshot_merge_driver.py" = 12
+"scripts/test_cli.py" = 1
+"scripts/validate_architecture.py" = 2
+"scripts/validate_config.py" = 2
+"scripts/validate_links.py" = 4
+"scripts/validate_signatures.py" = 8
+"scripts/verify_pe_dependencies.py" = 1

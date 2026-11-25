@@ -200,3 +200,210 @@ def test_tui_do_recovery_rollback_failure_preserves_session_dir(mock_session_bas
     app.announce.assert_called()
     announcement = app.announce.call_args[0][0]
     assert "failed" in announcement.lower() or "preserved" in announcement.lower()
+
+
+def test_session_startup_and_failed_transition_log_warnings_with_tracebacks(
+    tmp_path, mock_session_base, caplog
+):
+    """Verify AppSession logs warnings with tracebacks for JEV db init, startup recovery, and FAILED transition errors."""
+    import logging
+
+    from app.core.moves import MoveLedger
+    from app.core.pipeline import PipelineLifecycleState
+    from app.core.shared_registry import SharedModelRegistry
+
+    base_dir = str(tmp_path / "work_dir")
+    os.makedirs(base_dir, exist_ok=True)
+    doc_path = os.path.join(base_dir, "sample.txt")
+    with open(doc_path, "w", encoding="utf-8") as fh:
+        fh.write("hello")
+
+    settings = Settings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
+
+    mock_jev = MagicMock()
+    mock_jev.set_database.side_effect = RuntimeError("jev db attach failed")
+
+    caplog.set_level(logging.WARNING, logger="app.core.session")
+    with (
+        patch.object(
+            SharedModelRegistry.get_instance(),
+            "get_jev_classifier",
+            return_value=mock_jev,
+        ),
+        patch.object(
+            MoveLedger,
+            "reconcile_incomplete_transactions",
+            side_effect=RuntimeError("startup reconcile failed"),
+        ),
+    ):
+        app_session = AppSession(settings, base_dir)
+
+    try:
+        jev_records = [
+            r
+            for r in caplog.records
+            if "JEV classifier" in r.getMessage() and r.levelno == logging.WARNING
+        ]
+        rec_records = [
+            r
+            for r in caplog.records
+            if "reconcile incomplete move transactions" in r.getMessage()
+            and r.levelno == logging.WARNING
+        ]
+        assert len(jev_records) == 1
+        assert jev_records[0].exc_info is not None
+        assert len(rec_records) == 1
+        assert rec_records[0].exc_info is not None
+
+        app_session.lifecycle_state = PipelineLifecycleState.PLANNED
+        plan = {
+            "Docs": {
+                "sample.txt": {
+                    "__type__": "file",
+                    "filepath": doc_path,
+                    "target_filename": "sample.txt",
+                }
+            }
+        }
+        orig_transition = app_session.transition_to
+
+        def flaky_transition(target_state, context=None):
+            if target_state == PipelineLifecycleState.FAILED:
+                raise RuntimeError("transition to FAILED boom")
+            return orig_transition(target_state, context=context)
+
+        caplog.clear()
+        with (
+            patch(
+                "app.core.mover.execute_moves",
+                side_effect=OSError("simulated move failure"),
+            ),
+            patch.object(app_session, "transition_to", side_effect=flaky_transition),
+        ):
+            with pytest.raises(OSError, match="simulated move failure"):
+                app_session.execute_moves(plan)
+
+        fail_trans_records = [
+            r
+            for r in caplog.records
+            if "lifecycle state to FAILED" in r.getMessage()
+            and r.levelno == logging.WARNING
+        ]
+        assert len(fail_trans_records) == 1
+        assert fail_trans_records[0].exc_info is not None
+    finally:
+        app_session.close()
+
+
+def test_mover_logs_resume_flush_and_transition_errors_and_still_unwinds(
+    tmp_path, caplog
+):
+    """Verify execute_moves logs resume lookup/registration, batch flush, and pipeline transition errors while still running unwind_session."""
+    import logging
+
+    from app.core.mover import execute_moves
+    from app.core.pipeline import PipelineLifecycleState
+
+    base_dir = tmp_path / "mover_diag"
+    base_dir.mkdir(parents=True)
+    f1 = base_dir / "a.txt"
+    f2 = base_dir / "b.txt"
+    f1.write_text("alpha", encoding="utf-8")
+    f2.write_text("beta", encoding="utf-8")
+
+    # 1. Resume session lookup + fallback start_session failure + cancel transition failure
+    resume_history = MagicMock()
+    resume_history.get_sessions.side_effect = RuntimeError("sessions lookup failed")
+    resume_history.start_session.side_effect = RuntimeError("start_session failed")
+    cancel_pipeline = MagicMock()
+    cancel_pipeline.state = PipelineLifecycleState.EXECUTING
+    cancel_pipeline.transition_to.side_effect = RuntimeError("cancel transition failed")
+
+    plan_resume = {
+        "Sorted": {
+            "a.txt": {
+                "__type__": "file",
+                "filepath": str(f1),
+                "target_filename": "a.txt",
+            }
+        }
+    }
+    caplog.set_level(logging.WARNING, logger="app.core.mover")
+    cancel_summary = execute_moves(
+        str(base_dir),
+        plan_resume,
+        db=None,
+        history_manager=resume_history,
+        resume=True,
+        chunk_size=1,
+        max_workers=1,
+        cancel_check=lambda: True,
+        pipeline=cancel_pipeline,
+    )
+    assert cancel_summary["cancelled"] is True
+    mover_msgs = "\n".join(r.getMessage() for r in caplog.records)
+    assert "Failed to look up active sort session" in mover_msgs
+    assert "Failed to register sort session while resuming" in mover_msgs
+    assert "Failed to transition pipeline to CANCELLED" in mover_msgs
+
+    # 2. Flush error during failure must still run unwind_session and re-raise original error
+    caplog.clear()
+    fail_history = MagicMock()
+    fail_history.start_session.return_value = "sess_flush_test"
+    fail_history.moves = None
+
+    flaky_db = MagicMock()
+    flaky_db.get_document_hashes.return_value = {}
+    flaky_db.execute_batch_updates.side_effect = RuntimeError("batch flush failed")
+
+    fail_pipeline = MagicMock()
+    fail_pipeline.state = PipelineLifecycleState.EXECUTING
+    fail_pipeline.transition_to.side_effect = RuntimeError("pipeline transition failed")
+
+    plan_two_chunks = {
+        "Sorted": {
+            "a.txt": {
+                "__type__": "file",
+                "filepath": str(f1),
+                "target_filename": "a.txt",
+            },
+            "b.txt": {
+                "__type__": "file",
+                "filepath": str(f2),
+                "target_filename": "b.txt",
+            },
+        }
+    }
+    from app.core import mover
+
+    real_process_item = mover._process_move_item
+    call_count = [0]
+
+    def fail_second_item(*args, **kwargs):
+        call_count[0] += 1
+        if call_count[0] >= 2:
+            raise PermissionError("second chunk locked")
+        return real_process_item(*args, **kwargs)
+
+    with patch(
+        "app.core.mover._process_move_item",
+        side_effect=fail_second_item,
+    ):
+        with pytest.raises(PermissionError, match="second chunk locked"):
+            execute_moves(
+                str(base_dir),
+                plan_two_chunks,
+                db=flaky_db,
+                history_manager=fail_history,
+                batch_size=50,
+                chunk_size=1,
+                max_workers=1,
+                pipeline=fail_pipeline,
+            )
+
+    fail_history.unwind_session.assert_called_once_with("sess_flush_test", db=flaky_db)
+    fail_msgs = "\n".join(r.getMessage() for r in caplog.records)
+    assert "Failed to flush pending database updates before rollback" in fail_msgs
+    assert "Failed to transition pipeline to ROLLING_BACK" in fail_msgs
+    assert "Failed to transition pipeline to FAILED" in fail_msgs

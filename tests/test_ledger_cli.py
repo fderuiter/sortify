@@ -388,3 +388,75 @@ def test_cli_subcommands_dispatch(temp_ledger, capsys):
     assert exc.value.code == 0
     data = json.loads(capsys.readouterr().out)
     assert data["status"] == "success"
+
+
+def test_reconcile_warns_when_acquire_services_fails_in_text_and_json(
+    tmp_path, capsys, caplog
+):
+    """Verify standalone ledger reconcile logs acquire_services errors, warns about skipped path sync, and keeps stdout valid JSON."""
+    import logging
+
+    db_path = str(tmp_path / "standalone_ledger.db")
+    ledger = MoveLedger(db_path=db_path, auto_init=True)
+    src = tmp_path / "src_doc.txt"
+    dst = tmp_path / "dst_doc.txt"
+    dst.write_text("reconciled content", encoding="utf-8")
+    ledger.record_intent(
+        session_id="sess_standalone",
+        src=str(src),
+        dst=str(dst),
+    )
+
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    caplog.set_level(logging.WARNING, logger="app.cli.ledger_cli")
+
+    with mock.patch(
+        "app.core.services.acquire_services",
+        side_effect=RuntimeError("store locked"),
+    ):
+        args_json = argparse.Namespace(
+            subcommand="ledger",
+            ledger_command="reconcile",
+            ledger_db=db_path,
+            json=True,
+            quiet=False,
+        )
+        with pytest.raises(SystemExit) as exc_json:
+            handle_ledger_command(args_json, settings)
+        assert exc_json.value.code == 0
+
+        captured_json = capsys.readouterr()
+        payload = json.loads(captured_json.out)
+        assert payload["status"] == "success"
+        assert payload["reconciled_count"] == 1
+        assert any(
+            "skipping document path sync" in w for w in payload.get("warnings", [])
+        )
+        assert "skipping document path sync" in captured_json.err
+        assert any(
+            "skipping document path sync" in r.getMessage() and r.exc_info is not None
+            for r in caplog.records
+        )
+
+        # Re-seed another incomplete move to verify text mode warning as well
+        dst2 = tmp_path / "dst_doc2.txt"
+        dst2.write_text("reconciled text mode", encoding="utf-8")
+        ledger.record_intent(
+            session_id="sess_standalone_2",
+            src=str(tmp_path / "src_doc2.txt"),
+            dst=str(dst2),
+        )
+        args_text = argparse.Namespace(
+            subcommand="ledger",
+            ledger_command="reconcile",
+            ledger_db=db_path,
+            json=False,
+            quiet=False,
+        )
+        with pytest.raises(SystemExit) as exc_text:
+            handle_ledger_command(args_text, settings)
+        assert exc_text.value.code == 0
+
+        captured_text = capsys.readouterr()
+        assert "skipping document path sync" in captured_text.err
+        assert "reconciled 1 entry" in captured_text.err.lower()
