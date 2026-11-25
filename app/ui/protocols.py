@@ -261,9 +261,9 @@ class TUIHostProtocol(Protocol):
         ...
 
     def _get_executable_plan(
-        self, plan_dict: dict[str, Any] | None = None
+        self, plan_dict: dict[str, Any] | None = None, _prefix: str = ""
     ) -> dict[str, Any]:
-        """Filter ``plan_dict`` down to checked, non-excluded file entries."""
+        """Filter ``plan_dict`` down to checked, non-excluded file entries and manual folders."""
         ...
 
     def action_toggle_lock(self) -> None:
@@ -318,6 +318,10 @@ class TUIHostProtocol(Protocol):
 
     def _has_file_nodes(self, plan_dict: dict[str, Any]) -> bool:
         """Return True if ``plan_dict`` contains at least one file entry."""
+        ...
+
+    def _has_folder_nodes(self, plan_dict: dict[str, Any]) -> bool:
+        """Return True if ``plan_dict`` contains at least one folder category dictionary."""
         ...
 
     def _get_current_search_query(self) -> str:

@@ -9,7 +9,7 @@ from typing import Any
 
 from app.core.db_conn import get_db_connection
 from app.core.db_worker import DBWorker
-from app.core.migrations import Migration, add_missing_columns, migrate
+from app.core.migrations import Migration, add_missing_columns, migrate, table_columns
 
 AUDIO_EXTENSIONS = (
     ".mp3",
@@ -186,10 +186,31 @@ def _main_db_baseline(conn) -> None:
     )
 
 
+def migrate_add_user_verified_target_name(conn) -> None:
+    """Add ``user_verified_target_name`` column to ``documents`` for durable F2 file renames."""
+    if table_columns(conn, "documents"):
+        add_missing_columns(conn, "documents", {"user_verified_target_name": "TEXT"})
+
+
+def _normalize_verified_target_name(target_name: Any) -> str | None:
+    """Normalize a user-verified target filename; return None when empty or path-like."""
+    if not isinstance(target_name, str):
+        return None
+    cleaned = target_name.strip()
+    if not cleaned or "\x00" in cleaned or "/" in cleaned or "\\" in cleaned:
+        return None
+    if cleaned in (".", ".."):
+        return None
+    return cleaned
+
+
 # Ordered schema migrations for the main database. Never edit one after release;
 # add a new entry instead. Numbering starts at 7 because the old upgrade code
 # already used user_version 1 to 6.
-MAIN_DB_MIGRATIONS = (Migration(7, "baseline", _main_db_baseline),)
+MAIN_DB_MIGRATIONS = (
+    Migration(7, "baseline", _main_db_baseline),
+    Migration(8, "user_verified_target_name", migrate_add_user_verified_target_name),
+)
 
 
 class Database:
@@ -1009,10 +1030,18 @@ class Database:
                 )
                 filepaths = [row[0] for row in cursor.fetchall()]
 
-                conn.execute(
-                    "UPDATE documents SET user_verified_target_path = ? WHERE base_dir = ? AND file_hash = ?",
-                    (target_path, base_dir, file_hash),
-                )
+                if target_path is None or (
+                    isinstance(target_path, str) and target_path.startswith("!")
+                ):
+                    conn.execute(
+                        "UPDATE documents SET user_verified_target_path = ?, user_verified_target_name = NULL WHERE base_dir = ? AND file_hash = ?",
+                        (target_path, base_dir, file_hash),
+                    )
+                else:
+                    conn.execute(
+                        "UPDATE documents SET user_verified_target_path = ? WHERE base_dir = ? AND file_hash = ?",
+                        (target_path, base_dir, file_hash),
+                    )
                 for fp in filepaths:
                     self._update_tfidf_on_verified_target_change(
                         conn,
@@ -1171,12 +1200,12 @@ class Database:
                     conn, base_dir, old_filepath, new_filepath
                 )
                 upd_cur = conn.execute(
-                    "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
+                    "UPDATE documents SET filepath = ?, user_verified_target_path = ?, user_verified_target_name = NULL WHERE base_dir = ? AND filepath = ?",
                     (new_filepath, new_dir, base_dir, old_filepath),
                 )
                 if upd_cur.rowcount == 0:
                     conn.execute(
-                        "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND REPLACE(filepath, '\\', '/') = ?",
+                        "UPDATE documents SET filepath = ?, user_verified_target_path = ?, user_verified_target_name = NULL WHERE base_dir = ? AND REPLACE(filepath, '\\', '/') = ?",
                         (new_filepath, new_dir, base_dir, old_filepath),
                     )
                 cursor = conn.execute(
@@ -1276,10 +1305,89 @@ class Database:
             row = cur.fetchone()
             return row[0] if row else None
 
-    def set_user_verified_target_path(self, base_dir, filepath, target_path):
-        """Record the historical folder assignment for a specific document path."""
+    def get_user_verified_target_name(self, base_dir: str, filepath: str) -> str | None:
+        """Retrieve the persisted user-verified target filename for a specific document."""
         filepath = filepath.replace("\\", "/")
+        conn = get_db_connection(self.db_path)
+        with conn:
+            cur = conn.execute(
+                "SELECT user_verified_target_name FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                (base_dir, filepath, filepath),
+            )
+            row = cur.fetchone()
+            return _normalize_verified_target_name(row[0]) if row and row[0] else None
+
+    def get_user_verified_target_names(
+        self,
+        base_dir: str,
+        source_dirs: list[str] | None = None,
+    ) -> dict[str, str]:
+        """Retrieve all persisted user-verified target filenames keyed by scanned document key."""
+        multi_root = bool(source_dirs and len(source_dirs) > 1)
+        dirs = (
+            list(source_dirs)
+            if multi_root and source_dirs
+            else ([base_dir] if base_dir else [])
+        )
+        if not dirs:
+            return {}
+        conn = get_db_connection(self.db_path)
+        placeholders = ",".join("?" for _ in dirs)
+        result: dict[str, str] = {}
+        with conn:
+            cur = conn.execute(
+                f"SELECT base_dir, filepath, user_verified_target_name FROM documents WHERE base_dir IN ({placeholders}) AND user_verified_target_name IS NOT NULL",
+                dirs,
+            )
+            for doc_base, fp, raw_name in cur.fetchall():
+                norm_name = _normalize_verified_target_name(raw_name)
+                if not norm_name or not fp:
+                    continue
+                norm_fp = str(fp).replace("\\", "/")
+                key = f"{doc_base}::{norm_fp}" if multi_root else norm_fp
+                result[key] = norm_name
+                if not multi_root and fp != norm_fp:
+                    result[str(fp)] = norm_name
+        return result
+
+    def set_user_verified_target_name(
+        self,
+        base_dir: str,
+        filepath: str,
+        target_name: str | None,
+    ) -> None:
+        """Persist or clear the user-verified target filename for a specific document path."""
+        filepath = filepath.replace("\\", "/")
+        clean_name = _normalize_verified_target_name(target_name)
+
+        def _write() -> None:
+            conn = get_db_connection(self.db_path)
+            with conn:
+                conn.execute(
+                    "UPDATE documents SET user_verified_target_name = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                    (clean_name, base_dir, filepath, filepath),
+                )
+
+        self.worker.execute_write(_write)
+
+    def set_user_verified_target_path(
+        self,
+        base_dir,
+        filepath,
+        target_path,
+        target_name: str | None = None,
+    ):
+        """Record the historical folder assignment (and optional target filename) for a specific document path."""
+        filepath = filepath.replace("\\", "/")
+        raw_target_is_clear = target_path is None or (
+            isinstance(target_path, str) and target_path.strip().startswith("!")
+        )
         target_path = _normalize_verified_target_folder(target_path)
+        clean_target_name = (
+            _normalize_verified_target_name(target_name)
+            if target_name is not None
+            else None
+        )
         self._populate_cache_if_needed(base_dir)
         with self._cache_lock:
             if self._cached_base_dir == base_dir and self._cached_documents is not None:
@@ -1319,10 +1427,21 @@ class Database:
         def _write():
             conn = get_db_connection(self.db_path)
             with conn:
-                conn.execute(
-                    "UPDATE documents SET user_verified_target_path = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                    (target_path, base_dir, filepath, filepath),
-                )
+                if target_name is not None:
+                    conn.execute(
+                        "UPDATE documents SET user_verified_target_path = ?, user_verified_target_name = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                        (target_path, clean_target_name, base_dir, filepath, filepath),
+                    )
+                elif raw_target_is_clear:
+                    conn.execute(
+                        "UPDATE documents SET user_verified_target_path = ?, user_verified_target_name = NULL WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                        (target_path, base_dir, filepath, filepath),
+                    )
+                else:
+                    conn.execute(
+                        "UPDATE documents SET user_verified_target_path = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                        (target_path, base_dir, filepath, filepath),
+                    )
                 self._update_tfidf_on_verified_target_change(
                     conn,
                     base_dir,
@@ -1536,18 +1655,28 @@ class Database:
             precomputed_updates_map = {}
         for item in updates:
             if item["type"] == "verified_target":
-                base_dir, file_hash, target_path = item["args"]
-                target_path = _normalize_verified_target_folder(target_path)
+                base_dir, file_hash, raw_target_path = item["args"]
+                raw_is_clear = raw_target_path is None or (
+                    isinstance(raw_target_path, str)
+                    and raw_target_path.strip().startswith("!")
+                )
+                target_path = _normalize_verified_target_folder(raw_target_path)
                 cursor = conn.execute(
                     "SELECT filepath FROM documents WHERE base_dir = ? AND file_hash = ?",
                     (base_dir, file_hash),
                 )
                 filepaths = [row[0] for row in cursor.fetchall()]
 
-                conn.execute(
-                    "UPDATE documents SET user_verified_target_path = ? WHERE base_dir = ? AND file_hash = ?",
-                    (target_path, base_dir, file_hash),
-                )
+                if raw_is_clear:
+                    conn.execute(
+                        "UPDATE documents SET user_verified_target_path = ?, user_verified_target_name = NULL WHERE base_dir = ? AND file_hash = ?",
+                        (target_path, base_dir, file_hash),
+                    )
+                else:
+                    conn.execute(
+                        "UPDATE documents SET user_verified_target_path = ? WHERE base_dir = ? AND file_hash = ?",
+                        (target_path, base_dir, file_hash),
+                    )
                 for fp in filepaths:
                     counts = precomputed_updates_map.get((base_dir, fp))
                     self._update_tfidf_on_verified_target_change(
@@ -1575,12 +1704,12 @@ class Database:
                     conn, base_dir, old_filepath, new_filepath
                 )
                 upd_cur = conn.execute(
-                    "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
+                    "UPDATE documents SET filepath = ?, user_verified_target_path = ?, user_verified_target_name = NULL WHERE base_dir = ? AND filepath = ?",
                     (new_filepath, new_dir, base_dir, old_filepath),
                 )
                 if upd_cur.rowcount == 0:
                     conn.execute(
-                        "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND REPLACE(filepath, '\\', '/') = ?",
+                        "UPDATE documents SET filepath = ?, user_verified_target_path = ?, user_verified_target_name = NULL WHERE base_dir = ? AND REPLACE(filepath, '\\', '/') = ?",
                         (new_filepath, new_dir, base_dir, old_filepath),
                     )
                 cursor = conn.execute(

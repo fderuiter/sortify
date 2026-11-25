@@ -14,6 +14,7 @@ from typing import Any, cast
 from pydantic import BaseModel
 
 from app.core.analyzer_strategies import clustering_registry
+from app.core.db_conn import DB_ERRORS
 from app.core.domain_contracts import (
     SortingPlanNodeModel,
     validate_corpus_prefetch_batch,
@@ -1539,6 +1540,23 @@ class IncrementalAnalyzer:
                 ):
                     hash_to_target[d[2]] = clean_d3
 
+            verified_target_names: dict[str, str] = {}
+            if self.db and hasattr(self.db, "get_user_verified_target_names"):
+                try:
+                    raw_vt_names = self.db.get_user_verified_target_names(
+                        base_dir, source_dirs=source_dirs
+                    )
+                    if isinstance(raw_vt_names, dict):
+                        for k_vt, v_vt in raw_vt_names.items():
+                            if isinstance(v_vt, str) and v_vt.strip():
+                                clean_vt = v_vt.strip()
+                                verified_target_names[str(k_vt)] = clean_vt
+                                verified_target_names[str(k_vt).replace("\\", "/")] = (
+                                    clean_vt
+                                )
+                except (*DB_ERRORS, OSError, RuntimeError, ValueError, TypeError):
+                    verified_target_names = {}
+
             for d in docs:
                 if cancel_check and cancel_check():
                     return SortingPlan()
@@ -2959,11 +2977,21 @@ class IncrementalAnalyzer:
                     continue
 
                 norm_f = str(f).replace("\\", "/")
-                is_explicit_lock = f in locked_files or norm_f in norm_locked_files
+                has_verified_name = bool(
+                    verified_target_names.get(f) or verified_target_names.get(norm_f)
+                )
+                is_explicit_lock = (
+                    f in locked_files
+                    or norm_f in norm_locked_files
+                    or has_verified_name
+                )
                 explicit_lock_target = (
                     locked_files.get(f)
                     if f in locked_files
-                    else norm_locked_files.get(norm_f)
+                    else (
+                        norm_locked_files.get(norm_f)
+                        or (target_folder if has_verified_name else None)
+                    )
                 )
 
                 is_conflicted = False
@@ -3086,11 +3114,25 @@ class IncrementalAnalyzer:
 
                 plan[target_folder][f] = info
 
-            # Phase 3: Route unsupported files safely
+            # Phase 3: Route unsupported files safely (skip files already routed into plan)
             if unsupported_files:
-                if "Miscellaneous" not in plan:
-                    plan["Miscellaneous"] = {}
+                routed_in_plan: set[str] = set()
+
+                def _collect_routed_keys(node: dict[str, Any]) -> None:
+                    for rk, rv in node.items():
+                        if _is_file_leaf(rv):
+                            routed_in_plan.add(str(rk))
+                            routed_in_plan.add(str(rk).replace("\\", "/"))
+                        elif isinstance(rv, dict):
+                            _collect_routed_keys(rv)
+
+                _collect_routed_keys(plan)
                 for f, status in unsupported_files:
+                    norm_uf = str(f).replace("\\", "/")
+                    if f in routed_in_plan or norm_uf in routed_in_plan:
+                        continue
+                    if "Miscellaneous" not in plan:
+                        plan["Miscellaneous"] = {}
                     if f not in plan["Miscellaneous"]:
                         plan["Miscellaneous"][f] = {
                             "__type__": "file",
@@ -3143,6 +3185,131 @@ class IncrementalAnalyzer:
                 runtime_settings, "PRESERVE_HIERARCHY", False
             ):
                 clean_plan = self._inject_hierarchy(clean_plan)
+
+            if verified_target_names:
+                from app.core.path_utils import _disambiguate_key
+
+                matched_vt_keys: set[str] = set()
+
+                def _apply_verified_target_names(curr_node: dict[str, Any]) -> None:
+                    for k, v in list(curr_node.items()):
+                        is_leaf_none = v is None
+                        is_leaf_file = (
+                            isinstance(v, dict) and v.get("__type__") == "file"
+                        )
+                        if is_leaf_none or is_leaf_file:
+                            if isinstance(v, dict):
+                                raw_sp = str(v.get("source_path") or k)
+                                if "::" in raw_sp:
+                                    s_root_v, raw_rel_v = raw_sp.split("::", 1)
+                                else:
+                                    s_root_v = str(
+                                        v.get("source_root")
+                                        or (
+                                            k.split("::", 1)[0]
+                                            if "::" in k
+                                            else base_dir
+                                        )
+                                    )
+                                    raw_rel_v = raw_sp
+                            else:
+                                if "::" in k:
+                                    s_root_v, raw_rel_v = k.split("::", 1)
+                                else:
+                                    s_root_v = base_dir
+                                    raw_rel_v = k
+                            norm_rel_v = raw_rel_v.replace("\\", "/")
+                            cand_keys = (
+                                k,
+                                k.replace("\\", "/"),
+                                f"{s_root_v}::{norm_rel_v}" if s_root_v else norm_rel_v,
+                                norm_rel_v,
+                                raw_rel_v,
+                            )
+                            vt_name = None
+                            for ck in cand_keys:
+                                if ck in verified_target_names:
+                                    vt_name = verified_target_names[ck]
+                                    matched_vt_keys.add(ck)
+                                    matched_vt_keys.add(norm_rel_v)
+                                    if s_root_v:
+                                        matched_vt_keys.add(f"{s_root_v}::{norm_rel_v}")
+                                    break
+                            if not vt_name:
+                                continue
+                            if is_leaf_none:
+                                leaf_meta: dict[str, Any] = {
+                                    "__type__": "file",
+                                    "routed_by": "historical",
+                                    "match": "user assignment",
+                                    "status": None,
+                                }
+                                v = leaf_meta
+                                curr_node[k] = v
+                            assert isinstance(v, dict)
+                            if v.get("policy_action") in (
+                                "trash",
+                                "quarantine",
+                                "unarchive",
+                            ):
+                                continue
+                            v["source_path"] = norm_rel_v
+                            v["source_root"] = s_root_v or base_dir
+                            dest_key = vt_name
+                            if dest_key in curr_node and curr_node[dest_key] is not v:
+                                dest_key = _disambiguate_key(
+                                    curr_node, dest_key, is_file=True
+                                )
+                            if dest_key != k:
+                                curr_node.pop(k, None)
+                                curr_node[dest_key] = v
+                            v["target_filename"] = dest_key
+                            v["confirmed"] = True
+                            v["is_confirmed"] = True
+                            v["user_confirmed"] = True
+                            v["is_locked"] = True
+                        elif isinstance(v, dict) and v.get("__type__") != "directory":
+                            _apply_verified_target_names(v)
+
+                _apply_verified_target_names(clean_plan)
+
+                for d_row in docs or ():
+                    if len(d_row) > 3 and d_row[3]:
+                        continue
+                    doc_key_raw = str(d_row[0])
+                    norm_doc_key = doc_key_raw.replace("\\", "/")
+                    if (
+                        doc_key_raw in matched_vt_keys
+                        or norm_doc_key in matched_vt_keys
+                    ):
+                        continue
+                    s_root_u, rel_u = parse_item_identifier(doc_key_raw, base_dir)
+                    norm_rel_u = rel_u.replace("\\", "/")
+                    if norm_rel_u in matched_vt_keys or "/" in norm_rel_u:
+                        continue
+                    vt_root_name = (
+                        verified_target_names.get(doc_key_raw)
+                        or verified_target_names.get(norm_doc_key)
+                        or verified_target_names.get(norm_rel_u)
+                    )
+                    if not vt_root_name:
+                        continue
+                    dest_key = vt_root_name
+                    if dest_key in clean_plan:
+                        dest_key = _disambiguate_key(clean_plan, dest_key, is_file=True)
+                    clean_plan[dest_key] = {
+                        "__type__": "file",
+                        "source_path": norm_rel_u,
+                        "source_root": s_root_u or base_dir,
+                        "routed_by": "historical",
+                        "match": "user assignment",
+                        "status": None,
+                        "target_filename": dest_key,
+                        "confirmed": True,
+                        "is_confirmed": True,
+                        "user_confirmed": True,
+                        "is_locked": True,
+                    }
 
             configured_dup_action = (
                 str(getattr(runtime_settings, "DUPLICATE_ACTION", "off") or "off")

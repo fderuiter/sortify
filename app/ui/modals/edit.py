@@ -12,7 +12,11 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Button, Input, Label, Select, Static
 
-from app.core.path_utils import _is_absolute_path
+from app.core.path_utils import (
+    _is_absolute_path,
+    resolve_plan_folder_dict,
+    validate_target_path,
+)
 from app.ui.heading import Heading
 from app.ui.layout import ModalBox, ResponsiveModalScreen
 
@@ -328,6 +332,28 @@ class RenameModal(
             if self.extension
             else self.current_name
         )
+        if self.is_folder and ("/" in pattern_str or "\\" in pattern_str):
+            if _is_absolute_path(pattern_str):
+                return pattern_str
+            segments = [
+                seg for seg in pattern_str.replace("\\", "/").split("/") if seg != ""
+            ]
+            rendered_segments: list[str] = []
+            for seg in segments:
+                if PatternTokenFormatter.parse_tokens(seg):
+                    rendered_segments.append(
+                        PatternTokenFormatter.format_pattern(
+                            pattern=seg,
+                            metadata=metadata,
+                            seq=self.seq,
+                            fallback_original=fallback,
+                            file_path=None,
+                        )
+                    )
+                else:
+                    rendered_segments.append(seg)
+            return "/".join(rendered_segments)
+
         return PatternTokenFormatter.format_pattern(
             pattern=pattern_str,
             metadata=metadata,
@@ -475,22 +501,79 @@ class RenameModal(
                 msg = "Destination path contains illegal characters."
                 self._set_collision_warning(f"⚠️ Validation Error: {msg}", is_error=True)
                 return True, msg
+            if not _is_absolute_path(dest_val):
+                try:
+                    validate_target_path(dest_val)
+                except ValueError as ve:
+                    msg = str(ve)
+                    self._set_collision_warning(
+                        f"⚠️ Validation Error: {msg}", is_error=True
+                    )
+                    return True, msg
 
         collision_msg: str | None = None
 
         if self.is_folder:
-            target_folder = dest_val if dest_val else formatted_name
-            if target_folder and target_folder != self.current_name:
-                if self.plan and target_folder in self.plan:
+            if not dest_val and name_val and not _is_absolute_path(name_val):
+                try:
+                    validate_target_path(name_val)
+                except ValueError as ve:
+                    msg = str(ve)
+                    self._set_collision_warning(
+                        f"⚠️ Validation Error: {msg}", is_error=True
+                    )
+                    return True, msg
+            raw_target = dest_val if dest_val else formatted_name
+            if raw_target and not _is_absolute_path(raw_target):
+                try:
+                    validate_target_path(raw_target)
+                except ValueError as ve:
+                    msg = str(ve)
+                    self._set_collision_warning(
+                        f"⚠️ Validation Error: {msg}", is_error=True
+                    )
+                    return True, msg
+
+            if raw_target:
+                if (
+                    dest_val
+                    or _is_absolute_path(raw_target)
+                    or "/" in raw_target
+                    or "\\" in raw_target
+                ):
+                    target_folder = (
+                        raw_target
+                        if _is_absolute_path(raw_target)
+                        else raw_target.replace("\\", "/").strip("/")
+                    )
+                elif (
+                    "/" in self.category
+                    and not _is_absolute_path(self.category)
+                    and not (self.plan and self.category in self.plan)
+                ):
+                    parent_prefix = self.category.rsplit("/", 1)[0]
+                    target_folder = f"{parent_prefix}/{raw_target}"
+                else:
+                    target_folder = raw_target
+            else:
+                target_folder = ""
+
+            orig_folder = self.category or self.current_name
+            if target_folder and target_folder != orig_folder:
+                if (
+                    self.plan
+                    and resolve_plan_folder_dict(self.plan, target_folder, create=False)
+                    is not None
+                ):
                     collision_msg = (
                         f"Folder '{target_folder}' already exists in plan. "
                         "Confirming will merge folder contents safely."
                     )
-                elif self.base_dir:
+                elif self.base_dir or _is_absolute_path(target_folder):
                     disk_path = (
                         target_folder
                         if _is_absolute_path(target_folder)
-                        else os.path.join(self.base_dir, target_folder)
+                        else os.path.join(self.base_dir or "", target_folder)
                     )
                     if os.path.isdir(disk_path):
                         collision_msg = (
@@ -513,10 +596,33 @@ class RenameModal(
                         "Names will be disambiguated upon renaming."
                     )
                 elif self.plan:
-                    folder_dict = self.plan.get(target_folder, {})
+                    folder_dict = resolve_plan_folder_dict(
+                        self.plan, target_folder, create=False
+                    )
                     if isinstance(folder_dict, dict):
+                        batch_info_ids = {
+                            id(item.get("info"))
+                            for item in self.files
+                            if isinstance(item, dict)
+                            and isinstance(item.get("info"), dict)
+                        }
+                        batch_fps = {
+                            str(item.get("filepath"))
+                            for item in self.files
+                            if isinstance(item, dict) and item.get("filepath")
+                        }
                         for fn in batch_previews:
                             if fn in folder_dict:
+                                existing_batch_node = folder_dict[fn]
+                                if isinstance(existing_batch_node, dict) and (
+                                    id(existing_batch_node) in batch_info_ids
+                                    or (
+                                        existing_batch_node.get("filepath")
+                                        and str(existing_batch_node.get("filepath"))
+                                        in batch_fps
+                                    )
+                                ):
+                                    continue
                                 collision_msg = (
                                     f"Collision detected: '{fn}' already exists in "
                                     f"'{target_folder or 'root'}'. Overwrite will be blocked (names disambiguated)."
@@ -526,7 +632,9 @@ class RenameModal(
             target_folder = dest_val if dest_val else self.category
             if formatted_name:
                 if self.plan:
-                    folder_dict = self.plan.get(target_folder)
+                    folder_dict = resolve_plan_folder_dict(
+                        self.plan, target_folder, create=False
+                    )
                     if isinstance(folder_dict, dict) and formatted_name in folder_dict:
                         existing_node = folder_dict[formatted_name]
                         if not (
@@ -672,7 +780,11 @@ class RenameModal(
         self.dismiss(None)
 
 
-class NewFolderModal(_SubmittableModalMixin, ResponsiveModalScreen[str | None]):
+class NewFolderModal(
+    _CollisionWarningMixin,
+    _SubmittableModalMixin,
+    ResponsiveModalScreen[str | None],
+):
     """Modal dialog for creating a new folder node in the plan."""
 
     BINDINGS = [
@@ -682,6 +794,18 @@ class NewFolderModal(_SubmittableModalMixin, ResponsiveModalScreen[str | None]):
     ]
 
     MODAL_CSS = """
+    .modal-warning {
+        color: $warning;
+        text-style: bold;
+        margin-top: 1;
+        margin-bottom: 1;
+    }
+    .modal-error {
+        color: $error;
+        text-style: bold;
+        margin-top: 1;
+        margin-bottom: 1;
+    }
     .button-row {
         min-height: 3;
     }
@@ -705,11 +829,12 @@ class NewFolderModal(_SubmittableModalMixin, ResponsiveModalScreen[str | None]):
                     id="modal-title",
                 )
                 inp = Input(
-                    placeholder="e.g. Financials, Contracts, Invoices",
+                    placeholder="e.g. Financials, Financial/Audits, Contracts",
                     id="input-folder-name",
                 )
                 inp.tooltip = "Enter new target folder category name"
                 yield inp
+                yield Label("", id="warning-collision", classes="modal-warning")
             with Horizontal(classes="button-row"):
                 btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
                 btn_cancel.tooltip = "Cancel folder creation and close dialog"
@@ -724,15 +849,38 @@ class NewFolderModal(_SubmittableModalMixin, ResponsiveModalScreen[str | None]):
         self.query_one("#input-folder-name", Input).focus()
         self.announce("Opened create new target folder dialog.")
 
+    @on(Input.Changed, "#input-folder-name")
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Validate folder path inline as user types."""
+        val = event.value.strip()
+        if not val:
+            self._set_collision_warning("", is_error=False)
+            return
+        try:
+            validate_target_path(val)
+            self._set_collision_warning("", is_error=False)
+        except ValueError as ve:
+            self._set_collision_warning(f"⚠️ Validation Error: {ve}", is_error=True)
+
     @on(Button.Pressed, "#btn-confirm")
     def action_confirm(self) -> None:
         """Confirm folder creation action."""
         val = self.query_one("#input-folder-name", Input).value.strip()
-        if val:
-            self.announce(f"Confirmed folder creation for '{val}'.")
-        else:
+        if not val:
             self.announce("Cancelled folder creation.")
-        self.dismiss(val if val else None)
+            self.dismiss(None)
+            return
+        try:
+            validate_target_path(val)
+        except ValueError as ve:
+            self._set_collision_warning(f"⚠️ Validation Error: {ve}", is_error=True)
+            self.announce(f"Cannot create folder: {ve}")
+            return
+        clean_val = "/".join(
+            p for p in val.replace("\\", "/").strip("/").split("/") if p
+        )
+        self.announce(f"Confirmed folder creation for '{clean_val}'.")
+        self.dismiss(clean_val)
 
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:
@@ -891,16 +1039,40 @@ class ReassignModal(
             self._set_collision_warning(f"⚠️ Validation Error: {msg}", is_error=True)
             return True, msg
 
+        if not _is_absolute_path(target):
+            try:
+                validate_target_path(target)
+            except ValueError as ve:
+                msg = str(ve)
+                self._set_collision_warning(f"⚠️ Validation Error: {msg}", is_error=True)
+                return True, msg
+
         # Check collision across staging plan and filesystem
         collisions = []
+        resolved_target_dict = (
+            resolve_plan_folder_dict(self.plan, target, create=False)
+            if self.plan
+            else None
+        )
         target_dict = (
-            self.plan.get(target, {})
-            if self.plan and isinstance(self.plan.get(target), dict)
-            else {}
+            resolved_target_dict if isinstance(resolved_target_dict, dict) else {}
         )
 
         for fi in self.target_files:
-            fn = fi.get("target_filename") or fi.get("key")
+            fn = (
+                fi.get("target_filename")
+                or fi.get("key")
+                or (
+                    os.path.basename(str(fi["source_path"]))
+                    if fi.get("source_path")
+                    else None
+                )
+                or (
+                    os.path.basename(str(fi["filepath"]))
+                    if fi.get("filepath")
+                    else None
+                )
+            )
             src_fp = fi.get("filepath")
             if not fn:
                 continue

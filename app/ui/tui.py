@@ -1079,7 +1079,10 @@ class AutoSorterTUI(
             base_dir_text = base_dir if base_dir else "No directory selected"
             ws_state.update(f"Active Workspace: {base_dir_text}")
 
-            has_plan_files = self._has_file_nodes(getattr(self, "plan", {}))
+            current_plan = getattr(self, "plan", {})
+            has_plan_files = self._has_file_nodes(
+                current_plan
+            ) or self._has_folder_nodes(current_plan)
             active_node = getattr(self, "active_tree_node", None)
             has_selected_real_node = False
             if active_node and getattr(active_node, "data", None):

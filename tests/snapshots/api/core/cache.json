@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "0781a104bf0321a782181073e31ad60acd9d238b298bd6a3e7e3e09d51d1f904"
+    "checksum": "8fd3f4e6c1330d9b9af041d178b20d46bd9651e087e5658a270059a061d7a97d"
   },
   "classes": [
     {
@@ -263,6 +263,47 @@
             }
           ],
           "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "load_manual_folders",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "source_directory"
+            }
+          ],
+          "returns": "set[str]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "save_manual_folders",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "source_directory"
+            },
+            {
+              "annotation": "set[str] | list[str]",
+              "default": null,
+              "name": "manual_folders"
+            }
+          ],
+          "returns": "None"
         }
       ]
     },

@@ -102,9 +102,10 @@ def test_main_baseline_upgrades_legacy_v6_database(conn):
     conn.execute("PRAGMA user_version = 6")
     conn.commit()
 
-    assert migrate(conn, MAIN_DB_MIGRATIONS, label="main") == 7
+    assert migrate(conn, MAIN_DB_MIGRATIONS, label="main") == 8
 
     assert "rating" in table_columns(conn, "documents")
+    assert "user_verified_target_name" in table_columns(conn, "documents")
     assert "model_signature" in table_columns(conn, "document_vectors")
     assert {"quarantine_records", "jev_classification_cache"} <= _tables(conn)
     assert conn.execute("SELECT filepath FROM documents").fetchall() == [("f.txt",)]

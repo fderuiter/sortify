@@ -14,7 +14,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.core.cache import CacheManager, _cache_db_baseline
-from app.core.db import Database, _main_db_baseline
+from app.core.db import (
+    Database,
+    _main_db_baseline,
+    migrate_add_user_verified_target_name,
+)
 from app.core.db_conn import DB_ERRORS, get_db_connection
 from app.core.exceptions import CryptoError
 from app.core.history import HistoryManager, _history_db_baseline
@@ -56,6 +60,7 @@ STORE_MIGRATIONS = (
     Migration(2, "moves", migrate_add_moves),
     Migration(3, "legacy_moves", migrate_import_legacy_moves),
     Migration(4, "moves_exported_to_trash", migrate_moves_exported_to_trash),
+    Migration(5, "user_verified_target_name", migrate_add_user_verified_target_name),
 )
 
 

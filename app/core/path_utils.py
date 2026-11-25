@@ -1115,3 +1115,148 @@ def safe_extract_path(
         )
 
     return candidate_path
+
+
+def _is_plan_leaf_node(node: Any) -> bool:
+    """Return True when ``node`` represents a file or directory-cleanup leaf rather than a folder dict."""
+    return isinstance(node, dict) and node.get("__type__") in ("file", "directory")
+
+
+def resolve_plan_folder_dict(
+    plan_root: Any,
+    folder_path: str,
+    *,
+    create: bool = False,
+) -> dict[str, Any] | None:
+    """Resolve or create a nested folder container dictionary inside ``plan_root``."""
+    raw_root = getattr(plan_root, "plan", plan_root)
+    if not isinstance(raw_root, dict):
+        return None
+    if not folder_path:
+        return raw_root
+    existing_direct = raw_root.get(folder_path)
+    if isinstance(existing_direct, dict) and not _is_plan_leaf_node(existing_direct):
+        return existing_direct
+    if _is_absolute_path(folder_path):
+        if create:
+            if folder_path in raw_root and _is_plan_leaf_node(raw_root[folder_path]):
+                return None
+            return raw_root.setdefault(folder_path, {})
+        return None
+
+    clean = folder_path.replace("\\", "/").strip("/")
+    if not clean:
+        return raw_root
+    curr: dict[str, Any] = raw_root
+    for part in (p for p in clean.split("/") if p):
+        if part in curr:
+            nxt = curr[part]
+            if isinstance(nxt, dict) and not _is_plan_leaf_node(nxt):
+                curr = nxt
+            else:
+                return None
+        elif create:
+            curr = curr.setdefault(part, {})
+        else:
+            return None
+    return curr
+
+
+def collect_plan_folder_paths(
+    plan_node: Any,
+    prefix: str = "",
+) -> list[str]:
+    """Recursively enumerate all nested target folder paths in ``plan_node``."""
+    raw_node = getattr(plan_node, "plan", plan_node)
+    found: list[str] = []
+    if not isinstance(raw_node, dict) or _is_plan_leaf_node(raw_node):
+        return found
+    for k, v in raw_node.items():
+        if not isinstance(v, dict) or _is_plan_leaf_node(v):
+            continue
+        sub_path = k if (_is_absolute_path(k) or not prefix) else f"{prefix}/{k}"
+        found.append(sub_path)
+        if not _is_absolute_path(k):
+            found.extend(collect_plan_folder_paths(v, sub_path))
+    return found
+
+
+def collect_empty_plan_folders(
+    plan_node: Any,
+    prefix: str = "",
+) -> list[str]:
+    """Recursively enumerate leaf folder paths in ``plan_node`` that hold no child entries."""
+    raw_node = getattr(plan_node, "plan", plan_node)
+    empty_paths: list[str] = []
+    if not isinstance(raw_node, dict) or _is_plan_leaf_node(raw_node):
+        return empty_paths
+    for k, v in raw_node.items():
+        if not isinstance(v, dict) or _is_plan_leaf_node(v):
+            continue
+        sub_path = k if (_is_absolute_path(k) or not prefix) else f"{prefix}/{k}"
+        if not v:
+            empty_paths.append(sub_path)
+        elif not _is_absolute_path(k):
+            empty_paths.extend(collect_empty_plan_folders(v, sub_path))
+    return empty_paths
+
+
+def prune_empty_plan_ancestors(
+    plan_root: Any,
+    folder_path: str,
+    *,
+    preserve_folders: set[str] | None = None,
+) -> None:
+    """Remove emptied folder dicts along ``folder_path`` unless preserved as manual folders."""
+    raw_root = getattr(plan_root, "plan", plan_root)
+    if not isinstance(raw_root, dict) or not folder_path:
+        return
+    preserved_norm: set[str] = set()
+    for p in preserve_folders or ():
+        if not p:
+            continue
+        if _is_absolute_path(p):
+            preserved_norm.add(p)
+        else:
+            norm_p = p.replace("\\", "/").strip("/")
+            parts = [seg for seg in norm_p.split("/") if seg]
+            for idx in range(1, len(parts) + 1):
+                preserved_norm.add("/".join(parts[:idx]))
+
+    if folder_path in raw_root and _is_absolute_path(folder_path):
+        target = raw_root.get(folder_path)
+        if (
+            isinstance(target, dict)
+            and not _is_plan_leaf_node(target)
+            and not target
+            and folder_path not in preserved_norm
+        ):
+            raw_root.pop(folder_path, None)
+        return
+
+    clean = folder_path.replace("\\", "/").strip("/")
+    if not clean:
+        return
+    parts = [p for p in clean.split("/") if p]
+    chain: list[tuple[dict[str, Any], str, str]] = []
+    curr: dict[str, Any] = raw_root
+    built = ""
+    for part in parts:
+        nxt = curr.get(part)
+        if not isinstance(nxt, dict) or _is_plan_leaf_node(nxt):
+            break
+        built = f"{built}/{part}" if built else part
+        chain.append((curr, part, built))
+        curr = nxt
+
+    for parent_dict, key_name, full_rel in reversed(chain):
+        child_dict = parent_dict.get(key_name)
+        if (
+            isinstance(child_dict, dict)
+            and not _is_plan_leaf_node(child_dict)
+            and not child_dict
+            and full_rel not in preserved_norm
+        ):
+            parent_dict.pop(key_name, None)
+        else:
+            break

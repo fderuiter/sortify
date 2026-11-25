@@ -586,6 +586,15 @@ class TreeViewMixin:
                 return True
         return False
 
+    def _has_folder_nodes(self: TUIHostProtocol, plan_dict: dict[str, Any]) -> bool:
+        """Check if plan structure contains any folder category dictionaries (including empty ones)."""
+        if not plan_dict or not isinstance(plan_dict, dict):
+            return False
+        for v in plan_dict.values():
+            if isinstance(v, dict) and v.get("__type__") not in ("file", "directory"):
+                return True
+        return False
+
     def _get_current_search_query(self: TUIHostProtocol) -> str:
         """Return lowercased search query string if search input exists and contains text."""
         try:
@@ -651,7 +660,9 @@ class TreeViewMixin:
 
             tree.reset("Proposed Organization Plan")
 
-            if not self._has_file_nodes(self.plan):
+            if not self._has_file_nodes(self.plan) and not self._has_folder_nodes(
+                self.plan
+            ):
                 tree.root.add_leaf(
                     "💡 Empty Workspace: No documents found in target directory",
                     data={"is_empty_state": True, "action": "info"},

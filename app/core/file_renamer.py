@@ -664,10 +664,21 @@ class FileRenamerEngine:
                             v.get("source_path") if isinstance(v, dict) else None
                         )
                         or k,
+                        "is_user_locked": (
+                            bool(v.get("is_locked") or v.get("confirmed"))
+                            if isinstance(v, dict)
+                            else False
+                        ),
                     }
                     norm_k = os.path.normpath(k).replace("\\", "/")
                     node_meta_by_key[norm_k] = meta_entry
                     node_meta_by_key[os.path.basename(k).lower()] = meta_entry
+                    raw_sp_meta = str(meta_entry["source_path"])
+                    norm_sp_meta = os.path.normpath(raw_sp_meta).replace("\\", "/")
+                    node_meta_by_key[norm_sp_meta] = meta_entry
+                    node_meta_by_key[os.path.basename(norm_sp_meta).lower()] = (
+                        meta_entry
+                    )
                 elif isinstance(v, dict):
                     next_chain = f"{folder_chain}/{k}" if folder_chain else k
                     _collect_node_meta(v, next_chain)
@@ -688,6 +699,7 @@ class FileRenamerEngine:
                 )
                 if (
                     meta_info.get("is_excluded")
+                    or meta_info.get("is_user_locked")
                     or meta_info.get("duplicate_action") in ("stage", "trash", "skip")
                     or meta_info.get("policy_action")
                     in ("trash", "quarantine", "unarchive")

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "9549cb5105838e943711ee507036d5668604cfa97481a59c8cae6404fb1bd1d4"
+    "checksum": "215ae4be3a0430263936370328c23b9e51822c3cae97fa172c599001e331bfdf"
   },
   "classes": [
     {
@@ -494,6 +494,52 @@
         {
           "async": false,
           "decorators": [],
+          "name": "get_user_verified_target_name",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "filepath"
+            }
+          ],
+          "returns": "str | None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_user_verified_target_names",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "list[str] | None",
+              "default": "None",
+              "name": "source_dirs"
+            }
+          ],
+          "returns": "dict[str, str]"
+        },
+        {
+          "async": false,
+          "decorators": [],
           "name": "get_user_verified_target_path",
           "parameters": [
             {
@@ -716,6 +762,34 @@
         {
           "async": false,
           "decorators": [],
+          "name": "set_user_verified_target_name",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "filepath"
+            },
+            {
+              "annotation": "str | None",
+              "default": null,
+              "name": "target_name"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
           "name": "set_user_verified_target_path",
           "parameters": [
             {
@@ -737,6 +811,11 @@
               "annotation": null,
               "default": null,
               "name": "target_path"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "target_name"
             }
           ],
           "returns": null
@@ -978,5 +1057,19 @@
       ]
     }
   ],
-  "functions": []
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "migrate_add_user_verified_target_name",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "conn"
+        }
+      ],
+      "returns": "None"
+    }
+  ]
 }
