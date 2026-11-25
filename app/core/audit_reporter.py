@@ -30,7 +30,9 @@ STATUS_BADGES = {
 
 
 def generate_audit_report(
-    base_dir: str, move_records: list[dict[str, Any]]
+    base_dir: str,
+    move_records: list[dict[str, Any]],
+    session_id: str | None = None,
 ) -> dict[str, Any]:
     """Generate a structured audit report from a collection of move records.
 
@@ -133,7 +135,7 @@ def generate_audit_report(
 
     total_files = len(processed_records)
 
-    return {
+    report: dict[str, Any] = {
         "base_dir": base_dir,
         "timestamp": datetime.now(UTC).isoformat(),
         "total_files": total_files,
@@ -144,30 +146,39 @@ def generate_audit_report(
         "records": processed_records,
         "failed_items": failed_items,
     }
+    if session_id is not None:
+        report["session_id"] = session_id
+    return report
 
 
 def resolve_audit_report(
     audit_report: dict[str, Any] | None,
     base_dir: str | None,
     plan: Any,
+    session_id: str | None = None,
 ) -> dict[str, Any] | None:
     """Return ``audit_report`` or synthesize an audit report from ``plan`` moves.
 
     Parameters
     ----------
-    audit_report : Optional[dict[str, Any]]
+    audit_report : dict[str, Any] | None
         Existing post-sort audit report dictionary, if already generated.
-    base_dir : Optional[str]
+    base_dir : str | None
         Target base directory for resolving planned move paths.
     plan : Any
         Sorting plan dictionary or contract model used when ``audit_report`` is empty.
+    session_id : str | None, optional
+        Sort session identifier to preserve on the resolved report.
 
     Returns
     -------
-    Optional[dict[str, Any]]
+    dict[str, Any] | None
         Existing or synthesized audit report dictionary, or ``None`` when unavailable.
     """
     if audit_report:
+        if session_id and not audit_report.get("session_id"):
+            audit_report = dict(audit_report)
+            audit_report["session_id"] = session_id
         return audit_report
     if not plan:
         return None
@@ -176,7 +187,7 @@ def resolve_audit_report(
     effective_base = base_dir or "."
     moves = VerificationEngine.get_moves(effective_base, plan)
     records = [{"source_path": src, "destination_path": dst} for _, src, dst in moves]
-    return generate_audit_report(effective_base, records)
+    return generate_audit_report(effective_base, records, session_id=session_id)
 
 
 def _validate_and_resolve_export_path(

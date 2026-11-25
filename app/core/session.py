@@ -430,7 +430,12 @@ class AppSession:
                 ):
                     if summary.get("cancelled"):
                         _transition_exec_state(PipelineLifecycleState.CANCELLED)
-                    elif summary.get("error"):
+                    elif (
+                        summary.get("error")
+                        or summary.get("lifecycle_state")
+                        == PipelineLifecycleState.FAILED
+                        or bool((summary.get("audit_report") or {}).get("failed_items"))
+                    ):
                         _transition_exec_state(PipelineLifecycleState.FAILED)
                     else:
                         _transition_exec_state(PipelineLifecycleState.COMPLETED)
@@ -442,6 +447,31 @@ class AppSession:
                     with contextlib.suppress(Exception):
                         _transition_exec_state(PipelineLifecycleState.FAILED)
                 raise
+
+    def retry_failed_moves(
+        self,
+        failed_items: list[dict[str, Any]],
+        progress_callback: Any = None,
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Re-attempt move operations for failed items using session-managed DBWorker and MoveLedger."""
+        effective_base_dir = self.base_dir or (
+            self.source_dirs[0] if self.source_dirs else None
+        )
+        if not effective_base_dir:
+            return {}
+        from app.core.move_retry import execute_journaled_retry
+
+        with self._lock_folders():
+            return execute_journaled_retry(
+                effective_base_dir,
+                failed_items,
+                progress_callback=progress_callback,
+                db=self.db,
+                history_manager=self.history_manager,
+                runtime_settings=self.settings,
+                session_id=session_id,
+            )
 
     @staticmethod
     def lock_folders(
