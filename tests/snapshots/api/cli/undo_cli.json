@@ -1,9 +1,78 @@
 {
   "_metadata": {
-    "checksum": "29a9f35351fade4f6b8c97a719ec0a727098b604ea9df8cf97ce80a0512e32dd"
+    "checksum": "22c4e3da6c039f99448b8befd5e4ba6cc7b83e5657f10f62fdd4383619acaa83"
   },
   "classes": [],
   "cli": [
+    {
+      "args": [
+        "undo"
+      ],
+      "caller": "subparsers",
+      "keywords": {
+        "help": "Undo sorting operations and manage session history",
+        "parents": "[build_global_subparser_parent()]"
+      },
+      "method": "add_parser"
+    },
+    {
+      "args": [
+        "--session-id"
+      ],
+      "caller": "parser_undo",
+      "keywords": {
+        "default": null,
+        "help": "Specific historical session ID UUID to undo",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--list"
+      ],
+      "caller": "parser_undo",
+      "keywords": {
+        "action": "store_true",
+        "help": "List active and completed historical sorting sessions"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--latest"
+      ],
+      "caller": "parser_undo",
+      "keywords": {
+        "action": "store_true",
+        "help": "Undo the latest historical sorting session"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--export"
+      ],
+      "caller": "parser_undo",
+      "keywords": {
+        "default": null,
+        "help": "Export audit records for the selected session (or all sessions) to CSV or JSON",
+        "metavar": "PATH",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--force"
+      ],
+      "caller": "parser_undo",
+      "keywords": {
+        "action": "store_true",
+        "help": "Force undo even if sorted files are missing"
+      },
+      "method": "add_argument"
+    },
     {
       "args": [
         "--list-moves"
@@ -125,6 +194,19 @@
         }
       ],
       "returns": "None"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "register_subparser",
+      "parameters": [
+        {
+          "annotation": "argparse._SubParsersAction",
+          "default": null,
+          "name": "subparsers"
+        }
+      ],
+      "returns": "argparse.ArgumentParser"
     }
   ]
 }

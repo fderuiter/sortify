@@ -7,7 +7,7 @@ import sys
 from typing import Any
 
 from app.cli.error_emitter import emit_cli_error
-from app.cli.settings_args import add_settings_source_args
+from app.cli.settings_args import build_global_subparser_parent
 from app.config import AppSettings
 from app.core.exceptions import AuditExportError
 from app.core.moves import MoveLedger
@@ -19,49 +19,25 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
     """Register ledger subcommand group."""
     parser_ledger = subparsers.add_parser(
         "ledger",
+        parents=[build_global_subparser_parent()],
         help="Manage transaction ledger entries and automated reconciliation",
     )
-    parser_ledger.add_argument(
-        "--json",
-        action="store_true",
-        help="Output response in structured JSON format",
-    )
-    add_settings_source_args(parser_ledger, suppress_default=True)
     ledger_subparsers = parser_ledger.add_subparsers(
         dest="ledger_command", help="Ledger subcommands"
     )
 
     def add_ledger_common(p: argparse.ArgumentParser) -> None:
-        add_settings_source_args(p, suppress_default=True)
         p.add_argument(
             "--ledger-db",
             type=str,
             default=None,
             help="Path to sidecar transaction ledger database file",
         )
-        p.add_argument(
-            "-q",
-            "--quiet",
-            action="store_true",
-            dest="quiet",
-            default=argparse.SUPPRESS,
-            help="Suppress informational prints",
-        )
-        p.add_argument(
-            "--no-color",
-            action="store_true",
-            dest="no_color",
-            default=argparse.SUPPRESS,
-            help="Disable ANSI color formatting",
-        )
-        p.add_argument(
-            "--json",
-            action="store_true",
-            help="Output response in structured JSON format",
-        )
 
     p_status = ledger_subparsers.add_parser(
-        "status", help="Display incomplete or pending transaction ledger entries"
+        "status",
+        parents=[build_global_subparser_parent()],
+        help="Display incomplete or pending transaction ledger entries",
     )
     add_ledger_common(p_status)
     p_status.add_argument(
@@ -83,12 +59,15 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
 
     p_reconcile = ledger_subparsers.add_parser(
         "reconcile",
+        parents=[build_global_subparser_parent()],
         help="Execute automated headless reconciliation for interrupted file moves",
     )
     add_ledger_common(p_reconcile)
 
     p_purge = ledger_subparsers.add_parser(
-        "purge", help="Purge completed or session transaction ledger records"
+        "purge",
+        parents=[build_global_subparser_parent()],
+        help="Purge completed or session transaction ledger records",
     )
     add_ledger_common(p_purge)
     p_purge.add_argument(
@@ -120,6 +99,7 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
 
     p_export = ledger_subparsers.add_parser(
         "export",
+        parents=[build_global_subparser_parent()],
         help="Export session history transaction records as CSV or JSON audit log",
     )
     add_ledger_common(p_export)

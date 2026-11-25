@@ -217,16 +217,23 @@ def test_headless_commands_probe_unavailable_keyring_at_most_once(
     env["HOME"] = str(home_dir)
     env["USERPROFILE"] = str(home_dir)
     env["SMOKE_TEST"] = "0"
-    if mode in ("sort", "scan"):
+    existing_py_path = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = (
+        f"{REPO_ROOT}{os.pathsep}{existing_py_path}"
+        if existing_py_path
+        else str(REPO_ROOT)
+    )
+    if mode in ("demo", "sort", "scan"):
         env["AUTOSORTER_APP_DIR"] = str(work_dir / "app_state")
         env["SORTIFY_KEYS_DIR"] = str(work_dir / "app_keys")
     else:
         env.pop("AUTOSORTER_APP_DIR", None)
         env.pop("SORTIFY_KEYS_DIR", None)
 
+    run_cwd = str(work_dir) if mode == "demo" else str(REPO_ROOT)
     proc = subprocess.run(
         [sys.executable, "-c", runner],
-        cwd=str(REPO_ROOT),
+        cwd=run_cwd,
         env=env,
         capture_output=True,
         text=True,
@@ -245,12 +252,15 @@ def test_headless_commands_probe_unavailable_keyring_at_most_once(
         assert not (home_dir / ".autosorter").exists()
         assert not (home_dir / ".sortify").exists()
         assert list(home_dir.iterdir()) == []
+        assert (work_dir / "sandbox" / "demo_workspace").is_dir()
 
 
 def test_simulated_25s_dbus_timeout_bounded_to_2s_in_demo(tmp_path: Path) -> None:
     """A 25s hung keyring backend times out within ~2s so --demo finishes in seconds."""
     home_dir = tmp_path / "empty_home"
     home_dir.mkdir()
+    demo_cwd = tmp_path / "demo_run"
+    demo_cwd.mkdir()
     metrics_file = tmp_path / "metrics.json"
 
     runner = textwrap.dedent(
@@ -295,13 +305,19 @@ def test_simulated_25s_dbus_timeout_bounded_to_2s_in_demo(tmp_path: Path) -> Non
     env["HOME"] = str(home_dir)
     env["USERPROFILE"] = str(home_dir)
     env["SMOKE_TEST"] = "0"
-    env.pop("AUTOSORTER_APP_DIR", None)
-    env.pop("SORTIFY_KEYS_DIR", None)
+    existing_py_path = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = (
+        f"{REPO_ROOT}{os.pathsep}{existing_py_path}"
+        if existing_py_path
+        else str(REPO_ROOT)
+    )
+    env["AUTOSORTER_APP_DIR"] = str(tmp_path / "app_state")
+    env["SORTIFY_KEYS_DIR"] = str(tmp_path / "app_keys")
 
     start = time.monotonic()
     proc = subprocess.run(
         [sys.executable, "-c", runner],
-        cwd=str(REPO_ROOT),
+        cwd=str(demo_cwd),
         env=env,
         capture_output=True,
         text=True,
@@ -314,6 +330,7 @@ def test_simulated_25s_dbus_timeout_bounded_to_2s_in_demo(tmp_path: Path) -> Non
     assert metrics["elapsed"] < 20.0
     assert wall_elapsed < 22.0
     assert list(home_dir.iterdir()) == []
+    assert (demo_cwd / "sandbox" / "demo_workspace").is_dir()
 
 
 def test_fresh_sandbox_auto_seeds_honors_quiet_no_color_and_resets_keys(

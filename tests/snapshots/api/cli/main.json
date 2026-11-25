@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "05b164f98c0c78fc009b6d349f40338571aeea4215d28c2da327802434810ff9"
+    "checksum": "c81751f39000e9c13a04890122b46835cb10e3d962f608c58d8b52d0e644f5ab"
   },
   "cli": [
     {
@@ -11,6 +11,7 @@
       "caller": "parser",
       "keywords": {
         "action": "store_true",
+        "default": false,
         "dest": "quiet",
         "help": "Suppress informational prints and non-essential progress output"
       },
@@ -23,6 +24,7 @@
       "caller": "parser",
       "keywords": {
         "action": "store_true",
+        "default": false,
         "dest": "no_color",
         "help": "Disable ANSI color and style formatting"
       },
@@ -35,6 +37,7 @@
       "caller": "parser",
       "keywords": {
         "action": "store_true",
+        "default": false,
         "help": "Run interactive CLI demo mode"
       },
       "method": "add_argument"
@@ -46,6 +49,7 @@
       "caller": "parser",
       "keywords": {
         "action": "store_true",
+        "default": false,
         "help": "Run automated database smoke test and exit"
       },
       "method": "add_argument"
@@ -57,6 +61,7 @@
       "caller": "parser",
       "keywords": {
         "action": "store_true",
+        "default": false,
         "help": "Output in structured JSON format"
       },
       "method": "add_argument"
@@ -68,6 +73,7 @@
       "caller": "parser",
       "keywords": {
         "action": "store_true",
+        "default": false,
         "help": "Launch the persistent directory-watching daemon"
       },
       "method": "add_argument"
@@ -79,6 +85,7 @@
       "caller": "parser",
       "keywords": {
         "action": "store_true",
+        "default": false,
         "help": "argparse.SUPPRESS"
       },
       "method": "add_argument"
@@ -90,6 +97,7 @@
       "caller": "parser",
       "keywords": {
         "action": "store_true",
+        "default": false,
         "help": "Launch full-screen Textual TUI interface"
       },
       "method": "add_argument"
@@ -101,6 +109,7 @@
       "caller": "parser",
       "keywords": {
         "action": "store_true",
+        "default": false,
         "help": "Same as --tui"
       },
       "method": "add_argument"
@@ -200,7 +209,8 @@
       ],
       "caller": "subparsers",
       "keywords": {
-        "help": "Run document sorting in headless batch processing mode"
+        "help": "Run document sorting in headless batch processing mode",
+        "parents": "[build_global_subparser_parent(), build_sort_override_parent()]"
       },
       "method": "add_parser"
     },
@@ -231,17 +241,6 @@
         "default": null,
         "help": "Use standard workspace preset directory (demo, downloads, documents)",
         "type": "str"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--json"
-      ],
-      "caller": "parser_sort",
-      "keywords": {
-        "action": "store_true",
-        "help": "Output result in structured JSON format"
       },
       "method": "add_argument"
     },
@@ -286,7 +285,8 @@
       ],
       "caller": "subparsers",
       "keywords": {
-        "help": "Run directory scanning and analysis without moving files"
+        "help": "Run directory scanning and analysis without moving files",
+        "parents": "[build_global_subparser_parent(), build_sort_override_parent()]"
       },
       "method": "add_parser"
     },
@@ -322,22 +322,12 @@
     },
     {
       "args": [
-        "--json"
-      ],
-      "caller": "parser_scan",
-      "keywords": {
-        "action": "store_true",
-        "help": "Output scan plan in structured JSON format"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
         "config"
       ],
       "caller": "subparsers",
       "keywords": {
-        "help": "View or update application configuration settings"
+        "help": "View or update application configuration settings",
+        "parents": "[build_global_subparser_parent()]"
       },
       "method": "add_parser"
     },
@@ -349,17 +339,6 @@
       "keywords": {
         "action": "store_true",
         "help": "Display current configuration settings (the default)"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--json"
-      ],
-      "caller": "parser_config",
-      "keywords": {
-        "action": "store_true",
-        "help": "Output configuration as JSON"
       },
       "method": "add_argument"
     },
@@ -385,7 +364,8 @@
       ],
       "caller": "subparsers",
       "keywords": {
-        "help": "Launch or control persistent directory-watching daemon"
+        "help": "Launch or control persistent directory-watching daemon",
+        "parents": "[build_global_subparser_parent(), build_sort_override_parent()]"
       },
       "method": "add_parser"
     },
@@ -426,90 +406,12 @@
     },
     {
       "args": [
-        "undo"
-      ],
-      "caller": "subparsers",
-      "keywords": {
-        "help": "Undo sorting operations and manage session history"
-      },
-      "method": "add_parser"
-    },
-    {
-      "args": [
-        "--session-id"
-      ],
-      "caller": "parser_undo",
-      "keywords": {
-        "default": null,
-        "help": "Specific historical session ID UUID to undo",
-        "type": "str"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--list"
-      ],
-      "caller": "parser_undo",
-      "keywords": {
-        "action": "store_true",
-        "help": "List active and completed historical sorting sessions"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--latest"
-      ],
-      "caller": "parser_undo",
-      "keywords": {
-        "action": "store_true",
-        "help": "Undo the latest historical sorting session"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--export"
-      ],
-      "caller": "parser_undo",
-      "keywords": {
-        "default": null,
-        "help": "Export audit records for the selected session (or all sessions) to CSV or JSON",
-        "metavar": "PATH",
-        "type": "str"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--force"
-      ],
-      "caller": "parser_undo",
-      "keywords": {
-        "action": "store_true",
-        "help": "Force undo even if sorted files are missing"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--json"
-      ],
-      "caller": "parser_undo",
-      "keywords": {
-        "action": "store_true",
-        "help": "Output session list or undo status in structured JSON format"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
         "drop"
       ],
       "caller": "subparsers",
       "keywords": {
-        "help": "Quick file drop triage receiver for target files or directories"
+        "help": "Quick file drop triage receiver for target files or directories",
+        "parents": "[build_global_subparser_parent(), build_sort_override_parent()]"
       },
       "method": "add_parser"
     },
@@ -574,256 +476,6 @@
         "action": "store_true",
         "default": false,
         "help": "Export staged duplicate copies to the OS Trash after move verification"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--json"
-      ],
-      "caller": "parser_drop",
-      "keywords": {
-        "action": "store_true",
-        "help": "Output result in structured JSON format"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "-q",
-        "--quiet"
-      ],
-      "caller": "subparser",
-      "keywords": {
-        "action": "store_true",
-        "default": "argparse.SUPPRESS",
-        "dest": "quiet",
-        "help": "Suppress informational prints and non-essential progress output"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--no-color"
-      ],
-      "caller": "subparser",
-      "keywords": {
-        "action": "store_true",
-        "default": "argparse.SUPPRESS",
-        "dest": "no_color",
-        "help": "Disable ANSI color and style formatting"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--max-folders"
-      ],
-      "caller": "subparser",
-      "keywords": {
-        "default": null,
-        "help": "Maximum number of generated subfolders",
-        "type": "int"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--strategy"
-      ],
-      "caller": "subparser",
-      "keywords": {
-        "choices": [
-          "default",
-          "generative",
-          "clinical_tmf",
-          "clinical_isf"
-        ],
-        "default": null,
-        "help": "Sorting strategy",
-        "type": "str"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--conflict-policy"
-      ],
-      "caller": "subparser",
-      "keywords": {
-        "choices": [
-          "skip",
-          "rename",
-          "overwrite"
-        ],
-        "default": null,
-        "help": "Conflict resolution policy",
-        "type": "str"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--duplicates"
-      ],
-      "caller": "subparser",
-      "keywords": {
-        "choices": [
-          "off",
-          "review",
-          "skip",
-          "stage",
-          "trash"
-        ],
-        "default": null,
-        "help": "Byte-identical duplicate handling mode (off, review, skip, stage, trash; review requires --tui or --interactive)",
-        "type": "str"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--detect-original-by"
-      ],
-      "caller": "subparser",
-      "keywords": {
-        "choices": [
-          "first_seen",
-          "-first_seen",
-          "name",
-          "-name",
-          "created",
-          "-created",
-          "lastmodified",
-          "-lastmodified"
-        ],
-        "default": null,
-        "help": "Criterion used to select the surviving original in duplicate clusters",
-        "type": "str"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--contextual-renaming"
-      ],
-      "caller": "subparser",
-      "keywords": {
-        "action": "store_true",
-        "default": null,
-        "help": "Enable AI contextual renaming"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--no-contextual-renaming"
-      ],
-      "caller": "subparser",
-      "keywords": {
-        "action": "store_false",
-        "dest": "contextual_renaming",
-        "help": "Disable AI contextual renaming"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--tui"
-      ],
-      "caller": "subparser",
-      "keywords": {
-        "action": "store_true",
-        "default": false,
-        "help": "Launch full-screen Textual TUI interface"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--interactive"
-      ],
-      "caller": "subparser",
-      "keywords": {
-        "action": "store_true",
-        "default": false,
-        "help": "Launch full-screen interactive TUI mode"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--accept-ai-consent"
-      ],
-      "caller": "sub_ai_consent",
-      "keywords": {
-        "action": "store_true",
-        "default": false,
-        "help": "Pre-configure AI consent as granted and bypass onboarding wizard"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--decline-ai-consent"
-      ],
-      "caller": "sub_ai_consent",
-      "keywords": {
-        "action": "store_true",
-        "default": false,
-        "help": "Pre-configure AI consent as declined and bypass onboarding wizard"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--skip-wizard"
-      ],
-      "caller": "subparser",
-      "keywords": {
-        "action": "store_true",
-        "default": false,
-        "help": "Bypass onboarding wizard modal during startup"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--non-interactive"
-      ],
-      "caller": "subparser",
-      "keywords": {
-        "action": "store_true",
-        "default": false,
-        "help": "Run in non-interactive mode and bypass interactive modal dialogs"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--export-report"
-      ],
-      "caller": "subparser",
-      "keywords": {
-        "default": null,
-        "help": "Export dry-run simulation report to output file path",
-        "type": "str"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--report-format"
-      ],
-      "caller": "subparser",
-      "keywords": {
-        "choices": [
-          "html",
-          "json"
-        ],
-        "default": null,
-        "help": "Format for exported simulation report (html or json)",
-        "type": "str"
       },
       "method": "add_argument"
     }

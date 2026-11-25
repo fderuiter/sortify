@@ -13,7 +13,13 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 from app.cli.error_emitter import emit_cli_error
-from app.cli.settings_args import add_settings_source_args
+from app.cli.settings_args import (
+    add_settings_source_args,
+    build_global_subparser_parent,
+    build_sort_override_parent,
+    should_apply_sort_overrides,
+    validate_cross_level_cli_flags,
+)
 from app.config import AppSettings
 from app.core.domain_contracts import _make_json_serializable
 from app.core.path_utils import is_packaged
@@ -309,33 +315,8 @@ def _persist_settings_sync(settings: AppSettings) -> None:
         settings._save()
 
 
-def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
-    """Apply command-line argument overrides and persist explicit CLI consent flags."""
-    max_folders = getattr(args, "max_folders", None)
-    if max_folders is not None:
-        settings.override("MAX_FOLDERS", max_folders)
-
-    strategy = getattr(args, "strategy", None)
-    if strategy is not None:
-        settings.override("SORTING_STRATEGY", strategy)
-
-    conflict_policy = getattr(args, "conflict_policy", None)
-    if conflict_policy is not None:
-        settings.override("CONFLICT_POLICY", conflict_policy)
-
-    contextual_renaming = getattr(args, "contextual_renaming", None)
-    if contextual_renaming is not None:
-        settings.override("CONTEXTUAL_RENAMING", contextual_renaming)
-
-    duplicates = getattr(args, "duplicates", None)
-    if duplicates is not None:
-        settings.override("DUPLICATE_ACTION", duplicates)
-
-    detect_original_by = getattr(args, "detect_original_by", None)
-    if detect_original_by is not None:
-        settings.override("DETECT_ORIGINAL_BY", detect_original_by)
-
-    # Handle AI consent flags and environment variables
+def apply_global_cli_flags(settings: AppSettings, args: argparse.Namespace) -> None:
+    """Apply global AI consent, wizard-bypass, and non-interactive CLI/env flags."""
     accept_consent = _extract_bool_arg(args, "accept_ai_consent")
     decline_consent = _extract_bool_arg(args, "decline_ai_consent")
     skip_wizard = _extract_bool_arg(args, "skip_wizard")
@@ -377,6 +358,35 @@ def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
 
     if non_interactive_flag or is_non_interactive_env:
         object.__setattr__(settings, "_non_interactive", True)
+
+
+def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
+    """Apply command-line argument overrides and persist explicit CLI consent flags."""
+    max_folders = getattr(args, "max_folders", None)
+    if max_folders is not None:
+        settings.override("MAX_FOLDERS", max_folders)
+
+    strategy = getattr(args, "strategy", None)
+    if strategy is not None:
+        settings.override("SORTING_STRATEGY", strategy)
+
+    conflict_policy = getattr(args, "conflict_policy", None)
+    if conflict_policy is not None:
+        settings.override("CONFLICT_POLICY", conflict_policy)
+
+    contextual_renaming = getattr(args, "contextual_renaming", None)
+    if contextual_renaming is not None:
+        settings.override("CONTEXTUAL_RENAMING", contextual_renaming)
+
+    duplicates = getattr(args, "duplicates", None)
+    if duplicates is not None:
+        settings.override("DUPLICATE_ACTION", duplicates)
+
+    detect_original_by = getattr(args, "detect_original_by", None)
+    if detect_original_by is not None:
+        settings.override("DETECT_ORIGINAL_BY", detect_original_by)
+
+    apply_global_cli_flags(settings, args)
 
 
 def _maybe_provision_model_for_cli_consent(
@@ -465,9 +475,9 @@ def _prompt_workspace_selection(args: argparse.Namespace) -> Path:
             raise ValueError("Directory selection cancelled.")
 
         if choice in ("1", "demo"):
-            target = Path("sandbox/demo_workspace").resolve()
-            if not target.exists():
-                target.mkdir(parents=True, exist_ok=True)
+            from app.demo import ensure_demo_workspace
+
+            target, _seeded = ensure_demo_workspace("sandbox/demo_workspace")
             return target
 
         if choice in ("2", "downloads"):
@@ -558,9 +568,9 @@ def resolve_preset_and_directory(
     if preset:
         preset_str = str(preset).lower()
         if preset_str == "demo":
-            target = Path("sandbox/demo_workspace").resolve()
-            if not target.exists():
-                target.mkdir(parents=True, exist_ok=True)
+            from app.demo import ensure_demo_workspace
+
+            target, _seeded = ensure_demo_workspace("sandbox/demo_workspace")
             return target
         elif preset_str == "downloads":
             return (Path.home() / "Downloads").resolve()
@@ -1040,7 +1050,8 @@ def handle_config_command(args: argparse.Namespace, settings: AppSettings):
     """View or update application settings."""
     import json
 
-    apply_config_overrides(settings, args)
+    apply_global_cli_flags(settings, args)
+    json_output = bool(getattr(args, "json", False))
 
     if getattr(args, "set", None):
         for key, value in args.set:
@@ -1054,19 +1065,19 @@ def handle_config_command(args: argparse.Namespace, settings: AppSettings):
                 except Exception as ex:
                     emit_cli_error(
                         f"Error: Failed to set configuration key '{key_upper}' to '{value}': {ex}",
-                        json_mode=getattr(args, "json", False),
+                        json_mode=json_output,
                         exit_code=1,
                     )
             else:
                 emit_cli_error(
                     f"Error: Unknown configuration key '{key}'.",
-                    json_mode=getattr(args, "json", False),
+                    json_mode=json_output,
                     exit_code=1,
                 )
 
     quiet = getattr(args, "quiet", False)
     settings_dict = settings._settings_model.model_dump(mode="json")
-    if args.json:
+    if json_output:
         sys.stdout.write(json.dumps(settings_dict, indent=2) + "\n")
         sys.stdout.flush()
     else:
@@ -1089,6 +1100,7 @@ def handle_daemon_command(args: argparse.Namespace, settings: AppSettings):
     from app.core.ipc import DaemonIPCClient
 
     apply_config_overrides(settings, args)
+    json_output = bool(getattr(args, "json", False))
 
     known_actions = {"status", "health", "metrics", "pause", "resume", "stop", "start"}
 
@@ -1112,7 +1124,7 @@ def handle_daemon_command(args: argparse.Namespace, settings: AppSettings):
         if not target_path.exists() or not target_path.is_dir():
             emit_cli_error(
                 f"Error: Target directory '{target_dir}' does not exist or is not a directory.",
-                json_mode=getattr(args, "json", False),
+                json_mode=json_output,
                 exit_code=1,
             )
         start_daemon(settings, str(target_path))
@@ -1121,32 +1133,46 @@ def handle_daemon_command(args: argparse.Namespace, settings: AppSettings):
         is_watch = getattr(args, "watch", False)
 
         if action == "status" and is_watch:
-            print(
-                f"Monitoring daemon status telemetry for '{target_path}' (Press Ctrl+C to exit)..."
-            )
+            if not json_output:
+                print(
+                    f"Monitoring daemon status telemetry for '{target_path}' (Press Ctrl+C to exit)..."
+                )
             try:
                 while True:
                     try:
                         res = asyncio.run(client.send_command("status"))
-                        status_str = str(res.get("status", "unknown")).upper()
-                        pid = res.get("pid", "unknown")
-                        qd = res.get("queue_depth", 0)
-                        max_cap = res.get("max_queue_capacity", 1000)
-                        workers = res.get("active_workers", 0)
-                        uptime = res.get("uptime_seconds", 0)
-                        triages = res.get("active_triage_paths", [])
-                        print(
-                            f"[{time.strftime('%H:%M:%S')}] Status: {status_str} (PID {pid}) | Queue: {qd}/{max_cap} | Workers: {workers} | Uptime: {uptime}s | Active Triage: {len(triages)}"
-                        )
+                        if json_output:
+                            sys.stdout.write(
+                                json.dumps(_make_json_serializable(res)) + "\n"
+                            )
+                            sys.stdout.flush()
+                        else:
+                            status_str = str(res.get("status", "unknown")).upper()
+                            pid = res.get("pid", "unknown")
+                            qd = res.get("queue_depth", 0)
+                            max_cap = res.get("max_queue_capacity", 1000)
+                            workers = res.get("active_workers", 0)
+                            uptime = res.get("uptime_seconds", 0)
+                            triages = res.get("active_triage_paths", [])
+                            print(
+                                f"[{time.strftime('%H:%M:%S')}] Status: {status_str} (PID {pid}) | Queue: {qd}/{max_cap} | Workers: {workers} | Uptime: {uptime}s | Active Triage: {len(triages)}"
+                            )
                     except Exception as err:
                         print(f"Error querying daemon status: {err}", file=sys.stderr)
                     time.sleep(1.0)
             except KeyboardInterrupt:
-                print("\nStopped watch monitoring.")
+                if not json_output:
+                    print("\nStopped watch monitoring.")
                 sys.exit(0)
 
         try:
             res = asyncio.run(client.send_command(action))
+            if json_output:
+                sys.stdout.write(
+                    json.dumps(_make_json_serializable(res), indent=2) + "\n"
+                )
+                sys.stdout.flush()
+                return
             if action == "status":
                 print(f"Daemon Status (PID: {res.get('pid')}):")
                 print(f"  Status: {str(res.get('status', '')).upper()}")
@@ -1181,11 +1207,11 @@ def handle_daemon_command(args: argparse.Namespace, settings: AppSettings):
             elif action == "stop":
                 print(f"Daemon shutdown initiated ({res.get('message')}).")
             else:
-                print(json.dumps(res, indent=2))
+                print(json.dumps(_make_json_serializable(res), indent=2))
         except Exception as e:
             emit_cli_error(
                 str(e),
-                json_mode=getattr(args, "json", False),
+                json_mode=json_output,
                 exit_code=1,
             )
 
@@ -1197,7 +1223,7 @@ def handle_undo_command(args: argparse.Namespace, settings: AppSettings):
     execute_undo_command(
         args,
         settings,
-        apply_overrides_fn=apply_config_overrides,
+        apply_overrides_fn=apply_global_cli_flags,
         list_sessions_fn=list_sessions,
     )
 
@@ -1411,12 +1437,14 @@ class SortifyArgumentParser(argparse.ArgumentParser):
         args: Any = None,
         namespace: Any = None,
     ) -> tuple[Any, list[str]]:
-        """Normalize dash-prefixed option values before delegating to argparse."""
+        """Normalize dash-prefixed option values and validate cross-level flag rules."""
         raw_list = list(sys.argv[1:]) if args is None else list(args)
         normalized = self._normalize_dash_option_values(raw_list)
         if SortifyArgumentParser._active_cli_args is None:
             SortifyArgumentParser._active_cli_args = normalized
-        return super().parse_known_args(args=normalized, namespace=namespace)
+        ns, remaining = super().parse_known_args(args=normalized, namespace=namespace)
+        validate_cross_level_cli_flags(self, ns)
+        return ns, remaining
 
     def parse_args(
         self,
@@ -1462,45 +1490,56 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         "--quiet",
         action="store_true",
         dest="quiet",
+        default=False,
         help="Suppress informational prints and non-essential progress output",
     )
     parser.add_argument(
         "--no-color",
         action="store_true",
         dest="no_color",
+        default=False,
         help="Disable ANSI color and style formatting",
     )
     parser.add_argument(
-        "--demo", action="store_true", help="Run interactive CLI demo mode"
+        "--demo",
+        action="store_true",
+        default=False,
+        help="Run interactive CLI demo mode",
     )
     parser.add_argument(
         "--smoke-test",
         action="store_true",
+        default=False,
         help="Run automated database smoke test and exit",
     )
     parser.add_argument(
         "--json",
         action="store_true",
+        default=False,
         help="Output in structured JSON format",
     )
     parser.add_argument(
         "--daemon",
         action="store_true",
+        default=False,
         help="Launch the persistent directory-watching daemon",
     )
     parser.add_argument(
         "--debug-layout",
         action="store_true",
+        default=False,
         help=argparse.SUPPRESS,  # developer tool: outline UI elements
     )
     parser.add_argument(
         "--tui",
         action="store_true",
+        default=False,
         help="Launch full-screen Textual TUI interface",
     )
     parser.add_argument(
         "--interactive",
         action="store_true",
+        default=False,
         help="Same as --tui",
     )
     ai_consent_group = parser.add_mutually_exclusive_group()
@@ -1553,134 +1592,15 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         help="Criterion used to select the surviving original in duplicate clusters",
     )
 
-    subparsers = parser.add_subparsers(dest="subcommand", help="Available subcommands")
-
-    def add_common_override_args(subparser):
-        add_settings_source_args(subparser, suppress_default=True)
-        subparser.add_argument(
-            "-q",
-            "--quiet",
-            action="store_true",
-            dest="quiet",
-            default=argparse.SUPPRESS,
-            help="Suppress informational prints and non-essential progress output",
-        )
-        subparser.add_argument(
-            "--no-color",
-            action="store_true",
-            dest="no_color",
-            default=argparse.SUPPRESS,
-            help="Disable ANSI color and style formatting",
-        )
-        subparser.add_argument(
-            "--max-folders",
-            type=int,
-            default=None,
-            help="Maximum number of generated subfolders",
-        )
-        subparser.add_argument(
-            "--strategy",
-            type=str,
-            choices=["default", "generative", "clinical_tmf", "clinical_isf"],
-            default=None,
-            help="Sorting strategy",
-        )
-        subparser.add_argument(
-            "--conflict-policy",
-            type=str,
-            choices=["skip", "rename", "overwrite"],
-            default=None,
-            help="Conflict resolution policy",
-        )
-        subparser.add_argument(
-            "--duplicates",
-            type=str,
-            choices=["off", "review", "skip", "stage", "trash"],
-            default=None,
-            help="Byte-identical duplicate handling mode (off, review, skip, stage, trash; review requires --tui or --interactive)",
-        )
-        subparser.add_argument(
-            "--detect-original-by",
-            type=str,
-            choices=[
-                "first_seen",
-                "-first_seen",
-                "name",
-                "-name",
-                "created",
-                "-created",
-                "lastmodified",
-                "-lastmodified",
-            ],
-            default=None,
-            help="Criterion used to select the surviving original in duplicate clusters",
-        )
-        subparser.add_argument(
-            "--contextual-renaming",
-            action="store_true",
-            default=None,
-            help="Enable AI contextual renaming",
-        )
-        subparser.add_argument(
-            "--no-contextual-renaming",
-            action="store_false",
-            dest="contextual_renaming",
-            help="Disable AI contextual renaming",
-        )
-        subparser.add_argument(
-            "--tui",
-            action="store_true",
-            default=False,
-            help="Launch full-screen Textual TUI interface",
-        )
-        subparser.add_argument(
-            "--interactive",
-            action="store_true",
-            default=False,
-            help="Launch full-screen interactive TUI mode",
-        )
-        sub_ai_consent = subparser.add_mutually_exclusive_group()
-        sub_ai_consent.add_argument(
-            "--accept-ai-consent",
-            action="store_true",
-            default=False,
-            help="Pre-configure AI consent as granted and bypass onboarding wizard",
-        )
-        sub_ai_consent.add_argument(
-            "--decline-ai-consent",
-            action="store_true",
-            default=False,
-            help="Pre-configure AI consent as declined and bypass onboarding wizard",
-        )
-        subparser.add_argument(
-            "--skip-wizard",
-            action="store_true",
-            default=False,
-            help="Bypass onboarding wizard modal during startup",
-        )
-        subparser.add_argument(
-            "--non-interactive",
-            action="store_true",
-            default=False,
-            help="Run in non-interactive mode and bypass interactive modal dialogs",
-        )
-        subparser.add_argument(
-            "--export-report",
-            type=str,
-            default=None,
-            help="Export dry-run simulation report to output file path",
-        )
-        subparser.add_argument(
-            "--report-format",
-            type=str,
-            choices=["html", "json"],
-            default=None,
-            help="Format for exported simulation report (html or json)",
-        )
+    subparsers: argparse._SubParsersAction = parser.add_subparsers(
+        dest="subcommand", help="Available subcommands"
+    )
 
     # Subcommand: sort
     parser_sort = subparsers.add_parser(
-        "sort", help="Run document sorting in headless batch processing mode"
+        "sort",
+        parents=[build_global_subparser_parent(), build_sort_override_parent()],
+        help="Run document sorting in headless batch processing mode",
     )
     parser_sort.add_argument(
         "directory", nargs="?", default=None, type=str, help="Target directory to sort"
@@ -1691,11 +1611,6 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         choices=["demo", "downloads", "documents"],
         default=None,
         help="Use standard workspace preset directory (demo, downloads, documents)",
-    )
-    parser_sort.add_argument(
-        "--json",
-        action="store_true",
-        help="Output result in structured JSON format",
     )
     parser_sort.add_argument(
         "--dest-dir",
@@ -1714,11 +1629,12 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         default=False,
         help="Export staged duplicate copies to the OS Trash after move verification",
     )
-    add_common_override_args(parser_sort)
 
     # Subcommand: scan
     parser_scan = subparsers.add_parser(
-        "scan", help="Run directory scanning and analysis without moving files"
+        "scan",
+        parents=[build_global_subparser_parent(), build_sort_override_parent()],
+        help="Run directory scanning and analysis without moving files",
     )
     parser_scan.add_argument(
         "directory", nargs="?", default=None, type=str, help="Target directory to scan"
@@ -1730,26 +1646,17 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         default=None,
         help="Use standard workspace preset directory (demo, downloads, documents)",
     )
-    parser_scan.add_argument(
-        "--json",
-        action="store_true",
-        help="Output scan plan in structured JSON format",
-    )
-    add_common_override_args(parser_scan)
 
-    # Subcommand: config
+    # Subcommand: config (global flags only; rejects transient sort overrides)
     parser_config = subparsers.add_parser(
-        "config", help="View or update application configuration settings"
+        "config",
+        parents=[build_global_subparser_parent()],
+        help="View or update application configuration settings",
     )
     parser_config.add_argument(
         "--show",
         action="store_true",
         help="Display current configuration settings (the default)",
-    )
-    parser_config.add_argument(
-        "--json",
-        action="store_true",
-        help="Output configuration as JSON",
     )
     parser_config.add_argument(
         "--set",
@@ -1758,11 +1665,12 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         metavar=("KEY", "VALUE"),
         help="Set configuration KEY to VALUE",
     )
-    add_common_override_args(parser_config)
 
     # Subcommand: daemon
     parser_daemon = subparsers.add_parser(
-        "daemon", help="Launch or control persistent directory-watching daemon"
+        "daemon",
+        parents=[build_global_subparser_parent(), build_sort_override_parent()],
+        help="Launch or control persistent directory-watching daemon",
     )
     parser_daemon.add_argument(
         "action",
@@ -1781,53 +1689,17 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         action="store_true",
         help="Continuously monitor status telemetry in real time",
     )
-    add_common_override_args(parser_daemon)
 
-    # Subcommand: undo
-    parser_undo = subparsers.add_parser(
-        "undo", help="Undo sorting operations and manage session history"
-    )
-    parser_undo.add_argument(
-        "--session-id",
-        type=str,
-        default=None,
-        help="Specific historical session ID UUID to undo",
-    )
-    parser_undo.add_argument(
-        "--list",
-        action="store_true",
-        help="List active and completed historical sorting sessions",
-    )
-    parser_undo.add_argument(
-        "--latest",
-        action="store_true",
-        help="Undo the latest historical sorting session",
-    )
-    parser_undo.add_argument(
-        "--export",
-        type=str,
-        default=None,
-        metavar="PATH",
-        help="Export audit records for the selected session (or all sessions) to CSV or JSON",
-    )
-    parser_undo.add_argument(
-        "--force",
-        action="store_true",
-        help="Force undo even if sorted files are missing",
-    )
-    parser_undo.add_argument(
-        "--json",
-        action="store_true",
-        help="Output session list or undo status in structured JSON format",
-    )
-    from app.cli.undo_cli import extend_undo_parser
+    # Subcommand: undo (consolidated in app.cli.undo_cli; global flags only)
+    from app.cli.undo_cli import register_subparser as register_undo_subparser
 
-    extend_undo_parser(parser_undo)
-    add_common_override_args(parser_undo)
+    register_undo_subparser(subparsers)
 
     # Subcommand: drop
     parser_drop = subparsers.add_parser(
-        "drop", help="Quick file drop triage receiver for target files or directories"
+        "drop",
+        parents=[build_global_subparser_parent(), build_sort_override_parent()],
+        help="Quick file drop triage receiver for target files or directories",
     )
     parser_drop.add_argument(
         "paths",
@@ -1861,12 +1733,6 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         default=False,
         help="Export staged duplicate copies to the OS Trash after move verification",
     )
-    parser_drop.add_argument(
-        "--json",
-        action="store_true",
-        help="Output result in structured JSON format",
-    )
-    add_common_override_args(parser_drop)
 
     # Register modular domain subcommands
     from app.cli import register_cli_subcommands
@@ -1945,47 +1811,6 @@ def _main_impl():
     if getattr(args, "smoke_test", False) is True:
         run_smoke_test()
 
-    is_demo_run = (
-        bool(getattr(args, "demo", False)) and getattr(args, "subcommand", None) is None
-    )
-    if is_demo_run:
-        import tempfile
-
-        from app.core.db_conn import clear_connection_cache
-
-        prev_app_dir = os.environ.get("AUTOSORTER_APP_DIR")
-        prev_keys_dir = os.environ.get("SORTIFY_KEYS_DIR")
-        with tempfile.TemporaryDirectory(prefix="sortify-demo-") as demo_root:
-            demo_root_path = Path(demo_root)
-            os.environ["AUTOSORTER_APP_DIR"] = str(demo_root_path / "app")
-            os.environ["SORTIFY_KEYS_DIR"] = str(demo_root_path / "keys")
-            added_handlers: list[logging.Handler] = []
-            demo_settings: AppSettings | None = None
-            try:
-                demo_settings = _configure_settings_and_logging(
-                    args, tracked_handlers=added_handlers
-                )
-                from app.demo import run_demo
-
-                run_demo(demo_settings)
-            finally:
-                if demo_settings is not None:
-                    save_timer = demo_settings._save_timer
-                    if save_timer is not None:
-                        save_timer.cancel()
-                    AppSettings._cancel_file_timer(demo_settings._filepath)
-                _close_tracked_log_handlers(added_handlers)
-                clear_connection_cache(only_current_and_inactive=False)
-                if prev_app_dir is None:
-                    os.environ.pop("AUTOSORTER_APP_DIR", None)
-                else:
-                    os.environ["AUTOSORTER_APP_DIR"] = prev_app_dir
-                if prev_keys_dir is None:
-                    os.environ.pop("SORTIFY_KEYS_DIR", None)
-                else:
-                    os.environ["SORTIFY_KEYS_DIR"] = prev_keys_dir
-        return
-
     added_handlers: list[logging.Handler] = []
     settings = _configure_settings_and_logging(args, tracked_handlers=added_handlers)
     try:
@@ -2022,11 +1847,13 @@ def _run_configured_main(args: Any, parser: Any, settings: AppSettings) -> None:
         handle_config_command(args, settings)
     elif getattr(args, "subcommand", None) == "daemon":
         handle_daemon_command(args, settings)
+        return
     elif getattr(args, "subcommand", None) == "undo":
         handle_undo_command(args, settings)
     elif getattr(args, "subcommand", None) == "drop":
         handle_drop_command(args, settings)
     else:
+        apply_global_cli_flags(settings, args)
         from app.cli import handle_cli_command
 
         if handle_cli_command(args, settings):
@@ -2148,9 +1975,10 @@ def _run_configured_main(args: Any, parser: Any, settings: AppSettings) -> None:
 
         start_daemon(settings, args.directory)
     elif args.demo:
+        apply_config_overrides(settings, args)
         from app.demo import run_demo
 
-        run_demo(settings)
+        run_demo(settings, args)
     else:
         from app.ui.tui import run_tui
 
@@ -2206,7 +2034,10 @@ def _configure_settings_and_logging(
             if settings_filepath
             else AppSettings()
         )
-        apply_config_overrides(settings, args)
+        if should_apply_sort_overrides(args):
+            apply_config_overrides(settings, args)
+        else:
+            apply_global_cli_flags(settings, args)
     finally:
         root_logger.removeHandler(startup_buffer)
         if not pre_existing_handlers:

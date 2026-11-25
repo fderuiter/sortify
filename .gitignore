@@ -21,6 +21,8 @@ settings.json
 .env.*
 !.env.example
 sandbox/dataset/
+sandbox/demo_workspace/*
+!sandbox/demo_workspace/.gitkeep
 sandbox/pipeline-state/
 sandbox/*.db*
 sandbox/*.key

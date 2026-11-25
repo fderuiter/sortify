@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from app.cli.error_emitter import emit_cli_error
+from app.cli.settings_args import build_global_subparser_parent
 from app.config import AppSettings
 from app.core.exceptions import AuditExportError
 from app.core.session_catalog import (
@@ -21,6 +22,58 @@ from app.core.session_catalog import (
     list_sessions,
     preview_session_rollback,
 )
+
+
+def register_subparser(
+    subparsers: argparse._SubParsersAction,
+) -> argparse.ArgumentParser:
+    """Register the ``undo`` subcommand parser (global flags only; no transient sort overrides).
+
+    Parameters
+    ----------
+    subparsers : argparse._SubParsersAction
+        Root argument parser subparsers collection.
+
+    Returns
+    -------
+    argparse.ArgumentParser
+        Configured ``undo`` subparser instance.
+    """
+    parser_undo = subparsers.add_parser(
+        "undo",
+        parents=[build_global_subparser_parent()],
+        help="Undo sorting operations and manage session history",
+    )
+    parser_undo.add_argument(
+        "--session-id",
+        type=str,
+        default=None,
+        help="Specific historical session ID UUID to undo",
+    )
+    parser_undo.add_argument(
+        "--list",
+        action="store_true",
+        help="List active and completed historical sorting sessions",
+    )
+    parser_undo.add_argument(
+        "--latest",
+        action="store_true",
+        help="Undo the latest historical sorting session",
+    )
+    parser_undo.add_argument(
+        "--export",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Export audit records for the selected session (or all sessions) to CSV or JSON",
+    )
+    parser_undo.add_argument(
+        "--force",
+        action="store_true",
+        help="Force undo even if sorted files are missing",
+    )
+    extend_undo_parser(parser_undo)
+    return parser_undo
 
 
 def extend_undo_parser(parser_undo: argparse.ArgumentParser) -> None:

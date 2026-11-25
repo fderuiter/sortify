@@ -1,79 +1,172 @@
-"""Interactive CLI demo module for Smart AutoSorter."""
+"""Executable CLI demo and sample workspace seeding helpers for Smart AutoSorter."""
 
+from __future__ import annotations
+
+import argparse
 import json
-import os
 import sys
-import tempfile
 from pathlib import Path
+from typing import Any, NoReturn
 
+from app.cli.error_emitter import emit_cli_error
+from app.config import AppSettings
+from app.core.domain_contracts import _make_json_serializable
+from app.core.pipeline import SortPipeline
+from app.core.plan_format import format_plan_tree
 from app.core.sample_corpus import generate_sample_corpus
+from app.core.session import AppSession
+
+DEMO_WORKSPACE_REL = "sandbox/demo_workspace"
+_DEMO_PLACEHOLDER_NAMES = frozenset(
+    {
+        ".gitkeep",
+        ".branches",
+        ".sortify_duplicates",
+        ".sortify_overwritten",
+    }
+)
 
 
-def run_demo(settings):
-    """Run an interactive CLI demo in an isolated temporary workspace."""
-    print("Starting Smart AutoSorter AI Pro - Interactive CLI Demo...", file=sys.stderr)
+def ensure_demo_workspace(
+    base_dir: Path | str = DEMO_WORKSPACE_REL,
+) -> tuple[Path, list[str]]:
+    """Create ``sandbox/demo_workspace`` if needed and seed sample files when empty.
 
-    plan = None
-    with tempfile.TemporaryDirectory(prefix="sortify-demo-run-") as temp_dir:
-        temp_root = Path(temp_dir)
-        corpus_dir = temp_root / "corpus"
-        state_dir = temp_root / "state"
-        keys_dir = temp_root / "keys"
-        app_dir = temp_root / "app"
-        corpus_dir.mkdir(parents=True, exist_ok=True)
+    Existing user files and subfolders are never overwritten; sample documents
+    are generated only when the folder is newly created or contains solely
+    repository/session placeholder entries (such as ``.gitkeep``).
 
-        prev_app_dir = os.environ.get("AUTOSORTER_APP_DIR")
-        prev_keys_dir = os.environ.get("SORTIFY_KEYS_DIR")
-        os.environ["AUTOSORTER_APP_DIR"] = str(app_dir)
-        os.environ["SORTIFY_KEYS_DIR"] = str(keys_dir)
+    Parameters
+    ----------
+    base_dir : Path | str, optional
+        Target demo workspace path (defaults to ``sandbox/demo_workspace``).
 
-        from app.core.db_conn import clear_connection_cache
-        from app.core.pipeline import SortPipeline
-        from app.core.session import AppSession
-        from app.core.store import open_store
+    Returns
+    -------
+    tuple[Path, list[str]]
+        Resolved demo workspace directory path and list of newly seeded relative
+        filenames (empty when existing non-placeholder entries are already present).
+    """
+    target = Path(base_dir).resolve()
+    target.mkdir(parents=True, exist_ok=True)
+    meaningful_entries = [
+        entry for entry in target.iterdir() if entry.name not in _DEMO_PLACEHOLDER_NAMES
+    ]
+    if not meaningful_entries:
+        seeded = generate_sample_corpus(str(target), overwrite=False)
+        return target, seeded
+    return target, []
 
-        try:
-            print(f"[*] Generating sample corpus in {corpus_dir}...", file=sys.stderr)
-            files_to_sort = generate_sample_corpus(str(corpus_dir))
-            print(f"[*] Generated {len(files_to_sort)} files.", file=sys.stderr)
 
-            def progress_callback(info=None):
-                print("    -> Progress: File extraction complete.", file=sys.stderr)
+def run_demo(
+    settings: AppSettings,
+    args: argparse.Namespace | None = None,
+) -> NoReturn:
+    """Seed ``sandbox/demo_workspace``, execute an undoable sort, and print results.
 
-            print(
-                "[*] Processing files and generating sorting plan...", file=sys.stderr
-            )
-            store = open_store(
-                state_dir,
-                legacy_session_root=state_dir / "no-legacy-sessions",
-            )
-            session = AppSession(settings, base_dir=str(corpus_dir), store=store)
-            try:
-                plan = SortPipeline(session).plan(
-                    files_to_sort, progress_callback=progress_callback
-                )
-            finally:
-                session.close()
-        finally:
-            clear_connection_cache(only_current_and_inactive=False)
-            if prev_app_dir is None:
-                os.environ.pop("AUTOSORTER_APP_DIR", None)
-            else:
-                os.environ["AUTOSORTER_APP_DIR"] = prev_app_dir
-            if prev_keys_dir is None:
-                os.environ.pop("SORTIFY_KEYS_DIR", None)
-            else:
-                os.environ["SORTIFY_KEYS_DIR"] = prev_keys_dir
+    Parameters
+    ----------
+    settings : AppSettings
+        Active application configuration wrapper.
+    args : argparse.Namespace | None, optional
+        Parsed CLI namespace carrying output flags (``--json``, ``-q``/``--quiet``).
+    """
+    json_output = bool(getattr(args, "json", False))
+    quiet = bool(getattr(args, "quiet", False))
+    dry_run = bool(getattr(args, "dry_run", False))
 
-    print("\n--- Generated Sorting Plan ---", file=sys.stderr)
-    print(json.dumps(plan, indent=2))
-    print("------------------------------\n", file=sys.stderr)
+    try:
+        target_path, seeded_files = ensure_demo_workspace(DEMO_WORKSPACE_REL)
+    except (OSError, ValueError) as exc:
+        emit_cli_error(
+            f"Error preparing demo workspace: {exc}",
+            json_mode=json_output,
+            exit_code=1,
+        )
 
-    if plan and isinstance(plan, dict):
+    if not json_output and not quiet and seeded_files:
         print(
-            "[+] Success: Demo completed. Sorting plan successfully generated.",
+            f"Seeded {len(seeded_files)} sample file(s) in '{target_path}'.",
             file=sys.stderr,
         )
+
+    session: AppSession | None = None
+    try:
+        session = AppSession(settings, base_dir=str(target_path))
+        pipeline = SortPipeline(session)
+        plan = pipeline.plan()
+        serializable_plan = _make_json_serializable(plan)
+
+        if dry_run:
+            result: dict[str, Any] = {
+                "status": "success",
+                "dry_run": True,
+                "target_directory": str(target_path),
+                "destination_directory": str(target_path),
+                "seeded_files": seeded_files,
+                "plan": serializable_plan,
+            }
+            if json_output:
+                sys.stdout.write(json.dumps(result, indent=2) + "\n")
+                sys.stdout.flush()
+            else:
+                lines, _n_files, _n_folders = format_plan_tree(serializable_plan)
+                if lines:
+                    print("\n".join(lines))
+                elif not quiet:
+                    print(f"Nothing to sort in '{target_path}'.", file=sys.stderr)
+            sys.exit(0)
+
+        outcome = pipeline.execute(plan)
+        moved_count = len(outcome.moved) + len(outcome.quarantined)
+        staged_count = len(outcome.staged)
+        trashed_count = len(outcome.trashed)
+        reversible_count = moved_count + staged_count
+
+        result = {
+            "status": "success",
+            "dry_run": False,
+            "target_directory": str(target_path),
+            "destination_directory": str(target_path),
+            "seeded_files": seeded_files,
+            "session_id": outcome.session_id,
+            "moved_count": moved_count,
+            "staged_count": staged_count,
+            "trashed_count": trashed_count,
+            "plan": serializable_plan,
+            "summary": outcome.summary,
+        }
+
+        if json_output:
+            sys.stdout.write(json.dumps(result, indent=2) + "\n")
+            sys.stdout.flush()
+        else:
+            lines, _n_files, n_folders = format_plan_tree(serializable_plan)
+            if lines:
+                if not quiet:
+                    print(
+                        f"Moved {moved_count} file(s) into {n_folders} folder(s) in '{target_path}':",
+                        file=sys.stderr,
+                    )
+                print("\n".join(lines))
+            elif moved_count == 0 and staged_count == 0 and trashed_count == 0:
+                print(f"Nothing to sort in '{target_path}'.", file=sys.stderr)
+            if not quiet:
+                print(outcome.describe(), file=sys.stderr)
+                for source, reason in outcome.failed:
+                    print(f"  Failed: {source}: {reason}", file=sys.stderr)
+                if reversible_count > 0 and outcome.session_id:
+                    print(
+                        "To undo this sort, run: smart-autosorter undo --latest",
+                        file=sys.stderr,
+                    )
         sys.exit(0)
-    print("[-] Failure: Failed to generate sorting plan.", file=sys.stderr)
-    sys.exit(1)
+    except (OSError, RuntimeError, ValueError) as exc:
+        emit_cli_error(
+            f"Error during demo execution: {exc}",
+            json_mode=json_output,
+            exit_code=1,
+        )
+    finally:
+        if session is not None:
+            session.close()

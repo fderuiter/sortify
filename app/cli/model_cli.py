@@ -6,7 +6,7 @@ import logging
 import sys
 
 from app.cli.error_emitter import emit_cli_error
-from app.cli.settings_args import add_settings_source_args
+from app.cli.settings_args import build_global_subparser_parent
 from app.config import AppSettings
 from app.core.downloader import (
     DEFAULT_MODEL_URL,
@@ -25,70 +25,31 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
     """Register the ``model`` CLI subcommand group."""
     parser_model = subparsers.add_parser(
         "model",
+        parents=[build_global_subparser_parent()],
         help="Inspect, download, verify, or remove local AI model weights",
-    )
-    parser_model.add_argument(
-        "--json",
-        action="store_true",
-        help="Output response in structured JSON format",
-    )
-    add_settings_source_args(parser_model, suppress_default=True)
-    parser_model.add_argument(
-        "-q",
-        "--quiet",
-        action="store_true",
-        dest="quiet",
-        default=argparse.SUPPRESS,
-        help="Suppress informational prints",
-    )
-    parser_model.add_argument(
-        "--no-color",
-        action="store_true",
-        dest="no_color",
-        default=argparse.SUPPRESS,
-        help="Disable ANSI color formatting",
     )
     model_subparsers = parser_model.add_subparsers(
         dest="model_command", help="Model management subcommands"
     )
 
     def add_model_common(p: argparse.ArgumentParser) -> None:
-        add_settings_source_args(p, suppress_default=True)
         p.add_argument(
             "--model-dir",
             type=str,
             default=None,
             help="Explicit local model directory path override",
         )
-        p.add_argument(
-            "-q",
-            "--quiet",
-            action="store_true",
-            dest="quiet",
-            default=argparse.SUPPRESS,
-            help="Suppress informational prints",
-        )
-        p.add_argument(
-            "--no-color",
-            action="store_true",
-            dest="no_color",
-            default=argparse.SUPPRESS,
-            help="Disable ANSI color formatting",
-        )
-        p.add_argument(
-            "--json",
-            action="store_true",
-            help="Output response in structured JSON format",
-        )
 
     p_status = model_subparsers.add_parser(
         "status",
+        parents=[build_global_subparser_parent()],
         help="Display AI consent state, local model bundle readiness, and verification status",
     )
     add_model_common(p_status)
 
     p_download = model_subparsers.add_parser(
         "download",
+        parents=[build_global_subparser_parent()],
         help="Download and cryptographically verify local ONNX model weights",
     )
     add_model_common(p_download)
@@ -112,6 +73,7 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
 
     p_verify = model_subparsers.add_parser(
         "verify",
+        parents=[build_global_subparser_parent()],
         help="Verify SHA-256 hashes and integrity of local model bundle files",
     )
     add_model_common(p_verify)
@@ -119,6 +81,7 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
     p_remove = model_subparsers.add_parser(
         "remove",
         aliases=["delete"],
+        parents=[build_global_subparser_parent()],
         help="Unload in-memory AI models and delete local cached model files",
     )
     add_model_common(p_remove)

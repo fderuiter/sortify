@@ -621,22 +621,23 @@ Automation pipelines invoking CLI commands with `--json` can rely on determinist
 
 ##### `sort`
 ```text
-usage: smart-autosorter sort [-h] [--preset {demo,downloads,documents}]
-                             [--json] [--dest-dir DEST_DIR] [--dry-run]
-                             [--flush-trash]
+usage: smart-autosorter sort [-h]
                              [--settings-file SETTINGS_FILE | --profile PROFILE]
-                             [-q] [--no-color] [--max-folders MAX_FOLDERS]
+                             [-q] [--no-color] [--json] [--tui]
+                             [--interactive]
+                             [--accept-ai-consent | --decline-ai-consent]
+                             [--skip-wizard] [--non-interactive]
+                             [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
                              [--conflict-policy {skip,rename,overwrite}]
                              [--duplicates {off,review,skip,stage,trash}]
                              [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
                              [--contextual-renaming]
-                             [--no-contextual-renaming] [--tui]
-                             [--interactive]
-                             [--accept-ai-consent | --decline-ai-consent]
-                             [--skip-wizard] [--non-interactive]
+                             [--no-contextual-renaming]
                              [--export-report EXPORT_REPORT]
                              [--report-format {html,json}]
+                             [--preset {demo,downloads,documents}]
+                             [--dest-dir DEST_DIR] [--dry-run] [--flush-trash]
                              [directory]
 
 positional arguments:
@@ -644,15 +645,6 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
-  --preset {demo,downloads,documents}
-                        Use standard workspace preset directory (demo,
-                        downloads, documents)
-  --json                Output result in structured JSON format
-  --dest-dir DEST_DIR   Destination directory for sorted files
-  --dry-run             Perform dry run analysis without executing physical
-                        moves
-  --flush-trash         Export staged duplicate copies to the OS Trash after
-                        move verification
   --settings-file SETTINGS_FILE
                         Path to an explicit Sortify settings.json file
   --profile PROFILE     Named configuration profile under
@@ -660,6 +652,16 @@ options:
   -q, --quiet           Suppress informational prints and non-essential
                         progress output
   --no-color            Disable ANSI color and style formatting
+  --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
   --max-folders MAX_FOLDERS
                         Maximum number of generated subfolders
   --strategy {default,generative,clinical_tmf,clinical_isf}
@@ -677,38 +679,38 @@ options:
                         Enable AI contextual renaming
   --no-contextual-renaming
                         Disable AI contextual renaming
-  --tui                 Launch full-screen Textual TUI interface
-  --interactive         Launch full-screen interactive TUI mode
-  --accept-ai-consent   Pre-configure AI consent as granted and bypass
-                        onboarding wizard
-  --decline-ai-consent  Pre-configure AI consent as declined and bypass
-                        onboarding wizard
-  --skip-wizard         Bypass onboarding wizard modal during startup
-  --non-interactive     Run in non-interactive mode and bypass interactive
-                        modal dialogs
   --export-report EXPORT_REPORT
                         Export dry-run simulation report to output file path
   --report-format {html,json}
                         Format for exported simulation report (html or json)
+  --preset {demo,downloads,documents}
+                        Use standard workspace preset directory (demo,
+                        downloads, documents)
+  --dest-dir DEST_DIR   Destination directory for sorted files
+  --dry-run             Perform dry run analysis without executing physical
+                        moves
+  --flush-trash         Export staged duplicate copies to the OS Trash after
+                        move verification
 ```
 
 ##### `scan`
 ```text
-usage: smart-autosorter scan [-h] [--preset {demo,downloads,documents}]
-                             [--json]
+usage: smart-autosorter scan [-h]
                              [--settings-file SETTINGS_FILE | --profile PROFILE]
-                             [-q] [--no-color] [--max-folders MAX_FOLDERS]
+                             [-q] [--no-color] [--json] [--tui]
+                             [--interactive]
+                             [--accept-ai-consent | --decline-ai-consent]
+                             [--skip-wizard] [--non-interactive]
+                             [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
                              [--conflict-policy {skip,rename,overwrite}]
                              [--duplicates {off,review,skip,stage,trash}]
                              [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
                              [--contextual-renaming]
-                             [--no-contextual-renaming] [--tui]
-                             [--interactive]
-                             [--accept-ai-consent | --decline-ai-consent]
-                             [--skip-wizard] [--non-interactive]
+                             [--no-contextual-renaming]
                              [--export-report EXPORT_REPORT]
                              [--report-format {html,json}]
+                             [--preset {demo,downloads,documents}]
                              [directory]
 
 positional arguments:
@@ -716,10 +718,6 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
-  --preset {demo,downloads,documents}
-                        Use standard workspace preset directory (demo,
-                        downloads, documents)
-  --json                Output scan plan in structured JSON format
   --settings-file SETTINGS_FILE
                         Path to an explicit Sortify settings.json file
   --profile PROFILE     Named configuration profile under
@@ -727,6 +725,16 @@ options:
   -q, --quiet           Suppress informational prints and non-essential
                         progress output
   --no-color            Disable ANSI color and style formatting
+  --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
   --max-folders MAX_FOLDERS
                         Maximum number of generated subfolders
   --strategy {default,generative,clinical_tmf,clinical_isf}
@@ -744,43 +752,27 @@ options:
                         Enable AI contextual renaming
   --no-contextual-renaming
                         Disable AI contextual renaming
-  --tui                 Launch full-screen Textual TUI interface
-  --interactive         Launch full-screen interactive TUI mode
-  --accept-ai-consent   Pre-configure AI consent as granted and bypass
-                        onboarding wizard
-  --decline-ai-consent  Pre-configure AI consent as declined and bypass
-                        onboarding wizard
-  --skip-wizard         Bypass onboarding wizard modal during startup
-  --non-interactive     Run in non-interactive mode and bypass interactive
-                        modal dialogs
   --export-report EXPORT_REPORT
                         Export dry-run simulation report to output file path
   --report-format {html,json}
                         Format for exported simulation report (html or json)
+  --preset {demo,downloads,documents}
+                        Use standard workspace preset directory (demo,
+                        downloads, documents)
 ```
 
 ##### `config`
 ```text
-usage: smart-autosorter config [-h] [--show] [--json] [--set KEY VALUE]
+usage: smart-autosorter config [-h]
                                [--settings-file SETTINGS_FILE | --profile PROFILE]
-                               [-q] [--no-color] [--max-folders MAX_FOLDERS]
-                               [--strategy {default,generative,clinical_tmf,clinical_isf}]
-                               [--conflict-policy {skip,rename,overwrite}]
-                               [--duplicates {off,review,skip,stage,trash}]
-                               [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
-                               [--contextual-renaming]
-                               [--no-contextual-renaming] [--tui]
+                               [-q] [--no-color] [--json] [--tui]
                                [--interactive]
                                [--accept-ai-consent | --decline-ai-consent]
-                               [--skip-wizard] [--non-interactive]
-                               [--export-report EXPORT_REPORT]
-                               [--report-format {html,json}]
+                               [--skip-wizard] [--non-interactive] [--show]
+                               [--set KEY VALUE]
 
 options:
   -h, --help            show this help message and exit
-  --show                Display current configuration settings (the default)
-  --json                Output configuration as JSON
-  --set KEY VALUE       Set configuration KEY to VALUE
   --settings-file SETTINGS_FILE
                         Path to an explicit Sortify settings.json file
   --profile PROFILE     Named configuration profile under
@@ -788,23 +780,7 @@ options:
   -q, --quiet           Suppress informational prints and non-essential
                         progress output
   --no-color            Disable ANSI color and style formatting
-  --max-folders MAX_FOLDERS
-                        Maximum number of generated subfolders
-  --strategy {default,generative,clinical_tmf,clinical_isf}
-                        Sorting strategy
-  --conflict-policy {skip,rename,overwrite}
-                        Conflict resolution policy
-  --duplicates {off,review,skip,stage,trash}
-                        Byte-identical duplicate handling mode (off, review,
-                        skip, stage, trash; review requires --tui or
-                        --interactive)
-  --detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}
-                        Criterion used to select the surviving original in
-                        duplicate clusters
-  --contextual-renaming
-                        Enable AI contextual renaming
-  --no-contextual-renaming
-                        Disable AI contextual renaming
+  --json                Output response in structured JSON format
   --tui                 Launch full-screen Textual TUI interface
   --interactive         Launch full-screen interactive TUI mode
   --accept-ai-consent   Pre-configure AI consent as granted and bypass
@@ -814,28 +790,27 @@ options:
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
-  --export-report EXPORT_REPORT
-                        Export dry-run simulation report to output file path
-  --report-format {html,json}
-                        Format for exported simulation report (html or json)
+  --show                Display current configuration settings (the default)
+  --set KEY VALUE       Set configuration KEY to VALUE
 ```
 
 ##### `daemon`
 ```text
-usage: smart-autosorter daemon [-h] [--watch]
+usage: smart-autosorter daemon [-h]
                                [--settings-file SETTINGS_FILE | --profile PROFILE]
-                               [-q] [--no-color] [--max-folders MAX_FOLDERS]
+                               [-q] [--no-color] [--json] [--tui]
+                               [--interactive]
+                               [--accept-ai-consent | --decline-ai-consent]
+                               [--skip-wizard] [--non-interactive]
+                               [--max-folders MAX_FOLDERS]
                                [--strategy {default,generative,clinical_tmf,clinical_isf}]
                                [--conflict-policy {skip,rename,overwrite}]
                                [--duplicates {off,review,skip,stage,trash}]
                                [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
                                [--contextual-renaming]
-                               [--no-contextual-renaming] [--tui]
-                               [--interactive]
-                               [--accept-ai-consent | --decline-ai-consent]
-                               [--skip-wizard] [--non-interactive]
+                               [--no-contextual-renaming]
                                [--export-report EXPORT_REPORT]
-                               [--report-format {html,json}]
+                               [--report-format {html,json}] [--watch]
                                [action] [directory]
 
 positional arguments:
@@ -845,7 +820,6 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
-  --watch               Continuously monitor status telemetry in real time
   --settings-file SETTINGS_FILE
                         Path to an explicit Sortify settings.json file
   --profile PROFILE     Named configuration profile under
@@ -853,6 +827,16 @@ options:
   -q, --quiet           Suppress informational prints and non-essential
                         progress output
   --no-color            Disable ANSI color and style formatting
+  --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
   --max-folders MAX_FOLDERS
                         Maximum number of generated subfolders
   --strategy {default,generative,clinical_tmf,clinical_isf}
@@ -870,6 +854,36 @@ options:
                         Enable AI contextual renaming
   --no-contextual-renaming
                         Disable AI contextual renaming
+  --export-report EXPORT_REPORT
+                        Export dry-run simulation report to output file path
+  --report-format {html,json}
+                        Format for exported simulation report (html or json)
+  --watch               Continuously monitor status telemetry in real time
+```
+
+##### `undo`
+```text
+usage: smart-autosorter undo [-h]
+                             [--settings-file SETTINGS_FILE | --profile PROFILE]
+                             [-q] [--no-color] [--json] [--tui]
+                             [--interactive]
+                             [--accept-ai-consent | --decline-ai-consent]
+                             [--skip-wizard] [--non-interactive]
+                             [--session-id SESSION_ID] [--list] [--latest]
+                             [--export PATH] [--force] [--list-moves]
+                             [--dry-run] [--step-id STEP_IDS] [--file FILES]
+                             [-f {csv,json}] [--ledger-db LEDGER_DB]
+
+options:
+  -h, --help            show this help message and exit
+  --settings-file SETTINGS_FILE
+                        Path to an explicit Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --json                Output response in structured JSON format
   --tui                 Launch full-screen Textual TUI interface
   --interactive         Launch full-screen interactive TUI mode
   --accept-ai-consent   Pre-configure AI consent as granted and bypass
@@ -879,35 +893,6 @@ options:
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
-  --export-report EXPORT_REPORT
-                        Export dry-run simulation report to output file path
-  --report-format {html,json}
-                        Format for exported simulation report (html or json)
-```
-
-##### `undo`
-```text
-usage: smart-autosorter undo [-h] [--session-id SESSION_ID] [--list]
-                             [--latest] [--export PATH] [--force] [--json]
-                             [--list-moves] [--dry-run] [--step-id STEP_IDS]
-                             [--file FILES] [-f {csv,json}]
-                             [--ledger-db LEDGER_DB]
-                             [--settings-file SETTINGS_FILE | --profile PROFILE]
-                             [-q] [--no-color] [--max-folders MAX_FOLDERS]
-                             [--strategy {default,generative,clinical_tmf,clinical_isf}]
-                             [--conflict-policy {skip,rename,overwrite}]
-                             [--duplicates {off,review,skip,stage,trash}]
-                             [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
-                             [--contextual-renaming]
-                             [--no-contextual-renaming] [--tui]
-                             [--interactive]
-                             [--accept-ai-consent | --decline-ai-consent]
-                             [--skip-wizard] [--non-interactive]
-                             [--export-report EXPORT_REPORT]
-                             [--report-format {html,json}]
-
-options:
-  -h, --help            show this help message and exit
   --session-id SESSION_ID
                         Specific historical session ID UUID to undo
   --list                List active and completed historical sorting sessions
@@ -915,8 +900,6 @@ options:
   --export PATH         Export audit records for the selected session (or all
                         sessions) to CSV or JSON
   --force               Force undo even if sorted files are missing
-  --json                Output session list or undo status in structured JSON
-                        format
   --list-moves          List remaining undoable file moves for the target
                         session
   --dry-run             Preview undo outcome and potential collisions without
@@ -929,62 +912,26 @@ options:
                         Audit export format when using --export (csv or json)
   --ledger-db LEDGER_DB
                         Optional store database file path when using --export
-  --settings-file SETTINGS_FILE
-                        Path to an explicit Sortify settings.json file
-  --profile PROFILE     Named configuration profile under
-                        ~/.autosorter/profiles/<name>.json
-  -q, --quiet           Suppress informational prints and non-essential
-                        progress output
-  --no-color            Disable ANSI color and style formatting
-  --max-folders MAX_FOLDERS
-                        Maximum number of generated subfolders
-  --strategy {default,generative,clinical_tmf,clinical_isf}
-                        Sorting strategy
-  --conflict-policy {skip,rename,overwrite}
-                        Conflict resolution policy
-  --duplicates {off,review,skip,stage,trash}
-                        Byte-identical duplicate handling mode (off, review,
-                        skip, stage, trash; review requires --tui or
-                        --interactive)
-  --detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}
-                        Criterion used to select the surviving original in
-                        duplicate clusters
-  --contextual-renaming
-                        Enable AI contextual renaming
-  --no-contextual-renaming
-                        Disable AI contextual renaming
-  --tui                 Launch full-screen Textual TUI interface
-  --interactive         Launch full-screen interactive TUI mode
-  --accept-ai-consent   Pre-configure AI consent as granted and bypass
-                        onboarding wizard
-  --decline-ai-consent  Pre-configure AI consent as declined and bypass
-                        onboarding wizard
-  --skip-wizard         Bypass onboarding wizard modal during startup
-  --non-interactive     Run in non-interactive mode and bypass interactive
-                        modal dialogs
-  --export-report EXPORT_REPORT
-                        Export dry-run simulation report to output file path
-  --report-format {html,json}
-                        Format for exported simulation report (html or json)
 ```
 
 ##### `drop`
 ```text
-usage: smart-autosorter drop [-h] [--dest-dir DEST_DIR] [--dry-run]
-                             [--flush-trash] [--json]
+usage: smart-autosorter drop [-h]
                              [--settings-file SETTINGS_FILE | --profile PROFILE]
-                             [-q] [--no-color] [--max-folders MAX_FOLDERS]
+                             [-q] [--no-color] [--json] [--tui]
+                             [--interactive]
+                             [--accept-ai-consent | --decline-ai-consent]
+                             [--skip-wizard] [--non-interactive]
+                             [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
                              [--conflict-policy {skip,rename,overwrite}]
                              [--duplicates {off,review,skip,stage,trash}]
                              [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
                              [--contextual-renaming]
-                             [--no-contextual-renaming] [--tui]
-                             [--interactive]
-                             [--accept-ai-consent | --decline-ai-consent]
-                             [--skip-wizard] [--non-interactive]
+                             [--no-contextual-renaming]
                              [--export-report EXPORT_REPORT]
                              [--report-format {html,json}]
+                             [--dest-dir DEST_DIR] [--dry-run] [--flush-trash]
                              paths [paths ...]
 
 positional arguments:
@@ -992,12 +939,6 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
-  --dest-dir DEST_DIR   Destination directory for sorted files
-  --dry-run             Perform dry run analysis without executing physical
-                        moves
-  --flush-trash         Export staged duplicate copies to the OS Trash after
-                        move verification
-  --json                Output result in structured JSON format
   --settings-file SETTINGS_FILE
                         Path to an explicit Sortify settings.json file
   --profile PROFILE     Named configuration profile under
@@ -1005,6 +946,16 @@ options:
   -q, --quiet           Suppress informational prints and non-essential
                         progress output
   --no-color            Disable ANSI color and style formatting
+  --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
   --max-folders MAX_FOLDERS
                         Maximum number of generated subfolders
   --strategy {default,generative,clinical_tmf,clinical_isf}
@@ -1022,25 +973,25 @@ options:
                         Enable AI contextual renaming
   --no-contextual-renaming
                         Disable AI contextual renaming
-  --tui                 Launch full-screen Textual TUI interface
-  --interactive         Launch full-screen interactive TUI mode
-  --accept-ai-consent   Pre-configure AI consent as granted and bypass
-                        onboarding wizard
-  --decline-ai-consent  Pre-configure AI consent as declined and bypass
-                        onboarding wizard
-  --skip-wizard         Bypass onboarding wizard modal during startup
-  --non-interactive     Run in non-interactive mode and bypass interactive
-                        modal dialogs
   --export-report EXPORT_REPORT
                         Export dry-run simulation report to output file path
   --report-format {html,json}
                         Format for exported simulation report (html or json)
+  --dest-dir DEST_DIR   Destination directory for sorted files
+  --dry-run             Perform dry run analysis without executing physical
+                        moves
+  --flush-trash         Export staged duplicate copies to the OS Trash after
+                        move verification
 ```
 
 ##### `ledger`
 ```text
-usage: smart-autosorter ledger [-h] [--json]
+usage: smart-autosorter ledger [-h]
                                [--settings-file SETTINGS_FILE | --profile PROFILE]
+                               [-q] [--no-color] [--json] [--tui]
+                               [--interactive]
+                               [--accept-ai-consent | --decline-ai-consent]
+                               [--skip-wizard] [--non-interactive]
                                {status,reconcile,purge,export} ...
 
 positional arguments:
@@ -1056,11 +1007,23 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
-  --json                Output response in structured JSON format
   --settings-file SETTINGS_FILE
                         Path to an explicit Sortify settings.json file
   --profile PROFILE     Named configuration profile under
                         ~/.autosorter/profiles/<name>.json
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
 ```
 
 For comprehensive operational procedures, headless transaction reconciliation workflows, state transition handling, and stale daemon lock cleanup, refer to the dedicated [Ledger Reconciliation Runbook](runbooks/ledger_reconciliation.md).
@@ -1069,8 +1032,11 @@ For comprehensive operational procedures, headless transaction reconciliation wo
 ```text
 usage: smart-autosorter ledger status [-h]
                                       [--settings-file SETTINGS_FILE | --profile PROFILE]
-                                      [--ledger-db LEDGER_DB] [-q]
-                                      [--no-color] [--json]
+                                      [-q] [--no-color] [--json] [--tui]
+                                      [--interactive]
+                                      [--accept-ai-consent | --decline-ai-consent]
+                                      [--skip-wizard] [--non-interactive]
+                                      [--ledger-db LEDGER_DB]
                                       [--session-id SESSION_ID] [--failed]
                                       [--aborted]
 
@@ -1080,11 +1046,21 @@ options:
                         Path to an explicit Sortify settings.json file
   --profile PROFILE     Named configuration profile under
                         ~/.autosorter/profiles/<name>.json
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
   --ledger-db LEDGER_DB
                         Path to sidecar transaction ledger database file
-  -q, --quiet           Suppress informational prints
-  --no-color            Disable ANSI color formatting
-  --json                Output response in structured JSON format
   --session-id SESSION_ID
                         Filter pending entries by session ID
   --failed              Filter for failed and aborted transaction records
@@ -1095,8 +1071,11 @@ options:
 ```text
 usage: smart-autosorter ledger reconcile [-h]
                                          [--settings-file SETTINGS_FILE | --profile PROFILE]
-                                         [--ledger-db LEDGER_DB] [-q]
-                                         [--no-color] [--json]
+                                         [-q] [--no-color] [--json] [--tui]
+                                         [--interactive]
+                                         [--accept-ai-consent | --decline-ai-consent]
+                                         [--skip-wizard] [--non-interactive]
+                                         [--ledger-db LEDGER_DB]
 
 options:
   -h, --help            show this help message and exit
@@ -1104,21 +1083,34 @@ options:
                         Path to an explicit Sortify settings.json file
   --profile PROFILE     Named configuration profile under
                         ~/.autosorter/profiles/<name>.json
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
   --ledger-db LEDGER_DB
                         Path to sidecar transaction ledger database file
-  -q, --quiet           Suppress informational prints
-  --no-color            Disable ANSI color formatting
-  --json                Output response in structured JSON format
 ```
 
 ###### `ledger purge`
 ```text
 usage: smart-autosorter ledger purge [-h]
                                      [--settings-file SETTINGS_FILE | --profile PROFILE]
-                                     [--ledger-db LEDGER_DB] [-q] [--no-color]
-                                     [--json] [--session-id SESSION_ID]
-                                     [--completed] [--failed] [--aborted]
-                                     [--force]
+                                     [-q] [--no-color] [--json] [--tui]
+                                     [--interactive]
+                                     [--accept-ai-consent | --decline-ai-consent]
+                                     [--skip-wizard] [--non-interactive]
+                                     [--ledger-db LEDGER_DB]
+                                     [--session-id SESSION_ID] [--completed]
+                                     [--failed] [--aborted] [--force]
 
 options:
   -h, --help            show this help message and exit
@@ -1126,11 +1118,21 @@ options:
                         Path to an explicit Sortify settings.json file
   --profile PROFILE     Named configuration profile under
                         ~/.autosorter/profiles/<name>.json
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
   --ledger-db LEDGER_DB
                         Path to sidecar transaction ledger database file
-  -q, --quiet           Suppress informational prints
-  --no-color            Disable ANSI color formatting
-  --json                Output response in structured JSON format
   --session-id SESSION_ID
                         Purge entries for a specific session ID
   --completed           Purge all completed transaction records
@@ -1143,8 +1145,11 @@ options:
 ```text
 usage: smart-autosorter ledger export [-h]
                                       [--settings-file SETTINGS_FILE | --profile PROFILE]
-                                      [--ledger-db LEDGER_DB] [-q]
-                                      [--no-color] [--json]
+                                      [-q] [--no-color] [--json] [--tui]
+                                      [--interactive]
+                                      [--accept-ai-consent | --decline-ai-consent]
+                                      [--skip-wizard] [--non-interactive]
+                                      [--ledger-db LEDGER_DB]
                                       [--session-id SESSION_ID] [-o OUTPUT]
                                       [-f {csv,json}] [--csv]
 
@@ -1154,11 +1159,21 @@ options:
                         Path to an explicit Sortify settings.json file
   --profile PROFILE     Named configuration profile under
                         ~/.autosorter/profiles/<name>.json
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
   --ledger-db LEDGER_DB
                         Path to sidecar transaction ledger database file
-  -q, --quiet           Suppress informational prints
-  --no-color            Disable ANSI color formatting
-  --json                Output response in structured JSON format
   --session-id SESSION_ID
                         Export entries for a specific session ID
   -o OUTPUT, --output OUTPUT
@@ -1170,9 +1185,12 @@ options:
 
 ##### `model`
 ```text
-usage: smart-autosorter model [-h] [--json]
+usage: smart-autosorter model [-h]
                               [--settings-file SETTINGS_FILE | --profile PROFILE]
-                              [-q] [--no-color]
+                              [-q] [--no-color] [--json] [--tui]
+                              [--interactive]
+                              [--accept-ai-consent | --decline-ai-consent]
+                              [--skip-wizard] [--non-interactive]
                               {status,download,verify,remove,delete} ...
 
 positional arguments:
@@ -1189,21 +1207,34 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
-  --json                Output response in structured JSON format
   --settings-file SETTINGS_FILE
                         Path to an explicit Sortify settings.json file
   --profile PROFILE     Named configuration profile under
                         ~/.autosorter/profiles/<name>.json
-  -q, --quiet           Suppress informational prints
-  --no-color            Disable ANSI color formatting
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
 ```
 
 ###### `model status`
 ```text
 usage: smart-autosorter model status [-h]
                                      [--settings-file SETTINGS_FILE | --profile PROFILE]
-                                     [--model-dir MODEL_DIR] [-q] [--no-color]
-                                     [--json]
+                                     [-q] [--no-color] [--json] [--tui]
+                                     [--interactive]
+                                     [--accept-ai-consent | --decline-ai-consent]
+                                     [--skip-wizard] [--non-interactive]
+                                     [--model-dir MODEL_DIR]
 
 options:
   -h, --help            show this help message and exit
@@ -1211,19 +1242,32 @@ options:
                         Path to an explicit Sortify settings.json file
   --profile PROFILE     Named configuration profile under
                         ~/.autosorter/profiles/<name>.json
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
   --model-dir MODEL_DIR
                         Explicit local model directory path override
-  -q, --quiet           Suppress informational prints
-  --no-color            Disable ANSI color formatting
-  --json                Output response in structured JSON format
 ```
 
 ###### `model download`
 ```text
 usage: smart-autosorter model download [-h]
                                        [--settings-file SETTINGS_FILE | --profile PROFILE]
-                                       [--model-dir MODEL_DIR] [-q]
-                                       [--no-color] [--json] [--url URL]
+                                       [-q] [--no-color] [--json] [--tui]
+                                       [--interactive]
+                                       [--accept-ai-consent | --decline-ai-consent]
+                                       [--skip-wizard] [--non-interactive]
+                                       [--model-dir MODEL_DIR] [--url URL]
                                        [--proxy PROXY] [--force]
 
 options:
@@ -1232,11 +1276,21 @@ options:
                         Path to an explicit Sortify settings.json file
   --profile PROFILE     Named configuration profile under
                         ~/.autosorter/profiles/<name>.json
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
   --model-dir MODEL_DIR
                         Explicit local model directory path override
-  -q, --quiet           Suppress informational prints
-  --no-color            Disable ANSI color formatting
-  --json                Output response in structured JSON format
   --url URL             HTTPS allowlisted model weights URL
   --proxy PROXY         HTTP/HTTPS proxy URL for model download transfers
   --force               Re-download model weights even if verified files
@@ -1247,8 +1301,11 @@ options:
 ```text
 usage: smart-autosorter model verify [-h]
                                      [--settings-file SETTINGS_FILE | --profile PROFILE]
-                                     [--model-dir MODEL_DIR] [-q] [--no-color]
-                                     [--json]
+                                     [-q] [--no-color] [--json] [--tui]
+                                     [--interactive]
+                                     [--accept-ai-consent | --decline-ai-consent]
+                                     [--skip-wizard] [--non-interactive]
+                                     [--model-dir MODEL_DIR]
 
 options:
   -h, --help            show this help message and exit
@@ -1256,19 +1313,32 @@ options:
                         Path to an explicit Sortify settings.json file
   --profile PROFILE     Named configuration profile under
                         ~/.autosorter/profiles/<name>.json
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
   --model-dir MODEL_DIR
                         Explicit local model directory path override
-  -q, --quiet           Suppress informational prints
-  --no-color            Disable ANSI color formatting
-  --json                Output response in structured JSON format
 ```
 
 ###### `model remove`
 ```text
 usage: smart-autosorter model remove [-h]
                                      [--settings-file SETTINGS_FILE | --profile PROFILE]
-                                     [--model-dir MODEL_DIR] [-q] [--no-color]
-                                     [--json]
+                                     [-q] [--no-color] [--json] [--tui]
+                                     [--interactive]
+                                     [--accept-ai-consent | --decline-ai-consent]
+                                     [--skip-wizard] [--non-interactive]
+                                     [--model-dir MODEL_DIR]
 
 options:
   -h, --help            show this help message and exit
@@ -1276,19 +1346,32 @@ options:
                         Path to an explicit Sortify settings.json file
   --profile PROFILE     Named configuration profile under
                         ~/.autosorter/profiles/<name>.json
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
   --model-dir MODEL_DIR
                         Explicit local model directory path override
-  -q, --quiet           Suppress informational prints
-  --no-color            Disable ANSI color formatting
-  --json                Output response in structured JSON format
 ```
 
 ###### `model delete`
 ```text
 usage: smart-autosorter model remove [-h]
                                      [--settings-file SETTINGS_FILE | --profile PROFILE]
-                                     [--model-dir MODEL_DIR] [-q] [--no-color]
-                                     [--json]
+                                     [-q] [--no-color] [--json] [--tui]
+                                     [--interactive]
+                                     [--accept-ai-consent | --decline-ai-consent]
+                                     [--skip-wizard] [--non-interactive]
+                                     [--model-dir MODEL_DIR]
 
 options:
   -h, --help            show this help message and exit
@@ -1296,17 +1379,31 @@ options:
                         Path to an explicit Sortify settings.json file
   --profile PROFILE     Named configuration profile under
                         ~/.autosorter/profiles/<name>.json
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
   --model-dir MODEL_DIR
                         Explicit local model directory path override
-  -q, --quiet           Suppress informational prints
-  --no-color            Disable ANSI color formatting
-  --json                Output response in structured JSON format
 ```
 
 ##### `quarantine`
 ```text
-usage: smart-autosorter quarantine [-h] [--json]
+usage: smart-autosorter quarantine [-h]
                                    [--settings-file SETTINGS_FILE | --profile PROFILE]
+                                   [-q] [--no-color] [--json] [--tui]
+                                   [--interactive]
+                                   [--accept-ai-consent | --decline-ai-consent]
+                                   [--skip-wizard] [--non-interactive]
                                    {list,inspect,process,release,dismiss} ...
 
 positional arguments:
@@ -1322,19 +1419,34 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
-  --json                Output response in structured JSON format
   --settings-file SETTINGS_FILE
                         Path to an explicit Sortify settings.json file
   --profile PROFILE     Named configuration profile under
                         ~/.autosorter/profiles/<name>.json
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
 ```
 
 ###### `quarantine list`
 ```text
 usage: smart-autosorter quarantine list [-h]
                                         [--settings-file SETTINGS_FILE | --profile PROFILE]
-                                        [--db-path DB_PATH] [-q] [--no-color]
-                                        [--json] [--status STATUS]
+                                        [-q] [--no-color] [--json] [--tui]
+                                        [--interactive]
+                                        [--accept-ai-consent | --decline-ai-consent]
+                                        [--skip-wizard] [--non-interactive]
+                                        [--db-path DB_PATH] [--status STATUS]
                                         [--base-dir BASE_DIR]
 
 options:
@@ -1343,10 +1455,20 @@ options:
                         Path to an explicit Sortify settings.json file
   --profile PROFILE     Named configuration profile under
                         ~/.autosorter/profiles/<name>.json
-  --db-path DB_PATH     Path to database file
-  -q, --quiet           Suppress informational prints
-  --no-color            Disable ANSI color formatting
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
   --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
+  --db-path DB_PATH     Path to database file
   --status STATUS       Filter items by quarantine status (e.g. STAGED,
                         QUARANTINED, IN_INSPECTION, RELEASED,
                         DEAD_LETTER_QUEUE)
@@ -1357,8 +1479,11 @@ options:
 ```text
 usage: smart-autosorter quarantine inspect [-h]
                                            [--settings-file SETTINGS_FILE | --profile PROFILE]
-                                           [--db-path DB_PATH] [-q]
-                                           [--no-color] [--json]
+                                           [-q] [--no-color] [--json] [--tui]
+                                           [--interactive]
+                                           [--accept-ai-consent | --decline-ai-consent]
+                                           [--skip-wizard] [--non-interactive]
+                                           [--db-path DB_PATH]
                                            [--job-id JOB_ID]
                                            [JOB_ID]
 
@@ -1371,10 +1496,20 @@ options:
                         Path to an explicit Sortify settings.json file
   --profile PROFILE     Named configuration profile under
                         ~/.autosorter/profiles/<name>.json
-  --db-path DB_PATH     Path to database file
-  -q, --quiet           Suppress informational prints
-  --no-color            Disable ANSI color formatting
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
   --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
+  --db-path DB_PATH     Path to database file
   --job-id JOB_ID       Quarantine job ID
 ```
 
@@ -1382,8 +1517,11 @@ options:
 ```text
 usage: smart-autosorter quarantine process [-h]
                                            [--settings-file SETTINGS_FILE | --profile PROFILE]
-                                           [--db-path DB_PATH] [-q]
-                                           [--no-color] [--json]
+                                           [-q] [--no-color] [--json] [--tui]
+                                           [--interactive]
+                                           [--accept-ai-consent | --decline-ai-consent]
+                                           [--skip-wizard] [--non-interactive]
+                                           [--db-path DB_PATH]
                                            [--job-id JOB_ID]
                                            [--job-ids JOB_IDS]
                                            [--timeout TIMEOUT]
@@ -1398,10 +1536,20 @@ options:
                         Path to an explicit Sortify settings.json file
   --profile PROFILE     Named configuration profile under
                         ~/.autosorter/profiles/<name>.json
-  --db-path DB_PATH     Path to database file
-  -q, --quiet           Suppress informational prints
-  --no-color            Disable ANSI color formatting
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
   --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
+  --db-path DB_PATH     Path to database file
   --job-id JOB_ID       Quarantine job ID
   --job-ids JOB_IDS     Comma-separated list of quarantine job IDs
   --timeout TIMEOUT     Forensic scan timeout in seconds (default 300.0)
@@ -1411,8 +1559,11 @@ options:
 ```text
 usage: smart-autosorter quarantine release [-h]
                                            [--settings-file SETTINGS_FILE | --profile PROFILE]
-                                           [--db-path DB_PATH] [-q]
-                                           [--no-color] [--json]
+                                           [-q] [--no-color] [--json] [--tui]
+                                           [--interactive]
+                                           [--accept-ai-consent | --decline-ai-consent]
+                                           [--skip-wizard] [--non-interactive]
+                                           [--db-path DB_PATH]
                                            [--job-id JOB_ID]
                                            [--job-ids JOB_IDS]
                                            [--dest-dir DEST_DIR]
@@ -1429,10 +1580,20 @@ options:
                         Path to an explicit Sortify settings.json file
   --profile PROFILE     Named configuration profile under
                         ~/.autosorter/profiles/<name>.json
-  --db-path DB_PATH     Path to database file
-  -q, --quiet           Suppress informational prints
-  --no-color            Disable ANSI color formatting
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
   --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
+  --db-path DB_PATH     Path to database file
   --job-id JOB_ID       Quarantine job ID
   --job-ids JOB_IDS     Comma-separated list of quarantine job IDs
   --dest-dir DEST_DIR   Target destination directory for released file
@@ -1448,8 +1609,11 @@ options:
 ```text
 usage: smart-autosorter quarantine dismiss [-h]
                                            [--settings-file SETTINGS_FILE | --profile PROFILE]
-                                           [--db-path DB_PATH] [-q]
-                                           [--no-color] [--json]
+                                           [-q] [--no-color] [--json] [--tui]
+                                           [--interactive]
+                                           [--accept-ai-consent | --decline-ai-consent]
+                                           [--skip-wizard] [--non-interactive]
+                                           [--db-path DB_PATH]
                                            [--job-id JOB_ID]
                                            [--job-ids JOB_IDS]
                                            [JOB_ID ...]
@@ -1463,18 +1627,32 @@ options:
                         Path to an explicit Sortify settings.json file
   --profile PROFILE     Named configuration profile under
                         ~/.autosorter/profiles/<name>.json
-  --db-path DB_PATH     Path to database file
-  -q, --quiet           Suppress informational prints
-  --no-color            Disable ANSI color formatting
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
   --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
+  --db-path DB_PATH     Path to database file
   --job-id JOB_ID       Quarantine job ID
   --job-ids JOB_IDS     Comma-separated list of quarantine job IDs
 ```
 
 ##### `rules`
 ```text
-usage: smart-autosorter rules [-h] [--json]
+usage: smart-autosorter rules [-h]
                               [--settings-file SETTINGS_FILE | --profile PROFILE]
+                              [-q] [--no-color] [--json] [--tui]
+                              [--interactive]
+                              [--accept-ai-consent | --decline-ai-consent]
+                              [--skip-wizard] [--non-interactive]
                               [--folder FOLDER]
                               {import,export,list,add,remove,enable,disable}
                               ...
@@ -1496,11 +1674,23 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
-  --json                Output response in structured JSON format
   --settings-file SETTINGS_FILE
                         Optional path to a specific Sortify settings.json file
   --profile PROFILE     Named configuration profile under
                         ~/.autosorter/profiles/<name>.json
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
   --folder FOLDER       Scope rule inspection or updates to a specific target
                         directory
 ```
@@ -1509,8 +1699,12 @@ options:
 ```text
 usage: smart-autosorter rules import [-h]
                                      [--settings-file SETTINGS_FILE | --profile PROFILE]
-                                     [--folder FOLDER] [-q] [--no-color]
-                                     [--json] [-f FILE_OPT] [--dry-run]
+                                     [-q] [--no-color] [--json] [--tui]
+                                     [--interactive]
+                                     [--accept-ai-consent | --decline-ai-consent]
+                                     [--skip-wizard] [--non-interactive]
+                                     [--folder FOLDER] [-f FILE_OPT]
+                                     [--dry-run]
                                      [--conflict-strategy {keep_existing,overwrite,skip_conflicting}]
                                      [--resolve IDENT=STRATEGY]
                                      [--disabled | --enable]
@@ -1526,10 +1720,20 @@ options:
                         Optional path to a specific Sortify settings.json file
   --profile PROFILE     Named configuration profile under
                         ~/.autosorter/profiles/<name>.json
-  --folder FOLDER       Scope rule operation to a specific target directory
-  -q, --quiet           Suppress non-essential informational output
-  --no-color            Disable ANSI color formatting
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
   --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
+  --folder FOLDER       Scope rule operation to a specific target directory
   -f FILE_OPT, --file FILE_OPT
                         Path to rule file (.hazelrules, .plist, .ini, .xml,
                         .json, .dropit)
@@ -1550,8 +1754,11 @@ options:
 ```text
 usage: smart-autosorter rules export [-h]
                                      [--settings-file SETTINGS_FILE | --profile PROFILE]
-                                     [--folder FOLDER] [-q] [--no-color]
-                                     [--json] [-o OUTPUT_OPT]
+                                     [-q] [--no-color] [--json] [--tui]
+                                     [--interactive]
+                                     [--accept-ai-consent | --decline-ai-consent]
+                                     [--skip-wizard] [--non-interactive]
+                                     [--folder FOLDER] [-o OUTPUT_OPT]
                                      [-f {sortify_json,hazel,dropit_ini,json,hazelrules,ini}]
                                      [--dry-run]
                                      [OUTPUT]
@@ -1565,10 +1772,20 @@ options:
                         Optional path to a specific Sortify settings.json file
   --profile PROFILE     Named configuration profile under
                         ~/.autosorter/profiles/<name>.json
-  --folder FOLDER       Scope rule operation to a specific target directory
-  -q, --quiet           Suppress non-essential informational output
-  --no-color            Disable ANSI color formatting
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
   --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
+  --folder FOLDER       Scope rule operation to a specific target directory
   -o OUTPUT_OPT, --output OUTPUT_OPT
                         Destination file path for exported rules
   -f {sortify_json,hazel,dropit_ini,json,hazelrules,ini}, --format {sortify_json,hazel,dropit_ini,json,hazelrules,ini}
@@ -1582,8 +1799,11 @@ options:
 ```text
 usage: smart-autosorter rules list [-h]
                                    [--settings-file SETTINGS_FILE | --profile PROFILE]
-                                   [--folder FOLDER] [-q] [--no-color]
-                                   [--json]
+                                   [-q] [--no-color] [--json] [--tui]
+                                   [--interactive]
+                                   [--accept-ai-consent | --decline-ai-consent]
+                                   [--skip-wizard] [--non-interactive]
+                                   [--folder FOLDER]
                                    [--kind {all,keyword,learned,extension,policy}]
                                    [--status {all,active,disabled}]
 
@@ -1593,10 +1813,20 @@ options:
                         Optional path to a specific Sortify settings.json file
   --profile PROFILE     Named configuration profile under
                         ~/.autosorter/profiles/<name>.json
-  --folder FOLDER       Scope rule operation to a specific target directory
-  -q, --quiet           Suppress non-essential informational output
-  --no-color            Disable ANSI color formatting
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
   --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
+  --folder FOLDER       Scope rule operation to a specific target directory
   --kind {all,keyword,learned,extension,policy}
                         Filter rules by kind (all, keyword, learned,
                         extension, policy)
@@ -1608,8 +1838,11 @@ options:
 ```text
 usage: smart-autosorter rules add [-h]
                                   [--settings-file SETTINGS_FILE | --profile PROFILE]
-                                  [--folder FOLDER] [-q] [--no-color] [--json]
-                                  [--pattern PATTERN_OPT]
+                                  [-q] [--no-color] [--json] [--tui]
+                                  [--interactive]
+                                  [--accept-ai-consent | --decline-ai-consent]
+                                  [--skip-wizard] [--non-interactive]
+                                  [--folder FOLDER] [--pattern PATTERN_OPT]
                                   [--target TARGET_OPT]
                                   [--kind {keyword,learned,extension,policy}]
                                   [--type {keyword,pattern,override,action,compliance,unarchive,duplicate,age,modified_date,created_date,exif_date,size,glob,regex,extension}]
@@ -1631,10 +1864,20 @@ options:
                         Optional path to a specific Sortify settings.json file
   --profile PROFILE     Named configuration profile under
                         ~/.autosorter/profiles/<name>.json
-  --folder FOLDER       Scope rule operation to a specific target directory
-  -q, --quiet           Suppress non-essential informational output
-  --no-color            Disable ANSI color formatting
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
   --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
+  --folder FOLDER       Scope rule operation to a specific target directory
   --pattern PATTERN_OPT
                         Rule pattern or expression
   --target TARGET_OPT   Relative destination folder path
@@ -1658,8 +1901,11 @@ options:
 ```text
 usage: smart-autosorter rules remove [-h]
                                      [--settings-file SETTINGS_FILE | --profile PROFILE]
-                                     [--folder FOLDER] [-q] [--no-color]
-                                     [--json] [--pattern PATTERN_OPT]
+                                     [-q] [--no-color] [--json] [--tui]
+                                     [--interactive]
+                                     [--accept-ai-consent | --decline-ai-consent]
+                                     [--skip-wizard] [--non-interactive]
+                                     [--folder FOLDER] [--pattern PATTERN_OPT]
                                      [--kind {all,keyword,learned,extension,policy}]
                                      [PATTERN]
 
@@ -1673,10 +1919,20 @@ options:
                         Optional path to a specific Sortify settings.json file
   --profile PROFILE     Named configuration profile under
                         ~/.autosorter/profiles/<name>.json
-  --folder FOLDER       Scope rule operation to a specific target directory
-  -q, --quiet           Suppress non-essential informational output
-  --no-color            Disable ANSI color formatting
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
   --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
+  --folder FOLDER       Scope rule operation to a specific target directory
   --pattern PATTERN_OPT
                         Rule pattern, extension, category, or policy
                         expression to remove
@@ -1689,8 +1945,11 @@ options:
 ```text
 usage: smart-autosorter rules enable [-h]
                                      [--settings-file SETTINGS_FILE | --profile PROFILE]
-                                     [--folder FOLDER] [-q] [--no-color]
-                                     [--json] [--pattern PATTERN_OPT]
+                                     [-q] [--no-color] [--json] [--tui]
+                                     [--interactive]
+                                     [--accept-ai-consent | --decline-ai-consent]
+                                     [--skip-wizard] [--non-interactive]
+                                     [--folder FOLDER] [--pattern PATTERN_OPT]
                                      [--kind {all,keyword,learned,policy}]
                                      [PATTERN]
 
@@ -1703,10 +1962,20 @@ options:
                         Optional path to a specific Sortify settings.json file
   --profile PROFILE     Named configuration profile under
                         ~/.autosorter/profiles/<name>.json
-  --folder FOLDER       Scope rule operation to a specific target directory
-  -q, --quiet           Suppress non-essential informational output
-  --no-color            Disable ANSI color formatting
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
   --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
+  --folder FOLDER       Scope rule operation to a specific target directory
   --pattern PATTERN_OPT
                         Rule pattern or policy expression to enable
   --kind {all,keyword,learned,policy}
@@ -1718,8 +1987,12 @@ options:
 ```text
 usage: smart-autosorter rules disable [-h]
                                       [--settings-file SETTINGS_FILE | --profile PROFILE]
-                                      [--folder FOLDER] [-q] [--no-color]
-                                      [--json] [--pattern PATTERN_OPT]
+                                      [-q] [--no-color] [--json] [--tui]
+                                      [--interactive]
+                                      [--accept-ai-consent | --decline-ai-consent]
+                                      [--skip-wizard] [--non-interactive]
+                                      [--folder FOLDER]
+                                      [--pattern PATTERN_OPT]
                                       [--kind {all,keyword,learned,policy}]
                                       [PATTERN]
 
@@ -1732,10 +2005,20 @@ options:
                         Optional path to a specific Sortify settings.json file
   --profile PROFILE     Named configuration profile under
                         ~/.autosorter/profiles/<name>.json
-  --folder FOLDER       Scope rule operation to a specific target directory
-  -q, --quiet           Suppress non-essential informational output
-  --no-color            Disable ANSI color formatting
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
   --json                Output response in structured JSON format
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
+  --folder FOLDER       Scope rule operation to a specific target directory
   --pattern PATTERN_OPT
                         Rule pattern or policy expression to disable
   --kind {all,keyword,learned,policy}
