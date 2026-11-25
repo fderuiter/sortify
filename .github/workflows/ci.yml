@@ -183,6 +183,10 @@ jobs:
       run: |
         uv run ruff check .
 
+    - name: Check Ruff Exception Ceilings
+      run: |
+        uv run python scripts/check_ruff_exception_ceilings.py --github-annotations
+
     - name: Format with Ruff
       run: |
         uv run ruff format --check .

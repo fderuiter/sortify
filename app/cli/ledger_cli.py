@@ -2,13 +2,17 @@
 
 import argparse
 import json
+import logging
 import sys
+from typing import Any
 
 from app.cli.error_emitter import emit_cli_error
 from app.cli.settings_args import add_settings_source_args
 from app.config import AppSettings
 from app.core.exceptions import AuditExportError
 from app.core.moves import MoveLedger
+
+logger = logging.getLogger(__name__)
 
 
 def register_subparser(subparsers: argparse._SubParsersAction) -> None:
@@ -227,21 +231,34 @@ def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bo
 
         elif ledger_cmd == "reconcile":
             assert ledger is not None
+            sync_warning: str | None = None
             if lease is None:
                 try:
                     from app.core.services import acquire_services
 
                     lease = acquire_services()
                     db = lease.db
-                except Exception:
-                    pass
+                except Exception as exc:
+                    sync_warning = (
+                        f"Could not open app store ({exc}); "
+                        "skipping document path sync during reconciliation."
+                    )
+                    logger.warning(
+                        "Failed to acquire app store services for ledger reconcile; skipping document path sync: %s",
+                        exc,
+                        exc_info=True,
+                    )
 
             reconciled_count = ledger.reconcile_incomplete_transactions(db=db)
 
-            res = {
+            res: dict[str, Any] = {
                 "status": "success",
                 "reconciled_count": reconciled_count,
             }
+            if sync_warning is not None:
+                res["warnings"] = [sync_warning]
+                if not quiet:
+                    print(f"Warning: {sync_warning}", file=sys.stderr)
 
             if is_json:
                 sys.stdout.write(json.dumps(res, indent=2) + "\n")

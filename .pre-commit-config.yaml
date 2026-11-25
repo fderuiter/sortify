@@ -42,6 +42,12 @@ repos:
         entry: uv run ruff check --force-exclude
         language: system
         types: [python]
+      - id: ruff-exception-ceilings
+        name: Ruff Exception Ceilings
+        entry: uv run python scripts/check_ruff_exception_ceilings.py
+        language: system
+        pass_filenames: false
+        files: '^((app|scripts|\.agents)/.*\.py|pyproject\.toml|uv\.lock)$'
       - id: ty-check
         name: Ty Type Check
         entry: uv run python scripts/check_ty_warnings.py

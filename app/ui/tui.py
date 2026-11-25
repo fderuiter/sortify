@@ -1004,12 +1004,24 @@ class AutoSorterTUI(
                 from app.core.shared_registry import SharedModelRegistry
 
                 SharedModelRegistry.get_instance().unload_all_models()
-            except Exception:
-                pass
-            self.announce(
-                "AI processing disabled. In-memory AI models unloaded instantly.",
-                priority="high",
-            )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to unload in-memory AI models after consent revocation: %s",
+                    exc,
+                    exc_info=True,
+                )
+                err_msg = (
+                    "AI processing disabled, but failed to unload in-memory AI models: "
+                    f"{exc}"
+                )
+                self.announce(err_msg, priority="assertive")
+                if hasattr(self, "notify"):
+                    self.notify(err_msg, severity="error")
+            else:
+                self.announce(
+                    "AI processing disabled. In-memory AI models unloaded instantly.",
+                    priority="high",
+                )
         elif consent_val is True:
             self.announce("AI processing enabled.", priority="high")
 
@@ -1361,101 +1373,74 @@ class AutoSorterTUI(
             return
 
         def on_saved(res: dict[str, Any] | None) -> None:
-            if res:
-                if "PROTECTED_PATHS" in res:
+            if not res:
+                return
+            from pydantic import ValidationError
+
+            settings_keys = (
+                "PROTECTED_PATHS",
+                "IGNORED_EXTENSIONS",
+                "MAX_WORKERS",
+                "MAX_FOLDERS",
+                "SORTING_STRATEGY",
+                "AI_ASSISTED_NAMING",
+                "CLINICAL_SMART_RENAMING",
+                "CONTEXTUAL_RENAMING",
+                "SPEAK_ANNOUNCEMENTS",
+                "ENABLE_CHARACTER_KEY_SHORTCUTS",
+                "PDF_TEXT_DENSITY_THRESHOLD",
+                "CONFLICT_POLICY",
+                "DUPLICATE_ACTION",
+                "DETECT_ORIGINAL_BY",
+                "CLEANUP_EMPTY_FOLDERS",
+                "PRESERVE_HIERARCHY",
+                "SCAN_MAX_DEPTH",
+                "AUTO_QUARANTINE_RATINGS",
+                "QUARANTINE_DIR_NAME",
+                "RENAME_PATTERN",
+                "AI_CONSENT_GRANTED",
+            )
+            validation_errors: list[str] = []
+            for key in settings_keys:
+                if key in res:
                     try:
-                        self.settings.PROTECTED_PATHS = res["PROTECTED_PATHS"]
-                    except Exception:
-                        pass
-                if "IGNORED_EXTENSIONS" in res:
-                    self.settings.IGNORED_EXTENSIONS = res["IGNORED_EXTENSIONS"]
-                if "MAX_WORKERS" in res:
-                    try:
-                        self.settings.MAX_WORKERS = res["MAX_WORKERS"]
-                    except Exception:
-                        pass
-                if "MAX_FOLDERS" in res:
-                    try:
-                        self.settings.MAX_FOLDERS = res["MAX_FOLDERS"]
-                    except Exception:
-                        pass
-                if "SORTING_STRATEGY" in res:
-                    self.settings.SORTING_STRATEGY = res["SORTING_STRATEGY"]
-                if "AI_ASSISTED_NAMING" in res:
-                    try:
-                        self.settings.AI_ASSISTED_NAMING = res["AI_ASSISTED_NAMING"]
-                    except Exception:
-                        pass
-                if "CLINICAL_SMART_RENAMING" in res:
-                    self.settings.CLINICAL_SMART_RENAMING = res[
-                        "CLINICAL_SMART_RENAMING"
-                    ]
-                if "CONTEXTUAL_RENAMING" in res:
-                    self.settings.CONTEXTUAL_RENAMING = res["CONTEXTUAL_RENAMING"]
-                if "AI_CONSENT_GRANTED" in res:
-                    self.settings.AI_CONSENT_GRANTED = res["AI_CONSENT_GRANTED"]
-                if "SPEAK_ANNOUNCEMENTS" in res:
-                    self.settings.SPEAK_ANNOUNCEMENTS = res["SPEAK_ANNOUNCEMENTS"]
-                if "ENABLE_CHARACTER_KEY_SHORTCUTS" in res:
-                    self.settings.ENABLE_CHARACTER_KEY_SHORTCUTS = res[
-                        "ENABLE_CHARACTER_KEY_SHORTCUTS"
-                    ]
-                if "PDF_TEXT_DENSITY_THRESHOLD" in res:
-                    self.settings.PDF_TEXT_DENSITY_THRESHOLD = res[
-                        "PDF_TEXT_DENSITY_THRESHOLD"
-                    ]
-                if "CONFLICT_POLICY" in res:
-                    self.settings.CONFLICT_POLICY = res["CONFLICT_POLICY"]
-                if "DUPLICATE_ACTION" in res:
-                    try:
-                        self.settings.DUPLICATE_ACTION = res["DUPLICATE_ACTION"]
-                    except Exception:
-                        pass
-                if "DETECT_ORIGINAL_BY" in res:
-                    try:
-                        self.settings.DETECT_ORIGINAL_BY = res["DETECT_ORIGINAL_BY"]
-                    except Exception:
-                        pass
-                if "CLEANUP_EMPTY_FOLDERS" in res:
-                    try:
-                        self.settings.CLEANUP_EMPTY_FOLDERS = res[
-                            "CLEANUP_EMPTY_FOLDERS"
-                        ]
-                    except Exception:
-                        pass
-                if "PRESERVE_HIERARCHY" in res:
-                    try:
-                        self.settings.PRESERVE_HIERARCHY = res["PRESERVE_HIERARCHY"]
-                    except Exception:
-                        pass
-                if "SCAN_MAX_DEPTH" in res:
-                    try:
-                        self.settings.SCAN_MAX_DEPTH = res["SCAN_MAX_DEPTH"]
-                    except Exception:
-                        pass
-                if "AUTO_QUARANTINE_RATINGS" in res:
-                    try:
-                        self.settings.AUTO_QUARANTINE_RATINGS = res[
-                            "AUTO_QUARANTINE_RATINGS"
-                        ]
-                    except Exception:
-                        pass
-                if "QUARANTINE_DIR_NAME" in res:
-                    try:
-                        self.settings.QUARANTINE_DIR_NAME = res["QUARANTINE_DIR_NAME"]
-                    except Exception:
-                        pass
-                if "RENAME_PATTERN" in res:
-                    try:
-                        self.settings.RENAME_PATTERN = res["RENAME_PATTERN"]
-                    except Exception:
-                        pass
-                if hasattr(self.settings, "_save"):
-                    self.settings._save()
+                        setattr(self.settings, key, res[key])
+                    except ValidationError as exc:
+                        logger.warning(
+                            "Settings validation failed for %s: %s",
+                            key,
+                            exc,
+                            exc_info=True,
+                        )
+                        first_err = (
+                            exc.errors()[0].get("msg", str(exc))
+                            if exc.errors()
+                            else str(exc)
+                        )
+                        validation_errors.append(f"{key}: {first_err}")
+                    except ValueError as exc:
+                        logger.warning(
+                            "Settings validation failed for %s: %s",
+                            key,
+                            exc,
+                            exc_info=True,
+                        )
+                        validation_errors.append(f"{key}: {exc}")
+
+            if validation_errors:
+                err_msg = f"Failed to save settings ({'; '.join(validation_errors)})."
                 self.update_status()
-                self.announce("Settings updated and saved.")
-                if self.base_dir:
-                    self.action_scan_directory()
+                self.announce(err_msg, priority="assertive")
+                if hasattr(self, "notify"):
+                    self.notify(err_msg, severity="error")
+                return
+
+            if hasattr(self.settings, "_save"):
+                self.settings._save()
+            self.update_status()
+            self.announce("Settings updated and saved.")
+            if self.base_dir:
+                self.action_scan_directory()
 
         self.push_screen(SettingsModal(self.settings), on_saved)
 
