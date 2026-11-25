@@ -3,7 +3,6 @@
 import logging
 import os
 from collections.abc import Collection, Sequence
-from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -61,7 +60,7 @@ def _step_count_with_legacy_fallback(conn, session_id: str) -> int:
     return _count(conn, "transaction_ledger", session_id)
 
 
-def find_abandoned_sessions(store=None, session_root: Path | None = None) -> list:
+def find_abandoned_sessions(store=None) -> list:
     """Return the sessions a crash left unfinished, newest first.
 
     A session with recorded moves can be resumed or rolled back, and one
@@ -164,7 +163,7 @@ def roll_back_abandoned_session(settings, session_info: dict) -> bool:
     try:
         temp_session = AppSession(settings, base_dir, session_id=session_id)
         try:
-            result = SortPipeline(temp_session).undo(session_id, ignore_missing=True)
+            result = SortPipeline(temp_session).undo(session_id)
         finally:
             temp_session.close()
     except Exception as e:  # noqa: BLE001 - a failed rollback must keep the session files, whatever the cause

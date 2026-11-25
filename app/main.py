@@ -1126,7 +1126,6 @@ def handle_undo_command(args: argparse.Namespace, settings: AppSettings):
     list_flag = getattr(args, "list", False)
     latest_flag = getattr(args, "latest", False)
     session_id_arg = getattr(args, "session_id", None)
-    force_flag = getattr(args, "force", False)
     json_output = getattr(args, "json", False)
 
     # Constraint: Default to --latest when no session ID or subcommand flag specified
@@ -1195,7 +1194,6 @@ def handle_undo_command(args: argparse.Namespace, settings: AppSettings):
 
         undo_result = SortPipeline(None, settings=settings).undo(
             target_session_id,
-            ignore_missing=force_flag,
         )
         if "error" in undo_result.summary:
             raise RuntimeError(str(undo_result.summary["error"]))

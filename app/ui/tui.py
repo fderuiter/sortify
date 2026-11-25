@@ -1833,9 +1833,8 @@ class AutoSorterTUI(
             if not result or not result.get("confirmed"):
                 return
             sid = result["session_id"]
-            ignore_missing = result.get("ignore_missing", False)
             selected_step_ids = result.get("selected_step_ids")
-            self.run_undo_worker(sid, ignore_missing, selected_step_ids)
+            self.run_undo_worker(sid, selected_step_ids=selected_step_ids)
 
         self.push_screen(
             RollbackConfirmModal(session_info=target_sess),
@@ -1866,7 +1865,6 @@ class AutoSorterTUI(
 
             undo_result = pipeline.undo(
                 session_id,
-                ignore_missing=ignore_missing,
                 selected_step_ids=selected_step_ids,
             )
             if "error" in undo_result.summary:

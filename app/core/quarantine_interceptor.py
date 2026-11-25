@@ -1647,14 +1647,3 @@ class QuarantineInterceptorService:
                     }
                 )
         return results
-
-    def recover_orphaned_jobs(
-        self, timeout_seconds: Optional[float] = None
-    ) -> list[str]:
-        """Detect and reset orphaned inspection jobs exceeding configured timeouts back to STAGED."""
-        effective_timeout = (
-            timeout_seconds if timeout_seconds is not None else self.worker_timeout
-        )
-        return self.db.recover_orphaned_quarantine_jobs(
-            timeout_seconds=effective_timeout
-        )

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "91525c8f817343e9ac973841101f20012834c4295e270be9d24bc90d948b992b"
+    "checksum": "9055707ee3781ad93780a87e856106b395acea2d7e588c41e2e6aacf33e9d1b5"
   },
   "classes": [
     {
@@ -115,15 +115,6 @@
               "name": "db_path"
             }
           ],
-          "returns": "str"
-        },
-        {
-          "async": false,
-          "decorators": [
-            "@staticmethod"
-          ],
-          "name": "generate_bootstrap_key",
-          "parameters": [],
           "returns": "str"
         },
         {
@@ -543,19 +534,6 @@
       "name": "get_fallback_keys_dir",
       "parameters": [],
       "returns": "Path"
-    },
-    {
-      "async": false,
-      "decorators": [],
-      "name": "secure_delete_dir",
-      "parameters": [
-        {
-          "annotation": "Path",
-          "default": null,
-          "name": "dir_path"
-        }
-      ],
-      "returns": null
     },
     {
       "async": false,

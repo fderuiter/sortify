@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "c8b66a9dbeb2202daf3729ddb3862ac07ab6b23eee690a5bbf43a7c27d7827be"
+    "checksum": "685769927d60ba3c0ed12b89fa40bbf6ed0a22e344fad5f5e5d692c87ea08352"
   },
   "classes": [
     {
@@ -238,29 +238,6 @@
         {
           "async": false,
           "decorators": [],
-          "name": "get_document_rating",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "base_dir"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "filepath"
-            }
-          ],
-          "returns": "str | None"
-        },
-        {
-          "async": false,
-          "decorators": [],
           "name": "get_document_vector",
           "parameters": [
             {
@@ -494,29 +471,6 @@
         {
           "async": false,
           "decorators": [],
-          "name": "get_user_verified_target_path",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": null,
-              "default": null,
-              "name": "base_dir"
-            },
-            {
-              "annotation": null,
-              "default": null,
-              "name": "filepath"
-            }
-          ],
-          "returns": "Optional[str]"
-        },
-        {
-          "async": false,
-          "decorators": [],
           "name": "init_db",
           "parameters": [
             {
@@ -541,47 +495,6 @@
               "annotation": "Optional[str]",
               "default": "None",
               "name": "base_dir"
-            }
-          ],
-          "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "recover_orphaned_quarantine_jobs",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "float",
-              "default": "300.0",
-              "name": "timeout_seconds"
-            }
-          ],
-          "returns": "list[str]"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "remove_document",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": null,
-              "default": null,
-              "name": "base_dir"
-            },
-            {
-              "annotation": null,
-              "default": null,
-              "name": "filepath"
             }
           ],
           "returns": null

@@ -636,6 +636,13 @@ def test_manual_edits_persist_sqlite_doc_relpath_nested_ops_and_rescan(
                         stack.extend(reversed(curr.children))
                     return None
 
+                def _verified_target(rel_path: str) -> str | None:
+                    norm = rel_path.replace("\\", "/")
+                    for doc in session.db.get_all_documents(str(ws)):
+                        if str(doc[0]).replace("\\", "/") == norm and len(doc) > 3:
+                            return doc[3]
+                    return None
+
                 # 1. Single F2 rename on nested file persists source doc_relpath in SQLite
                 inv_node = _find_tree_node(
                     lambda d: d.get("is_file") and d.get("key") == "inbox/inv_1.pdf"
@@ -653,10 +660,7 @@ def test_manual_edits_persist_sqlite_doc_relpath_nested_ops_and_rescan(
                 app.action_rename_node()
                 await pilot.pause(0.05)
 
-                assert (
-                    session.db.get_user_verified_target_path(str(ws), "inbox/inv_1.pdf")
-                    == "Finance/2024/Invoices"
-                )
+                assert _verified_target("inbox/inv_1.pdf") == "Finance/2024/Invoices"
 
                 # 2. Nested on_reassigned moves tax_2024.pdf from Finance/2024/Invoices -> Legal/Tax/2024
                 tax_node = _find_tree_node(
@@ -676,10 +680,7 @@ def test_manual_edits_persist_sqlite_doc_relpath_nested_ops_and_rescan(
                 await pilot.pause(0.05)
 
                 assert "tax_2024.pdf" in app.plan["Legal"]["Tax"]["2024"]
-                assert (
-                    session.db.get_user_verified_target_path(str(ws), "tax_2024.pdf")
-                    == "Legal/Tax/2024"
-                )
+                assert _verified_target("tax_2024.pdf") == "Legal/Tax/2024"
 
                 # 3. Nested on_folder_renamed renames Finance/2024/Invoices -> Finance/2024/PaidInvoices
                 invoices_folder_node = _find_tree_node(
@@ -707,8 +708,7 @@ def test_manual_edits_persist_sqlite_doc_relpath_nested_ops_and_rescan(
                     in app.plan["Finance"]["2024"]["PaidInvoices"]
                 )
                 assert (
-                    session.db.get_user_verified_target_path(str(ws), "inbox/inv_1.pdf")
-                    == "Finance/2024/PaidInvoices"
+                    _verified_target("inbox/inv_1.pdf") == "Finance/2024/PaidInvoices"
                 )
 
                 # 4. Ctrl+L unlock + re-lock on renamed file updates SQLite via doc_relpath
@@ -724,15 +724,11 @@ def test_manual_edits_persist_sqlite_doc_relpath_nested_ops_and_rescan(
 
                 app.action_toggle_lock()
                 await pilot.pause(0.02)
-                assert (
-                    session.db.get_user_verified_target_path(str(ws), "inbox/inv_1.pdf")
-                    is None
-                )
+                assert _verified_target("inbox/inv_1.pdf") is None
                 app.action_toggle_lock()
                 await pilot.pause(0.02)
                 assert (
-                    session.db.get_user_verified_target_path(str(ws), "inbox/inv_1.pdf")
-                    == "Finance/2024/PaidInvoices"
+                    _verified_target("inbox/inv_1.pdf") == "Finance/2024/PaidInvoices"
                 )
 
                 # 5. Exclude notes.txt and verify rescan preserves manual rename, nested folders, and exclusion

@@ -334,7 +334,7 @@ class AppSession:
 
     def rollback(self, session_id, ignore_missing=False):
         """Rollback a past session."""
-        self.history_manager.rollback(session_id, ignore_missing=ignore_missing)
+        self.history_manager.rollback(session_id)
 
     def execute_moves(
         self,

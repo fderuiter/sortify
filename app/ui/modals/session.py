@@ -1677,7 +1677,6 @@ class HistoryModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
                 return
 
             sid = result["session_id"]
-            ignore_missing = result.get("ignore_missing", False)
             selected_step_ids = result.get("selected_step_ids")
 
             self.query_one("#btn-rollback-session", Button).disabled = True
@@ -1689,7 +1688,7 @@ class HistoryModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
             lbl_status.update(f"⏳ Rolling back session {sid[:8]}... Please wait.")
             self.announce(f"Executing rollback for session {sid[:8]}...")
 
-            self.run_rollback_worker(sid, ignore_missing, selected_step_ids)
+            self.run_rollback_worker(sid, selected_step_ids=selected_step_ids)
 
         self.app.push_screen(
             RollbackConfirmModal(session_info=target_sess),
@@ -1700,7 +1699,7 @@ class HistoryModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
     def run_rollback_worker(
         self,
         session_id: str,
-        ignore_missing: bool,
+        ignore_missing: bool = False,
         selected_step_ids: Optional[list[Any]] = None,
     ) -> None:
         """Execute session rollback asynchronously in background worker thread."""
@@ -1727,7 +1726,6 @@ class HistoryModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
 
             undo_result = pipeline.undo(
                 session_id,
-                ignore_missing=ignore_missing,
                 selected_step_ids=selected_step_ids,
             )
             if "error" in undo_result.summary:

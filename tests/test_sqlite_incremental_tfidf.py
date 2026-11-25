@@ -95,14 +95,14 @@ def test_sqlite_incremental_tfidf_lifecycle():
             assert len(top_terms) == 0
             assert len(doc_terms) == 0
 
-            # 6. Re-enabling verified target, then testing deletion
+            # 6. Re-enabling verified target, then testing clear
             db.set_user_verified_target_path(base_dir, new_filepath, "Baking Recipes")
             db_worker.q.join()
 
             N, top_terms, doc_terms, doc_metadata = db.get_tfidf_stats(base_dir)
             assert N == 1
 
-            db.remove_document(base_dir, new_filepath)
+            db.clear(base_dir)
             db_worker.q.join()
 
             N, top_terms, doc_terms, doc_metadata = db.get_tfidf_stats(base_dir)
@@ -323,8 +323,8 @@ def test_batch_tfidf_vocab_incremental_updates_and_deletions():
             for i in range(100):
                 assert vocab[f"newterm{i:03d}"] == 1
 
-            # Remove doc2
-            db.remove_document(base_dir, doc2)
+            # Clear doc2 target path
+            db.set_user_verified_target_path(base_dir, doc2, "")
             db_worker.q.join()
 
             with conn:

@@ -162,7 +162,7 @@ def test_scanning_stage_filters_out_transient_files(tmp_path):
         mock.patch(
             "app.core.daemon.get_files_recursively", return_value=scanned_files
         ) as mock_scan,
-        mock.patch("app.core.daemon.MetadataPass.run", return_value=[]),
+        mock.patch("app.core.metadata.MetadataPass.run", return_value=[]),
     ):
         # We also mock process_items_async
         async def dummy_process_items(items, cancel_check, **kwargs):
