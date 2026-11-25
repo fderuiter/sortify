@@ -10,6 +10,9 @@ import pytest
 
 from scripts.install_offline import (
     _extract_and_install_offline,
+    _resolve_target_venv,
+    _venv_python_path,
+    main,
     offline_install,
     safe_extract_zip,
 )
@@ -91,25 +94,34 @@ def test_safe_extract_zip_windows_drive_letter_aborts(tmp_path):
 @patch("scripts.install_offline.subprocess.run")
 @patch("scripts.install_offline.os.path.exists")
 @patch("scripts.install_offline.os.path.isdir")
-def test_extract_and_install_offline_requires_hashes(mock_isdir, mock_exists, mock_run):
-    """Test that _extract_and_install_offline passes --require-hashes to uv pip install."""
-    mock_exists.side_effect = lambda path: (
-        False if path == "offline_bundle.zip" else True
-    )
+def test_extract_and_install_offline_requires_hashes(
+    mock_isdir, mock_exists, mock_run, monkeypatch
+):
+    """Test that _extract_and_install_offline passes --python, --require-hashes, --no-deps, requirements.txt, and app_wheel.txt."""
+    monkeypatch.delenv("UV_PROJECT_ENVIRONMENT", raising=False)
+    monkeypatch.delenv("VIRTUAL_ENV", raising=False)
+    mock_exists.side_effect = lambda path: path != "offline_bundle.zip"
     mock_isdir.return_value = True
 
-    _extract_and_install_offline("uv")
+    target_venv = _extract_and_install_offline("uv")
+    assert target_venv == Path(".venv-offline")
 
     mock_run.assert_called_once()
-    args, kwargs = mock_run.call_args
+    args, _kwargs = mock_run.call_args
     cmd = args[0]
 
-    assert "uv" in cmd
-    assert "pip" in cmd
-    assert "install" in cmd
+    assert cmd[:3] == ["uv", "pip", "install"]
+    assert "--python" in cmd
+    assert cmd[cmd.index("--python") + 1] == str(
+        _venv_python_path(Path(".venv-offline"))
+    )
+    assert "--offline" in cmd
+    assert "--no-index" in cmd
     assert "--require-hashes" in cmd
+    assert "--no-deps" in cmd
     assert "-r" in cmd
     assert "offline_bundle/requirements.txt" in cmd
+    assert "offline_bundle/app_wheel.txt" in cmd
 
 
 def test_offline_requirements_manifest_specifies_hashes():
@@ -260,3 +272,95 @@ def test_offline_install_subcommand(mock_get_uv, mock_extract_install):
     args = MagicMock()
     offline_install(args)
     mock_extract_install.assert_called_once_with("uv")
+
+
+@pytest.mark.parametrize(
+    "cli_argv",
+    [
+        ["offline-install", "--venv", "/tmp/custom-offline-venv"],
+        ["--venv", "/tmp/custom-offline-venv", "offline-install"],
+    ],
+)
+@patch("scripts.install_offline._extract_and_install_offline")
+@patch("scripts.install_offline.get_uv_cmd", return_value="uv")
+def test_main_passes_venv_flag_to_offline_install(
+    mock_get_uv, mock_extract_install, cli_argv
+):
+    """Verify --venv is accepted before or after offline-install and forwarded."""
+    main(cli_argv)
+    mock_extract_install.assert_called_once_with(
+        "uv", venv_dir="/tmp/custom-offline-venv"
+    )
+
+
+def test_resolve_target_venv_precedence_and_checkout_isolation(tmp_path, monkeypatch):
+    """Verify --venv > UV_PROJECT_ENVIRONMENT > non-.venv VIRTUAL_ENV > .venv-offline in checkout vs .venv on clean host."""
+    checkout_dir = tmp_path / "checkout"
+    checkout_dir.mkdir()
+    (checkout_dir / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+    (checkout_dir / ".venv").mkdir()
+
+    monkeypatch.chdir(checkout_dir)
+    monkeypatch.delenv("UV_PROJECT_ENVIRONMENT", raising=False)
+    monkeypatch.delenv("VIRTUAL_ENV", raising=False)
+
+    # Default inside checkout is gitignored .venv-offline
+    assert _resolve_target_venv() == Path(".venv-offline")
+
+    # Implicit VIRTUAL_ENV=<checkout>/.venv set by `uv run --no-project` must NOT clobber .venv
+    monkeypatch.setenv("VIRTUAL_ENV", str(checkout_dir / ".venv"))
+    assert _resolve_target_venv() == Path(".venv-offline")
+
+    # Explicit custom VIRTUAL_ENV is honored
+    custom_venv = tmp_path / "custom-venv"
+    monkeypatch.setenv("VIRTUAL_ENV", str(custom_venv))
+    assert _resolve_target_venv() == custom_venv
+
+    # UV_PROJECT_ENVIRONMENT overrides VIRTUAL_ENV
+    uv_proj_venv = tmp_path / "uv-proj-venv"
+    monkeypatch.setenv("UV_PROJECT_ENVIRONMENT", str(uv_proj_venv))
+    assert _resolve_target_venv() == uv_proj_venv
+
+    # --venv overrides UV_PROJECT_ENVIRONMENT and VIRTUAL_ENV
+    cli_venv = tmp_path / "cli-venv"
+    assert _resolve_target_venv(cli_venv) == cli_venv
+
+    # Clean air-gapped host without .git or pyproject.toml defaults to .venv
+    airgap_dir = tmp_path / "airgap"
+    airgap_dir.mkdir()
+    monkeypatch.chdir(airgap_dir)
+    monkeypatch.delenv("UV_PROJECT_ENVIRONMENT", raising=False)
+    monkeypatch.delenv("VIRTUAL_ENV", raising=False)
+    assert _resolve_target_venv() == Path(".venv")
+
+
+def test_extract_and_install_offline_clean_host_creates_venv_and_fails_without_app_wheel(
+    tmp_path, monkeypatch
+):
+    """Verify clean air-gapped host creates .venv and fails closed if app_wheel.txt is missing."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("UV_PROJECT_ENVIRONMENT", raising=False)
+    monkeypatch.delenv("VIRTUAL_ENV", raising=False)
+
+    bundle_dir = tmp_path / "offline_bundle"
+    (bundle_dir / "wheels").mkdir(parents=True)
+    (bundle_dir / "requirements.txt").write_text("pkg==1.0.0 --hash=sha256:aa\n")
+
+    # Missing app_wheel.txt must exit with code 1
+    with pytest.raises(SystemExit) as exc_info:
+        _extract_and_install_offline("uv")
+    assert exc_info.value.code == 1
+
+    # With app_wheel.txt present, creates .venv and passes platform --python
+    (bundle_dir / "app_wheel.txt").write_text(
+        "smart-autosorter==0.1.0 --hash=sha256:bb\n"
+    )
+    with patch("scripts.install_offline.subprocess.run") as mock_run:
+        resolved = _extract_and_install_offline("uv")
+        assert resolved == Path(".venv")
+        assert mock_run.call_count == 2
+        assert mock_run.call_args_list[0][0][0] == ["uv", "venv", ".venv"]
+        install_cmd = mock_run.call_args_list[1][0][0]
+        assert install_cmd[install_cmd.index("--python") + 1] == str(
+            _venv_python_path(Path(".venv"))
+        )

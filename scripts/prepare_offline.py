@@ -11,6 +11,7 @@ Vulnerability database and package index endpoints used for dependency auditing:
 
 import argparse
 import ast
+import hashlib
 import os
 import platform
 import re
@@ -558,6 +559,49 @@ def _download_sdist_build_wheels(pip_path: str, wheels_dir: Path) -> None:
     )
 
 
+def _build_and_pin_app_wheel(wheels_dir: Path, app_wheel_manifest: Path) -> None:
+    """Build the `smart-autosorter` wheel into `wheels_dir` and write its SHA-256 requirement pin."""
+    print("Building smart-autosorter wheel for offline bundle...")
+    subprocess.run(
+        ["uv", "build", "--wheel", "--out-dir", str(wheels_dir)],
+        check=True,
+    )
+
+    if not wheels_dir.exists():
+        print(f"Error: Wheels directory not found at {wheels_dir}.")
+        sys.exit(1)
+
+    app_wheels = sorted(
+        [
+            whl
+            for whl in wheels_dir.glob("smart_autosorter-*.whl")
+            if whl.name.startswith("smart_autosorter-")
+            and whl.name.lower().endswith(".whl")
+        ],
+        key=lambda p: p.name,
+    )
+    if not app_wheels:
+        print("Error: smart_autosorter-*.whl was not built into offline_bundle/wheels.")
+        sys.exit(1)
+    if len(app_wheels) > 1:
+        names = ", ".join(w.name for w in app_wheels)
+        print(
+            f"Error: Expected exactly one smart_autosorter-*.whl in offline_bundle/wheels, found: {names}"
+        )
+        sys.exit(1)
+
+    app_wheel = app_wheels[0]
+    wheel_parts = app_wheel.name[:-4].split("-")
+    if len(wheel_parts) < 5 or not wheel_parts[1]:
+        print(f"Error: Malformed wheel filename for smart-autosorter: {app_wheel.name}")
+        sys.exit(1)
+    wheel_version = wheel_parts[1]
+    wheel_sha256 = hashlib.sha256(app_wheel.read_bytes()).hexdigest()
+
+    with open(app_wheel_manifest, "w", encoding="utf-8") as f:
+        f.write(f"smart-autosorter=={wheel_version} --hash=sha256:{wheel_sha256}\n")
+
+
 def main():
     """Prepare an offline bundle by downloading dependencies and model weights."""
     parser = argparse.ArgumentParser(
@@ -601,13 +645,20 @@ def main():
         print(f"Verified {reqs_file} is synchronized with uv.lock.")
         return
 
-    # Clean up previous ZIP output if any
+    # Clean up previous ZIP output and app wheel manifest if any
     zip_output = Path("offline_bundle.zip")
     if zip_output.exists():
         try:
             zip_output.unlink()
         except OSError as e:
             print(f"Warning: could not delete {zip_output}: {e}")
+
+    app_wheel_manifest = bundle_dir / "app_wheel.txt"
+    if app_wheel_manifest.exists():
+        try:
+            app_wheel_manifest.unlink()
+        except OSError as e:
+            print(f"Warning: could not delete {app_wheel_manifest}: {e}")
 
     # Clean up wheels directory specifically
     wheels_dir = bundle_dir / "wheels"
@@ -698,6 +749,9 @@ def main():
         print(
             "Validation complete: Only CPU-specific PyTorch wheels are present in the offline bundle."
         )
+
+    # 4. Build and hash-pin the smart-autosorter wheel
+    _build_and_pin_app_wheel(wheels_dir, app_wheel_manifest)
 
     # 5. Package bundle
     print("Zipping bundle...")

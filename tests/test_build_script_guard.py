@@ -514,7 +514,7 @@ def test_package_sidecar_models(tmp_path):
         zip_path = tmp_path / "dist" / "smart-autosorter-models.zip"
         root_zip = tmp_path / "smart-autosorter-models.zip"
         assert zip_path.exists()
-        assert root_zip.exists()
+        assert not root_zip.exists()
 
         with zipfile.ZipFile(zip_path, "r") as zf:
             names = zf.namelist()
@@ -871,8 +871,14 @@ def test_safe_extract_archive_rejects_absolute_path(tmp_path):
 
 
 def test_download_and_prepare_weights_pinned_hashes_success(tmp_path, monkeypatch):
-    """Verify download_and_prepare_weights succeeds and writes registry when all weights match pinned hashes."""
-    from scripts.build import PINNED_HASHES, download_and_prepare_weights
+    """Verify download_and_prepare_weights writes Ruff-formatted sorted hashes and skips rewrites when unchanged."""
+    import subprocess
+
+    from scripts.build import (
+        PINNED_HASHES,
+        _format_hashes_registry,
+        download_and_prepare_weights,
+    )
 
     monkeypatch.chdir(tmp_path)
 
@@ -886,17 +892,17 @@ def test_download_and_prepare_weights_pinned_hashes_success(tmp_path, monkeypatc
 
             def fake_hash(path):
                 name = path.name
-                if name in PINNED_HASHES["generative_naming"]:
-                    return PINNED_HASHES["generative_naming"][name]
+                if name in PINNED_HASHES["model_download"]:
+                    return PINNED_HASHES["model_download"][name]
                 if name in PINNED_HASHES["easyocr"]:
                     return PINNED_HASHES["easyocr"][name]
                 return "unknown"
 
             mock_hash.side_effect = fake_hash
 
-            for fname in PINNED_HASHES["generative_naming"]:
+            for fname in reversed(list(PINNED_HASHES["model_download"])):
                 (model_dir / fname).write_text("data")
-            for fname in PINNED_HASHES["easyocr"]:
+            for fname in reversed(list(PINNED_HASHES["easyocr"])):
                 (easyocr_dir / fname).write_text("data")
 
             download_and_prepare_weights()
@@ -905,9 +911,73 @@ def test_download_and_prepare_weights_pinned_hashes_success(tmp_path, monkeypatc
             hashes_registry_path = tmp_path / "app" / "core" / "hashes_registry.py"
             assert hashes_registry_path.exists()
             content = hashes_registry_path.read_text(encoding="utf-8")
-            assert "HASHES =" in content
+            assert content == _format_hashes_registry(PINNED_HASHES)
+            assert '"model.gguf":' in content
             assert "florence-2" in content
             assert "model_download" in content
+
+            fmt_res = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "ruff",
+                    "format",
+                    "--check",
+                    str(hashes_registry_path),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            assert fmt_res.returncode == 0, fmt_res.stderr or fmt_res.stdout
+
+            # Re-running with identical hashes must not open hashes_registry.py for writing
+            real_open = open
+            write_targets = []
+
+            def spy_open(file, mode="r", *args, **kwargs):
+                if "w" in mode or "a" in mode:
+                    write_targets.append(str(file))
+                return real_open(file, mode, *args, **kwargs)
+
+            with patch("builtins.open", side_effect=spy_open):
+                download_and_prepare_weights()
+            assert not any("hashes_registry.py" in t for t in write_targets)
+
+
+def test_lite_build_writes_ruff_formatted_hashes_stub_when_missing(
+    tmp_path, monkeypatch
+):
+    """Verify --lite writes a Ruff-formatted HASHES = {} stub when app/core/hashes_registry.py is missing."""
+    import subprocess
+
+    monkeypatch.chdir(tmp_path)
+    mock_pyinstaller_main.run.reset_mock()
+
+    with (
+        patch("sys.argv", ["build.py", "--lite"]),
+        patch("importlib.util.find_spec") as mock_find_spec,
+        patch("sys.exit", side_effect=SystemExit) as mock_exit,
+    ):
+        mock_spec = MagicMock()
+        mock_spec.submodule_search_locations = ["/some/path"]
+        mock_find_spec.return_value = mock_spec
+
+        main()
+        mock_exit.assert_not_called()
+
+    stub_path = tmp_path / "app" / "core" / "hashes_registry.py"
+    assert stub_path.is_file()
+    stub_text = stub_path.read_text(encoding="utf-8")
+    assert "HASHES = {}\n" in stub_text
+
+    fmt_res = subprocess.run(
+        [sys.executable, "-m", "ruff", "format", "--check", str(stub_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert fmt_res.returncode == 0, fmt_res.stderr or fmt_res.stdout
 
 
 def test_download_and_prepare_weights_aborts_on_tampered_model(tmp_path, monkeypatch):
@@ -920,7 +990,7 @@ def test_download_and_prepare_weights_aborts_on_tampered_model(tmp_path, monkeyp
     model_dir.mkdir(parents=True)
     easyocr_dir.mkdir(parents=True)
 
-    for fname in PINNED_HASHES["generative_naming"]:
+    for fname in PINNED_HASHES["model_download"]:
         (model_dir / fname).write_text("data")
     for fname in PINNED_HASHES["easyocr"]:
         (easyocr_dir / fname).write_text("data")
@@ -932,8 +1002,8 @@ def test_download_and_prepare_weights_aborts_on_tampered_model(tmp_path, monkeyp
                 if path.name == "model.onnx":
                     return "corrupted_onnx_hash"
                 name = path.name
-                if name in PINNED_HASHES["generative_naming"]:
-                    return PINNED_HASHES["generative_naming"][name]
+                if name in PINNED_HASHES["model_download"]:
+                    return PINNED_HASHES["model_download"][name]
                 if name in PINNED_HASHES["easyocr"]:
                     return PINNED_HASHES["easyocr"][name]
                 return "unknown"
@@ -960,7 +1030,7 @@ def test_download_and_prepare_weights_rejects_tampered_cached_easyocr(
 
     model_dir = tmp_path / "offline_bundle" / "model"
     model_dir.mkdir(parents=True)
-    for fname in PINNED_HASHES["generative_naming"]:
+    for fname in PINNED_HASHES["model_download"]:
         (model_dir / fname).write_text("data")
 
     with patch("pathlib.Path.home", return_value=tmp_path):
@@ -970,8 +1040,8 @@ def test_download_and_prepare_weights_rejects_tampered_cached_easyocr(
                 if path == corrupted_cached:
                     return "bad_cache_hash"
                 name = path.name
-                if name in PINNED_HASHES["generative_naming"]:
-                    return PINNED_HASHES["generative_naming"][name]
+                if name in PINNED_HASHES["model_download"]:
+                    return PINNED_HASHES["model_download"][name]
                 if name in PINNED_HASHES["easyocr"]:
                     return PINNED_HASHES["easyocr"][name]
                 return "unknown"
@@ -995,7 +1065,7 @@ def test_download_and_prepare_weights_cleans_up_on_corrupted_extracted_archive(
     model_dir.mkdir(parents=True)
     easyocr_dir.mkdir(parents=True)
 
-    for fname in PINNED_HASHES["generative_naming"]:
+    for fname in PINNED_HASHES["model_download"]:
         (model_dir / fname).write_text("data")
 
     def fake_download_file(url, dest_path, **kwargs):
@@ -1009,8 +1079,8 @@ def test_download_and_prepare_weights_cleans_up_on_corrupted_extracted_archive(
                 if path.name == "craft_mlt_25k.pth":
                     return "bad_extracted_hash"
                 name = path.name
-                if name in PINNED_HASHES["generative_naming"]:
-                    return PINNED_HASHES["generative_naming"][name]
+                if name in PINNED_HASHES["model_download"]:
+                    return PINNED_HASHES["model_download"][name]
                 if name in PINNED_HASHES["easyocr"]:
                     return PINNED_HASHES["easyocr"][name]
                 return "unknown"
