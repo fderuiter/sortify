@@ -1,5 +1,7 @@
 """Targeted test suite for edit modals to ensure high coverage without regressions."""
 
+import os
+
 import pytest
 from textual.app import App
 from textual.widgets import Button, Input, Select, Static
@@ -310,3 +312,25 @@ def test_rename_modal_path_security():
         modal._validate_path_security("folder/../file.txt") or ""
     )
     assert modal._validate_path_security("normal/nested/path.txt") is None
+
+
+def test_directory_select_modal_preserves_posix_virtual_paths_on_windows_abspath(
+    monkeypatch,
+):
+    orig_abspath = os.path.abspath
+
+    def _windows_style_abspath(path):
+        raw = str(path)
+        if raw.startswith("/") and not raw.startswith("//"):
+            return "D:" + raw.replace("/", "\\")
+        return orig_abspath(path)
+
+    monkeypatch.setattr("app.ui.modals.edit.os.path.abspath", _windows_style_abspath)
+
+    modal_single = DirectorySelectModal(current_dir="/dummy/projects")
+    assert modal_single.selected_sources == ["/dummy/projects"]
+
+    modal_multi = DirectorySelectModal(
+        source_dirs=["/dummy/projects", "/dummy/archive/..//exports"]
+    )
+    assert modal_multi.selected_sources == ["/dummy/projects", "/dummy/exports"]

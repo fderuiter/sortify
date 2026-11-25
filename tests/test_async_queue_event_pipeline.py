@@ -200,3 +200,37 @@ async def test_background_reconciliation_audit(tmp_path):
     enqueued = raw_item[2] if isinstance(raw_item, tuple) else raw_item
     assert enqueued.event_type == "reconciliation"
     assert os.path.basename(enqueued.file_path) == "untracked.pdf"
+
+
+def test_watchdog_handler_ignores_readonly_and_directory_events(tmp_path):
+    """Verify DaemonFolderHandler ignores Linux inotify read-only and directory events."""
+    from app.config import AppSettings
+
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    daemon = ContinuousWatchdogDaemon(settings, str(tmp_path))
+    daemon._is_running = True
+    daemon._event_queue = asyncio.PriorityQueue(maxsize=10)
+    handler = DaemonFolderHandler(daemon)
+
+    sample = tmp_path / "doc.txt"
+    sample.write_text("hello", encoding="utf-8")
+
+    class _SyntheticEvent:
+        def __init__(self, event_type: str, src_path: str, is_directory: bool = False):
+            self.event_type = event_type
+            self.src_path = src_path
+            self.dest_path = None
+            self.is_directory = is_directory
+
+    with daemon.scoped_move_phase(plan={"other.txt": "sorted/other.txt"}):
+        handler.on_any_event(_SyntheticEvent("opened", str(sample)))
+        handler.on_any_event(_SyntheticEvent("closed_no_write", str(sample)))
+        handler.on_any_event(
+            _SyntheticEvent("modified", str(tmp_path), is_directory=True)
+        )
+        assert daemon.pending_dirty is False
+
+    handler.on_any_event(_SyntheticEvent("opened", str(sample)))
+    handler.on_any_event(_SyntheticEvent("closed_no_write", str(sample)))
+    handler.on_any_event(_SyntheticEvent("modified", str(tmp_path), is_directory=True))
+    assert daemon._event_queue.qsize() == 0

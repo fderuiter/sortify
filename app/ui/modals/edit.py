@@ -3,6 +3,7 @@
 import contextlib
 import logging
 import os
+import posixpath
 import re
 from typing import Any
 
@@ -1276,14 +1277,20 @@ class DirectorySelectModal(
         self.added_via_btn = False
         if source_dirs:
             self.selected_sources = [
-                os.path.abspath(os.path.expanduser(str(d))) for d in source_dirs if d
+                self._normalize_initial_source_path(d) for d in source_dirs if d
             ]
         elif current_dir:
-            self.selected_sources = [
-                os.path.abspath(os.path.expanduser(str(current_dir)))
-            ]
+            self.selected_sources = [self._normalize_initial_source_path(current_dir)]
         else:
             self.selected_sources = []
+
+    @staticmethod
+    def _normalize_initial_source_path(raw_dir: Any) -> str:
+        """Normalize an initial directory path while keeping virtual POSIX roots platform-consistent."""
+        raw_str = str(raw_dir)
+        if raw_str.startswith("/") and not raw_str.startswith("//"):
+            return posixpath.normpath(raw_str)
+        return os.path.abspath(os.path.expanduser(raw_str))
 
     @staticmethod
     def _validate_directory_path(path_str: str) -> str | None:

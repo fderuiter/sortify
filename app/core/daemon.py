@@ -145,24 +145,46 @@ class DaemonFolderHandler(FileSystemEventHandler):
 
     def on_any_event(self, event):
         """Handle any file system event, publish FileChangeEvent to queue and trigger recalculation if valid."""
+        event_type = getattr(event, "event_type", "modified")
+        if event_type in ("opened", "closed_no_write"):
+            return
+        if getattr(event, "is_directory", False) is True:
+            return
+
         src_path = getattr(event, "src_path", "")
         dest_path = getattr(event, "dest_path", None)
 
         if self.daemon.should_ignore_path(src_path):
             return
-        if dest_path and self.daemon.should_ignore_path(dest_path):
+        if (
+            isinstance(dest_path, str)
+            and dest_path
+            and self.daemon.should_ignore_path(dest_path)
+        ):
             return
 
         # Suppress recalculation triggers if file moves are actively running,
-        # but mark dirty flag if external filesystem event occurs
+        # but enqueue external events when streaming triage is active (or mark dirty in sync mode).
         if getattr(self.daemon, "is_moving", False):
             if self.daemon.is_self_generated_event(event):
                 return
-            else:
-                self.daemon.mark_pending_dirty()
+            loop = getattr(self.daemon, "_event_loop", None)
+            if (
+                loop is not None
+                and loop.is_running()
+                and self.daemon._event_queue is not None
+            ):
+                change_event = FileChangeEvent(
+                    event_type=event_type,
+                    file_path=src_path,
+                    timestamp=time.time(),
+                    dest_path=dest_path,
+                )
+                self.daemon.enqueue_event(change_event)
                 return
+            self.daemon.mark_pending_dirty()
+            return
 
-        event_type = getattr(event, "event_type", "modified")
         change_event = FileChangeEvent(
             event_type=event_type,
             file_path=src_path,
@@ -239,6 +261,8 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         self._recent_events: dict[str, float] = {}
         self._active_path_locks: dict[str, asyncio.Lock] = {}
         self._active_triage_paths: set[str] = set()
+        self._queued_paths: set[str] = set()
+        self._last_settings_stat: tuple[int, int] | None = None
         self._worker_tasks: list[asyncio.Task] = []
         self._reconciliation_task: asyncio.Task | None = None
         self._app_session: AppSession | None = None
@@ -685,6 +709,46 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
 
         norm_p = os.path.normcase(file_path)
         now = time.time()
+        queue = self._event_queue
+        loop = self._event_loop
+
+        if queue is None:
+            return False
+
+        if queue.full():
+            logger.warning(
+                f"Queue full (capacity {self.max_queue_capacity}), dropping event for: {file_path}"
+            )
+            return False
+
+        loop_running = bool(loop and loop.is_running())
+        with self._lock:
+            if not self._is_running:
+                return False
+
+            last_time = self._recent_events.get(norm_p)
+            if last_time is not None and (now - last_time) < self.dedup_window:
+                logger.debug(f"Deduplicating rapid event for path: {file_path}")
+                return False
+
+            if norm_p in self._active_triage_paths or norm_p in self._queued_paths:
+                logger.debug(
+                    f"Path is currently queued or being triaged, deduplicating event: {file_path}"
+                )
+                return False
+
+            self._recent_events[norm_p] = now
+            if len(self._recent_events) > 2000:
+                cutoff = now - (self.dedup_window * 5)
+                self._recent_events = {
+                    k: v for k, v in self._recent_events.items() if v > cutoff
+                }
+
+            if loop_running:
+                self._queued_paths.add(norm_p)
+            self._queue_sequence_counter += 1
+            seq = self._queue_sequence_counter
+            self._events_enqueued_count += 1
 
         if change_event.priority_key is None:
             try:
@@ -712,58 +776,28 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
                 -change_event.archival_priority_score,
             )
 
-        with self._lock:
-            if not self._is_running:
-                return False
-
-            last_time = self._recent_events.get(norm_p)
-            if last_time is not None and (now - last_time) < self.dedup_window:
-                logger.debug(f"Deduplicating rapid event for path: {file_path}")
-                return False
-
-            if norm_p in self._active_triage_paths:
-                logger.debug(
-                    f"Path is currently being triaged, deduplicating event: {file_path}"
-                )
-                return False
-
-            self._recent_events[norm_p] = now
-            if len(self._recent_events) > 2000:
-                cutoff = now - (self.dedup_window * 5)
-                self._recent_events = {
-                    k: v for k, v in self._recent_events.items() if v > cutoff
-                }
-
-            self._queue_sequence_counter += 1
-            seq = self._queue_sequence_counter
-            self._events_enqueued_count += 1
-
         queue_entry = (change_event.priority_key, seq, change_event)
 
-        queue = self._event_queue
-        loop = self._event_loop
+        if loop and loop.is_running():
 
-        if queue is not None:
-            if queue.full():
-                logger.warning(
-                    f"Queue full (capacity {self.max_queue_capacity}), dropping event for: {file_path}"
-                )
-                return False
-
-            if loop and loop.is_running():
-                loop.call_soon_threadsafe(
-                    lambda: queue.put_nowait(queue_entry) if not queue.full() else None
-                )
-                return True
-            else:
-                try:
+            def _enqueue_on_loop() -> None:
+                if not queue.full():
                     queue.put_nowait(queue_entry)
-                    return True
-                except asyncio.QueueFull:
-                    logger.warning(f"Queue full, dropping event: {file_path}")
-                    return False
+                else:
+                    with self._lock:
+                        self._queued_paths.discard(norm_p)
 
-        return False
+            loop.call_soon_threadsafe(_enqueue_on_loop)
+            return True
+
+        try:
+            with self._lock:
+                self._queued_paths.discard(norm_p)
+            queue.put_nowait(queue_entry)
+            return True
+        except asyncio.QueueFull:
+            logger.warning(f"Queue full, dropping event: {file_path}")
+            return False
 
     def _get_path_lock(self, norm_path: str) -> asyncio.Lock:
         """Retrieve or create an asyncio.Lock for a specific normalized file path."""
@@ -808,7 +842,7 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             ]
             self._reconciliation_task = loop.create_task(self._reconciliation_worker())
 
-            ready_event.set()
+            loop.call_soon(ready_event.set)
 
             try:
                 loop.run_forever()
@@ -872,6 +906,11 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             else:
                 event = raw_item
 
+            popped_norm = (
+                os.path.normcase(self._resolve_event_path(event.file_path))
+                if isinstance(event, FileChangeEvent) and event.file_path
+                else ""
+            )
             try:
                 await self._process_single_event(event, cancel_token=token)
                 with self._lock:
@@ -882,6 +921,9 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
                     exc_info=True,
                 )
             finally:
+                if popped_norm:
+                    with self._lock:
+                        self._queued_paths.discard(popped_norm)
                 if self._event_queue is not None:
                     self._event_queue.task_done()
 
@@ -909,6 +951,7 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         async with lock:
             with self._lock:
                 self._active_triage_paths.add(norm_p)
+                self._queued_paths.discard(norm_p)
             try:
                 await self._triage_file_path(abs_path, cancel_token=cancel_token)
             finally:
@@ -926,6 +969,17 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             self._sort_executor, functools.partial(fn, *args, **kwargs)
         )
 
+    def _stat_settings_file(self) -> tuple[int, int] | None:
+        """Return ``(st_mtime_ns, st_size)`` for ``self.settings._filepath`` when present."""
+        cfg_path = getattr(self.settings, "_filepath", None)
+        if not isinstance(cfg_path, str) or not cfg_path:
+            return None
+        try:
+            st = os.stat(cfg_path)
+        except OSError:
+            return None
+        return (st.st_mtime_ns, st.st_size)
+
     def _reload_settings(self, *, log_error: bool = False) -> None:
         """Flush any pending debounced settings save timer and reload settings from disk."""
         try:
@@ -936,8 +990,21 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
                 except Exception:
                     logger.debug("Failed to cancel settings save timer", exc_info=True)
                 self.settings._save()
+                self._last_settings_stat = None
+
+            current_stat = self._stat_settings_file()
+            if (
+                not log_error
+                and save_timer is None
+                and current_stat is not None
+                and current_stat == self._last_settings_stat
+            ):
+                return
+
             self.settings.load()
+            self._last_settings_stat = self._stat_settings_file()
         except Exception as e:
+            self._last_settings_stat = None
             if log_error:
                 logger.error(f"Error loading settings dynamically: {e}", exc_info=True)
             else:
@@ -1204,6 +1271,7 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             fast_path_only=False,
             target_paths=[rel_path],
             jev_results=deferred_jev_results,
+            run_metadata_pass=False,
             cancel_check=cancel_check,
         )
         if slow_outcome is not None:
@@ -1383,11 +1451,20 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             self._recent_events.clear()
             self._active_path_locks.clear()
             self._active_triage_paths.clear()
+            self._queued_paths.clear()
+            self._last_settings_stat = None
             self._sorting_process = None
             self._proc_cancel_event = None
             self._rerun_pending = False
 
         logger.info(f"Starting continuous watchdog daemon for: {self.base_dir}")
+
+        try:
+            from app.core.db import Database
+
+            Database._get_tfidf_analyzer()
+        except Exception:
+            logger.debug("Optional TF-IDF analyzer warm-up skipped", exc_info=True)
 
         # Launch background asyncio event loop & worker pool
         self._start_pipeline_event_loop()
@@ -1414,6 +1491,7 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             self._pending_dirty = False
             self._rerun_pending = False
             self._active_move_paths.clear()
+            self._queued_paths.clear()
             self._cancel_event.set()
             if self._scoped_run_token is not None:
                 self._scoped_run_token.set()

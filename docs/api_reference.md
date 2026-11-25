@@ -186,6 +186,7 @@ flowchart TD
     core_crypto --> core_ledger
     core_crypto --> core_path_utils
     core_crypto --> core_resilient_file_ops
+    core_daemon --> core_db
     core_daemon --> core_domain_contracts
     core_daemon --> core_ipc
     core_daemon --> core_lifecycle
