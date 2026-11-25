@@ -1,5 +1,7 @@
 """Regression tests for Python 3.12 UP rule migrations (StrEnum, PEP 604, forward refs)."""
 
+import importlib
+import pkgutil
 import types
 import typing
 from enum import StrEnum
@@ -8,6 +10,8 @@ from unittest.mock import MagicMock
 import pytest
 
 import app.core.scanner as scanner_mod
+import app.ui.mixins as ui_mixins_pkg
+import app.ui.modals as ui_modals_pkg
 from app.core.daemon import DaemonState
 from app.core.downloader import DownloadState
 from app.core.extractor import ExtractionStatus
@@ -23,6 +27,7 @@ from app.core.plugin_registry import PluginRegistry
 from app.core.security_advisory import SecurityAdvisoryClient
 from app.core.session import AppSession
 from app.plugins.clinical_compliance.cro_multi_study_pipeline import CROPipelineState
+from app.ui.mixins.tree_view import PathLookupIndex, TreeViewMixin
 from app.ui.modals.command_palette import CommandPaletteModal
 from app.ui.modals.drop_zone import DropZoneModal
 from app.ui.modals.edit import (
@@ -174,3 +179,42 @@ def test_modal_generic_bases_use_pep604_union_types(modal_cls: type) -> None:
     (arg,) = typing.get_args(modal_bases[0])
     assert typing.get_origin(arg) in (types.UnionType, typing.Union)
     assert type(None) in typing.get_args(arg)
+
+
+def test_tree_view_helpers_use_pep604_union_annotations() -> None:
+    """Consolidated PathLookupIndex and TreeViewMixin helpers resolve PEP 604 T | None hints."""
+    path_methods = (
+        PathLookupIndex._matches_path,
+        PathLookupIndex._matches_node,
+        PathLookupIndex._matches_collision,
+        TreeViewMixin._resolve_node_target_path,
+        TreeViewMixin._invalid_lock_candidates,
+        TreeViewMixin._has_invalid_lock,
+        TreeViewMixin._get_invalid_lock_error,
+    )
+    for fn in path_methods:
+        hints = typing.get_type_hints(fn)
+        union_hints = [
+            hint
+            for hint in hints.values()
+            if typing.get_origin(hint) in (types.UnionType, typing.Union)
+        ]
+        assert union_hints, f"Expected PEP 604 union annotations on {fn.__qualname__}"
+        for hint in union_hints:
+            assert typing.get_origin(hint) is types.UnionType
+            assert type(None) in typing.get_args(hint)
+
+
+def test_tui_mixins_and_modals_import_cleanly_without_eager_annotation_skew() -> None:
+    """All TUI mixin, modal, and host modules evaluate class annotations without NameError."""
+    discovered: list[str] = ["app.ui.tui"]
+    for pkg in (ui_mixins_pkg, ui_modals_pkg):
+        for mod_info in pkgutil.iter_modules(pkg.__path__, pkg.__name__ + "."):
+            discovered.append(mod_info.name)
+
+    assert len(discovered) >= 15
+    for mod_name in discovered:
+        mod = importlib.import_module(mod_name)
+        assert not hasattr(mod, "Optional"), (
+            f"{mod_name} should use PEP 604 T | None rather than importing typing.Optional"
+        )
