@@ -24,10 +24,14 @@ def _start_validation_worker(host: TUIHostProtocol, epoch: int) -> None:
     try:
         if int(getattr(host, "_validation_epoch", 0)) != epoch:
             return
+        from app.core.path_utils import collect_empty_plan_folders
         from app.core.verifier import VerificationEngine
 
         exec_plan = host._get_executable_plan()
-        if not host.plan or not host._has_file_nodes(exec_plan):
+        has_exec_work = host._has_file_nodes(exec_plan) or bool(
+            collect_empty_plan_folders(exec_plan)
+        )
+        if not host.plan or not has_exec_work:
             if int(getattr(host, "_validation_epoch", 0)) == epoch:
                 host.call_from_thread(_apply_worker_validation_state, host, {}, epoch)
             return
@@ -220,6 +224,28 @@ class SortPipelineMixin:
             except Exception:
                 pass
 
+            try:
+                from app.core.db_conn import DB_ERRORS
+
+                loaded_manual: set[str] = set()
+                for s_dir in s_dirs:
+                    if s_dir:
+                        loaded_manual.update(
+                            self.app_session.cache_manager.load_manual_folders(
+                                str(s_dir)
+                            )
+                        )
+                if loaded_manual:
+                    self._manual_empty_folders.update(loaded_manual)
+                elif self._manual_empty_folders:
+                    for s_dir in s_dirs:
+                        if s_dir:
+                            self.app_session.cache_manager.save_manual_folders(
+                                str(s_dir), self._manual_empty_folders
+                            )
+            except (*DB_ERRORS, OSError, RuntimeError, ValueError, TypeError) as mf_err:
+                logger.debug(f"Manual folder cache sync skipped: {mf_err}")
+
             self._reapply_manual_plan_edits()
             self.call_from_thread(self.rebuild_tree)
             model_status = getattr(self.plan, "model_status", "HEALTHY")
@@ -281,8 +307,12 @@ class SortPipelineMixin:
         if self._announce_if_busy("execute the plan"):
             return
 
+        from app.core.path_utils import collect_empty_plan_folders
+
         exec_plan = self._get_executable_plan()
-        if not self._has_file_nodes(exec_plan):
+        if not self._has_file_nodes(exec_plan) and not collect_empty_plan_folders(
+            exec_plan
+        ):
             self.announce("No checked files in sorting plan to execute.")
             return
 
@@ -325,7 +355,9 @@ class SortPipelineMixin:
 
         def _continue_with_collision_check() -> None:
             refreshed_exec = self._get_executable_plan()
-            if not self._has_file_nodes(refreshed_exec):
+            if not self._has_file_nodes(
+                refreshed_exec
+            ) and not collect_empty_plan_folders(refreshed_exec):
                 self.announce("No remaining checked files to execute after review.")
                 return
             normalized_refreshed = self._normalize_plan_for_verification(
@@ -508,6 +540,7 @@ class SortPipelineMixin:
         _walk_plan(plan_dict)
 
         matched_edit_keys: set[str] = set()
+        matched_edit_ids: set[int] = set()
         for current_folder, container, key, file_info in collected:
             db_base, doc_relpath, abs_fp = _resolve_source_identity(
                 self,
@@ -523,6 +556,7 @@ class SortPipelineMixin:
             if not edit:
                 continue
             matched_edit_keys.add(scoped_key)
+            matched_edit_ids.add(id(edit))
 
             if doc_relpath and not file_info.get("source_path"):
                 file_info["source_path"] = doc_relpath
@@ -583,7 +617,7 @@ class SortPipelineMixin:
 
         # Re-insert renamed files that were pruned as in-place no-ops before target_filename was applied
         for scoped_key, edit in list(edits_map.items()):
-            if scoped_key in matched_edit_keys:
+            if scoped_key in matched_edit_keys or id(edit) in matched_edit_ids:
                 continue
             manual_tf = edit.get("target_filename")
             target_folder = str(edit.get("folder") or "")
@@ -750,11 +784,15 @@ class SortPipelineMixin:
 
         # Update Execute Button
         try:
+            from app.core.path_utils import collect_empty_plan_folders
+
             btn_exec = self.query_one("#btn-execute", Button)
             exec_plan = self._get_executable_plan()
-            has_files = self._has_file_nodes(exec_plan)
+            has_exec_work = self._has_file_nodes(exec_plan) or bool(
+                collect_empty_plan_folders(exec_plan)
+            )
 
-            if has_critical or not has_files:
+            if has_critical or not has_exec_work:
                 btn_exec.disabled = True
                 if has_critical:
                     btn_exec.tooltip = "Execution disabled: Plan contains blocking critical validation errors"

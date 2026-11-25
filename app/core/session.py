@@ -291,15 +291,18 @@ class AppSession:
         if not effective_base_dir:
             return {}
         locked = {}
+        manual_folders: set[str] = set()
         dirs_to_check = (
             self.source_dirs
             if self.source_dirs
             else ([effective_base_dir] if effective_base_dir else [])
         )
         for s_dir in dirs_to_check:
-            _, lk, _, _ = self.cache_manager.load_cache(s_dir)
+            _, lk, _, mf = self.cache_manager.load_cache(s_dir)
             if lk:
                 locked.update(lk)
+            if isinstance(mf, (set, list)):
+                manual_folders.update(str(item) for item in mf if item)
         plan = self.analyzer.generate_sorting_plan(
             effective_base_dir,
             self.settings,
@@ -311,6 +314,24 @@ class AppSession:
             existing_folders=existing_folders,
             dest_dir=dest_dir,
         )
+        if manual_folders:
+            from app.core.path_utils import (
+                resolve_plan_folder_dict,
+                validate_target_path,
+            )
+
+            for folder_name in sorted(manual_folders):
+                try:
+                    validate_target_path(folder_name)
+                except ValueError:
+                    continue
+                clean_folder = "/".join(
+                    p
+                    for p in str(folder_name).replace("\\", "/").strip("/").split("/")
+                    if p
+                )
+                if clean_folder:
+                    resolve_plan_folder_dict(plan, clean_folder, create=True)
         if (
             active_pipeline is None
             and hasattr(self, "lifecycle_state")

@@ -355,9 +355,13 @@ class CacheManager:
                 row = cur.fetchone()
 
             if row:
-                corpus = json.loads(row[0])
-                locked_files = json.loads(row[1])
-                index_to_word = {int(k): v for k, v in json.loads(row[2]).items()}
+                corpus = json.loads(row[0]) if row[0] is not None else None
+                locked_files = json.loads(row[1]) if row[1] is not None else None
+                index_to_word = (
+                    {int(k): v for k, v in json.loads(row[2]).items()}
+                    if row[2] is not None
+                    else None
+                )
                 manual_folders_raw = row[3]
                 manual_folders = (
                     set(json.loads(manual_folders_raw)) if manual_folders_raw else set()
@@ -374,3 +378,62 @@ class CacheManager:
                 exc_info=True,
             )
         return None, None, None, None
+
+    def load_manual_folders(self, source_directory: str) -> set[str]:
+        """Load persisted manual folder paths for ``source_directory``."""
+        if not source_directory:
+            return set()
+        from app.core.db_conn import DB_ERRORS
+
+        try:
+            conn = self._get_conn()
+            with conn:
+                cur = conn.execute(
+                    "SELECT manual_folders FROM directory_cache WHERE source_directory = ?",
+                    (source_directory,),
+                )
+                row = cur.fetchone()
+            if row and row[0]:
+                loaded = json.loads(row[0])
+                if isinstance(loaded, list):
+                    return {str(item) for item in loaded if item}
+        except (*DB_ERRORS, json.JSONDecodeError) as e:
+            logging.error(
+                f"Error loading manual_folders for directory '{source_directory}': {e}",
+                exc_info=True,
+            )
+        except Exception as e:
+            logging.error(
+                f"Failed to load manual_folders for directory '{source_directory}': {e}",
+                exc_info=True,
+            )
+        return set()
+
+    def save_manual_folders(
+        self,
+        source_directory: str,
+        manual_folders: set[str] | list[str],
+    ) -> None:
+        """Persist manual folder paths for ``source_directory`` in ``directory_cache``."""
+        if not source_directory:
+            return
+        serialized = json.dumps(sorted({str(f) for f in manual_folders if f}))
+
+        def _write() -> None:
+            conn = self._get_conn()
+            with conn:
+                conn.execute(
+                    """
+                    INSERT INTO directory_cache (source_directory, corpus, locked_files, index_to_word, manual_folders)
+                    VALUES (?, NULL, NULL, NULL, ?)
+                    ON CONFLICT(source_directory) DO UPDATE SET manual_folders = excluded.manual_folders
+                    """,
+                    (source_directory, serialized),
+                )
+
+        from app.core.db_worker import DBWorker
+
+        if isinstance(self.worker, DBWorker):
+            self.worker.execute_write(_write)
+        else:
+            _write()

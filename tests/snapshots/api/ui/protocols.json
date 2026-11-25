@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "b4f79eaa8d971088a43fbda17b56bc752b1821ac81dad7e6afad56b41c8291b3"
+    "checksum": "6e16b9c1656fbf30ae38cc6abacfadfeff63e82f19bfc510f5521eaf3d19a763"
   },
   "classes": [
     {
@@ -906,6 +906,11 @@
               "annotation": "dict[str, Any] | None",
               "default": "None",
               "name": "plan_dict"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "_prefix"
             }
           ],
           "returns": "dict[str, Any]"
@@ -1016,6 +1021,24 @@
           "async": false,
           "decorators": [],
           "name": "_has_file_nodes",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "dict[str, Any]",
+              "default": null,
+              "name": "plan_dict"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_has_folder_nodes",
           "parameters": [
             {
               "annotation": null,

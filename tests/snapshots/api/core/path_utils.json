@@ -1,9 +1,45 @@
 {
   "_metadata": {
-    "checksum": "8f7bbf3e9644055ee245e9cd3b941df6a2428aec2e16958ee4df601ae25b0f9c"
+    "checksum": "b58d844914d6298898d3baf2677a2a8ba251f818e89c19367df9a44c3df11a73"
   },
   "classes": [],
   "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "collect_empty_plan_folders",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "plan_node"
+        },
+        {
+          "annotation": "str",
+          "default": "''",
+          "name": "prefix"
+        }
+      ],
+      "returns": "list[str]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "collect_plan_folder_paths",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "plan_node"
+        },
+        {
+          "annotation": "str",
+          "default": "''",
+          "name": "prefix"
+        }
+      ],
+      "returns": "list[str]"
+    },
     {
       "async": false,
       "decorators": [],
@@ -105,6 +141,29 @@
     {
       "async": false,
       "decorators": [],
+      "name": "prune_empty_plan_ancestors",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "plan_root"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "folder_path"
+        },
+        {
+          "annotation": "set[str] | None",
+          "default": "None",
+          "name": "preserve_folders"
+        }
+      ],
+      "returns": "None"
+    },
+    {
+      "async": false,
+      "decorators": [],
       "name": "resolve_db_crypto",
       "parameters": [
         {
@@ -114,6 +173,29 @@
         }
       ],
       "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "resolve_plan_folder_dict",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "plan_root"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "folder_path"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "create"
+        }
+      ],
+      "returns": "dict[str, Any] | None"
     },
     {
       "async": false,

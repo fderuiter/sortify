@@ -19,37 +19,9 @@ def _resolve_plan_folder_dict(
     plan: dict[str, Any], folder_path: str, *, create: bool = False
 ) -> dict[str, Any] | None:
     """Resolve a flat or slash-delimited nested folder dictionary inside ``plan``."""
-    if not folder_path:
-        return plan
-    direct = plan.get(folder_path)
-    if isinstance(direct, dict) and direct.get("__type__") != "file":
-        return direct
+    from app.core.path_utils import resolve_plan_folder_dict
 
-    from app.core.path_utils import _is_absolute_path
-
-    if _is_absolute_path(folder_path):
-        if create:
-            created: dict[str, Any] = {}
-            plan[folder_path] = created
-            return created
-        return None
-
-    parts = [p for p in folder_path.replace("\\", "/").strip("/").split("/") if p]
-    if not parts:
-        return plan
-
-    curr: dict[str, Any] = plan
-    for part in parts:
-        nxt = curr.get(part)
-        if isinstance(nxt, dict) and nxt.get("__type__") != "file":
-            curr = nxt
-        elif create and nxt is None:
-            new_sub: dict[str, Any] = {}
-            curr[part] = new_sub
-            curr = new_sub
-        else:
-            return None
-    return curr
+    return resolve_plan_folder_dict(plan, folder_path, create=create)
 
 
 def _resolve_source_disk_path(
@@ -151,13 +123,9 @@ def _find_key_for_info(plan: dict[str, Any], target_info: Any) -> tuple[str, str
 
 def _collect_plan_folders(plan: dict[str, Any], prefix: str = "") -> list[str]:
     """Recursively collect slash-delimited folder paths present in ``plan``."""
-    folders: list[str] = []
-    for k, v in plan.items():
-        if isinstance(v, dict) and v.get("__type__") != "file":
-            full = f"{prefix}/{k}" if prefix else k
-            folders.append(full)
-            folders.extend(_collect_plan_folders(v, full))
-    return folders
+    from app.core.path_utils import collect_plan_folder_paths
+
+    return collect_plan_folder_paths(plan, prefix=prefix)
 
 
 def _make_manual_edit_key(db_base_dir: str, doc_relpath: str) -> str:
@@ -259,6 +227,66 @@ def _record_manual_edit(
             entry.pop(k, None)
         else:
             entry[k] = v
+
+
+def _normalize_validated_folder(raw_folder: str) -> str:
+    """Validate relative ``raw_folder`` with ``validate_target_path`` and return slash-normalized string."""
+    from app.core.path_utils import validate_target_path
+
+    validate_target_path(raw_folder)
+    return "/".join(p for p in raw_folder.replace("\\", "/").strip("/").split("/") if p)
+
+
+def _update_node_relative_source(
+    info_dict: dict[str, Any],
+    db_base_dir: str,
+    abs_filepath: str,
+    target_folder: str,
+) -> None:
+    """Refresh ``relative_source`` on ``info_dict`` after moving to ``target_folder``."""
+    if not abs_filepath or not db_base_dir:
+        return
+    from app.core.path_utils import _is_absolute_path, safe_relpath
+
+    dest_base = (
+        target_folder
+        if _is_absolute_path(target_folder)
+        else (
+            os.path.join(db_base_dir, target_folder) if target_folder else db_base_dir
+        )
+    )
+    try:
+        info_dict["relative_source"] = safe_relpath(abs_filepath, dest_base).replace(
+            "\\", "/"
+        )
+    except ValueError:
+        info_dict["relative_source"] = abs_filepath
+
+
+def _persist_manual_folders_to_cache(host: Any) -> None:
+    """Persist ``host._manual_empty_folders`` to workspace ``CacheManager``."""
+    manual_folders = getattr(host, "_manual_empty_folders", set())
+    source_dirs = getattr(host, "source_dirs", None) or (
+        [host.base_dir] if getattr(host, "base_dir", None) else []
+    )
+    valid_dirs = [str(s_dir) for s_dir in source_dirs if s_dir]
+    if not valid_dirs:
+        return
+    session = getattr(host, "app_session", None)
+    cache_mgr = getattr(session, "cache_manager", None) if session is not None else None
+    if cache_mgr is not None:
+        for s_dir in valid_dirs:
+            cache_mgr.save_manual_folders(s_dir, manual_folders)
+        return
+    try:
+        from app.core.db_conn import DB_ERRORS
+        from app.core.services import acquire_services
+
+        with acquire_services() as lease:
+            for s_dir in valid_dirs:
+                lease.cache.save_manual_folders(s_dir, manual_folders)
+    except (*DB_ERRORS, OSError, RuntimeError, ValueError, TypeError):
+        return
 
 
 def _derive_learned_pattern(raw_name: str) -> str | None:
@@ -479,20 +507,29 @@ class SelectionActionsMixin:
             if not target_folder:
                 return
 
-            from app.core.path_utils import validate_target_path
+            from app.core.path_utils import (
+                _disambiguate_key,
+                _is_absolute_path,
+                prune_empty_plan_ancestors,
+            )
 
             host: Any = self
             can_learn_rule = False
-            try:
-                validate_target_path(target_folder)
-                can_learn_rule = True
-            except ValueError:
-                can_learn_rule = False
+            if not _is_absolute_path(target_folder):
+                try:
+                    target_folder = _normalize_validated_folder(target_folder)
+                    can_learn_rule = True
+                except ValueError as err:
+                    host.announce(
+                        f"Invalid destination folder: {err}", priority="assertive"
+                    )
+                    return
 
             from app.config import resolve_scoped_settings
 
             settings_obj = getattr(host, "settings", None)
             scoped_learned_updates: dict[str, dict[str, str]] = {}
+            manual_folders = getattr(host, "_manual_empty_folders", set())
 
             reassigned_count = 0
             for fi in target_files:
@@ -526,14 +563,16 @@ class SelectionActionsMixin:
                         fi["filepath"] = abs_fp
 
                     old_container.pop(file_key, None)
+                    if old_folder and old_folder != target_folder:
+                        prune_empty_plan_ancestors(
+                            host.plan, old_folder, preserve_folders=manual_folders
+                        )
                     target_container = _resolve_plan_folder_dict(
                         host.plan, target_folder, create=True
                     )
                     if target_container is None:
                         host.plan[target_folder] = {}
                         target_container = host.plan[target_folder]
-
-                    from app.core.path_utils import _disambiguate_key
 
                     # Non-clobbering mutation with automatic numeric disambiguation
                     if (
@@ -551,13 +590,22 @@ class SelectionActionsMixin:
                     target_container[dest_key] = fi
                     fi["folder"] = target_folder
                     fi["is_locked"] = True
+                    _update_node_relative_source(fi, db_base, abs_fp, target_folder)
                     host.locked_files[dest_key] = target_folder
 
                     if doc_relpath:
                         host.locked_files[doc_relpath] = target_folder
+                        persisted_tf = (
+                            str(fi["target_filename"])
+                            if fi.get("target_filename")
+                            else None
+                        )
                         if host.app_session:
                             host.app_session.db.set_user_verified_target_path(
-                                db_base, doc_relpath, target_folder
+                                db_base,
+                                doc_relpath,
+                                target_folder,
+                                target_name=persisted_tf,
                             )
                         edit_kwargs: dict[str, Any] = {
                             "folder": target_folder,
@@ -689,12 +737,17 @@ class SelectionActionsMixin:
             self.announce(f"{status_str} {len(all_files)} file item(s).")
 
     def _get_executable_plan(
-        self: TUIHostProtocol, plan_dict: dict[str, Any] | None = None
+        self: TUIHostProtocol,
+        plan_dict: dict[str, Any] | None = None,
+        _prefix: str = "",
     ) -> dict[str, Any]:
-        """Return filtered plan dictionary containing only checked, non-excluded file nodes."""
+        """Return filtered plan dictionary containing checked files and manual empty folders."""
         if plan_dict is None:
             plan_dict = self.plan
 
+        manual_folders: set[str] = set(
+            getattr(self, "_manual_empty_folders", None) or set()
+        )
         result: dict[str, Any] = {}
         for k, v in plan_dict.items():
             if isinstance(v, dict) and v.get("__type__") == "file":
@@ -703,8 +756,9 @@ class SelectionActionsMixin:
                 if is_checked and not is_excluded:
                     result[k] = v
             elif isinstance(v, dict):
-                sub = self._get_executable_plan(v)
-                if sub:
+                sub_path = f"{_prefix}/{k}" if _prefix else k
+                sub = self._get_executable_plan(v, _prefix=sub_path)
+                if sub or sub_path in manual_folders:
                     result[k] = sub
             else:
                 result[k] = v
@@ -741,7 +795,13 @@ class SelectionActionsMixin:
                     db_base, doc_relpath, None
                 )
             _record_manual_edit(
-                self, db_base, doc_relpath, abs_fp, folder=None, is_locked=False
+                self,
+                db_base,
+                doc_relpath,
+                abs_fp,
+                folder=None,
+                target_filename=None,
+                is_locked=False,
             )
             msg = f"Unlocked file '{file_key}'"
         else:
@@ -749,15 +809,20 @@ class SelectionActionsMixin:
             if doc_relpath:
                 self.locked_files[doc_relpath] = folder
             data["is_locked"] = True
+            locked_tf: str | None = None
             if isinstance(info_dict, dict):
                 info_dict["is_locked"] = True
+                if info_dict.get("target_filename"):
+                    locked_tf = str(info_dict["target_filename"])
             if self.app_session and doc_relpath:
                 self.app_session.db.set_user_verified_target_path(
-                    db_base, doc_relpath, folder
+                    db_base, doc_relpath, folder, target_name=locked_tf
                 )
-            _record_manual_edit(
-                self, db_base, doc_relpath, abs_fp, folder=folder, is_locked=True
-            )
+            edit_kwargs: dict[str, Any] = {"folder": folder, "is_locked": True}
+            if locked_tf:
+                edit_kwargs["target_filename"] = locked_tf
+                edit_kwargs["confirmed"] = True
+            _record_manual_edit(self, db_base, doc_relpath, abs_fp, **edit_kwargs)
             msg = f"Locked file '{file_key}' to folder '{folder}'"
 
         self.announce(msg)
@@ -926,7 +991,11 @@ class SelectionActionsMixin:
                 if not new_name:
                     return
 
-                from app.core.path_utils import _is_absolute_path, _merge_plan_dicts
+                from app.core.path_utils import (
+                    _is_absolute_path,
+                    _merge_plan_dicts,
+                    prune_empty_plan_ancestors,
+                )
 
                 dest_override = getattr(new_name, "destination_override", None)
                 if isinstance(new_name, tuple):
@@ -955,10 +1024,21 @@ class SelectionActionsMixin:
                 else:
                     eff_folder_path = raw_target
 
+                if not _is_absolute_path(eff_folder_path):
+                    try:
+                        eff_folder_path = _normalize_validated_folder(eff_folder_path)
+                    except ValueError as err:
+                        self.announce(
+                            f"Invalid folder path: {err}", priority="assertive"
+                        )
+                        return
+
                 if not eff_folder_path or eff_folder_path == old_folder_path:
                     return
 
+                manual_folders = getattr(self, "_manual_empty_folders", set())
                 old_content: dict[str, Any] | None = None
+                popped_parent_prefix = ""
                 if old_folder_path in self.plan and isinstance(
                     self.plan[old_folder_path], dict
                 ):
@@ -970,11 +1050,37 @@ class SelectionActionsMixin:
                         parent_dict.get(leaf_name), dict
                     ):
                         old_content = parent_dict.pop(leaf_name)
+                        popped_parent_prefix = parent_prefix
                 elif old_name in self.plan and isinstance(self.plan[old_name], dict):
                     old_content = self.plan.pop(old_name)
 
                 if old_content is None:
                     return
+
+                if manual_folders:
+                    updated_manual: set[str] = set()
+                    changed_manual = False
+                    for mf in manual_folders:
+                        if mf == old_folder_path:
+                            updated_manual.add(eff_folder_path)
+                            changed_manual = True
+                        elif mf.startswith(f"{old_folder_path}/"):
+                            suffix = mf[len(old_folder_path) + 1 :]
+                            updated_manual.add(f"{eff_folder_path}/{suffix}")
+                            changed_manual = True
+                        else:
+                            updated_manual.add(mf)
+                    if changed_manual:
+                        self._manual_empty_folders = updated_manual
+                        manual_folders = updated_manual
+                        _persist_manual_folders_to_cache(self)
+
+                if popped_parent_prefix:
+                    prune_empty_plan_ancestors(
+                        self.plan,
+                        popped_parent_prefix,
+                        preserve_folders=manual_folders,
+                    )
 
                 def _recursively_update_folder(
                     content_dict: dict[str, Any], parent_folder: str
@@ -994,20 +1100,37 @@ class SelectionActionsMixin:
                                     v["filepath"] = abs_fp
                                 v["folder"] = parent_folder
                                 v["is_locked"] = True
+                                _update_node_relative_source(
+                                    v, db_b, abs_fp, parent_folder
+                                )
                                 self.locked_files[k] = parent_folder
                                 if doc_rel:
                                     self.locked_files[doc_rel] = parent_folder
+                                    persisted_tf = (
+                                        str(v["target_filename"])
+                                        if v.get("target_filename")
+                                        else None
+                                    )
                                     if self.app_session:
                                         self.app_session.db.set_user_verified_target_path(
-                                            db_b, doc_rel, parent_folder
+                                            db_b,
+                                            doc_rel,
+                                            parent_folder,
+                                            target_name=persisted_tf,
                                         )
+                                    edit_kwargs: dict[str, Any] = {
+                                        "folder": parent_folder,
+                                        "is_locked": True,
+                                    }
+                                    if persisted_tf:
+                                        edit_kwargs["target_filename"] = persisted_tf
+                                        edit_kwargs["confirmed"] = True
                                     _record_manual_edit(
                                         self,
                                         db_b,
                                         doc_rel,
                                         abs_fp,
-                                        folder=parent_folder,
-                                        is_locked=True,
+                                        **edit_kwargs,
                                     )
                             else:
                                 sub = f"{parent_folder}/{k}" if parent_folder else k
@@ -1068,9 +1191,21 @@ class SelectionActionsMixin:
                 if not result:
                     return
 
-                from app.core.path_utils import _disambiguate_key
+                from app.core.path_utils import (
+                    _disambiguate_key,
+                    _is_absolute_path,
+                    prune_empty_plan_ancestors,
+                )
 
                 dest_override = getattr(result, "destination_override", None)
+                if dest_override and not _is_absolute_path(str(dest_override)):
+                    try:
+                        dest_override = _normalize_validated_folder(str(dest_override))
+                    except ValueError as err:
+                        self.announce(
+                            f"Invalid destination folder: {err}", priority="assertive"
+                        )
+                        return
                 batch_items = getattr(result, "batch_items", None)
 
                 if not batch_items:
@@ -1094,6 +1229,7 @@ class SelectionActionsMixin:
                             }
                         )
 
+                manual_folders = getattr(self, "_manual_empty_folders", set())
                 renamed_count = 0
                 for item in batch_items:
                     old_name = str(item.get("key") or item.get("old_name") or "")
@@ -1104,6 +1240,11 @@ class SelectionActionsMixin:
                         if dest_override
                         else (item.get("folder") or old_folder)
                     )
+                    if target_folder and not _is_absolute_path(target_folder):
+                        try:
+                            target_folder = _normalize_validated_folder(target_folder)
+                        except ValueError:
+                            continue
                     data_info = item.get("info")
 
                     if not old_name or not new_filename:
@@ -1144,6 +1285,10 @@ class SelectionActionsMixin:
                     # Remove from old location in self.plan
                     if old_container is not None and old_name in old_container:
                         old_container.pop(old_name, None)
+                        if old_folder and old_folder != target_folder:
+                            prune_empty_plan_ancestors(
+                                self.plan, old_folder, preserve_folders=manual_folders
+                            )
 
                     target_container = _resolve_plan_folder_dict(
                         self.plan, target_folder, create=True
@@ -1171,6 +1316,9 @@ class SelectionActionsMixin:
                         data_info["folder"] = target_folder
                         data_info["is_locked"] = True
                         data_info["confirmed"] = True
+                        _update_node_relative_source(
+                            data_info, db_base, abs_fp, target_folder
+                        )
                     else:
                         new_info: dict[str, Any] = {
                             "__type__": "file",
@@ -1183,6 +1331,9 @@ class SelectionActionsMixin:
                             new_info["source_path"] = doc_relpath
                         if abs_fp:
                             new_info["filepath"] = abs_fp
+                        _update_node_relative_source(
+                            new_info, db_base, abs_fp, target_folder
+                        )
                         target_container[new_filename] = new_info
 
                     self.locked_files[new_filename] = target_folder
@@ -1190,7 +1341,10 @@ class SelectionActionsMixin:
                         self.locked_files[doc_relpath] = target_folder
                         if self.app_session:
                             self.app_session.db.set_user_verified_target_path(
-                                db_base, doc_relpath, target_folder
+                                db_base,
+                                doc_relpath,
+                                target_folder,
+                                target_name=new_filename,
                             )
                         _record_manual_edit(
                             self,
@@ -1256,7 +1410,11 @@ class SelectionActionsMixin:
                 if not new_formatted:
                     return
 
-                from app.core.path_utils import _disambiguate_key
+                from app.core.path_utils import (
+                    _disambiguate_key,
+                    _is_absolute_path,
+                    prune_empty_plan_ancestors,
+                )
 
                 dest_override = getattr(new_formatted, "destination_override", None)
                 if isinstance(new_formatted, tuple):
@@ -1264,19 +1422,39 @@ class SelectionActionsMixin:
                 else:
                     new_formatted_str = str(new_formatted)
 
+                if dest_override and not _is_absolute_path(str(dest_override)):
+                    try:
+                        dest_override = _normalize_validated_folder(str(dest_override))
+                    except ValueError as err:
+                        self.announce(
+                            f"Invalid destination folder: {err}", priority="assertive"
+                        )
+                        return
+
                 if ext and not new_formatted_str.endswith(ext):
                     new_filename = f"{new_formatted_str}{ext}"
                 else:
                     new_filename = new_formatted_str
 
-                target_folder = dest_override if dest_override else folder_cat
+                target_folder = str(dest_override if dest_override else folder_cat)
+                if target_folder and not _is_absolute_path(target_folder):
+                    try:
+                        target_folder = _normalize_validated_folder(target_folder)
+                    except ValueError as err:
+                        self.announce(
+                            f"Invalid destination folder: {err}", priority="assertive"
+                        )
+                        return
                 if not dest_override and new_filename == old_name:
                     return
 
+                manual_folders = getattr(self, "_manual_empty_folders", set())
+                old_folder = str(folder_cat or "")
+
                 # Remove from old location in self.plan
-                old_container = _resolve_plan_folder_dict(self.plan, folder_cat)
+                old_container = _resolve_plan_folder_dict(self.plan, old_folder)
                 if old_container is None or old_name not in old_container:
-                    _, found_container, _ = _find_file_in_plan(
+                    found_folder, found_container, _ = _find_file_in_plan(
                         self.plan,
                         old_name,
                         target_info=data.get("info")
@@ -1285,8 +1463,13 @@ class SelectionActionsMixin:
                     )
                     if found_container is not None:
                         old_container = found_container
+                        old_folder = found_folder
                 if old_container is not None and old_name in old_container:
                     old_container.pop(old_name, None)
+                    if old_folder and old_folder != target_folder:
+                        prune_empty_plan_ancestors(
+                            self.plan, old_folder, preserve_folders=manual_folders
+                        )
 
                 target_container = _resolve_plan_folder_dict(
                     self.plan, target_folder, create=True
@@ -1321,6 +1504,9 @@ class SelectionActionsMixin:
                     file_info["folder"] = target_folder
                     file_info["is_locked"] = True
                     file_info["confirmed"] = True
+                    _update_node_relative_source(
+                        file_info, db_base, abs_fp, target_folder
+                    )
                 else:
                     file_info = {
                         "__type__": "file",
@@ -1333,6 +1519,9 @@ class SelectionActionsMixin:
                         file_info["source_path"] = doc_relpath
                     if abs_fp:
                         file_info["filepath"] = abs_fp
+                    _update_node_relative_source(
+                        file_info, db_base, abs_fp, target_folder
+                    )
                     data["info"] = file_info
                     target_container[new_filename] = file_info
                 data["folder"] = target_folder
@@ -1342,7 +1531,10 @@ class SelectionActionsMixin:
                     self.locked_files[doc_relpath] = target_folder
                     if self.app_session:
                         self.app_session.db.set_user_verified_target_path(
-                            db_base, doc_relpath, target_folder
+                            db_base,
+                            doc_relpath,
+                            target_folder,
+                            target_name=new_filename,
                         )
                     _record_manual_edit(
                         self,
@@ -1367,16 +1559,30 @@ class SelectionActionsMixin:
         def on_created(folder_name: str | None) -> None:
             if not folder_name:
                 return
-            existing = _resolve_plan_folder_dict(self.plan, folder_name, create=False)
+            try:
+                clean_folder = _normalize_validated_folder(folder_name)
+            except ValueError as err:
+                self.announce(
+                    f"Invalid folder name '{folder_name}': {err}",
+                    priority="assertive",
+                )
+                return
+
+            existing = _resolve_plan_folder_dict(self.plan, clean_folder, create=False)
             if existing is None:
-                created = _resolve_plan_folder_dict(self.plan, folder_name, create=True)
+                created = _resolve_plan_folder_dict(
+                    self.plan, clean_folder, create=True
+                )
                 if created is None:
-                    self.plan[folder_name] = {}
-                self._manual_empty_folders.add(folder_name)
+                    self.plan[clean_folder] = {}
+                self._manual_empty_folders.add(clean_folder)
+                _persist_manual_folders_to_cache(self)
                 self.rebuild_tree()
-                self.announce(f"Created new folder category: '{folder_name}'")
+                self.announce(f"Created new folder category: '{clean_folder}'")
             else:
-                self.announce(f"Folder category '{folder_name}' already exists.")
+                self._manual_empty_folders.add(clean_folder)
+                _persist_manual_folders_to_cache(self)
+                self.announce(f"Folder category '{clean_folder}' already exists.")
 
         self.push_screen(NewFolderModal(), on_created)
 

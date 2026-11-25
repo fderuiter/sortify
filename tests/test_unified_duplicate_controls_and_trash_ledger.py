@@ -186,7 +186,7 @@ def test_migration_4_upgrades_v3_moves_check_constraint_without_data_loss(
         db = store.database(worker)
         history = store.history(db, store.cache(worker))
         conn = get_db_connection(str(store.path))
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 5
 
         rows_before = history.moves.list_moves("sess_v3")
         assert len(rows_before) == 1
@@ -1357,7 +1357,7 @@ def test_unencrypted_legacy_store_upgrade_to_v4_and_worker_rollback_preserves_wa
         user_ver = (
             get_db_connection(str(store.path)).execute("PRAGMA user_version").fetchone()
         )
-        assert user_ver is not None and user_ver[0] == 4
+        assert user_ver is not None and user_ver[0] == 5
 
         # Opens HistoryManager on DBWorker thread (triggers SessionCrypto.get_cipher probe)
         with open_session_history(store) as history:

@@ -3236,6 +3236,20 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                 runtime_settings, "progress_callback", None
             )
 
+            # Validate any explicit empty folder categories before sanitization so
+            # escaping relative folder paths raise ValueError rather than silently
+            # collapsing into base_dir.
+            from app.core.path_utils import (
+                _is_absolute_path,
+                collect_empty_plan_folders,
+                validate_target_path,
+            )
+
+            pre_empty_folders = collect_empty_plan_folders(plan)
+            for raw_empty_rel in pre_empty_folders:
+                if not _is_absolute_path(raw_empty_rel):
+                    validate_target_path(raw_empty_rel)
+
             active_conflict_policy = str(
                 getattr(runtime_settings, "CONFLICT_POLICY", "rename") or "rename"
             ).lower()
@@ -3253,6 +3267,28 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                     or "Plan validation failed."
                 )
                 raise ValueError(f"Plan validation or confirmation failed: {warn_text}")
+
+            # Materialize any explicit empty folder categories preserved in the plan
+            # (such as user-created Ctrl+N folders) within base_dir.
+            empty_plan_folders = collect_empty_plan_folders(plan)
+            for empty_rel in empty_plan_folders:
+                if _is_absolute_path(empty_rel):
+                    target_empty_dir = os.path.normpath(empty_rel)
+                else:
+                    validate_target_path(empty_rel)
+                    clean_empty_rel = "/".join(
+                        p
+                        for p in empty_rel.replace("\\", "/").strip("/").split("/")
+                        if p
+                    )
+                    target_empty_dir = os.path.normpath(
+                        os.path.join(base_dir, clean_empty_rel)
+                    )
+                    if not is_subpath_or_equal(target_empty_dir, base_dir):
+                        raise ValueError(
+                            f"Empty folder target escapes base directory: {empty_rel}"
+                        )
+                os.makedirs(target_empty_dir, exist_ok=True)
 
             # No transaction spans the sort. Documents and move records share one
             # store (ADR 0008), so a sort-long write lock would stall every move
