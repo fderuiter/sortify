@@ -45,7 +45,7 @@ class PathLookupIndex(NamedTuple):
             return index
         return cls(paths=index[0], basenames=index[1])
 
-    def _matches_path(self, raw_path: Optional[str]) -> bool:
+    def _matches_path(self, raw_path: str | None) -> bool:
         """Check whether normalized or absolute variants of ``raw_path`` exist in ``self.paths``."""
         if not raw_path or not self.paths:
             return False
@@ -55,7 +55,7 @@ class PathLookupIndex(NamedTuple):
         abs_p = os.path.normpath(os.path.abspath(raw_path))
         return abs_p in self.paths or abs_p.replace("\\", "/") in self.paths
 
-    def _matches_node(self, filepath: Optional[str], key: Optional[str]) -> bool:
+    def _matches_node(self, filepath: str | None, key: str | None) -> bool:
         """Check whether ``filepath`` matches ``self.paths`` or ``norm_key`` is in the index."""
         if self._matches_path(filepath):
             return True
@@ -65,9 +65,9 @@ class PathLookupIndex(NamedTuple):
     def _matches_collision(
         self,
         file_info: Mapping[str, Any],
-        target_path: Optional[str],
-        filepath: Optional[str],
-        key: Optional[str],
+        target_path: str | None,
+        filepath: str | None,
+        key: str | None,
     ) -> bool:
         """Check collision flags, ``target_path``, ``filepath``, and ``key`` against the index."""
         return bool(
@@ -165,7 +165,7 @@ class TreeViewMixin:
         file_info: Mapping[str, Any],
         folder: str,
         file_key: str,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Resolve destination path for a file node while preserving Windows drive separators."""
         override_dir = file_info.get("destination_override")
         eff_folder = str(override_dir) if override_dir else folder
@@ -192,7 +192,7 @@ class TreeViewMixin:
 
     @staticmethod
     def _invalid_lock_candidates(
-        filepath: Optional[str], key: Optional[str]
+        filepath: str | None, key: str | None
     ) -> tuple[str, ...]:
         """Build up to 4 normalized lookup keys for ``invalid_locks`` checks."""
         candidates: list[str] = []
@@ -207,9 +207,9 @@ class TreeViewMixin:
 
     def _has_invalid_lock(
         self: TUIHostProtocol,
-        filepath: Optional[str],
-        key: Optional[str],
-        invalid_locks: Optional[Mapping[str, Any]] = None,
+        filepath: str | None,
+        key: str | None,
+        invalid_locks: Mapping[str, Any] | None = None,
     ) -> bool:
         """Check whether any of the 4 path variants exists in ``invalid_locks``."""
         locks = (
@@ -226,10 +226,10 @@ class TreeViewMixin:
 
     def _get_invalid_lock_error(
         self: TUIHostProtocol,
-        filepath: Optional[str],
-        key: Optional[str],
-        invalid_locks: Optional[Mapping[str, Any]] = None,
-    ) -> Optional[str]:
+        filepath: str | None,
+        key: str | None,
+        invalid_locks: Mapping[str, Any] | None = None,
+    ) -> str | None:
         """Return the first truthy ``invalid_locks`` error across 4 path variants."""
         locks = (
             TreeViewMixin._get_plan_invalid_locks(self)

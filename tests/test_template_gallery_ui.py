@@ -39,10 +39,11 @@ def test_wizard_modal_starter_templates_applied(tmp_path):
             modal.action_finish()
             await pilot.pause(0.1)
 
-            # Verify default starter templates (financial_tax, personal_admin) populated KEYWORD_RULES & POLICIES
-            assert "invoice" in settings.KEYWORD_RULES
-            assert "utility" in settings.KEYWORD_RULES
-            assert len(settings.POLICIES) > 0
+            # Verify default starter templates (financial_tax, personal_admin) populated folder-scoped KEYWORD_RULES & POLICIES
+            scoped = settings.for_folder(app.base_dir)
+            assert "invoice" in scoped.KEYWORD_RULES
+            assert "utility" in scoped.KEYWORD_RULES
+            assert len(scoped.POLICIES) > 0
 
     asyncio.run(_test())
 

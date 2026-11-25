@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "13481c8f749e71824419c2a4d877f9d5ab1ec1a18d1699a4d0aac47375143aff"
+    "checksum": "5c7c3327abcf81b0e2535b7721a67e022bd1faa5879cae340343b67eddbc314b"
   },
   "classes": [
     {
@@ -72,6 +72,21 @@
         },
         {
           "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "filepath",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
           "decorators": [],
           "name": "flush",
           "parameters": [
@@ -82,6 +97,29 @@
             }
           ],
           "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "for_folder",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str | os.PathLike[str] | None",
+              "default": null,
+              "name": "folder_path"
+            },
+            {
+              "annotation": "bool",
+              "default": "True",
+              "name": "fallback_to_global"
+            }
+          ],
+          "returns": "Any"
         },
         {
           "async": false,
@@ -366,6 +404,48 @@
         {
           "async": false,
           "decorators": [
+            "@field_validator('EXTENSION_CATEGORIES')",
+            "@classmethod"
+          ],
+          "name": "validate_extension_categories",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "dict",
+              "default": null,
+              "name": "v"
+            }
+          ],
+          "returns": "dict"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@field_validator('FOLDER_RULE_SCOPES', mode='before')",
+            "@classmethod"
+          ],
+          "name": "validate_folder_rule_scopes",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "v"
+            }
+          ],
+          "returns": "dict[str, dict[str, Any]]"
+        },
+        {
+          "async": false,
+          "decorators": [
             "@field_validator('IGNORED_EXTENSIONS', mode='before')",
             "@classmethod"
           ],
@@ -387,7 +467,7 @@
         {
           "async": false,
           "decorators": [
-            "@field_validator('KEYWORD_RULES', 'LEARNED_RULES', 'DISABLED_KEYWORD_RULES')",
+            "@field_validator('KEYWORD_RULES', 'LEARNED_RULES', 'DISABLED_KEYWORD_RULES', 'DISABLED_LEARNED_RULES')",
             "@classmethod"
           ],
           "name": "validate_keyword_rules",

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "a03387dff63c5f4e86389487c5676e274720dc18a082d2d1b24ac063ddbc96f5"
+    "checksum": "7206f4112fddf1b468d22d61df2bfd96ce7edfd2ed1c2a3875c8b2fce81e1c20"
   },
   "classes": [
     {
@@ -165,9 +165,14 @@
               "name": "default_strategy"
             },
             {
-              "annotation": "bool",
+              "annotation": "bool | None",
               "default": "False",
               "name": "import_disabled"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "force_enable"
             }
           ],
           "returns": "tuple[dict[str, str], list[dict[str, Any]]]"

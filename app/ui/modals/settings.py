@@ -654,10 +654,28 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
                 priority="polite",
             )
 
+    def _get_scoped_rule_settings(self) -> Any:
+        """Resolve folder-scoped settings for rule dialogs when a workspace folder is active."""
+        from app.config import resolve_scoped_settings
+
+        get_active_fn = (
+            getattr(self.app, "get_active_settings", None)
+            if hasattr(self, "app") and self.app
+            else None
+        )
+        if callable(get_active_fn):
+            return get_active_fn()
+        base_dir = (
+            getattr(self.app, "base_dir", None)
+            if hasattr(self, "app") and self.app
+            else None
+        )
+        return resolve_scoped_settings(self.settings, base_dir, fallback_to_global=True)
+
     @on(Button.Pressed, "#btn-open-templates")
     def action_open_templates(self) -> None:
         """Open starter rule template gallery modal."""
-        self.app.push_screen(TemplateGalleryModal(self.settings))
+        self.app.push_screen(TemplateGalleryModal(self._get_scoped_rule_settings()))
 
     @on(Button.Pressed, "#btn-open-rules")
     def action_open_active_rules(self) -> None:
@@ -674,7 +692,9 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
                     if callable(scan_fn):
                         scan_fn()
 
-        self.app.push_screen(ActiveRuleManagerModal(self.settings), on_rules_closed)
+        self.app.push_screen(
+            ActiveRuleManagerModal(self._get_scoped_rule_settings()), on_rules_closed
+        )
 
     @on(DensitySlider.Changed, "#slider-pdf-density-threshold")
     def _on_density_slider_changed(self, event: DensitySlider.Changed) -> None:

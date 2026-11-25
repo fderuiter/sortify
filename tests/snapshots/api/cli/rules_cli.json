@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "ea90e473357de6552e8ef42007810b108c3f1b586653b4bfe9632bd7140ec5ae"
+    "checksum": "7a69982972f78157606424eb4b326abeb661d6dc8a2c2db45056f7a5decebd20"
   },
   "classes": [],
   "cli": [
@@ -10,7 +10,7 @@
       ],
       "caller": "subparsers",
       "keywords": {
-        "help": "Import or export routing rules (Hazel, DropIt, TagSpaces, Sortify JSON)"
+        "help": "Manage, import, or export routing rules (global or folder-scoped)"
       },
       "method": "add_parser"
     },
@@ -22,6 +22,18 @@
       "keywords": {
         "action": "store_true",
         "help": "Output response in structured JSON format"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--folder"
+      ],
+      "caller": "parser_rules",
+      "keywords": {
+        "default": null,
+        "help": "Scope rule inspection or updates to a specific target directory",
+        "type": "str"
       },
       "method": "add_argument"
     },
@@ -196,12 +208,12 @@
     },
     {
       "args": [
-        "--settings-file"
+        "--folder"
       ],
       "caller": "target_parser",
       "keywords": {
-        "default": null,
-        "help": "Optional path to a specific Sortify settings.json file",
+        "default": "argparse.SUPPRESS",
+        "help": "Scope rule operation to a specific target directory",
         "type": "str"
       },
       "method": "add_argument"

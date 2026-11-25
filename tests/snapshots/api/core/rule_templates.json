@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "c416ee6731853e580e78917c886e9c8d6aeb3406d4442981c797693e5782564a"
+    "checksum": "212f3508a521b0902a2d2fe8faad97926f425ea6f9da44c3cfb462d0ce6e5666"
   },
   "classes": [
     {
@@ -26,6 +26,11 @@
           "annotation": "list[str]",
           "default": null,
           "name": "pack_ids"
+        },
+        {
+          "annotation": "str | Path | None",
+          "default": "None",
+          "name": "folder"
         }
       ],
       "returns": "tuple[dict[str, str], list[dict[str, Any]]]"
@@ -49,6 +54,11 @@
           "annotation": "str | Path",
           "default": null,
           "name": "destination_path"
+        },
+        {
+          "annotation": "str | Path | None",
+          "default": "None",
+          "name": "folder"
         }
       ],
       "returns": "Path"

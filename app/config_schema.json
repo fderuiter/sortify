@@ -340,10 +340,22 @@
       "title": "Learned Rules",
       "type": "object"
     },
+    "DISABLED_LEARNED_RULES": {
+      "additionalProperties": true,
+      "description": "Mapping of temporarily disabled learned keyword patterns to relative target folder paths, preserving separator-normalized learned rule semantics while inactive and enforcing the same relative target path validation as LEARNED_RULES.",
+      "title": "Disabled Learned Rules",
+      "type": "object"
+    },
     "EXTENSION_CATEGORIES": {
       "additionalProperties": true,
-      "description": "Custom mapping of category folder names to lists of file extensions or extension overrides used for fallback file-type routing.",
+      "description": "Custom mapping of file extensions to relative category folder paths (or category folder paths to lists of file extensions) used for fallback file-type routing.",
       "title": "Extension Categories",
+      "type": "object"
+    },
+    "FOLDER_RULE_SCOPES": {
+      "additionalProperties": true,
+      "description": "Mapping of canonicalized workspace folder paths to per-folder rule scope dictionaries containing optional KEYWORD_RULES, DISABLED_KEYWORD_RULES, LEARNED_RULES, DISABLED_LEARNED_RULES, EXTENSION_CATEGORIES, and POLICIES entries, all validated against relative target path and policy constraints.",
+      "title": "Folder Rule Scopes",
       "type": "object"
     },
     "POLICIES": {

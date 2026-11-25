@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "cc3893cfd8d4b14af3e2b614d1837a5de773b7de64ff4e7165b0725a9704529d"
+    "checksum": "4f2dbd35f2334ad47f3bac309fbf8b40c85deabdb86ff1ca1b782665be18929d"
   },
   "classes": [
     {
@@ -111,6 +111,29 @@
         }
       ],
       "returns": "str | None"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "matches_learned_rule_pattern",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "pattern"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "text_to_search"
+        },
+        {
+          "annotation": "str | None",
+          "default": "None",
+          "name": "norm_search"
+        }
+      ],
+      "returns": "bool"
     }
   ]
 }

@@ -101,11 +101,23 @@ Mapping of temporarily disabled keyword strings to relative target folder paths,
 
 Mapping of user-corrected keyword patterns to relative target folder paths learned from interactive reassignments, validated with the same relative path rules as KEYWORD_RULES.
 
+### `DISABLED_LEARNED_RULES`
+- **Type**: `dict`
+- **Default**: `{}`
+
+Mapping of temporarily disabled learned keyword patterns to relative target folder paths, preserving separator-normalized learned rule semantics while inactive and enforcing the same relative target path validation as LEARNED_RULES.
+
 ### `EXTENSION_CATEGORIES`
 - **Type**: `dict`
 - **Default**: `{}`
 
-Custom mapping of category folder names to lists of file extensions or extension overrides used for fallback file-type routing.
+Custom mapping of file extensions to relative category folder paths (or category folder paths to lists of file extensions) used for fallback file-type routing.
+
+### `FOLDER_RULE_SCOPES`
+- **Type**: `dict`
+- **Default**: `{}`
+
+Mapping of canonicalized workspace folder paths to per-folder rule scope dictionaries containing optional KEYWORD_RULES, DISABLED_KEYWORD_RULES, LEARNED_RULES, DISABLED_LEARNED_RULES, EXTENSION_CATEGORIES, and POLICIES entries, all validated against relative target path and policy constraints.
 
 ### `POLICIES`
 - **Type**: `list[PolicyRule]`
@@ -505,6 +517,7 @@ usage: smart-autosorter [-h] [-q] [--no-color] [--demo] [--smoke-test]
                         [--json] [--daemon] [--tui] [--interactive]
                         [--accept-ai-consent | --decline-ai-consent]
                         [--skip-wizard] [--non-interactive]
+                        [--settings-file SETTINGS_FILE | --profile PROFILE]
                         {sort,scan,config,daemon,undo,drop,ledger,model,quarantine,rules}
                         ...
 
@@ -529,8 +542,8 @@ positional arguments:
                         weights
     quarantine          Manage compliance quarantine staging, inspection, and
                         release
-    rules               Import or export routing rules (Hazel, DropIt,
-                        TagSpaces, Sortify JSON)
+    rules               Manage, import, or export routing rules (global or
+                        folder-scoped)
 
 options:
   -h, --help            show this help message and exit
@@ -550,6 +563,10 @@ options:
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
+  --settings-file SETTINGS_FILE
+                        Path to an explicit Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
 
 examples:
   smart-autosorter                         open the full-screen TUI
@@ -591,8 +608,9 @@ Automation pipelines invoking CLI commands with `--json` can rely on determinist
 ```text
 usage: smart-autosorter sort [-h] [--preset {demo,downloads,documents}]
                              [--json] [--dest-dir DEST_DIR] [--dry-run]
-                             [--flush-trash] [-q] [--no-color]
-                             [--max-folders MAX_FOLDERS]
+                             [--flush-trash]
+                             [--settings-file SETTINGS_FILE | --profile PROFILE]
+                             [-q] [--no-color] [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
                              [--conflict-policy {skip,rename,overwrite}]
                              [--duplicates {off,skip,stage,trash}]
@@ -620,6 +638,10 @@ options:
                         moves
   --flush-trash         Export staged duplicate copies to the OS Trash after
                         move verification
+  --settings-file SETTINGS_FILE
+                        Path to an explicit Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
   -q, --quiet           Suppress informational prints and non-essential
                         progress output
   --no-color            Disable ANSI color and style formatting
@@ -657,8 +679,9 @@ options:
 ##### `scan`
 ```text
 usage: smart-autosorter scan [-h] [--preset {demo,downloads,documents}]
-                             [--json] [-q] [--no-color]
-                             [--max-folders MAX_FOLDERS]
+                             [--json]
+                             [--settings-file SETTINGS_FILE | --profile PROFILE]
+                             [-q] [--no-color] [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
                              [--conflict-policy {skip,rename,overwrite}]
                              [--duplicates {off,skip,stage,trash}]
@@ -681,6 +704,10 @@ options:
                         Use standard workspace preset directory (demo,
                         downloads, documents)
   --json                Output scan plan in structured JSON format
+  --settings-file SETTINGS_FILE
+                        Path to an explicit Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
   -q, --quiet           Suppress informational prints and non-essential
                         progress output
   --no-color            Disable ANSI color and style formatting
@@ -717,8 +744,9 @@ options:
 
 ##### `config`
 ```text
-usage: smart-autosorter config [-h] [--show] [--json] [--set KEY VALUE] [-q]
-                               [--no-color] [--max-folders MAX_FOLDERS]
+usage: smart-autosorter config [-h] [--show] [--json] [--set KEY VALUE]
+                               [--settings-file SETTINGS_FILE | --profile PROFILE]
+                               [-q] [--no-color] [--max-folders MAX_FOLDERS]
                                [--strategy {default,generative,clinical_tmf,clinical_isf}]
                                [--conflict-policy {skip,rename,overwrite}]
                                [--duplicates {off,skip,stage,trash}]
@@ -736,6 +764,10 @@ options:
   --show                Display current configuration settings (the default)
   --json                Output configuration as JSON
   --set KEY VALUE       Set configuration KEY to VALUE
+  --settings-file SETTINGS_FILE
+                        Path to an explicit Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
   -q, --quiet           Suppress informational prints and non-essential
                         progress output
   --no-color            Disable ANSI color and style formatting
@@ -772,8 +804,9 @@ options:
 
 ##### `daemon`
 ```text
-usage: smart-autosorter daemon [-h] [--watch] [-q] [--no-color]
-                               [--max-folders MAX_FOLDERS]
+usage: smart-autosorter daemon [-h] [--watch]
+                               [--settings-file SETTINGS_FILE | --profile PROFILE]
+                               [-q] [--no-color] [--max-folders MAX_FOLDERS]
                                [--strategy {default,generative,clinical_tmf,clinical_isf}]
                                [--conflict-policy {skip,rename,overwrite}]
                                [--duplicates {off,skip,stage,trash}]
@@ -795,6 +828,10 @@ positional arguments:
 options:
   -h, --help            show this help message and exit
   --watch               Continuously monitor status telemetry in real time
+  --settings-file SETTINGS_FILE
+                        Path to an explicit Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
   -q, --quiet           Suppress informational prints and non-essential
                         progress output
   --no-color            Disable ANSI color and style formatting
@@ -832,8 +869,9 @@ options:
 ##### `undo`
 ```text
 usage: smart-autosorter undo [-h] [--session-id SESSION_ID] [--list]
-                             [--latest] [--force] [--json] [-q] [--no-color]
-                             [--max-folders MAX_FOLDERS]
+                             [--latest] [--force] [--json]
+                             [--settings-file SETTINGS_FILE | --profile PROFILE]
+                             [-q] [--no-color] [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
                              [--conflict-policy {skip,rename,overwrite}]
                              [--duplicates {off,skip,stage,trash}]
@@ -855,6 +893,10 @@ options:
   --force               Force rollback even if original files are missing
   --json                Output session list or rollback status in structured
                         JSON format
+  --settings-file SETTINGS_FILE
+                        Path to an explicit Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
   -q, --quiet           Suppress informational prints and non-essential
                         progress output
   --no-color            Disable ANSI color and style formatting
@@ -892,6 +934,7 @@ options:
 ##### `drop`
 ```text
 usage: smart-autosorter drop [-h] [--dest-dir DEST_DIR] [--dry-run] [--json]
+                             [--settings-file SETTINGS_FILE | --profile PROFILE]
                              [-q] [--no-color] [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
                              [--conflict-policy {skip,rename,overwrite}]
@@ -915,6 +958,10 @@ options:
   --dry-run             Perform dry run analysis without executing physical
                         moves
   --json                Output result in structured JSON format
+  --settings-file SETTINGS_FILE
+                        Path to an explicit Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
   -q, --quiet           Suppress informational prints and non-essential
                         progress output
   --no-color            Disable ANSI color and style formatting
@@ -952,6 +999,7 @@ options:
 ##### `ledger`
 ```text
 usage: smart-autosorter ledger [-h] [--json]
+                               [--settings-file SETTINGS_FILE | --profile PROFILE]
                                {status,reconcile,purge,export} ...
 
 positional arguments:
@@ -968,19 +1016,29 @@ positional arguments:
 options:
   -h, --help            show this help message and exit
   --json                Output response in structured JSON format
+  --settings-file SETTINGS_FILE
+                        Path to an explicit Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
 ```
 
 For comprehensive operational procedures, headless transaction reconciliation workflows, state transition handling, and stale daemon lock cleanup, refer to the dedicated [Ledger Reconciliation Runbook](runbooks/ledger_reconciliation.md).
 
 ###### `ledger status`
 ```text
-usage: smart-autosorter ledger status [-h] [--ledger-db LEDGER_DB] [-q]
+usage: smart-autosorter ledger status [-h]
+                                      [--settings-file SETTINGS_FILE | --profile PROFILE]
+                                      [--ledger-db LEDGER_DB] [-q]
                                       [--no-color] [--json]
                                       [--session-id SESSION_ID] [--failed]
                                       [--aborted]
 
 options:
   -h, --help            show this help message and exit
+  --settings-file SETTINGS_FILE
+                        Path to an explicit Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
   --ledger-db LEDGER_DB
                         Path to sidecar transaction ledger database file
   -q, --quiet           Suppress informational prints
@@ -994,11 +1052,17 @@ options:
 
 ###### `ledger reconcile`
 ```text
-usage: smart-autosorter ledger reconcile [-h] [--ledger-db LEDGER_DB] [-q]
+usage: smart-autosorter ledger reconcile [-h]
+                                         [--settings-file SETTINGS_FILE | --profile PROFILE]
+                                         [--ledger-db LEDGER_DB] [-q]
                                          [--no-color] [--json]
 
 options:
   -h, --help            show this help message and exit
+  --settings-file SETTINGS_FILE
+                        Path to an explicit Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
   --ledger-db LEDGER_DB
                         Path to sidecar transaction ledger database file
   -q, --quiet           Suppress informational prints
@@ -1008,13 +1072,19 @@ options:
 
 ###### `ledger purge`
 ```text
-usage: smart-autosorter ledger purge [-h] [--ledger-db LEDGER_DB] [-q]
-                                     [--no-color] [--json]
-                                     [--session-id SESSION_ID] [--completed]
-                                     [--failed] [--aborted] [--force]
+usage: smart-autosorter ledger purge [-h]
+                                     [--settings-file SETTINGS_FILE | --profile PROFILE]
+                                     [--ledger-db LEDGER_DB] [-q] [--no-color]
+                                     [--json] [--session-id SESSION_ID]
+                                     [--completed] [--failed] [--aborted]
+                                     [--force]
 
 options:
   -h, --help            show this help message and exit
+  --settings-file SETTINGS_FILE
+                        Path to an explicit Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
   --ledger-db LEDGER_DB
                         Path to sidecar transaction ledger database file
   -q, --quiet           Suppress informational prints
@@ -1030,13 +1100,19 @@ options:
 
 ###### `ledger export`
 ```text
-usage: smart-autosorter ledger export [-h] [--ledger-db LEDGER_DB] [-q]
+usage: smart-autosorter ledger export [-h]
+                                      [--settings-file SETTINGS_FILE | --profile PROFILE]
+                                      [--ledger-db LEDGER_DB] [-q]
                                       [--no-color] [--json]
                                       [--session-id SESSION_ID] [-o OUTPUT]
                                       [-f {csv,json}] [--csv]
 
 options:
   -h, --help            show this help message and exit
+  --settings-file SETTINGS_FILE
+                        Path to an explicit Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
   --ledger-db LEDGER_DB
                         Path to sidecar transaction ledger database file
   -q, --quiet           Suppress informational prints
@@ -1053,7 +1129,9 @@ options:
 
 ##### `model`
 ```text
-usage: smart-autosorter model [-h] [--json] [-q] [--no-color]
+usage: smart-autosorter model [-h] [--json]
+                              [--settings-file SETTINGS_FILE | --profile PROFILE]
+                              [-q] [--no-color]
                               {status,download,verify,remove,delete} ...
 
 positional arguments:
@@ -1071,17 +1149,27 @@ positional arguments:
 options:
   -h, --help            show this help message and exit
   --json                Output response in structured JSON format
+  --settings-file SETTINGS_FILE
+                        Path to an explicit Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
   -q, --quiet           Suppress informational prints
   --no-color            Disable ANSI color formatting
 ```
 
 ###### `model status`
 ```text
-usage: smart-autosorter model status [-h] [--model-dir MODEL_DIR] [-q]
-                                     [--no-color] [--json]
+usage: smart-autosorter model status [-h]
+                                     [--settings-file SETTINGS_FILE | --profile PROFILE]
+                                     [--model-dir MODEL_DIR] [-q] [--no-color]
+                                     [--json]
 
 options:
   -h, --help            show this help message and exit
+  --settings-file SETTINGS_FILE
+                        Path to an explicit Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
   --model-dir MODEL_DIR
                         Explicit local model directory path override
   -q, --quiet           Suppress informational prints
@@ -1091,12 +1179,18 @@ options:
 
 ###### `model download`
 ```text
-usage: smart-autosorter model download [-h] [--model-dir MODEL_DIR] [-q]
+usage: smart-autosorter model download [-h]
+                                       [--settings-file SETTINGS_FILE | --profile PROFILE]
+                                       [--model-dir MODEL_DIR] [-q]
                                        [--no-color] [--json] [--url URL]
                                        [--proxy PROXY] [--force]
 
 options:
   -h, --help            show this help message and exit
+  --settings-file SETTINGS_FILE
+                        Path to an explicit Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
   --model-dir MODEL_DIR
                         Explicit local model directory path override
   -q, --quiet           Suppress informational prints
@@ -1110,11 +1204,17 @@ options:
 
 ###### `model verify`
 ```text
-usage: smart-autosorter model verify [-h] [--model-dir MODEL_DIR] [-q]
-                                     [--no-color] [--json]
+usage: smart-autosorter model verify [-h]
+                                     [--settings-file SETTINGS_FILE | --profile PROFILE]
+                                     [--model-dir MODEL_DIR] [-q] [--no-color]
+                                     [--json]
 
 options:
   -h, --help            show this help message and exit
+  --settings-file SETTINGS_FILE
+                        Path to an explicit Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
   --model-dir MODEL_DIR
                         Explicit local model directory path override
   -q, --quiet           Suppress informational prints
@@ -1124,11 +1224,17 @@ options:
 
 ###### `model remove`
 ```text
-usage: smart-autosorter model remove [-h] [--model-dir MODEL_DIR] [-q]
-                                     [--no-color] [--json]
+usage: smart-autosorter model remove [-h]
+                                     [--settings-file SETTINGS_FILE | --profile PROFILE]
+                                     [--model-dir MODEL_DIR] [-q] [--no-color]
+                                     [--json]
 
 options:
   -h, --help            show this help message and exit
+  --settings-file SETTINGS_FILE
+                        Path to an explicit Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
   --model-dir MODEL_DIR
                         Explicit local model directory path override
   -q, --quiet           Suppress informational prints
@@ -1138,11 +1244,17 @@ options:
 
 ###### `model delete`
 ```text
-usage: smart-autosorter model remove [-h] [--model-dir MODEL_DIR] [-q]
-                                     [--no-color] [--json]
+usage: smart-autosorter model remove [-h]
+                                     [--settings-file SETTINGS_FILE | --profile PROFILE]
+                                     [--model-dir MODEL_DIR] [-q] [--no-color]
+                                     [--json]
 
 options:
   -h, --help            show this help message and exit
+  --settings-file SETTINGS_FILE
+                        Path to an explicit Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
   --model-dir MODEL_DIR
                         Explicit local model directory path override
   -q, --quiet           Suppress informational prints
@@ -1153,6 +1265,7 @@ options:
 ##### `quarantine`
 ```text
 usage: smart-autosorter quarantine [-h] [--json]
+                                   [--settings-file SETTINGS_FILE | --profile PROFILE]
                                    {list,inspect,process,release,dismiss} ...
 
 positional arguments:
@@ -1169,49 +1282,66 @@ positional arguments:
 options:
   -h, --help            show this help message and exit
   --json                Output response in structured JSON format
+  --settings-file SETTINGS_FILE
+                        Path to an explicit Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
 ```
 
 ###### `quarantine list`
 ```text
-usage: smart-autosorter quarantine list [-h] [--db-path DB_PATH] [-q]
-                                        [--no-color] [--json]
-                                        [--status STATUS]
+usage: smart-autosorter quarantine list [-h]
+                                        [--settings-file SETTINGS_FILE | --profile PROFILE]
+                                        [--db-path DB_PATH] [-q] [--no-color]
+                                        [--json] [--status STATUS]
                                         [--base-dir BASE_DIR]
 
 options:
-  -h, --help           show this help message and exit
-  --db-path DB_PATH    Path to database file
-  -q, --quiet          Suppress informational prints
-  --no-color           Disable ANSI color formatting
-  --json               Output response in structured JSON format
-  --status STATUS      Filter items by quarantine status (e.g. STAGED,
-                       QUARANTINED, IN_INSPECTION, RELEASED,
-                       DEAD_LETTER_QUEUE)
-  --base-dir BASE_DIR  Filter items by base directory
+  -h, --help            show this help message and exit
+  --settings-file SETTINGS_FILE
+                        Path to an explicit Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
+  --db-path DB_PATH     Path to database file
+  -q, --quiet           Suppress informational prints
+  --no-color            Disable ANSI color formatting
+  --json                Output response in structured JSON format
+  --status STATUS       Filter items by quarantine status (e.g. STAGED,
+                        QUARANTINED, IN_INSPECTION, RELEASED,
+                        DEAD_LETTER_QUEUE)
+  --base-dir BASE_DIR   Filter items by base directory
 ```
 
 ###### `quarantine inspect`
 ```text
-usage: smart-autosorter quarantine inspect [-h] [--db-path DB_PATH] [-q]
+usage: smart-autosorter quarantine inspect [-h]
+                                           [--settings-file SETTINGS_FILE | --profile PROFILE]
+                                           [--db-path DB_PATH] [-q]
                                            [--no-color] [--json]
                                            [--job-id JOB_ID]
                                            [JOB_ID]
 
 positional arguments:
-  JOB_ID             Quarantine job ID
+  JOB_ID                Quarantine job ID
 
 options:
-  -h, --help         show this help message and exit
-  --db-path DB_PATH  Path to database file
-  -q, --quiet        Suppress informational prints
-  --no-color         Disable ANSI color formatting
-  --json             Output response in structured JSON format
-  --job-id JOB_ID    Quarantine job ID
+  -h, --help            show this help message and exit
+  --settings-file SETTINGS_FILE
+                        Path to an explicit Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
+  --db-path DB_PATH     Path to database file
+  -q, --quiet           Suppress informational prints
+  --no-color            Disable ANSI color formatting
+  --json                Output response in structured JSON format
+  --job-id JOB_ID       Quarantine job ID
 ```
 
 ###### `quarantine process`
 ```text
-usage: smart-autosorter quarantine process [-h] [--db-path DB_PATH] [-q]
+usage: smart-autosorter quarantine process [-h]
+                                           [--settings-file SETTINGS_FILE | --profile PROFILE]
+                                           [--db-path DB_PATH] [-q]
                                            [--no-color] [--json]
                                            [--job-id JOB_ID]
                                            [--job-ids JOB_IDS]
@@ -1219,22 +1349,28 @@ usage: smart-autosorter quarantine process [-h] [--db-path DB_PATH] [-q]
                                            [JOB_ID ...]
 
 positional arguments:
-  JOB_ID             Quarantine job ID(s)
+  JOB_ID                Quarantine job ID(s)
 
 options:
-  -h, --help         show this help message and exit
-  --db-path DB_PATH  Path to database file
-  -q, --quiet        Suppress informational prints
-  --no-color         Disable ANSI color formatting
-  --json             Output response in structured JSON format
-  --job-id JOB_ID    Quarantine job ID
-  --job-ids JOB_IDS  Comma-separated list of quarantine job IDs
-  --timeout TIMEOUT  Forensic scan timeout in seconds (default 300.0)
+  -h, --help            show this help message and exit
+  --settings-file SETTINGS_FILE
+                        Path to an explicit Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
+  --db-path DB_PATH     Path to database file
+  -q, --quiet           Suppress informational prints
+  --no-color            Disable ANSI color formatting
+  --json                Output response in structured JSON format
+  --job-id JOB_ID       Quarantine job ID
+  --job-ids JOB_IDS     Comma-separated list of quarantine job IDs
+  --timeout TIMEOUT     Forensic scan timeout in seconds (default 300.0)
 ```
 
 ###### `quarantine release`
 ```text
-usage: smart-autosorter quarantine release [-h] [--db-path DB_PATH] [-q]
+usage: smart-autosorter quarantine release [-h]
+                                           [--settings-file SETTINGS_FILE | --profile PROFILE]
+                                           [--db-path DB_PATH] [-q]
                                            [--no-color] [--json]
                                            [--job-id JOB_ID]
                                            [--job-ids JOB_IDS]
@@ -1248,6 +1384,10 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
+  --settings-file SETTINGS_FILE
+                        Path to an explicit Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
   --db-path DB_PATH     Path to database file
   -q, --quiet           Suppress informational prints
   --no-color            Disable ANSI color formatting
@@ -1265,46 +1405,71 @@ options:
 
 ###### `quarantine dismiss`
 ```text
-usage: smart-autosorter quarantine dismiss [-h] [--db-path DB_PATH] [-q]
+usage: smart-autosorter quarantine dismiss [-h]
+                                           [--settings-file SETTINGS_FILE | --profile PROFILE]
+                                           [--db-path DB_PATH] [-q]
                                            [--no-color] [--json]
                                            [--job-id JOB_ID]
                                            [--job-ids JOB_IDS]
                                            [JOB_ID ...]
 
 positional arguments:
-  JOB_ID             Quarantine job ID(s)
+  JOB_ID                Quarantine job ID(s)
 
 options:
-  -h, --help         show this help message and exit
-  --db-path DB_PATH  Path to database file
-  -q, --quiet        Suppress informational prints
-  --no-color         Disable ANSI color formatting
-  --json             Output response in structured JSON format
-  --job-id JOB_ID    Quarantine job ID
-  --job-ids JOB_IDS  Comma-separated list of quarantine job IDs
+  -h, --help            show this help message and exit
+  --settings-file SETTINGS_FILE
+                        Path to an explicit Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
+  --db-path DB_PATH     Path to database file
+  -q, --quiet           Suppress informational prints
+  --no-color            Disable ANSI color formatting
+  --json                Output response in structured JSON format
+  --job-id JOB_ID       Quarantine job ID
+  --job-ids JOB_IDS     Comma-separated list of quarantine job IDs
 ```
 
 ##### `rules`
 ```text
-usage: smart-autosorter rules [-h] [--json] {import,export} ...
+usage: smart-autosorter rules [-h] [--json]
+                              [--settings-file SETTINGS_FILE | --profile PROFILE]
+                              [--folder FOLDER]
+                              {import,export,list,add,remove,enable,disable}
+                              ...
 
 positional arguments:
-  {import,export}  Rule management subcommands
-    import         Parse, preview, and merge external rule packages into
-                   Sortify settings
-    export         Export active keyword rules and policies to Sortify JSON,
-                   Hazel, or DropIt INI
+  {import,export,list,add,remove,enable,disable}
+                        Rule management subcommands
+    import              Parse, preview, and merge external rule packages into
+                        Sortify settings
+    export              Export active keyword rules and policies to Sortify
+                        JSON, Hazel, or DropIt INI
+    list                List active and disabled rules in global or folder-
+                        scoped settings
+    add                 Add or update a keyword, learned, extension, or policy
+                        rule
+    remove              Remove a rule by pattern or expression
+    enable              Enable a disabled keyword, learned, or policy rule
+    disable             Disable an active keyword, learned, or policy rule
 
 options:
-  -h, --help       show this help message and exit
-  --json           Output response in structured JSON format
+  -h, --help            show this help message and exit
+  --json                Output response in structured JSON format
+  --settings-file SETTINGS_FILE
+                        Optional path to a specific Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
+  --folder FOLDER       Scope rule inspection or updates to a specific target
+                        directory
 ```
 
 ###### `rules import`
 ```text
-usage: smart-autosorter rules import [-h] [--settings-file SETTINGS_FILE] [-q]
-                                     [--no-color] [--json] [-f FILE_OPT]
-                                     [--dry-run]
+usage: smart-autosorter rules import [-h]
+                                     [--settings-file SETTINGS_FILE | --profile PROFILE]
+                                     [--folder FOLDER] [-q] [--no-color]
+                                     [--json] [-f FILE_OPT] [--dry-run]
                                      [--conflict-strategy {keep_existing,overwrite,skip_conflicting}]
                                      [--resolve IDENT=STRATEGY]
                                      [--disabled | --enable]
@@ -1318,6 +1483,9 @@ options:
   -h, --help            show this help message and exit
   --settings-file SETTINGS_FILE
                         Optional path to a specific Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
+  --folder FOLDER       Scope rule operation to a specific target directory
   -q, --quiet           Suppress non-essential informational output
   --no-color            Disable ANSI color formatting
   --json                Output response in structured JSON format
@@ -1339,8 +1507,10 @@ options:
 
 ###### `rules export`
 ```text
-usage: smart-autosorter rules export [-h] [--settings-file SETTINGS_FILE] [-q]
-                                     [--no-color] [--json] [-o OUTPUT_OPT]
+usage: smart-autosorter rules export [-h]
+                                     [--settings-file SETTINGS_FILE | --profile PROFILE]
+                                     [--folder FOLDER] [-q] [--no-color]
+                                     [--json] [-o OUTPUT_OPT]
                                      [-f {sortify_json,hazel,dropit_ini,json,hazelrules,ini}]
                                      [--dry-run]
                                      [OUTPUT]
@@ -1352,6 +1522,9 @@ options:
   -h, --help            show this help message and exit
   --settings-file SETTINGS_FILE
                         Optional path to a specific Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
+  --folder FOLDER       Scope rule operation to a specific target directory
   -q, --quiet           Suppress non-essential informational output
   --no-color            Disable ANSI color formatting
   --json                Output response in structured JSON format
@@ -1362,6 +1535,171 @@ options:
                         when omitted)
   --dry-run             Preview rule counts and target format without writing
                         export file
+```
+
+###### `rules list`
+```text
+usage: smart-autosorter rules list [-h]
+                                   [--settings-file SETTINGS_FILE | --profile PROFILE]
+                                   [--folder FOLDER] [-q] [--no-color]
+                                   [--json]
+                                   [--kind {all,keyword,learned,extension,policy}]
+                                   [--status {all,active,disabled}]
+
+options:
+  -h, --help            show this help message and exit
+  --settings-file SETTINGS_FILE
+                        Optional path to a specific Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
+  --folder FOLDER       Scope rule operation to a specific target directory
+  -q, --quiet           Suppress non-essential informational output
+  --no-color            Disable ANSI color formatting
+  --json                Output response in structured JSON format
+  --kind {all,keyword,learned,extension,policy}
+                        Filter rules by kind (all, keyword, learned,
+                        extension, policy)
+  --status {all,active,disabled}
+                        Filter rules by state (all, active, disabled)
+```
+
+###### `rules add`
+```text
+usage: smart-autosorter rules add [-h]
+                                  [--settings-file SETTINGS_FILE | --profile PROFILE]
+                                  [--folder FOLDER] [-q] [--no-color] [--json]
+                                  [--pattern PATTERN_OPT]
+                                  [--target TARGET_OPT]
+                                  [--kind {keyword,learned,extension,policy}]
+                                  [--type {keyword,pattern,override,action,compliance,unarchive,duplicate,age,modified_date,created_date,exif_date,size,glob,regex,extension}]
+                                  [--action {move,copy,rename,quarantine,archive,unarchive,retain,redact,trash,duplicate}]
+                                  [--priority PRIORITY] [--no-halting]
+                                  [--rename-pattern RENAME_PATTERN]
+                                  [--disabled]
+                                  [PATTERN] [TARGET]
+
+positional arguments:
+  PATTERN               Keyword, learned stem, comma-separated extensions, or
+                        policy expression
+  TARGET                Relative destination folder path (e.g.
+                        Finances/Invoices)
+
+options:
+  -h, --help            show this help message and exit
+  --settings-file SETTINGS_FILE
+                        Optional path to a specific Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
+  --folder FOLDER       Scope rule operation to a specific target directory
+  -q, --quiet           Suppress non-essential informational output
+  --no-color            Disable ANSI color formatting
+  --json                Output response in structured JSON format
+  --pattern PATTERN_OPT
+                        Rule pattern or expression
+  --target TARGET_OPT   Relative destination folder path
+  --kind {keyword,learned,extension,policy}
+                        Rule table kind (default: keyword)
+  --type {keyword,pattern,override,action,compliance,unarchive,duplicate,age,modified_date,created_date,exif_date,size,glob,regex,extension}
+                        Condition type when --kind=policy (default: keyword)
+  --action {move,copy,rename,quarantine,archive,unarchive,retain,redact,trash,duplicate}
+                        Action when --kind=policy (e.g. move, copy, trash,
+                        quarantine)
+  --priority PRIORITY   Evaluation priority (0-100) when --kind=policy
+                        (default: 75)
+  --no-halting          Continue evaluating lower-priority policies after
+                        match
+  --rename-pattern RENAME_PATTERN
+                        Optional rename template when --kind=policy
+  --disabled            Create the rule in disabled state
+```
+
+###### `rules remove`
+```text
+usage: smart-autosorter rules remove [-h]
+                                     [--settings-file SETTINGS_FILE | --profile PROFILE]
+                                     [--folder FOLDER] [-q] [--no-color]
+                                     [--json] [--pattern PATTERN_OPT]
+                                     [--kind {all,keyword,learned,extension,policy}]
+                                     [PATTERN]
+
+positional arguments:
+  PATTERN               Rule pattern, extension, category, or policy
+                        expression to remove
+
+options:
+  -h, --help            show this help message and exit
+  --settings-file SETTINGS_FILE
+                        Optional path to a specific Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
+  --folder FOLDER       Scope rule operation to a specific target directory
+  -q, --quiet           Suppress non-essential informational output
+  --no-color            Disable ANSI color formatting
+  --json                Output response in structured JSON format
+  --pattern PATTERN_OPT
+                        Rule pattern, extension, category, or policy
+                        expression to remove
+  --kind {all,keyword,learned,extension,policy}
+                        Restrict removal to a specific rule kind (default:
+                        all)
+```
+
+###### `rules enable`
+```text
+usage: smart-autosorter rules enable [-h]
+                                     [--settings-file SETTINGS_FILE | --profile PROFILE]
+                                     [--folder FOLDER] [-q] [--no-color]
+                                     [--json] [--pattern PATTERN_OPT]
+                                     [--kind {all,keyword,learned,policy}]
+                                     [PATTERN]
+
+positional arguments:
+  PATTERN               Rule pattern or policy expression to enable
+
+options:
+  -h, --help            show this help message and exit
+  --settings-file SETTINGS_FILE
+                        Optional path to a specific Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
+  --folder FOLDER       Scope rule operation to a specific target directory
+  -q, --quiet           Suppress non-essential informational output
+  --no-color            Disable ANSI color formatting
+  --json                Output response in structured JSON format
+  --pattern PATTERN_OPT
+                        Rule pattern or policy expression to enable
+  --kind {all,keyword,learned,policy}
+                        Restrict enable operation to a specific rule kind
+                        (default: all)
+```
+
+###### `rules disable`
+```text
+usage: smart-autosorter rules disable [-h]
+                                      [--settings-file SETTINGS_FILE | --profile PROFILE]
+                                      [--folder FOLDER] [-q] [--no-color]
+                                      [--json] [--pattern PATTERN_OPT]
+                                      [--kind {all,keyword,learned,policy}]
+                                      [PATTERN]
+
+positional arguments:
+  PATTERN               Rule pattern or policy expression to disable
+
+options:
+  -h, --help            show this help message and exit
+  --settings-file SETTINGS_FILE
+                        Optional path to a specific Sortify settings.json file
+  --profile PROFILE     Named configuration profile under
+                        ~/.autosorter/profiles/<name>.json
+  --folder FOLDER       Scope rule operation to a specific target directory
+  -q, --quiet           Suppress non-essential informational output
+  --no-color            Disable ANSI color formatting
+  --json                Output response in structured JSON format
+  --pattern PATTERN_OPT
+                        Rule pattern or policy expression to disable
+  --kind {all,keyword,learned,policy}
+                        Restrict disable operation to a specific rule kind
+                        (default: all)
 ```
 
 ### `sandbox_cli.py`
