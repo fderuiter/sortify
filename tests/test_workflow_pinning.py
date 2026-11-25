@@ -145,3 +145,33 @@ def test_scheduled_link_audit_runs_live_validation_with_readonly_permissions():
     assert (link_step.get("env") or {}).get(
         "GITHUB_TOKEN"
     ) == "${{ secrets.GITHUB_TOKEN }}"
+
+
+def test_classify_pr_workflow_filters_main_scopes_permissions_and_checks_out_main():
+    """classify-pr.yml must restrict pull_request_target to main, default to read-only, and check out main."""
+    path = Path(".github/workflows/classify-pr.yml")
+    raw_text = path.read_text(encoding="utf-8")
+    workflow = yaml.safe_load(raw_text)
+
+    triggers = workflow.get("on") or workflow.get(True) or {}
+    pr_target = triggers.get("pull_request_target") or {}
+    assert pr_target.get("branches") == ["main"]
+    assert workflow.get("permissions") == {"contents": "read"}
+
+    jobs = workflow.get("jobs") or {}
+    assert "classify" in jobs
+    classify_job = jobs["classify"]
+    assert classify_job.get("permissions") == {
+        "contents": "read",
+        "issues": "write",
+        "pull-requests": "write",
+        "statuses": "write",
+    }
+
+    steps = classify_job.get("steps") or []
+    checkout_steps = [s for s in steps if "actions/checkout@" in s.get("uses", "")]
+    assert len(checkout_steps) == 1
+    checkout_with = checkout_steps[0].get("with") or {}
+    assert checkout_with.get("ref") == "refs/heads/main"
+    assert checkout_with.get("persist-credentials") is False
+    assert "pull_request.head" not in str(checkout_with)

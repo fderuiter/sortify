@@ -1658,3 +1658,159 @@ def test_process_queue_merges_bot_and_fork_docs_pr_when_maintainer_applies_autom
         res = process_auto_merge_queue(client)
         assert res.action == AutoMergeAction.MERGED
         assert res.pr_id == pr_num
+
+
+def test_automerge_label_from_bot_authors_without_bot_suffix_is_rejected_even_on_dependabot():
+    client = MagicMock(spec=GitHubClient)
+    client.get_collaborator_permission.return_value = "admin"
+    for bot_login in ("stitch", "jules", "dependabot", "dependabot[bot]"):
+        client.list_issue_events.return_value = [
+            _label_event(bot_login, actor_type="User")
+        ]
+        assert automerge_label_applied_by_maintainer(client, 1180) is False
+
+    # Even on a dependabot[bot] PR, a bot-applied 'automerge' label is stripped
+    _stub_pr_contents(client, ["pyproject.toml"])
+    pr = {
+        "number": 1181,
+        "title": "Bump the python-major group with 1 update",
+        "draft": False,
+        "state": "open",
+        "base": {
+            "sha": "base_1181",
+            "ref": "main",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "head": {
+            "sha": "head_1181",
+            "ref": "dependabot/pip/major",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "user": {"login": "dependabot[bot]", "type": "Bot"},
+        "labels": [{"name": "dependencies"}, {"name": "automerge"}],
+    }
+    client.list_issue_events.return_value = [_label_event("stitch", actor_type="User")]
+    meta = build_pr_metadata(client, pr)
+    assert "automerge" not in meta.labels
+
+
+def test_process_queue_merges_grouped_minor_patch_dependabot_and_blocks_breaking_grouped():
+    grouped_minor_commit = """build(deps): bump the python-minor-patch group with 3 updates
+
+Updates `ty` from 0.0.104 to 0.0.105
+Updates `mpmath` from 1.3.0 to 1.4.1
+Updates `narwhals` from 2.28.0 to 2.29.0
+
+---
+updated-dependencies:
+- dependency-name: ty
+  dependency-version: 0.0.105
+  dependency-type: direct:development
+  update-type: version-update:semver-patch
+  dependency-group: python-minor-patch
+- dependency-name: mpmath
+  dependency-version: 1.4.1
+  dependency-type: indirect
+  update-type: version-update:semver-minor
+  dependency-group: python-minor-patch
+- dependency-name: narwhals
+  dependency-version: 2.29.0
+  dependency-type: indirect
+  update-type: version-update:semver-minor
+  dependency-group: python-minor-patch
+...
+"""
+    client = MagicMock(spec=GitHubClient)
+    client.list_open_pull_requests.return_value = [
+        {"number": 1152, "labels": [{"name": "automerge:eligible"}], "draft": False}
+    ]
+    client.get_pull_request.return_value = {
+        "number": 1152,
+        "title": "build(deps): bump the python-minor-patch group with 3 updates",
+        "body": "Updates `ty` from 0.0.104 to 0.0.105\nUpdates `mpmath` from 1.3.0 to 1.4.1\nUpdates `narwhals` from 2.28.0 to 2.29.0\n",
+        "draft": False,
+        "state": "open",
+        "base": {
+            "sha": "base_1152",
+            "ref": "main",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "head": {
+            "sha": "head_1152",
+            "ref": "dependabot/pip/python-minor-patch",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "mergeable": True,
+        "mergeable_state": "clean",
+        "user": {"login": "dependabot[bot]", "type": "Bot"},
+        "labels": [{"name": "dependencies"}, {"name": "automerge:eligible"}],
+    }
+    client.get_commit_verification.return_value = {"verified": True}
+    client.list_pull_request_files.return_value = [
+        {"filename": "pyproject.toml", "additions": 3, "deletions": 3}
+    ]
+    client.list_pull_request_commits.return_value = [
+        {
+            "sha": "dep_commit_1",
+            "parents": [{"sha": "p0"}],
+            "commit": {
+                "message": grouped_minor_commit,
+                "verification": {"verified": True},
+            },
+        },
+        {
+            "sha": "merge_main_commit",
+            "parents": [{"sha": "dep_commit_1"}, {"sha": "main_sha"}],
+            "commit": {
+                "message": "Merge branch 'main' into dependabot/pip/python-minor-patch",
+                "verification": {"verified": True},
+            },
+        },
+    ]
+    client.get_required_ci_conclusion.return_value = "success"
+    client.merge_pull_request.return_value = True
+
+    res = process_auto_merge_queue(client)
+    assert res.action == AutoMergeAction.MERGED
+    assert res.pr_id == 1152
+
+    # Now test a grouped Dependabot PR with a 0.x minor bump that carries a stale automerge:eligible label:
+    # controller must remove stale automerge:eligible and apply automerge:blocked + risk:high
+    zero_x_breaking_commit = grouped_minor_commit.replace(
+        "Updates `ty` from 0.0.104 to 0.0.105",
+        "Updates `ty` from 0.0.104 to 0.1.0",
+    ).replace(
+        "dependency-version: 0.0.105\n  dependency-type: direct:development\n  update-type: version-update:semver-patch",
+        "dependency-version: 0.1.0\n  dependency-type: direct:development\n  update-type: version-update:semver-minor",
+    )
+    client_blocked = MagicMock(spec=GitHubClient)
+    client_blocked.list_open_pull_requests.return_value = [
+        {"number": 1153, "labels": [{"name": "automerge:eligible"}], "draft": False}
+    ]
+    client_blocked.get_pull_request.return_value = {
+        **client.get_pull_request.return_value,
+        "number": 1153,
+        "body": "Updates `ty` from 0.0.104 to 0.1.0\n",
+    }
+    client_blocked.get_commit_verification.return_value = {"verified": True}
+    client_blocked.list_pull_request_files.return_value = [
+        {"filename": "pyproject.toml", "additions": 3, "deletions": 3}
+    ]
+    client_blocked.list_pull_request_commits.return_value = [
+        {
+            "sha": "dep_commit_breaking",
+            "parents": [{"sha": "p0"}],
+            "commit": {
+                "message": zero_x_breaking_commit,
+                "verification": {"verified": True},
+            },
+        }
+    ]
+
+    res_blocked = process_auto_merge_queue(client_blocked)
+    assert res_blocked.action == AutoMergeAction.NONE
+    client_blocked.remove_label.assert_called_once_with(1153, "automerge:eligible")
+    client_blocked.add_labels.assert_called_once_with(
+        1153, ["risk:high", "automerge:blocked"]
+    )
+    client_blocked.merge_pull_request.assert_not_called()

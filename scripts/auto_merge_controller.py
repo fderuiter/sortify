@@ -31,9 +31,8 @@ from scripts.classify_pr import (
     ClassificationResult,
     PRMetadata,
     classify_pr,
-    dependency_update_type_from_diffs,
-    dependency_update_type_from_title,
     is_approved_automation_bot,
+    resolve_dependency_update_type,
 )
 
 logger = logging.getLogger(__name__)
@@ -288,8 +287,8 @@ def automerge_label_applied_by_maintainer(client: GitHubClient, pr_number: int) 
         if not labelled:
             return False
         actor = labelled[-1].get("actor") or {}
-        login = actor.get("login", "")
-        if not login or actor.get("type") == "Bot" or login.endswith("[bot]"):
+        login = str(actor.get("login") or "")
+        if not login or actor.get("type") == "Bot" or is_approved_automation_bot(login):
             return False
         return client.get_collaborator_permission(login) in MAINTAINER_PERMISSIONS
     except Exception as exc:
@@ -309,6 +308,16 @@ def build_pr_metadata(client: GitHubClient, full_pr: dict[str, Any]) -> PRMetada
         for c in commits
         if not ((c.get("commit") or {}).get("verification") or {}).get("verified")
     ]
+    commit_messages = [
+        msg
+        for c in commits
+        if len(c.get("parents") or []) <= 1
+        and isinstance((msg := (c.get("commit") or {}).get("message")), str)
+        and msg.strip()
+    ]
+    all_commits_verified = bool(commits) and not unverified
+    raw_body = full_pr.get("body")
+    pr_body = raw_body if isinstance(raw_body, str) else ""
     labels = [lbl["name"] for lbl in full_pr.get("labels", [])]
     title = full_pr.get("title", "")
     user_obj = full_pr.get("user") or {}
@@ -352,14 +361,22 @@ def build_pr_metadata(client: GitHubClient, full_pr: dict[str, Any]) -> PRMetada
         manifest_diffs_evaluated = True
         try:
             if "uv.lock" in changed_files:
-                base_uv_lock = client.get_file_content("uv.lock", base_sha)
-                head_uv_lock = client.get_file_content("uv.lock", head_sha)
+                raw_base_uv = client.get_file_content("uv.lock", base_sha)
+                raw_head_uv = client.get_file_content("uv.lock", head_sha)
+                base_uv_lock = raw_base_uv if isinstance(raw_base_uv, str) else None
+                head_uv_lock = raw_head_uv if isinstance(raw_head_uv, str) else None
             if "offline_bundle/requirements.txt" in changed_files:
-                base_requirements_txt = client.get_file_content(
+                raw_base_req = client.get_file_content(
                     "offline_bundle/requirements.txt", base_sha
                 )
-                head_requirements_txt = client.get_file_content(
+                raw_head_req = client.get_file_content(
                     "offline_bundle/requirements.txt", head_sha
+                )
+                base_requirements_txt = (
+                    raw_base_req if isinstance(raw_base_req, str) else None
+                )
+                head_requirements_txt = (
+                    raw_head_req if isinstance(raw_head_req, str) else None
                 )
         except Exception as exc:
             logger.warning(
@@ -369,24 +386,25 @@ def build_pr_metadata(client: GitHubClient, full_pr: dict[str, Any]) -> PRMetada
             head_uv_lock = None
             base_requirements_txt = None
             head_requirements_txt = None
-        dependency_update_type = dependency_update_type_from_diffs(
-            changed_files,
-            base_uv_lock=base_uv_lock,
-            head_uv_lock=head_uv_lock,
-            base_requirements_txt=base_requirements_txt,
-            head_requirements_txt=head_requirements_txt,
-        )
-    else:
-        dependency_update_type = (
-            dependency_update_type_from_title(title)
-            if (is_dependabot or is_security_patch)
-            else "minor"
-        )
 
-    if (
-        AUTOMERGE_OPT_IN_LABEL in labels
-        and not is_dependabot
-        and not automerge_label_applied_by_maintainer(client, pr_number)
+    dependency_update_type = resolve_dependency_update_type(
+        title=title,
+        changed_files=changed_files,
+        is_dependabot=is_dependabot,
+        is_security_patch=is_security_patch,
+        all_commits_verified=all_commits_verified,
+        commit_messages=commit_messages,
+        pr_body=pr_body,
+        base_uv_lock=base_uv_lock,
+        head_uv_lock=head_uv_lock,
+        base_requirements_txt=base_requirements_txt,
+        head_requirements_txt=head_requirements_txt,
+        manifest_diffs_evaluated=manifest_diffs_evaluated,
+        fallback_update_type=None,
+    )
+
+    if AUTOMERGE_OPT_IN_LABEL in labels and not automerge_label_applied_by_maintainer(
+        client, pr_number
     ):
         labels = [name for name in labels if name != AUTOMERGE_OPT_IN_LABEL]
 
@@ -402,8 +420,10 @@ def build_pr_metadata(client: GitHubClient, full_pr: dict[str, Any]) -> PRMetada
         is_dependabot=is_dependabot,
         is_security_patch=is_security_patch,
         dependency_update_type=dependency_update_type,
-        all_commits_verified=bool(commits) and not unverified,
+        all_commits_verified=all_commits_verified,
         unverified_commit_shas=unverified,
+        commit_messages=commit_messages,
+        pr_body=pr_body,
         base_uv_lock=base_uv_lock,
         head_uv_lock=head_uv_lock,
         base_requirements_txt=base_requirements_txt,
