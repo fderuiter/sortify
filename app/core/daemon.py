@@ -144,6 +144,13 @@ class DaemonFolderHandler(FileSystemEventHandler):
 
     def on_any_event(self, event):
         """Handle any file system event, publish FileChangeEvent to queue and trigger recalculation if valid."""
+        if getattr(event, "is_directory", False) is True:
+            return
+
+        event_type = getattr(event, "event_type", "modified")
+        if event_type in ("opened", "closed_no_write"):
+            return
+
         src_path = getattr(event, "src_path", "")
         dest_path = getattr(event, "dest_path", None)
 
@@ -161,7 +168,6 @@ class DaemonFolderHandler(FileSystemEventHandler):
                 self.daemon.mark_pending_dirty()
                 return
 
-        event_type = getattr(event, "event_type", "modified")
         change_event = FileChangeEvent(
             event_type=event_type,
             file_path=src_path,

@@ -2,10 +2,95 @@
 
 from __future__ import annotations
 
+import html
 import os
 import re
 
 import pytest
+
+
+def _fmt_svg_num(val: float) -> str:
+    """Format a Rich SVG coordinate/dimension float without trailing .0."""
+    formatted = f"{val:.1f}"
+    return formatted[:-2] if formatted.endswith(".0") else formatted
+
+
+def _normalize_dummy_drive_geometry(svg: str) -> str:
+    """Adjust Rich SVG textLength and row background rects when stripping Windows drive prefixes on /dummy paths."""
+    line_to_rect_y = {
+        m.group(1): m.group(2)
+        for m in re.finditer(
+            r'<clipPath id="terminal-test-line-(\d+)">\s*<rect [^>]*?\by="([\d.]+)"',
+            svg,
+        )
+    }
+    rect_adjustments: list[tuple[str, str, float, float]] = []
+
+    def _replace_text(match: re.Match[str]) -> str:
+        attrs, body = match.group(1), match.group(2)
+        if not re.search(r"[A-Za-z]:[/\\]+dummy", body):
+            return match.group(0)
+        new_body = re.sub(r"(?:[A-Za-z]:)?[/\\]+dummy", "/dummy", body)
+        old_cells = len(html.unescape(body))
+        new_cells = len(html.unescape(new_body))
+        delta_cells = old_cells - new_cells
+        if delta_cells <= 0 or old_cells <= 0:
+            return f"<text{attrs}>{new_body}</text>"
+
+        tl_match = re.search(r'\btextLength="([\d.]+)"', attrs)
+        x_match = re.search(r'\bx="([\d.]+)"', attrs)
+        line_match = re.search(r'clip-path="url\(#terminal-test-line-(\d+)\)"', attrs)
+        if tl_match:
+            old_tl = float(tl_match.group(1))
+            cell_w = round(old_tl / old_cells, 2)
+            new_tl = round(old_tl - delta_cells * cell_w, 1)
+            attrs = (
+                attrs[: tl_match.start(1)]
+                + _fmt_svg_num(new_tl)
+                + attrs[tl_match.end(1) :]
+            )
+            if x_match and line_match and line_match.group(1) in line_to_rect_y:
+                rect_adjustments.append(
+                    (
+                        line_to_rect_y[line_match.group(1)],
+                        x_match.group(1),
+                        old_tl,
+                        new_tl,
+                    )
+                )
+        return f"<text{attrs}>{new_body}</text>"
+
+    svg = re.sub(r"<text([^>]*)>(.*?)</text>", _replace_text, svg)
+
+    for rect_y, x_str, old_tl, new_tl in rect_adjustments:
+        x_val = float(x_str)
+        old_tl_str = _fmt_svg_num(old_tl)
+        old_next_x_str = _fmt_svg_num(x_val + old_tl)
+        pair_pattern = re.compile(
+            r'(<rect fill="([^"]+)" x="'
+            + re.escape(x_str)
+            + r'" y="'
+            + re.escape(rect_y)
+            + r'" width=")'
+            + re.escape(old_tl_str)
+            + r'("[^>]*/>)'
+            + r'(<rect fill="\2" x=")'
+            + re.escape(old_next_x_str)
+            + r'(" y="'
+            + re.escape(rect_y)
+            + r'" width=")([\d.]+)("[^>]*/>)'
+        )
+        svg = pair_pattern.sub(
+            lambda m, xv=x_val, ot=old_tl, nt=new_tl: (
+                f"{m.group(1)}{_fmt_svg_num(nt)}{m.group(3)}"
+                f"{m.group(4)}{_fmt_svg_num(xv + nt)}{m.group(5)}"
+                f"{_fmt_svg_num(float(m.group(6)) + (ot - nt))}{m.group(7)}"
+            ),
+            svg,
+            count=1,
+        )
+
+    return svg
 
 
 def sanitize_svg(svg: str) -> str:
@@ -38,6 +123,7 @@ def sanitize_svg(svg: str) -> str:
         .replace("&#x2f;", "/")
     )
     svg = re.sub(r"<tspan[^>]*>[A-Za-z]:</tspan>", "", svg)
+    svg = _normalize_dummy_drive_geometry(svg)
     svg = re.sub(r"(?:[A-Za-z]:)?[/\\]+dummy", "/dummy", svg)
     svg = re.sub(
         r"/dummy([^<\"]*)",
