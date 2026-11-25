@@ -10,8 +10,10 @@ To set up your local development environment and sync every dependency group (de
 
 ```bash
 uv sync --all-groups
-uv run pre-commit install
+uv run python scripts/install_git_hooks.py
 ```
+
+`scripts/install_git_hooks.py` installs the repository's offline `pre-commit` hook into `.git/hooks/pre-commit`, or skips cleanly with guidance when Git is configured with a custom `core.hooksPath`.
 
 Add `--extra ml` to also install the optional OCR, audio and embedding libraries.
 

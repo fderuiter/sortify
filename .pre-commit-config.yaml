@@ -1,37 +1,64 @@
 repos:
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
-    hooks:
-      - id: check-added-large-files
-      - id: check-case-conflict
-      - id: check-json
-      - id: check-toml
-      - id: check-yaml
-        exclude: '^mkdocs\.yml$'
-      - id: check-merge-conflict
-      - id: debug-statements
-      - id: no-commit-to-branch
-        args: ['--branch', 'main']
-
-  - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.24.0
-    hooks:
-      - id: gitleaks
-        args: ['--config', '.gitleaks.toml']
-      - id: gitleaks
-        alias: gitleaks-dir
-        name: Detect hardcoded secrets (working tree)
-        entry: gitleaks dir . --redact --verbose
-        args: ['--config', '.gitleaks.toml']
-        pass_filenames: false
-
-  - repo: https://github.com/rhysd/actionlint
-    rev: v1.7.7
-    hooks:
-      - id: actionlint
-
   - repo: local
     hooks:
+      - id: check-added-large-files
+        name: Check for added large files
+        entry: uv run check-added-large-files
+        language: system
+      - id: check-case-conflict
+        name: Check for case conflicts
+        entry: uv run check-case-conflict
+        language: system
+      - id: check-json
+        name: Check JSON
+        entry: uv run check-json
+        language: system
+        types: [json]
+      - id: check-toml
+        name: Check TOML
+        entry: uv run check-toml
+        language: system
+        types: [toml]
+      - id: check-yaml
+        name: Check YAML
+        entry: uv run check-yaml
+        language: system
+        types: [yaml]
+        exclude: '^mkdocs\.yml$'
+      - id: check-merge-conflict
+        name: Check for merge conflicts
+        entry: uv run check-merge-conflict
+        language: system
+        types: [text]
+      - id: debug-statements
+        name: Debug Statements (Python)
+        entry: uv run debug-statement-hook
+        language: system
+        types: [python]
+      - id: no-commit-to-branch
+        name: "Don't commit to branch"
+        entry: uv run no-commit-to-branch
+        args: ['--branch', 'main']
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: gitleaks
+        name: Detect hardcoded secrets (staged)
+        entry: uv run python scripts/run_secret_scan.py --mode staged
+        args: ['--config', '.gitleaks.toml']
+        language: system
+        pass_filenames: false
+      - id: gitleaks-dir
+        name: Detect hardcoded secrets (working tree)
+        entry: uv run python scripts/run_secret_scan.py --mode working-tree
+        args: ['--config', '.gitleaks.toml']
+        language: system
+        pass_filenames: false
+      - id: actionlint
+        name: Lint GitHub Actions workflows
+        entry: uv run python scripts/run_actionlint.py
+        language: system
+        files: '^\.github/(workflows/.*\.ya?ml|actionlint\.ya?ml)$'
       - id: ruff-format
         name: Ruff Format
         entry: uv run ruff format --force-exclude

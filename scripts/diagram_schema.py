@@ -1618,33 +1618,6 @@ CORE_TEXT_EXTRACTION_SPEC = SequenceDiagramSpec(
     ],
 )
 
-CONTRIBUTOR_ONBOARDING_SPEC = ComponentDiagramSpec(
-    id="contributor_onboarding",
-    title="Contributor Onboarding & Validation Workflow",
-    diagram_type="flowchart",
-    direction="TD",
-    nodes=[
-        DiagramNode(id="A", label="Clone Repository"),
-        DiagramNode(id="B", label="Sync Environment: uv sync"),
-        DiagramNode(id="C", label="Install Hooks: uv run pre-commit install"),
-        DiagramNode(id="D", label="Run Test Suite: uv run pytest"),
-        DiagramNode(id="E", label="Run CLI Demo: uv run smart-autosorter --demo"),
-        DiagramNode(
-            id="F",
-            label="Run Docs Check: uv run python scripts/generate_docs.py --check",
-        ),
-        DiagramNode(id="G", label="Submit Pull Request"),
-    ],
-    edges=[
-        DiagramEdge(source="A", target="B"),
-        DiagramEdge(source="B", target="C"),
-        DiagramEdge(source="C", target="D"),
-        DiagramEdge(source="D", target="E"),
-        DiagramEdge(source="E", target="F"),
-        DiagramEdge(source="F", target="G"),
-    ],
-)
-
 TROUBLESHOOTING_SETUP_WIZARD_SPEC = ComponentDiagramSpec(
     id="troubleshooting_setup_wizard",
     title="Setup Wizard Troubleshooting & Fallback Decision Flow",
@@ -3281,7 +3254,10 @@ def _create_contributor_onboarding_spec() -> ComponentDiagramSpec:
         nodes=[
             DiagramNode(id="A", label="Clone Repository"),
             DiagramNode(id="B", label="Sync Environment: uv sync"),
-            DiagramNode(id="C", label="Install Hooks: uv run pre-commit install"),
+            DiagramNode(
+                id="C",
+                label="Install Hooks: uv run python scripts/install_git_hooks.py",
+            ),
             DiagramNode(id="D", label="Run Test Suite: uv run pytest"),
             DiagramNode(id="E", label="Run CLI Demo: uv run smart-autosorter --demo"),
             DiagramNode(

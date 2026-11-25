@@ -17,7 +17,7 @@ Local, offline-first Python 3.12 file sorter (`smart-autosorter`). Read `CONTEXT
 - Vulnerability remediation: `uv run python scripts/remediate_vulnerabilities.py --stage-dir <dir>` (stage validated lockfiles and `remediation_manifest.json` read-only) and `uv run python scripts/remediate_vulnerabilities.py --publish-from <dir>` (publish signed PRs and issue alerts).
 - Architecture validation: `uv run python scripts/validate_architecture.py`.
 - Prompt manifest verification: `uv run python scripts/prompt_manifest.py verify --strict` (generate keypair with `keygen`; re-sign via `PROMPT_MANIFEST_PRIVATE_KEY` with `generate`).
-- Hooks: `uv run pre-commit install` (or `uv run pre-commit run --all-files`); they run ruff, staged and full-tree secret detection (`gitleaks` and `gitleaks-dir` via `.gitleaks.toml`), workflow linting (actionlint), plus full-repository read-only validators in `scripts/`.
+- Hooks: `uv run python scripts/install_git_hooks.py` (or `SKIP=no-commit-to-branch uv run pre-commit run --all-files`); installs `.git/hooks/pre-commit` unless `core.hooksPath` is configured, and runs offline `uv`-provisioned hooks (`pre-commit-hooks`, ruff, staged and working-tree secret detection (`gitleaks` and `gitleaks-dir` via `scripts/run_secret_scan.py` + `.gitleaks.toml`), workflow linting via `scripts/run_actionlint.py`, ty, plus read-only validators in `scripts/`).
 
 ## Conventions
 
