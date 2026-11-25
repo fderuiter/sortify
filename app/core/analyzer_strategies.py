@@ -2442,74 +2442,32 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                 if folder and v:
                                     if embedding_manager.validate_vector_dimension(v):
                                         historical_folder_vectors[folder].append(v)
-                    elif db and base_dir:
+                    elif (
+                        db
+                        and base_dir
+                        and callable(
+                            getattr(db, "get_verified_historical_vectors", None)
+                        )
+                    ):
                         try:
-                            from app.core.db_conn import get_db_connection
-
-                            conn = get_db_connection(db.db_path)
-                            with conn:
-                                cursor = conn.execute(
-                                    """
-                                    SELECT d.filepath, d.user_verified_target_path, v.vector
-                                    FROM documents d
-                                    JOIN document_vectors v ON d.base_dir = v.base_dir AND (d.filepath = v.filepath OR REPLACE(d.filepath, '\\', '/') = REPLACE(v.filepath, '\\', '/'))
-                                    WHERE d.base_dir = ? AND d.user_verified_target_path IS NOT NULL AND d.user_verified_target_path != ''
-                                    """,
-                                    (base_dir,),
+                            decrypted_results = list(
+                                db.get_verified_historical_vectors(
+                                    base_dir,
+                                    include_unvectorized=False,
+                                    track_corrupted=True,
                                 )
-                                rows = cursor.fetchall()
-
-                            history_db = db
-
-                            def decrypt_chunk(chunk):
-                                chunk_results = []
-                                for filepath, folder, vector_str in chunk:
-                                    if folder and vector_str:
-                                        try:
-                                            v = history_db.crypto.decrypt_and_parse_vector(
-                                                vector_str
-                                            )
-                                            chunk_results.append((filepath, folder, v))
-                                        except Exception:
-                                            chunk_results.append(
-                                                (filepath, folder, None)
-                                            )
-                                    else:
-                                        chunk_results.append((None, None, None))
-                                return chunk_results
-
-                            if len(rows) <= 32:
-                                decrypted_results = decrypt_chunk(rows)
-                            else:
-                                executor = get_decryption_executor()
-                                num_chunks = min(32, max(1, len(rows) // 32))
-                                step = (len(rows) + num_chunks - 1) // num_chunks
-                                chunks = [
-                                    rows[i : i + step]
-                                    for i in range(0, len(rows), step)
-                                ]
-                                chunk_res = list(executor.map(decrypt_chunk, chunks))
-                                decrypted_results = [
-                                    item for sub in chunk_res for item in sub
-                                ]
-
+                            )
                             cached_decrypted_db_rows = decrypted_results
 
-                            for filepath, folder, v in decrypted_results:
-                                if folder:
-                                    if v is not None:
-                                        if (
-                                            use_semantic
-                                            and embedding_manager is not None
-                                        ):
-                                            if embedding_manager.validate_vector_dimension(
-                                                v
-                                            ):
-                                                historical_folder_vectors[
-                                                    folder
-                                                ].append(v)
-                                    else:
-                                        db.track_corrupted_vector(base_dir, filepath)
+                            for _filepath, folder, v in decrypted_results:
+                                if (
+                                    folder
+                                    and v is not None
+                                    and use_semantic
+                                    and embedding_manager is not None
+                                    and embedding_manager.validate_vector_dimension(v)
+                                ):
+                                    historical_folder_vectors[folder].append(v)
                         except Exception as e:
                             logging.error(
                                 f"Failed to query historical folder vectors: {e}"
@@ -2953,59 +2911,36 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                             ".wav",
                             ".m4a",
                         }
+                        allowed_text_exts = {
+                            ext
+                            for ext in registry._extractors
+                            if ext not in non_text_media_exts
+                            and registry.is_supported(ext)
+                        }
 
                         if cached_decrypted_db_rows is not None:
-                            decrypted_hist_results = cached_decrypted_db_rows
+                            decrypted_hist_results = [
+                                (filepath, user_verified_target, v)
+                                for filepath, user_verified_target, v in cached_decrypted_db_rows
+                                if filepath
+                                and (dot_idx := filepath.rfind(".")) != -1
+                                and filepath[dot_idx:].lower() in allowed_text_exts
+                            ]
+                        elif callable(
+                            getattr(db, "get_verified_historical_vectors", None)
+                        ):
+                            # 2. Query pre-computed historical vectors through Database
+                            decrypted_hist_results = list(
+                                db.get_verified_historical_vectors(
+                                    base_dir,
+                                    include_unvectorized=False,
+                                    allowed_extensions=allowed_text_exts,
+                                    track_corrupted=True,
+                                )
+                            )
+                            cached_decrypted_db_rows = decrypted_hist_results
                         else:
-                            # 2. Query Pre-computed Historical Vectors directly from DB
-                            from app.core.db_conn import get_db_connection
-
-                            conn = get_db_connection(db.db_path)
-                            with conn:
-                                cursor = conn.execute(
-                                    """
-                                    SELECT d.filepath, d.user_verified_target_path, v.vector
-                                    FROM documents d
-                                    JOIN document_vectors v ON d.base_dir = v.base_dir AND (d.filepath = v.filepath OR REPLACE(d.filepath, '\\', '/') = REPLACE(v.filepath, '\\', '/'))
-                                    WHERE d.base_dir = ? AND d.user_verified_target_path IS NOT NULL AND d.user_verified_target_path != ''
-                                """,
-                                    (base_dir,),
-                                )
-                                rows = cursor.fetchall()
-
-                            if rows:
-
-                                def decrypt_historical_item(row):
-                                    filepath, user_verified_target, vector_str = row
-                                    dot_idx = filepath.rfind(".")
-                                    ext = (
-                                        filepath[dot_idx:].lower()
-                                        if dot_idx != -1
-                                        else ""
-                                    )
-                                    # Exclude non-textual attachments and image files from semantic similarity
-                                    if (
-                                        ext in non_text_media_exts
-                                        or not registry.is_supported(ext)
-                                    ):
-                                        return None, None, None
-
-                                    if vector_str:
-                                        try:
-                                            v = db.crypto.decrypt_and_parse_vector(
-                                                vector_str
-                                            )
-                                            return filepath, user_verified_target, v
-                                        except Exception:
-                                            return filepath, user_verified_target, None
-                                    return None, None, None
-
-                                executor = get_decryption_executor()
-                                decrypted_hist_results = list(
-                                    executor.map(decrypt_historical_item, rows)
-                                )
-                            else:
-                                decrypted_hist_results = []
+                            decrypted_hist_results = []
 
                         if decrypted_hist_results:
                             import numpy as np
@@ -3016,31 +2951,18 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                 user_verified_target,
                                 v,
                             ) in decrypted_hist_results:
-                                if filepath:
-                                    dot_idx = filepath.rfind(".")
-                                    ext = (
-                                        filepath[dot_idx:].lower()
-                                        if dot_idx != -1
-                                        else ""
+                                if (
+                                    filepath
+                                    and v is not None
+                                    and embedding_manager.validate_vector_dimension(v)
+                                ):
+                                    hist_vectors.append(v)
+                                    hist_meta.append(
+                                        {
+                                            "filepath": filepath,
+                                            "user_verified_target_path": user_verified_target,
+                                        }
                                     )
-                                    if (
-                                        ext in non_text_media_exts
-                                        or not registry.is_supported(ext)
-                                    ):
-                                        continue
-                                    if v is not None:
-                                        if embedding_manager.validate_vector_dimension(
-                                            v
-                                        ):
-                                            hist_vectors.append(v)
-                                            hist_meta.append(
-                                                {
-                                                    "filepath": filepath,
-                                                    "user_verified_target_path": user_verified_target,
-                                                }
-                                            )
-                                    else:
-                                        db.track_corrupted_vector(base_dir, filepath)
 
                             if hist_vectors:
                                 # 3. Cosine Similarity Calculation
@@ -3074,7 +2996,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                         "Here are some historical examples of documents and their corresponding user-corrected folder names:"
                                     )
                                     # Fetch top exemplar texts efficiently in batch
-                                    doc_snippets = {}
+                                    doc_snippets: dict[str, Any] = {}
                                     if db and base_dir and top_examples:
                                         try:
                                             target_fps = [
@@ -3082,49 +3004,85 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                                 for ex, _ in top_examples
                                             ]
                                             # Check cache first
-                                            with db._cache_lock:
-                                                if (
-                                                    db._cached_base_dir == base_dir
-                                                    and db._cached_documents is not None
-                                                ):
-                                                    for row in db._cached_documents:
-                                                        if row[0] in target_fps:
-                                                            doc_snippets[row[0]] = row[
-                                                                1
-                                                            ]
+                                            cache_lock = getattr(
+                                                db, "_cache_lock", None
+                                            )
+                                            if cache_lock is not None and hasattr(
+                                                cache_lock, "__enter__"
+                                            ):
+                                                with cache_lock:
+                                                    if (
+                                                        getattr(
+                                                            db, "_cached_base_dir", None
+                                                        )
+                                                        == base_dir
+                                                        and getattr(
+                                                            db,
+                                                            "_cached_documents",
+                                                            None,
+                                                        )
+                                                        is not None
+                                                    ):
+                                                        cached_docs = (
+                                                            db._cached_documents
+                                                        )
+                                                        if hasattr(
+                                                            cached_docs, "get"
+                                                        ) and not isinstance(
+                                                            cached_docs, list
+                                                        ):
+                                                            for fp in target_fps:
+                                                                row = cached_docs.get(
+                                                                    fp
+                                                                )
+                                                                if (
+                                                                    row is not None
+                                                                    and len(row) > 1
+                                                                ):
+                                                                    doc_snippets[fp] = (
+                                                                        row[1]
+                                                                    )
+                                                        else:
+                                                            target_fp_set = set(
+                                                                target_fps
+                                                            )
+                                                            for row in cached_docs:
+                                                                if (
+                                                                    row
+                                                                    and len(row) > 1
+                                                                    and row[0].replace(
+                                                                        "\\", "/"
+                                                                    )
+                                                                    in target_fp_set
+                                                                ):
+                                                                    doc_snippets[
+                                                                        row[0].replace(
+                                                                            "\\", "/"
+                                                                        )
+                                                                    ] = row[1]
 
-                                            # Fetch any remaining from DB in a single query
+                                            # Fetch any cache misses through chunked Database query
                                             missing_fps = [
                                                 fp
                                                 for fp in target_fps
                                                 if fp not in doc_snippets
                                             ]
-                                            if missing_fps:
-                                                from app.core.db_conn import (
-                                                    get_db_connection,
+                                            if missing_fps and callable(
+                                                getattr(
+                                                    db,
+                                                    "get_documents_by_filepaths",
+                                                    None,
                                                 )
-
-                                                conn = get_db_connection(db.db_path)
-                                                with conn:
-                                                    placeholders = ",".join(
-                                                        ["?"] * len(missing_fps)
-                                                    )
-                                                    cursor = conn.execute(
-                                                        f"SELECT filepath, extracted_text FROM documents WHERE base_dir = ? AND filepath IN ({placeholders})",
-                                                        [base_dir] + missing_fps,
-                                                    )
-                                                    for row in cursor.fetchall():
-                                                        raw_text = row[1]
-                                                        if raw_text is not None:
-                                                            try:
-                                                                decrypted = db.crypto.decrypt_text(
-                                                                    raw_text
-                                                                )
-                                                            except Exception:
-                                                                decrypted = raw_text
-                                                            doc_snippets[row[0]] = (
-                                                                decrypted
-                                                            )
+                                            ):
+                                                for (
+                                                    fp,
+                                                    decrypted,
+                                                ) in db.get_documents_by_filepaths(
+                                                    base_dir, missing_fps
+                                                ):
+                                                    doc_snippets[
+                                                        fp.replace("\\", "/")
+                                                    ] = decrypted
                                         except Exception as e:
                                             logging.error(
                                                 f"Failed to fetch decrypted document snippets for semantic exemplars: {e}"
