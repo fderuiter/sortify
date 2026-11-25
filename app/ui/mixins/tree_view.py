@@ -2,6 +2,7 @@
 
 import logging
 import os
+import posixpath
 import re
 from collections.abc import Mapping
 from pathlib import Path
@@ -181,6 +182,150 @@ class TreeViewMixin:
         if eff_folder:
             return os.path.normpath(os.path.join(eff_folder, target_filename))
         return None
+
+    def _resolve_file_source_path(
+        self: TUIHostProtocol,
+        file_info: Mapping[str, Any],
+        file_key: str,
+        current_folder: str = "",
+    ) -> str:
+        """Resolve real source path for a plan file node without fabricating destination folders."""
+        raw_fp = file_info.get("filepath")
+        if raw_fp is not None and str(raw_fp).strip():
+            return str(raw_fp)
+
+        raw_root = file_info.get("source_root")
+        s_root = str(raw_root).strip() if raw_root is not None else ""
+
+        raw_rel = file_info.get("relative_source")
+        rel_src = str(raw_rel).strip() if raw_rel is not None else ""
+        if "::" in rel_src:
+            parsed_root, rel_src = rel_src.split("::", 1)
+            if not s_root:
+                s_root = parsed_root
+
+        raw_sp = file_info.get("source_path")
+        sp_str = str(raw_sp).strip() if raw_sp is not None else ""
+        if "::" in sp_str:
+            parsed_root, sp_str = sp_str.split("::", 1)
+            if not s_root:
+                s_root = parsed_root
+
+        clean_key = str(file_key) if file_key else ""
+        if "::" in clean_key:
+            parsed_root, clean_key = clean_key.split("::", 1)
+            if not s_root:
+                s_root = parsed_root
+
+        base_dir = str(getattr(self, "base_dir", "") or "")
+        eff_base = s_root or base_dir
+        folder_posix = (
+            current_folder.replace("\\", "/")
+            if current_folder and current_folder != "(Root)"
+            else ""
+        )
+
+        if rel_src:
+            rel_posix = rel_src.replace("\\", "/")
+            if _is_absolute_path(rel_src):
+                return posixpath.normpath(rel_posix)
+
+            has_parent_seg = rel_posix == ".." or rel_posix.startswith("../")
+            if eff_base:
+                eff_posix = eff_base.replace("\\", "/")
+                root_cand = posixpath.normpath(posixpath.join(eff_posix, rel_posix))
+                if folder_posix:
+                    folder_cand = posixpath.normpath(
+                        posixpath.join(eff_posix, folder_posix, rel_posix)
+                    )
+                    if os.path.lexists(root_cand) and os.path.normcase(
+                        os.path.abspath(root_cand)
+                    ) != os.path.normcase(os.path.abspath(folder_cand)):
+                        return root_cand
+                    if os.path.lexists(folder_cand):
+                        return folder_cand
+                    if os.path.lexists(root_cand):
+                        return root_cand
+                    if sp_str:
+                        sp_posix = sp_str.replace("\\", "/")
+                        sp_cand = posixpath.normpath(
+                            sp_posix
+                            if _is_absolute_path(sp_str)
+                            else posixpath.join(eff_posix, sp_posix)
+                        )
+                        if os.path.lexists(sp_cand) or not has_parent_seg:
+                            return sp_cand
+                    return folder_cand if has_parent_seg else root_cand
+
+                if os.path.lexists(root_cand):
+                    return root_cand
+                if has_parent_seg:
+                    if sp_str:
+                        sp_posix = sp_str.replace("\\", "/")
+                        return posixpath.normpath(
+                            sp_posix
+                            if _is_absolute_path(sp_str)
+                            else posixpath.join(eff_posix, sp_posix)
+                        )
+                    if clean_key:
+                        key_cand = posixpath.normpath(
+                            posixpath.join(eff_posix, clean_key.replace("\\", "/"))
+                        )
+                        if os.path.lexists(key_cand):
+                            return key_cand
+                return root_cand
+
+            if has_parent_seg:
+                if folder_posix:
+                    rel_cand = posixpath.normpath(
+                        posixpath.join(folder_posix, rel_posix)
+                    )
+                    if rel_cand not in ("", ".") and not (
+                        rel_cand == ".." or rel_cand.startswith("../")
+                    ):
+                        return rel_cand
+            else:
+                return posixpath.normpath(rel_posix)
+
+        if sp_str:
+            sp_posix = sp_str.replace("\\", "/")
+            if _is_absolute_path(sp_str):
+                return posixpath.normpath(sp_posix)
+            if eff_base:
+                return posixpath.normpath(
+                    posixpath.join(eff_base.replace("\\", "/"), sp_posix)
+                )
+            return posixpath.normpath(sp_posix)
+
+        if not clean_key:
+            return ""
+        key_posix = clean_key.replace("\\", "/")
+        if _is_absolute_path(clean_key):
+            return posixpath.normpath(key_posix)
+        if eff_base:
+            return (Path(eff_base.replace("\\", "/")) / key_posix).as_posix()
+        return posixpath.normpath(key_posix)
+
+    def _enrich_file_info_in_place(
+        self: TUIHostProtocol,
+        file_info: dict[str, Any],
+        file_key: str,
+        current_folder: str = "",
+    ) -> dict[str, Any]:
+        """Populate missing ``key``, ``folder``, and ``filepath`` metadata on ``file_info`` in place."""
+        if not file_info.get("key") and file_key:
+            file_info["key"] = file_key
+        eff_folder = str(file_info.get("folder") or current_folder)
+        if "folder" not in file_info or (
+            not file_info.get("folder") and current_folder
+        ):
+            file_info["folder"] = eff_folder
+        if not file_info.get("filepath"):
+            eff_key = str(file_info.get("key") or file_key)
+            file_info["filepath"] = TreeViewMixin._resolve_file_source_path(
+                self, file_info, eff_key, eff_folder
+            )
+        return file_info
 
     def _get_plan_invalid_locks(self: TUIHostProtocol) -> dict[str, Any]:
         """Extract the ``invalid_locks`` mapping from ``SortingPlan`` or ``dict`` plans."""
@@ -465,13 +610,8 @@ class TreeViewMixin:
             for k, v in d.items():
                 if isinstance(v, dict):
                     if v.get("__type__") == "file":
-                        filepath = str(
-                            v.get(
-                                "filepath",
-                                (Path(self.base_dir) / folder / k).as_posix()
-                                if self.base_dir
-                                else (Path(folder) / k).as_posix(),
-                            )
+                        filepath = TreeViewMixin._resolve_file_source_path(
+                            self, v, k, folder
                         )
                         target_filename = str(v.get("target_filename", ""))
                         if (
@@ -589,18 +729,28 @@ class TreeViewMixin:
             self.run_validation_worker()
 
     def _collect_file_nodes_from_dict(
-        self: TUIHostProtocol, d: dict[str, Any]
+        self: TUIHostProtocol, d: dict[str, Any], current_folder: str = ""
     ) -> list[dict[str, Any]]:
         """Collect all file info dicts nested within a plan directory subtree."""
-        files = []
+        files: list[dict[str, Any]] = []
         if not isinstance(d, dict):
             return files
-        for val in d.values():
+        for k, val in d.items():
             if isinstance(val, dict):
                 if val.get("__type__") == "file":
+                    TreeViewMixin._enrich_file_info_in_place(
+                        self, val, str(k), current_folder
+                    )
                     files.append(val)
                 else:
-                    files.extend(self._collect_file_nodes_from_dict(val))
+                    sub_folder = (
+                        (Path(current_folder) / k).as_posix() if current_folder else k
+                    )
+                    files.extend(
+                        TreeViewMixin._collect_file_nodes_from_dict(
+                            self, val, current_folder=sub_folder
+                        )
+                    )
         return files
 
     def _collect_visible_file_nodes_from_dict(
@@ -612,12 +762,14 @@ class TreeViewMixin:
         matching_ids: set[int] | None = None,
     ) -> list[dict[str, Any]]:
         """Collect file info dicts for nodes visible under the active search query filter."""
-        files = []
+        files: list[dict[str, Any]] = []
         if not isinstance(node_dict, dict):
             return files
 
         if not query:
-            return self._collect_file_nodes_from_dict(node_dict)
+            return TreeViewMixin._collect_file_nodes_from_dict(
+                self, node_dict, current_folder=current_folder
+            )
 
         if matching_ids is None and query:
             matching_ids = self._build_matching_node_ids(
@@ -629,6 +781,9 @@ class TreeViewMixin:
                 if parent_folder_matches or (
                     matching_ids is not None and id(v) in matching_ids
                 ):
+                    TreeViewMixin._enrich_file_info_in_place(
+                        self, v, str(k), current_folder
+                    )
                     files.append(v)
             elif isinstance(v, dict):
                 sub_folder = (
@@ -714,29 +869,12 @@ class TreeViewMixin:
                 file_key = k
                 file_info = v
                 raw_sp = file_info.get("source_path")
-                if file_info.get("filepath"):
-                    filepath = str(file_info["filepath"])
-                elif raw_sp:
-                    sp_str = str(raw_sp)
-                    s_root = str(file_info.get("source_root") or self.base_dir or "")
-                    if "::" in sp_str:
-                        parsed_root, sp_str = sp_str.split("::", 1)
-                        s_root = str(file_info.get("source_root") or parsed_root)
-                    if os.path.isabs(sp_str):
-                        filepath = Path(sp_str).as_posix()
-                    elif s_root:
-                        filepath = (Path(s_root) / sp_str).as_posix()
-                    else:
-                        filepath = Path(sp_str).as_posix()
-                elif "::" in file_key:
-                    s_root_k, rel_k = file_key.split("::", 1)
-                    filepath = (Path(s_root_k) / rel_k).as_posix()
-                else:
-                    filepath = (
-                        (Path(self.base_dir) / current_folder / file_key).as_posix()
-                        if self.base_dir
-                        else (Path(current_folder) / file_key).as_posix()
-                    )
+                filepath = TreeViewMixin._resolve_file_source_path(
+                    self, file_info, file_key, current_folder
+                )
+                file_info["filepath"] = filepath
+                file_info["key"] = file_key
+                file_info["folder"] = current_folder
 
                 if query and not parent_folder_matches:
                     file_matches = matching_ids is not None and id(v) in matching_ids
@@ -928,7 +1066,9 @@ class TreeViewMixin:
                     "folder": sub_folder,
                     "info": v,
                 }
-                child_files = self._collect_file_nodes_from_dict(v)
+                child_files = TreeViewMixin._collect_file_nodes_from_dict(
+                    self, v, current_folder=sub_folder
+                )
                 if child_files:
                     checked_count = sum(
                         1
@@ -1002,7 +1142,9 @@ class TreeViewMixin:
             if path_comp_widget:
                 plan_dict = getattr(self, "plan", None)
                 all_files = (
-                    self._collect_file_nodes_from_dict(plan_dict)
+                    TreeViewMixin._collect_file_nodes_from_dict(
+                        self, plan_dict, current_folder=""
+                    )
                     if isinstance(plan_dict, dict) and plan_dict
                     else []
                 )
@@ -1043,10 +1185,26 @@ class TreeViewMixin:
             rating = data.get("rating") or "None"
             info = data.get("info") if isinstance(data.get("info"), dict) else {}
 
-            src_filepath = data.get("filepath") or info.get("filepath") or key
             target_fn = info.get("target_filename") or key
             target_folder = folder if folder != "(Root)" else ""
-            if self.base_dir and target_folder:
+            src_filepath = (
+                str(data["filepath"])
+                if data.get("filepath")
+                else TreeViewMixin._resolve_file_source_path(
+                    self, info, str(key), target_folder
+                )
+            )
+            raw_tp = data.get("target_path")
+            resolved_tp = (
+                str(raw_tp)
+                if isinstance(raw_tp, str) and raw_tp
+                else TreeViewMixin._resolve_node_target_path(
+                    self, info, target_folder, str(key)
+                )
+            )
+            if resolved_tp:
+                target_filepath = resolved_tp
+            elif self.base_dir and target_folder:
                 target_filepath = os.path.join(self.base_dir, target_folder, target_fn)
             elif self.base_dir:
                 target_filepath = os.path.join(self.base_dir, target_fn)
@@ -1066,7 +1224,7 @@ class TreeViewMixin:
                 path_comp_widget.update(table)
 
             lines.append(f"[bold accent]File:[/bold accent] {key}")
-            lines.append(f"[bold]Path:[/bold] {data.get('filepath')}")
+            lines.append(f"[bold]Path:[/bold] {src_filepath or data.get('filepath')}")
             lines.append(f"[bold]Target Folder:[/bold] {folder}")
 
             target_fn = info.get("target_filename")
@@ -1077,7 +1235,7 @@ class TreeViewMixin:
             lines.append(f"[bold]ML Rating:[/bold] {rating}")
 
             lock_err = TreeViewMixin._get_invalid_lock_error(
-                self, data.get("filepath"), data.get("key")
+                self, src_filepath, data.get("key")
             )
             if lock_err:
                 lines.append(f"[bold error]Lock Warning:[/bold error] {lock_err}")
@@ -1178,7 +1336,9 @@ class TreeViewMixin:
             folder = data.get("folder", "")
             folder_info = data.get("info", {})
             child_files = (
-                self._collect_file_nodes_from_dict(folder_info)
+                TreeViewMixin._collect_file_nodes_from_dict(
+                    self, folder_info, current_folder=folder
+                )
                 if isinstance(folder_info, dict)
                 else []
             )
