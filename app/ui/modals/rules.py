@@ -1,6 +1,7 @@
 """Rule template gallery and rule import dialogs."""
 
 import copy
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -8,10 +9,13 @@ from textual import events, on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.css.query import QueryError
 from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select
 
 from app.ui.heading import Heading
 from app.ui.layout import ModalBox, ResponsiveModalScreen
+
+logger = logging.getLogger(__name__)
 
 
 class _CancelToCloseMixin:
@@ -846,8 +850,14 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Any | None]):
                 finally:
                     self._auto_setting_import_disabled = False
             self.import_disabled = desired_chk
-        except Exception:
-            pass
+        except (
+            AttributeError,
+            LookupError,
+            QueryError,
+            RuntimeError,
+            TypeError,
+        ) as exc:
+            logger.debug("Import-disabled checkbox sync skipped: %s", exc)
 
         dt_kw = self.query_one("#dt-imported-keywords", DataTable)
         dt_pol = self.query_one("#dt-imported-policies", DataTable)

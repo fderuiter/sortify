@@ -835,6 +835,8 @@ async def test_dropzone_modal_accepts_newly_supported_formats(tmp_path):
     _build_sample_odt(str(odt))
     unknown = tmp_path / "mystery.unknown"
     unknown.write_bytes(b"\x00\x01\x02")
+    ignored = tmp_path / "scratch.tmp"
+    ignored.write_bytes(b"\x00\x01\x02")
 
     settings = DummySettings(tmp_path)
     app = ModalTestApp(settings=settings, base_dir=str(tmp_path))
@@ -847,15 +849,16 @@ async def test_dropzone_modal_accepts_newly_supported_formats(tmp_path):
             assert modal._is_supported_file(str(p)) is True
             modal.stage_paths(str(p))
         modal.stage_paths(str(unknown))
+        modal.stage_paths(str(ignored))
         await pilot.pause()
         by_path = {
             os.path.abspath(entry["path"]): entry for entry in modal.staged_items
         }
-        for p in (deck, note, mail, odt):
+        for p in (deck, note, mail, odt, unknown):
             abs_p = os.path.abspath(str(p))
             assert abs_p in by_path
             assert by_path[abs_p]["status"] == "Ready"
-        assert by_path[os.path.abspath(str(unknown))]["status"] == "Unsupported"
+        assert by_path[os.path.abspath(str(ignored))]["status"] == "Unsupported"
 
 
 def _flatten_plan_tree(node: object, prefix: str = "") -> dict[str, str]:

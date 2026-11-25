@@ -52,6 +52,7 @@ def test_get_verified_historical_vectors_join_modes_and_extension_filtering(
 
     db.upsert_document(base_dir, "unverified.txt", "h4", "unverified text")
     db.upsert_document_vectors(base_dir, [("unverified.txt", [0.0, 0.0, 1.0, 0.0])])
+    db.worker.flush()
 
     inner_rows = db.get_verified_historical_vectors(
         base_dir, include_unvectorized=False
@@ -98,6 +99,7 @@ def test_get_verified_historical_vectors_parallel_decryption_and_corruption_trac
 
     valid_vectors = [(f"doc_{i}.txt", [0.25, 0.75, 0.0, 0.0]) for i in range(38)]
     db.upsert_document_vectors(base_dir, valid_vectors)
+    db.worker.flush()
 
     conn = get_db_connection(db.db_path)
     with conn:
@@ -149,6 +151,7 @@ def test_get_documents_by_filepaths_batches_50_and_handles_corrupted_text(
         for i in range(total_docs)
     ]
     db.upsert_documents(docs_batch)
+    db.worker.flush()
 
     conn = get_db_connection(db.db_path)
     with conn:
@@ -198,6 +201,7 @@ def test_generative_naming_corrupted_snippet_falls_back_to_basename_without_ciph
         "broken vector document",
     )
     db.set_user_verified_target(base_dir, "h_bad_vec", "Operations")
+    db.worker.flush()
 
     raw_ciphertext_marker = "CORRUPTED_CIPHERTEXT_DO_NOT_LEAK"
     conn = get_db_connection(db.db_path)
@@ -249,6 +253,7 @@ def test_generative_naming_corrupted_snippet_falls_back_to_basename_without_ciph
     prompt_text = mock_run_prompt.call_args[0][0]
     assert raw_ciphertext_marker not in prompt_text
     assert "annual_budget_summary.txt" in prompt_text
+    db.worker.flush()
     assert "sub/broken_vector.txt" in db.get_corrupted_vectors_by_base_dir(base_dir)
 
 

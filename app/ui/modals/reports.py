@@ -10,6 +10,7 @@ from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.css.query import QueryError
 from textual.widgets import (
     Button,
     DataTable,
@@ -1007,16 +1008,23 @@ class AuditReportModal(ResponsiveModalScreen[None]):
         self._populate_table()
         self._update_stats_cards()
 
+        start_scan = getattr(app_ref, "_start_scan", None)
         if (
             int(new_audit.get("verified_pass_count") or 0) > 0
             and app_ref is not None
             and getattr(app_ref, "source_dirs", None)
-            and callable(getattr(app_ref, "_start_scan", None))
+            and callable(start_scan)
         ):
             try:
-                app_ref._start_scan()
-            except Exception:
-                pass
+                start_scan()
+            except (
+                AttributeError,
+                LookupError,
+                QueryError,
+                RuntimeError,
+                TypeError,
+            ) as exc:
+                logger.debug("Post-retry scan refresh skipped: %s", exc)
 
         pass_cnt = self.report_data.get("verified_pass_count", 0)
         fail_cnt = self.report_data.get("mismatch_fail_count", 0)
