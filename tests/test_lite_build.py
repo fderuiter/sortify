@@ -572,9 +572,13 @@ def test_spec_file_recursive_metadata_collection_and_excludes(tmp_path, monkeypa
     lite_globals, lite_hooks = _run_spec("1", lite_copy_metadata)
     lite_called = [call.args[0] for call in lite_hooks.copy_metadata.call_args_list]
     assert lite_called == ["smart-autosorter"]
-    lite_dests = {
-        dest for _, dest in lite_globals["Analysis"].call_args.kwargs["datas"]
-    }
+    lite_datas = lite_globals["Analysis"].call_args.kwargs["datas"]
+    lite_dests = {dest for _, dest in lite_datas}
+    staged_marker = tmp_path / "build" / "LITE_BUILD"
+    assert staged_marker.is_file()
+    assert not (tmp_path / "LITE_BUILD").exists()
+    assert (str(staged_marker), ".") in lite_datas
+    assert (str(staged_marker), "_internal") in lite_datas
     assert "smart_autosorter-0.1.0.dist-info" in lite_dests
     assert "textual-8.2.8.dist-info" in lite_dests
     assert "sqlcipher3_wheels-0.5.7.dist-info" in lite_dests

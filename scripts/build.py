@@ -3,31 +3,35 @@
 import argparse
 import os
 import sys
+from pathlib import Path
 
-from app.core.resilient_file_ops import resilient_file_hash
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from app.core.resilient_file_ops import resilient_file_hash  # noqa: E402
+from scripts.offline_bundle_utils import (  # noqa: E402
+    format_hashes_registry,
+    sync_hashes_registry,
+)
 
 PINNED_HASHES = {
     "generative_naming": {
-        "tokenizer_config.json": "9261e7d79b44c8195c1cada2b453e55b00aeb81e907a6664974b4d7776172ab3",
-        "vocab.txt": "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3",
-        "config.json": "7135149f7cffa1a573466c6e4d8423ed73b62fd2332c575bf738a0d033f70df7",
-        "model.onnx": "759c3cd2b7fe7e93933ad23c4c9181b7396442a2ed746ec7c1d46192c469c46e",
-        "version.txt": "92521fc3cbd964bdc9f584a991b89fddaa5754ed1cc96d6d42445338669c1305",
-        "special_tokens_map.json": "b6d346be366a7d1d48332dbc9fdf3bf8960b5d879522b7799ddba59e76237ee3",
-        "tokenizer.json": "da0e79933b9ed51798a3ae27893d3c5fa4a201126cef75586296df9b4d2c62a0",
+        "config.json": "3c8e94b12f4a7e5109d2b8a4c6e173f90b2d45a81c7e9034f6a82b5d1e39c704",
+        "model.gguf": "a94f28c61b7d03e5924a8c1f63d7b09e54a281c7f09b3e6d41c82a57f90e1b36",
     },
     "model_download": {
-        "tokenizer_config.json": "9261e7d79b44c8195c1cada2b453e55b00aeb81e907a6664974b4d7776172ab3",
-        "vocab.txt": "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3",
         "config.json": "7135149f7cffa1a573466c6e4d8423ed73b62fd2332c575bf738a0d033f70df7",
         "model.onnx": "759c3cd2b7fe7e93933ad23c4c9181b7396442a2ed746ec7c1d46192c469c46e",
-        "version.txt": "92521fc3cbd964bdc9f584a991b89fddaa5754ed1cc96d6d42445338669c1305",
         "special_tokens_map.json": "b6d346be366a7d1d48332dbc9fdf3bf8960b5d879522b7799ddba59e76237ee3",
         "tokenizer.json": "da0e79933b9ed51798a3ae27893d3c5fa4a201126cef75586296df9b4d2c62a0",
+        "tokenizer_config.json": "9261e7d79b44c8195c1cada2b453e55b00aeb81e907a6664974b4d7776172ab3",
+        "version.txt": "92521fc3cbd964bdc9f584a991b89fddaa5754ed1cc96d6d42445338669c1305",
+        "vocab.txt": "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3",
     },
     "easyocr": {
-        "english_g2.pth": "e2272681d9d67a04e2dff396b6e95077bc19001f8f6d3593c307b9852e1c29e8",
         "craft_mlt_25k.pth": "4a5efbfb48b4081100544e75e1e2b57f8de3d84f213004b14b85fd4b3748db17",
+        "english_g2.pth": "e2272681d9d67a04e2dff396b6e95077bc19001f8f6d3593c307b9852e1c29e8",
     },
     "florence-2": {
         "config.json": "7135149f7cffa1a573466c6e4d8423ed73b62fd2332c575bf738a0d033f70df7",
@@ -167,7 +171,7 @@ def download_and_prepare_weights():
 
     for name, url in files_to_download.items():
         dest = model_dir / name
-        expected_hash = PINNED_HASHES["generative_naming"][name]
+        expected_hash = PINNED_HASHES["model_download"][name]
         if dest.exists():
             current_hash = resilient_file_hash(dest)
             if current_hash == expected_hash:
@@ -181,7 +185,7 @@ def download_and_prepare_weights():
     version_txt = model_dir / "version.txt"
     if not version_txt.exists():
         version_txt.write_text("1.0.0", encoding="utf-8")
-    expected_version_hash = PINNED_HASHES["generative_naming"]["version.txt"]
+    expected_version_hash = PINNED_HASHES["model_download"]["version.txt"]
     actual_version_hash = resilient_file_hash(version_txt)
     if actual_version_hash != expected_version_hash:
         raise ValueError(
@@ -239,12 +243,12 @@ def download_and_prepare_weights():
                     zip_dest.unlink()
 
     # 3. Validate all downloaded weights against pinned hashes before writing registry
-    hashes = {"generative_naming": {}, "easyocr": {}}
+    hashes: dict[str, dict[str, str]] = {"model_download": {}, "easyocr": {}}
     for category, file_dir in [
-        ("generative_naming", model_dir),
+        ("model_download", model_dir),
         ("easyocr", easyocr_dir),
     ]:
-        for item in file_dir.glob("*"):
+        for item in sorted(file_dir.glob("*"), key=lambda p: p.name):
             if item.is_file():
                 actual_hash = resilient_file_hash(item)
                 expected_hash = PINNED_HASHES.get(category, {}).get(item.name)
@@ -255,25 +259,18 @@ def download_and_prepare_weights():
                     )
                 hashes[category][item.name] = actual_hash
 
-        for expected_file, expected_hash in PINNED_HASHES[category].items():
+        for expected_file in PINNED_HASHES[category]:
             if expected_file not in hashes[category]:
                 raise ValueError(
                     f"Missing required model weight in {category}: {expected_file}"
                 )
 
-    registry_data = dict(PINNED_HASHES)
-    registry_data["generative_naming"] = dict(hashes["generative_naming"])
-    registry_data["model_download"] = dict(hashes["generative_naming"])
+    registry_data = {cat: dict(entries) for cat, entries in PINNED_HASHES.items()}
+    registry_data["model_download"] = dict(hashes["model_download"])
     registry_data["easyocr"] = dict(hashes["easyocr"])
 
     hashes_registry_path = Path("app/core/hashes_registry.py")
-    hashes_registry_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(hashes_registry_path, "w", encoding="utf-8") as f:
-        f.write(
-            '"""Registry containing expected hashes of the embedded model weights."""\n\n'
-        )
-        f.write("# This file is generated during the build process.\n")
-        f.write(f"HASHES = {repr(registry_data)}\n")
+    sync_hashes_registry(hashes_registry_path, registry_data)
     print(
         f"Successfully prepared weights and verified model hashes against pinned registry: {hashes_registry_path}"
     )
@@ -311,16 +308,10 @@ def package_sidecar_models():
 
     print(f"Creating sidecar model package at {zip_path}...")
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
-        for file_path in offline_bundle.rglob("*"):
+        for file_path in sorted(offline_bundle.rglob("*")):
             if file_path.is_file():
                 rel_path = file_path.relative_to(offline_bundle)
                 zip_file.write(file_path, arcname=rel_path)
-
-    root_zip = Path("smart-autosorter-models.zip")
-    if zip_path.exists():
-        import shutil
-
-        shutil.copy2(zip_path, root_zip)
 
     print(f"Successfully packaged sidecar model archive: {zip_path}")
 
@@ -484,9 +475,7 @@ def main(argv=None):
         if not hashes_registry_path.exists():
             hashes_registry_path.parent.mkdir(parents=True, exist_ok=True)
             with open(hashes_registry_path, "w", encoding="utf-8") as f:
-                f.write(
-                    '"""Registry containing expected hashes of the embedded model weights."""\n\nHASHES = {}\n'
-                )
+                f.write(format_hashes_registry({}))
     else:
         print("Verifying machine learning packages in active environment...")
         ml_packages = [

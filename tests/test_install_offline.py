@@ -91,25 +91,36 @@ def test_safe_extract_zip_windows_drive_letter_aborts(tmp_path):
 @patch("scripts.install_offline.subprocess.run")
 @patch("scripts.install_offline.os.path.exists")
 @patch("scripts.install_offline.os.path.isdir")
-def test_extract_and_install_offline_requires_hashes(mock_isdir, mock_exists, mock_run):
-    """Test that _extract_and_install_offline passes --require-hashes to uv pip install."""
-    mock_exists.side_effect = lambda path: (
-        False if path == "offline_bundle.zip" else True
-    )
+def test_extract_and_install_offline_requires_hashes(
+    mock_isdir, mock_exists, mock_run, monkeypatch
+):
+    """Test that _extract_and_install_offline passes --python, --require-hashes, --no-deps, requirements.txt, and app_wheel.txt."""
+    from scripts.offline_bundle_utils import venv_python_path
+
+    monkeypatch.delenv("UV_PROJECT_ENVIRONMENT", raising=False)
+    monkeypatch.delenv("VIRTUAL_ENV", raising=False)
+    mock_exists.side_effect = lambda path: path != "offline_bundle.zip"
     mock_isdir.return_value = True
 
-    _extract_and_install_offline("uv")
+    target_venv = _extract_and_install_offline("uv")
+    assert target_venv == Path(".venv-offline")
 
     mock_run.assert_called_once()
-    args, kwargs = mock_run.call_args
+    args, _kwargs = mock_run.call_args
     cmd = args[0]
 
-    assert "uv" in cmd
-    assert "pip" in cmd
-    assert "install" in cmd
+    assert cmd[:3] == ["uv", "pip", "install"]
+    assert "--python" in cmd
+    assert cmd[cmd.index("--python") + 1] == str(
+        venv_python_path(Path(".venv-offline"))
+    )
+    assert "--offline" in cmd
+    assert "--no-index" in cmd
     assert "--require-hashes" in cmd
+    assert "--no-deps" in cmd
     assert "-r" in cmd
     assert "offline_bundle/requirements.txt" in cmd
+    assert "offline_bundle/app_wheel.txt" in cmd
 
 
 def test_offline_requirements_manifest_specifies_hashes():

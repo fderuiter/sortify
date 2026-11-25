@@ -77,6 +77,14 @@ def _default_cpu_torch_wheel() -> MagicMock:
         if sys.platform in ("win32", "linux")
         else "torch-2.15.0-cp312-none-macosx_11_0_arm64.whl"
     )
+    mock_wheel.read_bytes.return_value = b"mock-torch-wheel"
+    return mock_wheel
+
+
+def _default_app_wheel(payload: bytes = b"mock-smart-autosorter-wheel") -> MagicMock:
+    mock_wheel = MagicMock()
+    mock_wheel.name = "smart_autosorter-0.1.0-py3-none-any.whl"
+    mock_wheel.read_bytes.return_value = payload
     return mock_wheel
 
 
@@ -101,7 +109,10 @@ def test_prepare_offline_cpu_success(
                 mock_file = MagicMock()
                 mock_file.__enter__.return_value.read.return_value = mock_requirements
                 mock_open.return_value = mock_file
-                mock_glob.return_value = [_default_cpu_torch_wheel()]
+                mock_glob.return_value = [
+                    _default_cpu_torch_wheel(),
+                    _default_app_wheel(),
+                ]
 
                 main()
 
@@ -110,8 +121,8 @@ def test_prepare_offline_cpu_success(
                     "offline_bundle", "zip", "offline_bundle"
                 )
 
-                # Verify subprocess.run invocations (export, venv, download)
-                assert mock_run.call_count == 3
+                # Verify subprocess.run invocations (export, venv, download, uv build)
+                assert mock_run.call_count == 4
 
                 # Verify uv export uses --frozen --format requirements.txt --extra ml --no-dev --no-emit-project
                 export_cmd = mock_run.call_args_list[0][0][0]
@@ -153,13 +164,16 @@ def test_prepare_offline_frozen_skips_compile_and_succeeds(
                 mock_file = MagicMock()
                 mock_file.__enter__.return_value.read.return_value = mock_requirements
                 mock_open.return_value = mock_file
-                mock_glob.return_value = [_default_cpu_torch_wheel()]
+                mock_glob.return_value = [
+                    _default_cpu_torch_wheel(),
+                    _default_app_wheel(),
+                ]
 
                 main()
 
                 mock_exit.assert_not_called()
-                # Only uv venv --seed and pip download should run (no uv export / compile)
-                assert mock_run.call_count == 2
+                # Only uv venv --seed, pip download, and uv build --wheel should run (no uv export / compile)
+                assert mock_run.call_count == 3
                 for call in mock_run.call_args_list:
                     assert "compile" not in call[0][0]
                     assert "export" not in call[0][0]
@@ -336,14 +350,19 @@ def test_prepare_offline_downloads_pep517_build_wheels_for_sdist(
 
             torch_whl = wheels_dir / _default_cpu_torch_wheel().name
             torch_whl.write_bytes(b"wheel")
+        elif cmd[:3] == ["uv", "build", "--wheel"]:
+            out_dir = Path(cmd[cmd.index("--out-dir") + 1])
+            (out_dir / "smart_autosorter-0.1.0-py3-none-any.whl").write_bytes(
+                b"built-smart-autosorter-wheel"
+            )
 
     mock_run.side_effect = fake_run
 
     with patch("sys.argv", ["prepare_offline.py", "--cpu", "--frozen"]):
         main()
 
-    # Calls: 1) uv venv --seed, 2) pip download -r, 3) pip download --only-binary=:all: for PEP 517 deps
-    assert mock_run.call_count == 3
+    # Calls: 1) uv venv --seed, 2) pip download -r, 3) pip download --only-binary=:all:, 4) uv build --wheel
+    assert mock_run.call_count == 4
     pep517_cmd = mock_run.call_args_list[2][0][0]
     assert "--only-binary=:all:" in pep517_cmd
     assert "scikit-build-core[pyproject]>=0.9.2" in pep517_cmd
@@ -381,7 +400,10 @@ def test_prepare_offline_preserves_models(
                 mock_file = MagicMock()
                 mock_file.__enter__.return_value.read.return_value = mock_requirements
                 mock_open.return_value = mock_file
-                mock_glob.return_value = [_default_cpu_torch_wheel()]
+                mock_glob.return_value = [
+                    _default_cpu_torch_wheel(),
+                    _default_app_wheel(),
+                ]
 
                 main()
 

@@ -562,12 +562,25 @@ jobs:
 
     - name: Install Offline Bundle
       run: |
-        uv run --no-project python scripts/install_offline.py offline-install
+        OFFLINE_STAGE="$RUNNER_TEMP/offline-install"
+        rm -rf "$OFFLINE_STAGE"
+        mkdir -p "$OFFLINE_STAGE"
+        cp offline_bundle.zip "$OFFLINE_STAGE/offline_bundle.zip"
+        (
+          cd "$OFFLINE_STAGE"
+          uv run --no-project python "$GITHUB_WORKSPACE"/scripts/install_offline.py offline-install
+        )
         git diff --exit-code
 
     - name: Verify Application and ML Imports in Offline Environment
+      env:
+        PYTHON_KEYRING_BACKEND: keyring.backends.fail.Keyring
       run: |
+        cd "$RUNNER_TEMP/offline-install"
+        test -x .venv/bin/smart-autosorter
+        .venv/bin/smart-autosorter --smoke-test
         .venv/bin/python - <<'PY'
+        from pathlib import Path
         import app
         import app.config
         import app.core
@@ -579,6 +592,9 @@ jobs:
         import transformers
         from app.core.verifier import is_ml_available
 
+        venv_root = (Path.cwd() / ".venv").resolve()
+        app_path = Path(app.__file__).resolve()
+        assert app_path.is_relative_to(venv_root), f"Expected installed app inside {venv_root}, got {app_path}"
         assert is_ml_available(), "Expected is_ml_available() to return True"
         assert torch.cuda.is_available() is False, "Expected CPU-only PyTorch build"
         print("Application and ML modules successfully imported from offline bundle environment!")
