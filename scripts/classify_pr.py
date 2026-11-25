@@ -69,6 +69,7 @@ DEPENDENCY_MANIFEST_PATHS = [
 BASELINE_PATHS = [
     r"^tests/snapshots/api/.*",
     r"^tests/snapshots/tui_svg/.*",
+    r"^tests/ty_baseline\.json$",
 ]
 
 DOCS_PATHS = [
@@ -1025,7 +1026,7 @@ def classify_pr(meta: PRMetadata) -> ClassificationResult:
         if risk_level not in ("sensitive", "high"):
             risk_level = "baseline-change"
         blocking_reasons.append(
-            f"PR modifies snapshot or API contract baseline file(s): {', '.join(baseline_file_matches[:3])}"
+            f"PR modifies snapshot, type, or API contract baseline file(s): {', '.join(baseline_file_matches[:3])}"
         )
 
     # 5. Dependency check

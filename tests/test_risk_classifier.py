@@ -304,6 +304,32 @@ def test_snapshot_baseline_change_is_blocked():
     assert "risk:baseline-change" in res.labels_to_add
 
 
+def test_ty_baseline_change_is_blocked_and_documented():
+    meta = PRMetadata(
+        pr_number=1071,
+        title="chore: sync ty baseline",
+        author="stitch",
+        labels=["automerge"],
+        changed_files=["tests/ty_baseline.json"],
+        additions=5,
+        deletions=8,
+    )
+    res = classify_pr(meta)
+    assert res.eligible is False
+    assert res.risk_level == "baseline-change"
+    assert "risk:baseline-change" in res.labels_to_add
+    assert "automerge:blocked" in res.labels_to_add
+
+    repo_root = Path(__file__).resolve().parents[1]
+    assert "tests/ty_baseline.json @fderuiter" in (
+        repo_root / ".github" / "CODEOWNERS"
+    ).read_text(encoding="utf-8")
+    for doc_rel in ("CONTRIBUTING.md", "AGENTS.md", "docs/auto_merge_policy.md"):
+        assert "tests/ty_baseline.json" in (repo_root / doc_rel).read_text(
+            encoding="utf-8"
+        )
+
+
 def test_dependabot_minor_is_eligible():
     meta = PRMetadata(
         pr_number=108,
@@ -513,6 +539,7 @@ def test_protected_paths_are_listed_in_codeowners():
     expected_paths = set(PROTECTED_PATHS) | {
         "tests/snapshots/api/",
         "tests/snapshots/tui_svg/",
+        "tests/ty_baseline.json",
     }
     missing = [p for p in sorted(expected_paths) if p not in owned]
     assert not missing, f"Add to .github/CODEOWNERS: {missing}"

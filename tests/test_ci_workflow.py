@@ -500,12 +500,18 @@ def test_pre_commit_ty_check_triggers_on_app_scripts_pyproject_and_lockfile():
     ty_hook = next(h for h in local_repo.get("hooks", []) if h.get("id") == "ty-check")
 
     assert "scripts/check_ty_warnings.py" in ty_hook.get("entry", "")
+    assert ty_hook.get("pass_filenames") is True
+    assert ty_hook.get("require_serial") is True
     pattern = re.compile(ty_hook["files"])
     for expected_match in (
+        "sandbox_cli.py",
         "app/main.py",
         "app/core/history.py",
         "scripts/build.py",
         "scripts/check_ty_warnings.py",
+        "tests/conftest.py",
+        "tests/ty_baseline.json",
+        ".agents/skills/run-sortify/driver.py",
         "pyproject.toml",
         "uv.lock",
     ):
