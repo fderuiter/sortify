@@ -35,7 +35,7 @@ from app.ui.modals.session import (
     RollbackConfirmModal,
 )
 from app.ui.tui import AutoSorterTUI
-from scripts.validate_architecture import validate_import_layers
+from scripts.validate_architecture import ArchitectureASTVisitor
 
 
 def _configure_test_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> AppSettings:
@@ -57,7 +57,9 @@ def test_import_layers_forbid_history_imports_in_ui() -> None:
         "def f():\n    from app.core.history import HistoryManager\n",
     ):
         errors: list[str] = []
-        validate_import_layers(errors, "app/ui/modals/session.py", ast.parse(snippet))
+        ArchitectureASTVisitor("app/ui/modals/session.py", errors).visit(
+            ast.parse(snippet)
+        )
         assert errors, f"Expected layer violation for snippet: {snippet!r}"
         assert "'app.ui.modals.session'" in errors[0]
         assert "'app.core.history'" in errors[0]

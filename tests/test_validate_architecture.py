@@ -36,11 +36,38 @@ def test_validate_architecture_incremental_irrelevant_file(monkeypatch):
     assert exc_info.value.code == 0
 
 
+def _run_duplication_check(
+    errors: list[str],
+    target_files: set[str] | None = None,
+) -> None:
+    from scripts.validate_architecture import (
+        _CHECK_HASH_INDEX_ONLY,
+        ArchitectureASTVisitor,
+        _collect_parsed_app_files,
+        _report_duplicate_function_hashes,
+    )
+
+    function_hashes: dict[str, list[tuple[str, int, str]]] = {}
+    for filepath, tree in _collect_parsed_app_files("app"):
+        if target_files is None or filepath in target_files:
+            ArchitectureASTVisitor(
+                filepath, errors, function_hashes=function_hashes
+            ).visit(tree)
+        else:
+            ArchitectureASTVisitor(
+                filepath,
+                [],
+                function_hashes=function_hashes,
+                checks=_CHECK_HASH_INDEX_ONLY,
+            ).visit(tree)
+    _report_duplicate_function_hashes(
+        errors, function_hashes, target_files=target_files
+    )
+
+
 def test_validate_architecture_incremental_duplication_order_independent(
     monkeypatch, tmp_path
 ):
-    from scripts.validate_architecture import validate_codebase_duplication
-
     monkeypatch.chdir(tmp_path)
     core_dir = tmp_path / "app" / "core"
     core_dir.mkdir(parents=True, exist_ok=True)
@@ -56,15 +83,15 @@ def test_validate_architecture_incremental_duplication_order_independent(
     path_b = "app/core/zz_dup_b.py"
 
     # Test incremental target on File A
-    errors_a = []
-    validate_codebase_duplication(errors_a, target_files={path_a})
+    errors_a: list[str] = []
+    _run_duplication_check(errors_a, target_files={path_a})
     assert any(
         "Duplicate function body found" in err and path_a in err for err in errors_a
     )
 
     # Test incremental target on File B
-    errors_b = []
-    validate_codebase_duplication(errors_b, target_files={path_b})
+    errors_b: list[str] = []
+    _run_duplication_check(errors_b, target_files={path_b})
     assert any(
         "Duplicate function body found" in err and path_b in err for err in errors_b
     )
@@ -73,8 +100,6 @@ def test_validate_architecture_incremental_duplication_order_independent(
 def test_validate_architecture_same_file_ui_duplicate_methods_fail(
     monkeypatch, tmp_path
 ):
-    from scripts.validate_architecture import validate_codebase_duplication
-
     monkeypatch.chdir(tmp_path)
     modals_dir = tmp_path / "app" / "ui" / "modals"
     modals_dir.mkdir(parents=True, exist_ok=True)
@@ -94,14 +119,14 @@ def test_validate_architecture_same_file_ui_duplicate_methods_fail(
     rel_path = "app/ui/modals/dup_modal.py"
 
     full_errors: list[str] = []
-    validate_codebase_duplication(full_errors)
+    _run_duplication_check(full_errors)
     assert any(
         "Duplicate function body found for 'action_cancel'" in err and rel_path in err
         for err in full_errors
     )
 
     inc_errors: list[str] = []
-    validate_codebase_duplication(inc_errors, target_files={rel_path})
+    _run_duplication_check(inc_errors, target_files={rel_path})
     assert any(
         "Duplicate function body found for 'action_cancel'" in err and rel_path in err
         for err in inc_errors
@@ -111,8 +136,6 @@ def test_validate_architecture_same_file_ui_duplicate_methods_fail(
 def test_validate_architecture_allows_docstring_stubs_and_overloads(
     monkeypatch, tmp_path
 ):
-    from scripts.validate_architecture import validate_codebase_duplication
-
     monkeypatch.chdir(tmp_path)
     app_dir = tmp_path / "app"
     app_dir.mkdir(parents=True, exist_ok=True)
@@ -137,14 +160,14 @@ def test_validate_architecture_allows_docstring_stubs_and_overloads(
     )
 
     errors: list[str] = []
-    validate_codebase_duplication(errors)
+    _run_duplication_check(errors)
     assert errors == []
 
 
-def test_validate_modal_shell_conventions_flags_direct_modal_screen_and_inlined_css():
+def test_modal_shell_conventions_flag_direct_modal_screen_and_inlined_css():
     import ast
 
-    from scripts.validate_architecture import validate_modal_shell_conventions
+    from scripts.validate_architecture import ArchitectureASTVisitor
 
     bad_source = (
         "from textual.screen import ModalScreen\n"
@@ -161,23 +184,21 @@ def test_validate_modal_shell_conventions_flags_direct_modal_screen_and_inlined_
     )
 
     errors: list[str] = []
-    validate_modal_shell_conventions(
-        errors,
-        parsed_files=[
-            ("app/ui/modals/bad.py", ast.parse(bad_source)),
-            ("app/ui/modals/good.py", ast.parse(good_source)),
-        ],
-    )
+    for filepath, tree in (
+        ("app/ui/modals/bad.py", ast.parse(bad_source)),
+        ("app/ui/modals/good.py", ast.parse(good_source)),
+    ):
+        ArchitectureASTVisitor(filepath, errors).visit(tree)
     assert any("inherits directly from 'ModalScreen'" in err for err in errors)
     assert any("defines 'CSS' directly" in err for err in errors)
     assert any("re-inlines shared modal shell CSS rules" in err for err in errors)
     assert not any("good.py" in err for err in errors)
 
 
-def test_validate_modal_shell_conventions_rejects_unnested_breakpoint_selectors():
+def test_modal_shell_conventions_reject_unnested_breakpoint_selectors():
     import ast
 
-    from scripts.validate_architecture import validate_modal_shell_conventions
+    from scripts.validate_architecture import ArchitectureASTVisitor
 
     bad_top_level = (
         "from app.ui.layout import ResponsiveModalScreen\n\n"
@@ -203,13 +224,11 @@ def test_validate_modal_shell_conventions_rejects_unnested_breakpoint_selectors(
     )
 
     errors: list[str] = []
-    validate_modal_shell_conventions(
-        errors,
-        parsed_files=[
-            ("app/ui/modals/bad_bp.py", ast.parse(bad_top_level)),
-            ("app/ui/modals/good_bp.py", ast.parse(good_nested)),
-        ],
-    )
+    for filepath, tree in (
+        ("app/ui/modals/bad_bp.py", ast.parse(bad_top_level)),
+        ("app/ui/modals/good_bp.py", ast.parse(good_nested)),
+    ):
+        ArchitectureASTVisitor(filepath, errors).visit(tree)
     for cls_name in (
         "TopLevelCompactModal",
         "TopLevelNarrowModal",
@@ -244,10 +263,10 @@ def test_validate_architecture_incremental_violation(monkeypatch, tmp_path):
 def _layer_errors(filepath, source):
     import ast
 
-    from scripts.validate_architecture import validate_import_layers
+    from scripts.validate_architecture import ArchitectureASTVisitor
 
-    errors = []
-    validate_import_layers(errors, filepath, ast.parse(source))
+    errors: list[str] = []
+    ArchitectureASTVisitor(filepath, errors).visit(ast.parse(source))
     return errors
 
 
@@ -306,10 +325,12 @@ def _settings_key_errors(
 ):
     import ast
 
-    from scripts.validate_architecture import validate_settings_keys
+    from scripts.validate_architecture import ArchitectureASTVisitor
 
-    errors = []
-    validate_settings_keys(errors, "app/core/x.py", ast.parse(source), set(declared))
+    errors: list[str] = []
+    ArchitectureASTVisitor(
+        "app/core/x.py", errors, declared_settings=set(declared)
+    ).visit(ast.parse(source))
     return errors
 
 
@@ -338,10 +359,10 @@ def test_declared_settings_keys_include_fields_and_property_aliases():
 def _global_errors(source):
     import ast
 
-    from scripts.validate_architecture import validate_import_time_globals
+    from scripts.validate_architecture import ArchitectureASTVisitor
 
-    errors = []
-    validate_import_time_globals(errors, "app/core/x.py", ast.parse(source))
+    errors: list[str] = []
+    ArchitectureASTVisitor("app/core/x.py", errors).visit(ast.parse(source))
     return errors
 
 
@@ -363,21 +384,21 @@ def test_import_time_globals_allow_install_functions_and_reads():
 
 
 def test_app_has_no_import_time_global_patches(parsed_app_files):
-    from scripts.validate_architecture import validate_import_time_globals
+    from scripts.validate_architecture import ArchitectureASTVisitor
 
-    errors = []
+    errors: list[str] = []
     for filepath, tree in parsed_app_files:
-        validate_import_time_globals(errors, filepath, tree)
+        ArchitectureASTVisitor(filepath, errors).visit(tree)
     assert errors == []
 
 
 def _detection_errors(source):
     import ast
 
-    from scripts.validate_architecture import validate_no_test_detection
+    from scripts.validate_architecture import ArchitectureASTVisitor
 
-    errors = []
-    validate_no_test_detection(errors, "app/core/x.py", ast.parse(source))
+    errors: list[str] = []
+    ArchitectureASTVisitor("app/core/x.py", errors).visit(ast.parse(source))
     return errors
 
 
@@ -398,21 +419,21 @@ def test_test_detection_allows_ordinary_code():
 
 
 def test_app_has_no_test_detection(parsed_app_files):
-    from scripts.validate_architecture import validate_no_test_detection
+    from scripts.validate_architecture import ArchitectureASTVisitor
 
-    errors = []
+    errors: list[str] = []
     for filepath, tree in parsed_app_files:
-        validate_no_test_detection(errors, filepath, tree)
+        ArchitectureASTVisitor(filepath, errors).visit(tree)
     assert errors == []
 
 
 def _ml_errors(source, filepath="app/core/example.py"):
     import ast
 
-    from scripts.validate_architecture import validate_lazy_ml_imports
+    from scripts.validate_architecture import ArchitectureASTVisitor
 
-    errors = []
-    validate_lazy_ml_imports(errors, filepath, ast.parse(source))
+    errors: list[str] = []
+    ArchitectureASTVisitor(filepath, errors).visit(ast.parse(source))
     return errors
 
 
@@ -557,11 +578,11 @@ class Foo:
 
 
 def test_app_has_no_eager_ml_imports(parsed_app_files):
-    from scripts.validate_architecture import validate_lazy_ml_imports
+    from scripts.validate_architecture import ArchitectureASTVisitor
 
-    errors = []
+    errors: list[str] = []
     for filepath, tree in parsed_app_files:
-        validate_lazy_ml_imports(errors, filepath, tree)
+        ArchitectureASTVisitor(filepath, errors).visit(tree)
     assert errors == []
 
 
@@ -594,13 +615,13 @@ def test_validate_architecture_incremental_ml_violation(monkeypatch, tmp_path):
 def test_writer_construction_requires_composition_root(source):
     import ast
 
-    from scripts.validate_architecture import validate_service_ownership
+    from scripts.validate_architecture import ArchitectureASTVisitor
 
-    errors = []
-    validate_service_ownership(errors, "app/ui/example.py", ast.parse(source))
+    errors: list[str] = []
+    ArchitectureASTVisitor("app/ui/example.py", errors).visit(ast.parse(source))
     assert errors
     errors = []
-    validate_service_ownership(errors, "app/core/services.py", ast.parse(source))
+    ArchitectureASTVisitor("app/core/services.py", errors).visit(ast.parse(source))
     assert not errors
 
 
@@ -854,10 +875,10 @@ def test_writer_construction_catches_alias_imported_after_call():
     """Verify single-pass service ownership check catches aliases imported later in module."""
     import ast
 
-    from scripts.validate_architecture import validate_service_ownership
+    from scripts.validate_architecture import ArchitectureASTVisitor
 
     source = "def build():\n    return Writer()\n\nfrom app.core.db_worker import DBWorker as Writer\n"
     errors: list[str] = []
-    validate_service_ownership(errors, "app/ui/example.py", ast.parse(source))
+    ArchitectureASTVisitor("app/ui/example.py", errors).visit(ast.parse(source))
     assert len(errors) == 1
     assert "DBWorker" in errors[0]
