@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -15,9 +18,12 @@ from scripts.classify_pr import (
     classify_requirements_diff,
     classify_uv_lock_diff,
     classify_version_bump,
+    dependency_update_type_from_dependabot_metadata,
     dependency_update_type_from_diffs,
     dependency_update_type_from_title,
     main,
+    parse_dependabot_updated_dependencies,
+    resolve_dependency_update_type,
 )
 
 
@@ -980,7 +986,7 @@ def test_classify_pr_workflow_verifies_maintainer_and_fetches_manifests_via_api(
     steps = workflow["jobs"]["classify"]["steps"]
 
     checkout_step = next(s for s in steps if "actions/checkout@" in s.get("uses", ""))
-    assert checkout_step["with"]["ref"] == "${{ github.event.pull_request.base.sha }}"
+    assert checkout_step["with"]["ref"] == "refs/heads/main"
     assert checkout_step["with"]["persist-credentials"] is False
 
     extract_step = next(s for s in steps if s.get("name") == "Extract PR Metadata")
@@ -1058,3 +1064,691 @@ def test_main_cli_fails_closed_when_docs_author_permission_missing(
     result = json.loads(capsys.readouterr().out)
     assert result["eligible"] is False
     assert "automerge:blocked" in result["labels_to_add"]
+
+
+_GROUPED_COMMIT_1109 = """build(deps): bump the python-minor-patch group with 7 updates
+
+Updates `pypdf` from 7.0.1 to 7.1.0
+Updates `pydantic-settings` from 2.16.2 to 2.16.3
+Updates `transformers` from 5.22.2 to 5.23.0
+Updates `onnxruntime` from 1.31.1 to 1.32.0
+Updates `ruff` from 0.17.4 to 0.17.5
+Updates `ty` from 0.0.100 to 0.0.103
+Updates `tifffile` from 2026.11.8 to 2026.11.12
+
+---
+updated-dependencies:
+- dependency-name: pypdf
+  dependency-version: 7.1.0
+  dependency-type: direct:production
+  update-type: version-update:semver-minor
+  dependency-group: python-minor-patch
+- dependency-name: pydantic-settings
+  dependency-version: 2.16.3
+  dependency-type: direct:production
+  update-type: version-update:semver-patch
+  dependency-group: python-minor-patch
+- dependency-name: transformers
+  dependency-version: 5.23.0
+  dependency-type: direct:production
+  update-type: version-update:semver-minor
+  dependency-group: python-minor-patch
+- dependency-name: onnxruntime
+  dependency-version: 1.32.0
+  dependency-type: direct:production
+  update-type: version-update:semver-minor
+  dependency-group: python-minor-patch
+- dependency-name: ruff
+  dependency-version: 0.17.5
+  dependency-type: direct:development
+  update-type: version-update:semver-patch
+  dependency-group: python-minor-patch
+- dependency-name: ty
+  dependency-version: 0.0.103
+  dependency-type: direct:development
+  update-type: version-update:semver-patch
+  dependency-group: python-minor-patch
+- dependency-name: tifffile
+  dependency-version: 2026.11.12
+  dependency-type: indirect
+  update-type: version-update:semver-patch
+  dependency-group: python-minor-patch
+...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+"""
+
+_GROUPED_BODY_1109 = """Bumps the python-minor-patch group with 7 updates:
+
+| Package | From | To |
+| --- | --- | --- |
+| [pypdf](repo) | `7.0.1` | `7.1.0` |
+| [pydantic-settings](repo) | `2.16.2` | `2.16.3` |
+| [transformers](repo) | `5.22.2` | `5.23.0` |
+| [onnxruntime](repo) | `1.31.1` | `1.32.0` |
+| [ruff](repo) | `0.17.4` | `0.17.5` |
+| [ty](repo) | `0.0.100` | `0.0.103` |
+| [tifffile](repo) | `2026.11.8` | `2026.11.12` |
+
+Updates `pypdf` from 7.0.1 to 7.1.0
+<details>
+<summary>Release notes</summary>
+Updates `pypdf` from 1.0.0 to 7.1.0
+</details>
+"""
+
+_GROUPED_COMMIT_1134 = """build(deps): bump the python-minor-patch group across 1 directory with 2 updates
+
+Updates `llama-cpp-python` from 0.3.36 to 0.3.37
+Updates `ty` from 0.0.103 to 0.0.104
+
+---
+updated-dependencies:
+- dependency-name: llama-cpp-python
+  dependency-version: 0.3.37
+  dependency-type: direct:production
+  update-type: version-update:semver-patch
+  dependency-group: python-minor-patch
+- dependency-name: ty
+  dependency-version: 0.0.104
+  dependency-type: direct:development
+  update-type: version-update:semver-patch
+  dependency-group: python-minor-patch
+...
+"""
+
+_GROUPED_COMMIT_1152 = """build(deps): bump the python-minor-patch group with 3 updates
+
+Updates `ty` from 0.0.104 to 0.0.105
+Updates `mpmath` from 1.3.0 to 1.4.1
+Updates `narwhals` from 2.28.0 to 2.29.0
+
+---
+updated-dependencies:
+- dependency-name: ty
+  dependency-version: 0.0.105
+  dependency-type: direct:development
+  update-type: version-update:semver-patch
+  dependency-group: python-minor-patch
+- dependency-name: mpmath
+  dependency-version: 1.4.1
+  dependency-type: indirect
+  update-type: version-update:semver-minor
+  dependency-group: python-minor-patch
+- dependency-name: narwhals
+  dependency-version: '2.29.0'
+  dependency-type: indirect
+  update-type: version-update:semver-minor
+  dependency-group: python-minor-patch
+...
+"""
+
+
+def test_parse_dependabot_updated_dependencies_handles_grouped_and_malformed_blocks():
+    parsed_1109 = parse_dependabot_updated_dependencies(_GROUPED_COMMIT_1109)
+    assert parsed_1109 is not None
+    assert len(parsed_1109) == 7
+    assert parsed_1109[0]["dependency-name"] == "pypdf"
+    assert parsed_1109[4]["dependency-name"] == "ruff"
+    assert parsed_1109[4]["update-type"] == "version-update:semver-patch"
+
+    parsed_1152 = parse_dependabot_updated_dependencies(_GROUPED_COMMIT_1152)
+    assert parsed_1152 is not None
+    assert len(parsed_1152) == 3
+    assert parsed_1152[2]["dependency-version"] == "2.29.0"
+
+    # Unclosed YAML trailer fails closed to None
+    unclosed = (
+        "Bump group\n\n---\nupdated-dependencies:\n"
+        "- dependency-name: ruff\n  dependency-version: 0.17.5\n"
+    )
+    assert parse_dependabot_updated_dependencies(unclosed) is None
+
+    # Missing dependency-version fails closed to None
+    missing_ver = (
+        "Bump group\n\n---\nupdated-dependencies:\n- dependency-name: ruff\n...\n"
+    )
+    assert parse_dependabot_updated_dependencies(missing_ver) is None
+
+
+@pytest.mark.parametrize(
+    ("title", "commit_msg", "pr_body"),
+    [
+        (
+            "build(deps): bump the python-minor-patch group with 7 updates",
+            _GROUPED_COMMIT_1109,
+            _GROUPED_BODY_1109,
+        ),
+        (
+            "build(deps): bump the python-minor-patch group across 1 directory with 2 updates",
+            _GROUPED_COMMIT_1134,
+            "Bumps the python-minor-patch group across 1 directory with 2 updates: [llama-cpp-python](repo) and [ty](repo).\n\nUpdates `llama-cpp-python` from 0.3.36 to 0.3.37\nUpdates `ty` from 0.0.103 to 0.0.104\n",
+        ),
+        (
+            "build(deps): bump the python-minor-patch group with 3 updates",
+            _GROUPED_COMMIT_1152,
+            "",
+        ),
+    ],
+)
+def test_grouped_dependabot_minor_patch_metadata_classifies_eligible(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    title: str,
+    commit_msg: str,
+    pr_body: str,
+):
+    assert (
+        dependency_update_type_from_dependabot_metadata(
+            [commit_msg], pr_body=pr_body, title=title
+        )
+        == "minor"
+    )
+
+    meta = PRMetadata(
+        pr_number=1109,
+        title=title,
+        author="dependabot[bot]",
+        is_dependabot=True,
+        labels=["dependencies"],
+        changed_files=["pyproject.toml"],
+        additions=12,
+        deletions=12,
+        all_commits_verified=True,
+        commit_messages=[commit_msg],
+        pr_body=pr_body,
+    )
+    res = classify_pr(meta)
+    assert res.eligible is True
+    assert res.risk_level == "low"
+    assert res.labels_to_add == ["risk:low", "automerge:eligible"]
+
+    # Also verify CLI JSON input path
+    payload_path = tmp_path / "grouped_meta.json"
+    payload_path.write_text(
+        json.dumps(
+            {
+                "pr_number": 1109,
+                "title": title,
+                "pr_body": pr_body,
+                "commit_messages": [commit_msg],
+                "author": "dependabot[bot]",
+                "is_dependabot": True,
+                "labels": ["dependencies"],
+                "changed_files": ["pyproject.toml"],
+                "additions": 12,
+                "deletions": 12,
+                "all_commits_verified": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "sys.argv", ["classify_pr.py", "--json-input", str(payload_path)]
+    )
+    main()
+    cli_out = json.loads(capsys.readouterr().out)
+    assert cli_out["eligible"] is True
+    assert cli_out["risk_level"] == "low"
+    assert cli_out["labels_to_add"] == ["risk:low", "automerge:eligible"]
+
+
+def test_grouped_dependabot_blocks_zero_x_minor_major_and_malformed_metadata():
+    # 0.x minor bump in grouped update fails closed to major / blocked
+    zero_x_minor_commit = """build(deps): bump the python-minor-patch group with 2 updates
+
+Updates `ruff` from 0.17.5 to 0.18.0
+Updates `ty` from 0.0.104 to 0.0.105
+
+---
+updated-dependencies:
+- dependency-name: ruff
+  dependency-version: 0.18.0
+  dependency-type: direct:development
+  update-type: version-update:semver-minor
+  dependency-group: python-minor-patch
+- dependency-name: ty
+  dependency-version: 0.0.105
+  dependency-type: direct:development
+  update-type: version-update:semver-patch
+  dependency-group: python-minor-patch
+...
+"""
+    assert (
+        dependency_update_type_from_dependabot_metadata(
+            [zero_x_minor_commit],
+            title="build(deps): bump the python-minor-patch group with 2 updates",
+        )
+        == "major"
+    )
+
+    # Major bump in grouped update fails closed to major / blocked
+    major_commit = """build(deps): bump the python-minor-patch group with 2 updates
+
+Updates `pypdf` from 7.1.0 to 8.0.0
+Updates `ty` from 0.0.104 to 0.0.105
+
+---
+updated-dependencies:
+- dependency-name: pypdf
+  dependency-version: 8.0.0
+  dependency-type: direct:production
+  update-type: version-update:semver-major
+  dependency-group: python-minor-patch
+- dependency-name: ty
+  dependency-version: 0.0.105
+  dependency-type: direct:development
+  update-type: version-update:semver-patch
+  dependency-group: python-minor-patch
+...
+"""
+    res_major = classify_pr(
+        PRMetadata(
+            pr_number=1201,
+            title="build(deps): bump the python-minor-patch group with 2 updates",
+            author="dependabot[bot]",
+            is_dependabot=True,
+            labels=["dependencies"],
+            changed_files=["pyproject.toml"],
+            commit_messages=[major_commit],
+            all_commits_verified=True,
+        )
+    )
+    assert res_major.eligible is False
+    assert res_major.risk_level == "high"
+    assert "automerge:blocked" in res_major.labels_to_add
+
+    # Title says 3 updates, YAML only lists 2 -> count mismatch fails closed
+    assert (
+        dependency_update_type_from_dependabot_metadata(
+            [_GROUPED_COMMIT_1134],
+            title="build(deps): bump the python-minor-patch group with 3 updates",
+        )
+        == "major"
+    )
+
+    # Missing metadata entirely on grouped PR fails closed
+    assert (
+        resolve_dependency_update_type(
+            title="build(deps): bump the python-minor-patch group with 2 updates",
+            changed_files=["pyproject.toml"],
+            is_dependabot=True,
+            all_commits_verified=True,
+            commit_messages=["chore: update deps without metadata"],
+            pr_body="No structured metadata here.",
+        )
+        == "major"
+    )
+
+    # Unverified commit signature fails closed even if YAML looks benign
+    assert (
+        resolve_dependency_update_type(
+            title="build(deps): bump the python-minor-patch group with 2 updates",
+            changed_files=["pyproject.toml"],
+            is_dependabot=True,
+            all_commits_verified=False,
+            commit_messages=[_GROUPED_COMMIT_1134],
+        )
+        == "major"
+    )
+
+
+def _load_classify_workflow_script(step_name: str) -> str:
+    workflow_path = (
+        Path(__file__).resolve().parents[1]
+        / ".github"
+        / "workflows"
+        / "classify-pr.yml"
+    )
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+    steps = workflow["jobs"]["classify"]["steps"]
+    step = next(s for s in steps if s.get("name") == step_name)
+    return str(step["with"]["script"])
+
+
+def _run_github_script_in_node(
+    tmp_path: Path,
+    script_body: str,
+    harness_state: dict[str, Any],
+) -> subprocess.CompletedProcess[str]:
+    node_bin = shutil.which("node")
+    if node_bin is None:
+        pytest.skip("node binary not available in test environment")
+
+    state_file = tmp_path / "state.json"
+    out_file = tmp_path / "out.json"
+    runner_file = tmp_path / "runner.cjs"
+    state_file.write_text(json.dumps(harness_state), encoding="utf-8")
+
+    runner_source = (
+        """
+const fs = require('fs');
+const state = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const outPath = process.argv[3];
+const calls = {
+  removedLabels: [],
+  addedLabels: [],
+  statuses: [],
+  summaryMarkdown: '',
+};
+
+function maybeThrow(endpoint) {
+  const errSpec = (state.errors || {})[endpoint];
+  if (!errSpec) return;
+  if (errSpec.onlyLabel && errSpec.onlyLabel !== arguments[1]) return;
+  const err = new Error(errSpec.message || endpoint + ' failed');
+  err.status = errSpec.status;
+  throw err;
+}
+
+const github = {
+  paginate: async (fn, params) => {
+    const res = await fn(params);
+    return res.data;
+  },
+  rest: {
+    pulls: {
+      listFiles: async () => {
+        maybeThrow('listFiles');
+        return { data: state.files || [] };
+      },
+      listCommits: async () => {
+        maybeThrow('listCommits');
+        return { data: state.commits || [] };
+      },
+    },
+    issues: {
+      listLabelsOnIssue: async () => {
+        maybeThrow('listLabelsOnIssue');
+        return { data: (state.labels || []).map(name => ({ name })) };
+      },
+      listEvents: async () => {
+        maybeThrow('listEvents');
+        return { data: state.events || [] };
+      },
+      removeLabel: async ({ name }) => {
+        maybeThrow('removeLabel', name);
+        calls.removedLabels.push(name);
+        return { data: {} };
+      },
+      addLabels: async ({ labels }) => {
+        maybeThrow('addLabels');
+        calls.addedLabels.push(...labels);
+        return { data: {} };
+      },
+    },
+    repos: {
+      getCollaboratorPermissionLevel: async ({ username }) => {
+        maybeThrow('getCollaboratorPermissionLevel');
+        const perms = state.permissions || {};
+        return { data: { permission: perms[username] || 'none' } };
+      },
+      getContent: async ({ path, ref }) => {
+        maybeThrow('getContent');
+        const key = `${ref}:${path}`;
+        const files = state.rawFiles || {};
+        if (!(key in files)) {
+          const err = new Error('Not Found');
+          err.status = 404;
+          throw err;
+        }
+        return { data: files[key] };
+      },
+      createCommitStatus: async (payload) => {
+        maybeThrow('createCommitStatus');
+        calls.statuses.push(payload);
+        return { data: {} };
+      },
+    },
+  },
+};
+
+const context = {
+  repo: { owner: 'fderuiter', repo: 'sortify' },
+  payload: { pull_request: state.pr || {} },
+};
+
+const core = {
+  summary: {
+    addRaw: (md) => {
+      calls.summaryMarkdown += md;
+      return core.summary;
+    },
+    write: async () => {},
+  },
+};
+
+(async () => {
+"""
+        + script_body
+        + """
+  fs.writeFileSync(outPath, JSON.stringify(calls));
+})().catch((err) => {
+  console.error(err && err.stack ? err.stack : String(err));
+  process.exit(1);
+});
+"""
+    )
+    runner_file.write_text(runner_source, encoding="utf-8")
+    return subprocess.run(
+        [node_bin, str(runner_file), str(state_file), str(out_file)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_classify_workflow_extract_script_verifies_maintainer_on_all_prs_and_fails_on_api_errors(
+    tmp_path: Path,
+):
+    extract_script = _load_classify_workflow_script("Extract PR Metadata")
+    base_pr: dict[str, Any] = {
+        "number": 1155,
+        "title": "build(deps): bump group",
+        "body": "Updates `ty` from 0.0.104 to 0.0.105",
+        "draft": False,
+        "user": {"login": "dependabot[bot]", "type": "Bot"},
+        "base": {
+            "sha": "base_sha_1",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "head": {
+            "sha": "head_sha_1",
+            "ref": "dependabot/pip/group",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+    }
+    commits: list[dict[str, Any]] = [
+        {
+            "sha": "c1",
+            "parents": [{"sha": "p0"}],
+            "commit": {
+                "message": _GROUPED_COMMIT_1152,
+                "verification": {"verified": True},
+            },
+        },
+        {
+            "sha": "c2_merge",
+            "parents": [{"sha": "c1"}, {"sha": "main_tip"}],
+            "commit": {
+                "message": "Merge branch 'main' into dependabot/pip/group",
+                "verification": {"verified": True},
+            },
+        },
+    ]
+
+    # 1. Bot-applied 'automerge' (even by 'stitch' User account or on dependabot[bot] PR) is stripped
+    for actor in (
+        {"login": "dependabot[bot]", "type": "Bot"},
+        {"login": "stitch", "type": "User"},
+        {"login": "jules", "type": "User"},
+        {"login": "reader", "type": "User"},
+    ):
+        proc = _run_github_script_in_node(
+            tmp_path,
+            extract_script,
+            {
+                "pr": base_pr,
+                "files": [
+                    {"filename": "pyproject.toml", "additions": 2, "deletions": 2}
+                ],
+                "commits": commits,
+                "labels": ["dependencies", "automerge"],
+                "events": [
+                    {
+                        "event": "labeled",
+                        "label": {"name": "automerge"},
+                        "actor": actor,
+                    }
+                ],
+                "permissions": {"stitch": "write", "jules": "admin", "reader": "read"},
+            },
+        )
+        assert proc.returncode == 0, proc.stderr
+        extracted = json.loads((tmp_path / "pr_meta.json").read_text(encoding="utf-8"))
+        assert "automerge" not in extracted["labels"]
+        assert extracted["commit_messages"] == [_GROUPED_COMMIT_1152]
+        assert extracted["pr_body"] == "Updates `ty` from 0.0.104 to 0.0.105"
+
+    # 2. Human maintainer ('write', 'maintain', 'admin') 'automerge' is preserved
+    proc_maint = _run_github_script_in_node(
+        tmp_path,
+        extract_script,
+        {
+            "pr": base_pr,
+            "files": [{"filename": "uv.lock", "additions": 4, "deletions": 4}],
+            "commits": commits,
+            "labels": ["dependencies", "automerge"],
+            "events": [
+                {
+                    "event": "labeled",
+                    "label": {"name": "automerge"},
+                    "actor": {"login": "fderuiter", "type": "User"},
+                }
+            ],
+            "permissions": {"fderuiter": "maintain"},
+            "rawFiles": {},  # 404 on getContent is tolerated and recorded as null
+        },
+    )
+    assert proc_maint.returncode == 0, proc_maint.stderr
+    extracted_maint = json.loads(
+        (tmp_path / "pr_meta.json").read_text(encoding="utf-8")
+    )
+    assert "automerge" in extracted_maint["labels"]
+    assert extracted_maint["base_uv_lock"] is None
+    assert extracted_maint["head_uv_lock"] is None
+
+    # 3. Non-404 REST error on listLabelsOnIssue or getContent fails the step
+    for endpoint in ("listLabelsOnIssue", "getContent"):
+        proc_err = _run_github_script_in_node(
+            tmp_path,
+            extract_script,
+            {
+                "pr": base_pr,
+                "files": [{"filename": "uv.lock", "additions": 1, "deletions": 1}],
+                "commits": commits,
+                "labels": ["dependencies"],
+                "errors": {endpoint: {"status": 500, "message": "Internal Error"}},
+            },
+        )
+        assert proc_err.returncode != 0
+
+
+def test_classify_workflow_sync_script_posts_completed_status_and_propagates_non_404_errors(
+    tmp_path: Path,
+):
+    sync_script = _load_classify_workflow_script("Sync PR Labels & Post Status Check")
+    pr_payload: dict[str, Any] = {
+        "number": 1156,
+        "head": {"sha": "head_sha_sync"},
+    }
+    res_file = tmp_path / "classification_result.json"
+
+    # 1. Blocked PR posts state='success' (never 'pending') with 'Human review required (<risk>)'
+    #    and ignores 404 when removing a missing label
+    res_file.write_text(
+        json.dumps(
+            {
+                "eligible": False,
+                "risk_level": "high",
+                "labels_to_add": ["risk:high", "automerge:blocked"],
+                "blocking_reasons": ["Major dependency upgrades require human review."],
+                "summary_markdown": "## Summary\n",
+            }
+        ),
+        encoding="utf-8",
+    )
+    proc_blocked = _run_github_script_in_node(
+        tmp_path,
+        sync_script,
+        {
+            "pr": pr_payload,
+            "labels": ["automerge:eligible", "risk:low", "dependencies"],
+            "errors": {
+                "removeLabel": {
+                    "status": 404,
+                    "onlyLabel": "risk:low",
+                    "message": "Label does not exist",
+                }
+            },
+        },
+    )
+    assert proc_blocked.returncode == 0, proc_blocked.stderr
+    calls_blocked = json.loads((tmp_path / "out.json").read_text(encoding="utf-8"))
+    assert calls_blocked["removedLabels"] == ["automerge:eligible"]
+    assert calls_blocked["addedLabels"] == ["risk:high", "automerge:blocked"]
+    assert len(calls_blocked["statuses"]) == 1
+    assert calls_blocked["statuses"][0] == {
+        "owner": "fderuiter",
+        "repo": "sortify",
+        "sha": "head_sha_sync",
+        "state": "success",
+        "context": "automerge/classification",
+        "description": "Human review required (high)",
+    }
+
+    # 2. Eligible PR posts state='success' with 'Eligible for auto-merge'
+    res_file.write_text(
+        json.dumps(
+            {
+                "eligible": True,
+                "risk_level": "low",
+                "labels_to_add": ["risk:low", "automerge:eligible"],
+                "blocking_reasons": [],
+                "summary_markdown": "## Summary\n",
+            }
+        ),
+        encoding="utf-8",
+    )
+    proc_eligible = _run_github_script_in_node(
+        tmp_path,
+        sync_script,
+        {
+            "pr": pr_payload,
+            "labels": ["automerge:blocked", "risk:high"],
+        },
+    )
+    assert proc_eligible.returncode == 0, proc_eligible.stderr
+    calls_eligible = json.loads((tmp_path / "out.json").read_text(encoding="utf-8"))
+    assert calls_eligible["statuses"][0]["state"] == "success"
+    assert calls_eligible["statuses"][0]["description"] == "Eligible for auto-merge"
+
+    # 3. Non-404 REST errors on listLabelsOnIssue, removeLabel, addLabels, or createCommitStatus fail the run
+    for endpoint in (
+        "listLabelsOnIssue",
+        "removeLabel",
+        "addLabels",
+        "createCommitStatus",
+    ):
+        proc_fail = _run_github_script_in_node(
+            tmp_path,
+            sync_script,
+            {
+                "pr": pr_payload,
+                "labels": ["automerge:blocked"],
+                "errors": {endpoint: {"status": 500, "message": "API failure"}},
+            },
+        )
+        assert proc_fail.returncode != 0

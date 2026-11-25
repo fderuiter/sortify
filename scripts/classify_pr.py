@@ -424,7 +424,7 @@ def dependency_update_type_from_title(title: str) -> str:
     A change in the first version component is major, and so is a change in the
     second while the first is 0, as semver treats 0.x minors as breaking. Titles
     without a single "from A to B" (grouped updates) count as major, so a person
-    reviews them when lockfile diffs are unavailable.
+    reviews them when lockfile diffs and Dependabot metadata are unavailable.
     """
     matches = list(_DEPENDABOT_VERSION_RE.finditer(title))
     if len(matches) != 1:
@@ -436,6 +436,433 @@ def dependency_update_type_from_title(title: str) -> str:
     if old[0] == 0 and (old[1:2] or [0]) != (new[1:2] or [0]):
         return "major"
     return "minor"
+
+
+_HTML_DETAILS_OR_QUOTE_RE = re.compile(
+    r"<(?P<tag>details|blockquote)\b[^>]*>[\s\S]*?</(?P=tag)>",
+    re.IGNORECASE,
+)
+
+_DEPENDABOT_YAML_HEADER_RE = re.compile(
+    r"(?:^|\r?\n)---[ \t]*\r?\nupdated-dependencies:[ \t]*\r?\n",
+    re.IGNORECASE,
+)
+
+_DEPENDABOT_UPDATES_LINE_RE = re.compile(
+    r"^[ \t]*Updates\s+`(?P<name>[^`\r\n]+)`\s+from\s+v?(?P<old>[^\s`]+)\s+to\s+v?(?P<new>[^\s`]+?)[ \t]*\.?[ \t]*$",
+    re.MULTILINE | re.IGNORECASE,
+)
+
+_DEPENDABOT_BUMPS_LINE_RE = re.compile(
+    r"^[ \t]*Bumps\s+(?:\[(?P<link_name>[^\]\r\n]+)\]\([^)\r\n]*\)|`(?P<code_name>[^`\r\n]+)`)\s+"
+    r"from\s+v?(?P<old>[^\s`]+)\s+to\s+v?(?P<new>[^\s`]+?)[ \t]*\.?[ \t]*$",
+    re.MULTILINE | re.IGNORECASE,
+)
+
+_DEPENDABOT_TABLE_ROW_RE = re.compile(
+    r"^[ \t]*\|\s*(?:\[(?P<link_name>[^\]|\r\n]+)\]\([^)\r\n]*\)|`(?P<code_name>[^`\r\n]+)`)\s*\|\s*"
+    r"`?v?(?P<old>\d[^\s|`]*?)`?\s*\|\s*`?v?(?P<new>\d[^\s|`]*?)`?\s*\|[ \t]*$",
+    re.MULTILINE,
+)
+
+_DEPENDABOT_GROUP_COUNT_RE = re.compile(
+    r"\b(?:bump|bumps)\s+the\s+\S+\s+group\b[^\r\n]*?\bwith\s+(?P<count>\d+)\s+updates?\b",
+    re.IGNORECASE,
+)
+
+_MERGE_COMMIT_SUBJECT_RE = re.compile(
+    r"^Merge\s+(?:branch|remote-tracking\s+branch|commit)\b",
+    re.IGNORECASE,
+)
+
+
+def _normalize_dep_identifier(name: str) -> str:
+    """Normalize a dependency name (preserving ecosystem slashes when present)."""
+    base = name.split("[", 1)[0].strip().lower()
+    if "/" in base:
+        return "/".join(_canonical_pkg_name(part) for part in base.split("/"))
+    return _canonical_pkg_name(base)
+
+
+def _unquote_yaml_scalar(raw_value: str) -> str | None:
+    """Strip optional matching single or double quotes from a simple YAML scalar."""
+    val = raw_value.strip()
+    if not val:
+        return ""
+    if val[0] in ("'", '"'):
+        if len(val) < 2 or val[-1] != val[0]:
+            return None
+        return val[1:-1].strip()
+    if any(q in val for q in ("'", '"')):
+        return None
+    return val
+
+
+def parse_dependabot_updated_dependencies(
+    text: str,
+) -> list[dict[str, str]] | None:
+    """Parse Dependabot's ``updated-dependencies:`` YAML commit trailer using stdlib.
+
+    Returns an empty list when no ``updated-dependencies`` trailer is present, a
+    list of parsed dependency dicts when valid, or ``None`` if a trailer header
+    appears but is malformed or incomplete.
+    """
+    if "updated-dependencies" not in text.lower():
+        return []
+
+    header_match = _DEPENDABOT_YAML_HEADER_RE.search(text)
+    if not header_match:
+        return None
+
+    tail_lines = text[header_match.end() :].splitlines()
+    entries: list[dict[str, str]] = []
+    current: dict[str, str] | None = None
+    closed = False
+
+    for raw_line in tail_lines:
+        stripped = raw_line.strip()
+        if stripped in ("...", "---"):
+            closed = True
+            break
+        if not stripped:
+            break
+        if raw_line.startswith("- "):
+            if current is not None:
+                entries.append(current)
+            current = {}
+            kv_text = raw_line[2:].strip()
+        elif raw_line.startswith("  ") and current is not None:
+            kv_text = stripped
+        else:
+            return None
+
+        if ":" not in kv_text:
+            return None
+        key_raw, val_raw = kv_text.split(":", maxsplit=1)
+        key = key_raw.strip().lower()
+        val = _unquote_yaml_scalar(val_raw)
+        if not key or val is None:
+            return None
+        current[key] = val
+
+    if current is not None:
+        entries.append(current)
+
+    if not entries or not closed:
+        return None
+
+    for item in entries:
+        if not item.get("dependency-name") or not item.get("dependency-version"):
+            return None
+
+    return entries
+
+
+def _classify_dependabot_yaml_entry(
+    entry: dict[str, str],
+    transitions_by_pkg: dict[str, tuple[str, str]],
+) -> str:
+    """Classify one ``updated-dependencies`` item as 'minor' or 'major'."""
+    dep_name = _normalize_dep_identifier(entry.get("dependency-name", ""))
+    dep_version = entry.get("dependency-version", "").strip().lstrip("vV")
+    update_type = entry.get("update-type", "").strip().lower()
+    if not dep_name or not dep_version:
+        return "major"
+
+    parsed = _parse_pep440_version(dep_version)
+    if parsed is None:
+        return "major"
+    _epoch, release, new_cmp, has_pre_or_dev, local_tag = parsed
+    if has_pre_or_dev or local_tag:
+        return "major"
+
+    if dep_name in transitions_by_pkg:
+        old_v, transition_new_v = transitions_by_pkg[dep_name]
+        transition_parsed = _parse_pep440_version(transition_new_v)
+        if transition_parsed is None or transition_parsed[2] != new_cmp:
+            return "major"
+        if classify_version_bump(old_v, transition_new_v) == "major":
+            return "major"
+
+    if update_type == "version-update:semver-patch":
+        return "minor"
+    if update_type == "version-update:semver-minor":
+        if release[0] == 0:
+            return "major"
+        return "minor"
+    if not update_type and dep_name in transitions_by_pkg:
+        old_v, transition_new_v = transitions_by_pkg[dep_name]
+        return classify_version_bump(old_v, transition_new_v)
+    return "major"
+
+
+def _extract_dependabot_body_transitions(
+    text: str,
+) -> dict[str, tuple[str, str]] | None:
+    """Extract verified ``(old_version, new_version)`` pairs keyed by normalized package name.
+
+    Strips ``<details>`` and ``<blockquote>`` sections so upstream release notes
+    cannot spoof version transitions, and returns ``None`` if duplicate entries
+    for the same package disagree on versions.
+    """
+    header_match = _DEPENDABOT_YAML_HEADER_RE.search(text)
+    prose = text[: header_match.start()] if header_match else text
+    sanitized = _HTML_DETAILS_OR_QUOTE_RE.sub("", prose)
+
+    transitions: dict[str, tuple[str, str]] = {}
+
+    def _record(raw_name: str, raw_old: str, raw_new: str) -> bool:
+        norm_name = _normalize_dep_identifier(raw_name)
+        old_clean = raw_old.strip().rstrip(".")
+        new_clean = raw_new.strip().rstrip(".")
+        if not norm_name or not old_clean or not new_clean:
+            return False
+        if norm_name in transitions and transitions[norm_name] != (
+            old_clean,
+            new_clean,
+        ):
+            return False
+        transitions[norm_name] = (old_clean, new_clean)
+        return True
+
+    for match in _DEPENDABOT_TABLE_ROW_RE.finditer(sanitized):
+        pkg = match.group("link_name") or match.group("code_name") or ""
+        if not _record(pkg, match.group("old"), match.group("new")):
+            return None
+
+    for match in _DEPENDABOT_UPDATES_LINE_RE.finditer(sanitized):
+        if not _record(match.group("name"), match.group("old"), match.group("new")):
+            return None
+
+    for match in _DEPENDABOT_BUMPS_LINE_RE.finditer(sanitized):
+        pkg = match.group("link_name") or match.group("code_name") or ""
+        if not _record(pkg, match.group("old"), match.group("new")):
+            return None
+
+    return transitions
+
+
+def _expected_group_update_count(*texts: str) -> int | None:
+    """Extract the expected package update count from grouped Dependabot headers/titles."""
+    counts: set[int] = set()
+    for text in texts:
+        if not text:
+            continue
+        sanitized = _HTML_DETAILS_OR_QUOTE_RE.sub("", text)
+        for match in _DEPENDABOT_GROUP_COUNT_RE.finditer(sanitized):
+            count = int(match.group("count"))
+            if count <= 0:
+                return -1
+            counts.add(count)
+    if not counts:
+        return None
+    if len(counts) > 1:
+        return -1
+    return next(iter(counts))
+
+
+def _contains_dependabot_metadata_markers(
+    commit_messages: list[str] | tuple[str, ...],
+    pr_body: str,
+) -> bool:
+    """Return True when commit messages or PR body include Dependabot metadata markers."""
+    for text in (*commit_messages, pr_body):
+        if not text or not text.strip():
+            continue
+        if "updated-dependencies" in text.lower():
+            return True
+        sanitized = _HTML_DETAILS_OR_QUOTE_RE.sub("", text)
+        if (
+            _DEPENDABOT_UPDATES_LINE_RE.search(sanitized)
+            or _DEPENDABOT_BUMPS_LINE_RE.search(sanitized)
+            or _DEPENDABOT_TABLE_ROW_RE.search(sanitized)
+            or _DEPENDABOT_GROUP_COUNT_RE.search(sanitized)
+        ):
+            return True
+    return False
+
+
+def dependency_update_type_from_dependabot_metadata(
+    commit_messages: list[str] | tuple[str, ...] = (),
+    *,
+    pr_body: str = "",
+    title: str = "",
+) -> str:
+    """Classify single or grouped Dependabot updates from commit trailers and PR metadata.
+
+    Returns ``'minor'`` only when verified metadata confirms every updated package
+    is a non-``0.x`` minor bump or a patch bump. Missing, partial, inconsistent,
+    ``0.x`` minor, or major version updates fail closed to ``'major'``.
+    """
+    expected_count = _expected_group_update_count(title, pr_body, *commit_messages)
+    if expected_count is not None and expected_count <= 0:
+        return "major"
+
+    non_merge_commits = [
+        msg
+        for msg in commit_messages
+        if isinstance(msg, str)
+        and msg.strip()
+        and not _MERGE_COMMIT_SUBJECT_RE.match(msg.strip())
+    ]
+
+    verified_packages: dict[str, str] = {}
+
+    for msg in non_merge_commits:
+        yaml_entries = parse_dependabot_updated_dependencies(msg)
+        if yaml_entries is None:
+            return "major"
+        msg_transitions = _extract_dependabot_body_transitions(msg)
+        if msg_transitions is None:
+            return "major"
+
+        if not yaml_entries and not msg_transitions:
+            subject = msg.strip().splitlines()[0]
+            if (
+                expected_count is None
+                and len(list(_DEPENDABOT_VERSION_RE.finditer(subject))) == 1
+            ):
+                if dependency_update_type_from_title(subject) == "major":
+                    return "major"
+                verified_packages[f"__title__:{subject}"] = "minor"
+                continue
+            return "major"
+
+        for pkg_name, (old_v, new_v) in msg_transitions.items():
+            if classify_version_bump(old_v, new_v) == "major":
+                return "major"
+            verified_packages[pkg_name] = new_v
+
+        if yaml_entries:
+            yaml_names = {
+                _normalize_dep_identifier(item.get("dependency-name", ""))
+                for item in yaml_entries
+            }
+            if msg_transitions and set(msg_transitions.keys()) != yaml_names:
+                return "major"
+            for item in yaml_entries:
+                if _classify_dependabot_yaml_entry(item, msg_transitions) == "major":
+                    return "major"
+                dep_name = _normalize_dep_identifier(item["dependency-name"])
+                verified_packages[dep_name] = (
+                    item["dependency-version"].strip().lstrip("vV")
+                )
+
+    if pr_body and pr_body.strip():
+        body_yaml = parse_dependabot_updated_dependencies(pr_body)
+        if body_yaml is None:
+            return "major"
+        body_transitions = _extract_dependabot_body_transitions(pr_body)
+        if body_transitions is None:
+            return "major"
+
+        if not non_merge_commits and not body_yaml and not body_transitions:
+            return "major"
+
+        for pkg_name, (old_v, new_v) in body_transitions.items():
+            if classify_version_bump(old_v, new_v) == "major":
+                return "major"
+            if pkg_name in verified_packages:
+                existing_parsed = _parse_pep440_version(verified_packages[pkg_name])
+                body_parsed = _parse_pep440_version(new_v)
+                if (
+                    existing_parsed is None
+                    or body_parsed is None
+                    or existing_parsed[2] != body_parsed[2]
+                ):
+                    return "major"
+            else:
+                verified_packages[pkg_name] = new_v
+
+        if body_yaml:
+            for item in body_yaml:
+                if _classify_dependabot_yaml_entry(item, body_transitions) == "major":
+                    return "major"
+                dep_name = _normalize_dep_identifier(item["dependency-name"])
+                verified_packages.setdefault(
+                    dep_name, item["dependency-version"].strip().lstrip("vV")
+                )
+
+    if not verified_packages:
+        return "major"
+
+    if expected_count is not None and len(verified_packages) < expected_count:
+        return "major"
+
+    return "minor"
+
+
+def resolve_dependency_update_type(
+    *,
+    title: str,
+    changed_files: list[str] | tuple[str, ...] = (),
+    is_dependabot: bool = False,
+    is_security_patch: bool = False,
+    all_commits_verified: bool = True,
+    commit_messages: list[str] | tuple[str, ...] = (),
+    pr_body: str = "",
+    base_uv_lock: str | None = None,
+    head_uv_lock: str | None = None,
+    base_requirements_txt: str | None = None,
+    head_requirements_txt: str | None = None,
+    manifest_diffs_evaluated: bool = False,
+    fallback_update_type: str | None = None,
+) -> str:
+    """Resolve dependency update risk from lockfile diffs, Dependabot metadata, or title."""
+    if not (is_dependabot or is_security_patch):
+        return fallback_update_type if fallback_update_type is not None else "minor"
+
+    has_manifest_diff_inputs = manifest_diffs_evaluated or any(
+        content is not None
+        for content in (
+            base_uv_lock,
+            head_uv_lock,
+            base_requirements_txt,
+            head_requirements_txt,
+        )
+    )
+    has_dependabot_meta_inputs = is_dependabot and (
+        bool(commit_messages) or bool(pr_body and pr_body.strip())
+    )
+
+    if has_manifest_diff_inputs:
+        diff_type = dependency_update_type_from_diffs(
+            changed_files,
+            base_uv_lock=base_uv_lock,
+            head_uv_lock=head_uv_lock,
+            base_requirements_txt=base_requirements_txt,
+            head_requirements_txt=head_requirements_txt,
+        )
+        if diff_type == "major":
+            return "major"
+        if has_dependabot_meta_inputs and _contains_dependabot_metadata_markers(
+            commit_messages, pr_body
+        ):
+            if not all_commits_verified:
+                return "major"
+            if (
+                dependency_update_type_from_dependabot_metadata(
+                    commit_messages,
+                    pr_body=pr_body,
+                    title=title,
+                )
+                == "major"
+            ):
+                return "major"
+        return "minor"
+
+    if has_dependabot_meta_inputs:
+        if not all_commits_verified:
+            return "major"
+        return dependency_update_type_from_dependabot_metadata(
+            commit_messages,
+            pr_body=pr_body,
+            title=title,
+        )
+
+    if fallback_update_type is not None:
+        return fallback_update_type
+    return dependency_update_type_from_title(title)
 
 
 BOT_AUTHORS = {
@@ -469,6 +896,8 @@ class PRMetadata:
     dependency_update_type: str = "minor"  # 'major', 'minor', 'patch'
     all_commits_verified: bool = True
     unverified_commit_shas: list[str] = field(default_factory=list)
+    commit_messages: list[str] = field(default_factory=list)
+    pr_body: str = ""
     base_uv_lock: str | None = None
     head_uv_lock: str | None = None
     base_requirements_txt: str | None = None
@@ -518,30 +947,21 @@ def classify_pr(meta: PRMetadata) -> ClassificationResult:
         and "automerge" in meta.labels
     )
 
-    has_manifest_diff_inputs = meta.manifest_diffs_evaluated or any(
-        content is not None
-        for content in (
-            meta.base_uv_lock,
-            meta.head_uv_lock,
-            meta.base_requirements_txt,
-            meta.head_requirements_txt,
-        )
-    )
-    effective_dependency_update_type = (
-        dependency_update_type_from_diffs(
-            meta.changed_files,
-            base_uv_lock=meta.base_uv_lock,
-            head_uv_lock=meta.head_uv_lock,
-            base_requirements_txt=meta.base_requirements_txt,
-            head_requirements_txt=meta.head_requirements_txt,
-        )
-        if has_manifest_diff_inputs
-        and (
-            is_dependabot
-            or (is_bot_author and meta.is_security_patch)
-            or is_automated_security_patch
-        )
-        else meta.dependency_update_type
+    effective_dependency_update_type = resolve_dependency_update_type(
+        title=meta.title,
+        changed_files=meta.changed_files,
+        is_dependabot=is_dependabot,
+        is_security_patch=(is_bot_author and meta.is_security_patch)
+        or is_automated_security_patch,
+        all_commits_verified=meta.all_commits_verified,
+        commit_messages=meta.commit_messages,
+        pr_body=meta.pr_body,
+        base_uv_lock=meta.base_uv_lock,
+        head_uv_lock=meta.head_uv_lock,
+        base_requirements_txt=meta.base_requirements_txt,
+        head_requirements_txt=meta.head_requirements_txt,
+        manifest_diffs_evaluated=meta.manifest_diffs_evaluated,
+        fallback_update_type=meta.dependency_update_type,
     )
 
     # 0. Commit signature check
@@ -744,20 +1164,31 @@ def main() -> None:
     head_uv_lock = data.get("head_uv_lock")
     base_requirements_txt = data.get("base_requirements_txt")
     head_requirements_txt = data.get("head_requirements_txt")
+    all_commits_verified = bool(data.get("all_commits_verified", True))
+    raw_commit_messages = data.get("commit_messages", [])
+    commit_messages = (
+        [m for m in raw_commit_messages if isinstance(m, str) and m.strip()]
+        if isinstance(raw_commit_messages, list)
+        else []
+    )
+    raw_pr_body = data.get("pr_body", data.get("body", ""))
+    pr_body = raw_pr_body if isinstance(raw_pr_body, str) else ""
 
-    if is_dependabot or is_security_patch:
-        if has_manifest_keys:
-            dep_update_type = dependency_update_type_from_diffs(
-                changed_files,
-                base_uv_lock=base_uv_lock,
-                head_uv_lock=head_uv_lock,
-                base_requirements_txt=base_requirements_txt,
-                head_requirements_txt=head_requirements_txt,
-            )
-        else:
-            dep_update_type = dependency_update_type_from_title(title)
-    else:
-        dep_update_type = "minor"
+    dep_update_type = resolve_dependency_update_type(
+        title=title,
+        changed_files=changed_files,
+        is_dependabot=is_dependabot,
+        is_security_patch=is_security_patch,
+        all_commits_verified=all_commits_verified,
+        commit_messages=commit_messages,
+        pr_body=pr_body,
+        base_uv_lock=base_uv_lock,
+        head_uv_lock=head_uv_lock,
+        base_requirements_txt=base_requirements_txt,
+        head_requirements_txt=head_requirements_txt,
+        manifest_diffs_evaluated=has_manifest_keys,
+        fallback_update_type=None,
+    )
 
     raw_permission = data.get("author_permission")
     author_permission = (
@@ -782,8 +1213,10 @@ def main() -> None:
         is_dependabot=is_dependabot,
         is_security_patch=is_security_patch,
         dependency_update_type=dep_update_type,
-        all_commits_verified=data.get("all_commits_verified", True),
+        all_commits_verified=all_commits_verified,
         unverified_commit_shas=data.get("unverified_commit_shas", []),
+        commit_messages=commit_messages,
+        pr_body=pr_body,
         base_uv_lock=base_uv_lock,
         head_uv_lock=head_uv_lock,
         base_requirements_txt=base_requirements_txt,

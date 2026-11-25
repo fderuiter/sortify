@@ -5,6 +5,7 @@ name: PR Risk Classifier
 # check out or execute the PR's head here: this job holds a write token.
 on:
   pull_request_target:
+    branches: [ main ]
     types: [opened, synchronize, reopened, labeled, unlabeled, ready_for_review]
 
 concurrency:
@@ -13,19 +14,21 @@ concurrency:
 
 permissions:
   contents: read
-  issues: write
-  pull-requests: write
-  statuses: write
 
 jobs:
   classify:
     name: Classify PR Risk
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+      statuses: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: refs/heads/main
           persist-credentials: false
 
       - name: Set up Python
@@ -53,10 +56,16 @@ jobs:
             });
 
             const unverifiedCommitShas = [];
+            const commitMessages = [];
             for (const c of commits) {
               const verified = c.commit && c.commit.verification && c.commit.verification.verified;
               if (!verified) {
                 unverifiedCommitShas.push(c.sha);
+              }
+              const parents = Array.isArray(c.parents) ? c.parents : [];
+              const message = (c.commit && typeof c.commit.message === 'string') ? c.commit.message : '';
+              if (message.trim() && parents.length <= 1) {
+                commitMessages.push(message);
               }
             }
             const allCommitsVerified = commits.length > 0 && unverifiedCommitShas.length === 0;
@@ -74,18 +83,13 @@ jobs:
               'github-actions[bot]',
             ]);
             const maintainerPermissions = new Set(['admin', 'maintain', 'write']);
-            let labels = (pr.labels || []).map(l => l.name);
-            try {
-              const { data: liveLabels } = await github.rest.issues.listLabelsOnIssue({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: pr.number,
-                per_page: 100,
-              });
-              labels = liveLabels.map(l => l.name);
-            } catch (err) {
-              console.log('Could not refresh live PR labels, using payload labels:', err.message);
-            }
+            const liveLabels = await github.paginate(github.rest.issues.listLabelsOnIssue, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              per_page: 100,
+            });
+            let labels = liveLabels.map(l => l.name);
 
             const isDependabot = author === 'dependabot[bot]';
             const headRef = pr.head ? pr.head.ref : '';
@@ -125,7 +129,7 @@ jobs:
               headRef.startsWith('security/')
             ) && isApprovedBot;
 
-            if (labels.includes('automerge') && !isDependabot) {
+            if (labels.includes('automerge')) {
               let appliedByMaintainer = false;
               try {
                 const events = await github.paginate(github.rest.issues.listEvents, {
@@ -140,7 +144,7 @@ jobs:
                 if (labeledEvents.length > 0) {
                   const actor = labeledEvents[labeledEvents.length - 1].actor || {};
                   const login = actor.login || '';
-                  if (login && actor.type !== 'Bot' && !login.endsWith('[bot]')) {
+                  if (login && actor.type !== 'Bot' && !botAuthors.has(login) && !login.endsWith('[bot]')) {
                     const { data: permData } = await github.rest.repos.getCollaboratorPermissionLevel({
                       owner: context.repo.owner,
                       repo: context.repo.repo,
@@ -170,8 +174,11 @@ jobs:
                 });
                 return typeof resp.data === 'string' ? resp.data : null;
               } catch (err) {
-                console.log(`Could not fetch ${filePath} at ${ref}:`, err.message);
-                return null;
+                if (err && err.status === 404) {
+                  console.log(`File ${filePath} not found at ${ref} (404).`);
+                  return null;
+                }
+                throw err;
               }
             }
 
@@ -192,6 +199,8 @@ jobs:
             const meta = {
               pr_number: pr.number,
               title: pr.title,
+              pr_body: typeof pr.body === 'string' ? pr.body : '',
+              commit_messages: commitMessages,
               author: author,
               is_draft: pr.draft,
               labels: labels,
@@ -225,18 +234,13 @@ jobs:
 
             console.log("Classification result:", result);
 
-            // Fetch current PR labels to sync dynamically
-            let currentLabelNames = [];
-            try {
-              const { data: currentLabelsData } = await github.rest.issues.listLabelsOnIssue({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: prNumber,
-              });
-              currentLabelNames = currentLabelsData.map(l => l.name);
-            } catch (err) {
-              console.log("Failed to fetch issue labels:", err.message);
-            }
+            const currentLabelsData = await github.paginate(github.rest.issues.listLabelsOnIssue, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              per_page: 100,
+            });
+            const currentLabelNames = currentLabelsData.map(l => l.name);
 
             const labelsToAdd = result.labels_to_add || [];
             const riskLevels = ['risk:low', 'risk:medium', 'risk:high', 'risk:sensitive', 'risk:baseline-change'];
@@ -264,44 +268,32 @@ jobs:
                   name: label,
                 });
               } catch (err) {
-                console.log(`Label ${label} not present or failed to remove:`, err.message);
+                if (err && err.status === 404) {
+                  console.log(`Label ${label} already absent (404), continuing.`);
+                  continue;
+                }
+                throw err;
               }
             }
 
             if (labelsToAdd.length > 0) {
-              try {
-                await github.rest.issues.addLabels({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: prNumber,
-                  labels: labelsToAdd,
-                });
-              } catch (err) {
-                console.log("Failed to add labels in bulk, trying individually:", err.message);
-                for (const label of labelsToAdd) {
-                  try {
-                    await github.rest.issues.addLabels({
-                      owner: context.repo.owner,
-                      repo: context.repo.repo,
-                      issue_number: prNumber,
-                      labels: [label],
-                    });
-                  } catch (singleErr) {
-                    console.log(`Failed to add label ${label}:`, singleErr.message);
-                  }
-                }
-              }
-            }
-
-            try {
-              await github.rest.repos.createCommitStatus({
+              await github.rest.issues.addLabels({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                sha: context.payload.pull_request.head.sha,
-                state: result.eligible ? 'success' : 'pending',
-                context: 'automerge/classification',
-                description: result.eligible ? 'Eligible for auto-merge' : `Blocked: ${result.risk_level}`,
+                issue_number: prNumber,
+                labels: labelsToAdd,
               });
-            } catch (err) {
-              console.log("Failed to create commit status:", err.message);
             }
+
+            const statusDescription = result.eligible
+              ? 'Eligible for auto-merge'
+              : `Human review required (${result.risk_level})`;
+
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.payload.pull_request.head.sha,
+              state: 'success',
+              context: 'automerge/classification',
+              description: statusDescription,
+            });
