@@ -12,7 +12,7 @@ from app.cli.rules_crud import (
     handle_rules_crud_subcommand,
     register_crud_subparsers,
 )
-from app.cli.settings_args import add_settings_source_args
+from app.cli.settings_args import build_global_subparser_parent
 from app.config import (
     AppSettings,
     normalize_folder_scope_key,
@@ -27,6 +27,7 @@ from app.core.rule_importers import (
 from app.core.rule_templates import export_active_rules
 
 _VALID_CONFLICT_STRATEGIES = ("keep_existing", "overwrite", "skip_conflicting")
+_RULES_SETTINGS_HELP = "Optional path to a specific Sortify settings.json file"
 
 
 def register_subparser(subparsers: argparse._SubParsersAction) -> None:
@@ -39,17 +40,8 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
     """
     parser_rules = subparsers.add_parser(
         "rules",
+        parents=[build_global_subparser_parent(settings_help=_RULES_SETTINGS_HELP)],
         help="Manage, import, or export routing rules (global or folder-scoped)",
-    )
-    parser_rules.add_argument(
-        "--json",
-        action="store_true",
-        help="Output response in structured JSON format",
-    )
-    add_settings_source_args(
-        parser_rules,
-        suppress_default=True,
-        settings_help="Optional path to a specific Sortify settings.json file",
     )
     parser_rules.add_argument(
         "--folder",
@@ -63,40 +55,16 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
     )
 
     def add_rules_common(target_parser: argparse.ArgumentParser) -> None:
-        add_settings_source_args(
-            target_parser,
-            suppress_default=True,
-            settings_help="Optional path to a specific Sortify settings.json file",
-        )
         target_parser.add_argument(
             "--folder",
             type=str,
             default=argparse.SUPPRESS,
             help="Scope rule operation to a specific target directory",
         )
-        target_parser.add_argument(
-            "-q",
-            "--quiet",
-            action="store_true",
-            dest="quiet",
-            default=argparse.SUPPRESS,
-            help="Suppress non-essential informational output",
-        )
-        target_parser.add_argument(
-            "--no-color",
-            action="store_true",
-            dest="no_color",
-            default=argparse.SUPPRESS,
-            help="Disable ANSI color formatting",
-        )
-        target_parser.add_argument(
-            "--json",
-            action="store_true",
-            help="Output response in structured JSON format",
-        )
 
     p_import = rules_subparsers.add_parser(
         "import",
+        parents=[build_global_subparser_parent(settings_help=_RULES_SETTINGS_HELP)],
         help="Parse, preview, and merge external rule packages into Sortify settings",
     )
     add_rules_common(p_import)
@@ -151,6 +119,7 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
 
     p_export = rules_subparsers.add_parser(
         "export",
+        parents=[build_global_subparser_parent(settings_help=_RULES_SETTINGS_HELP)],
         help="Export active keyword rules and policies to Sortify JSON, Hazel, or DropIt INI",
     )
     add_rules_common(p_export)

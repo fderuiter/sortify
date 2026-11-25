@@ -26,7 +26,7 @@ Dependency groups (PEP 735, in `pyproject.toml`):
 ## Everyday commands
 
 ```bash
-uv run smart-autosorter --demo          # isolated end-to-end run on a generated sample corpus
+uv run smart-autosorter --demo          # end-to-end sort in sandbox/demo_workspace (undo with `undo --latest`)
 uv run python sandbox_cli.py analyze -q --json  # isolated sandbox analysis (auto-seeds dataset)
 uv run pytest -m "not slow"             # fast suite (includes TUI snapshots), parallel by default (pytest-xdist)
 uv run pytest -m slow -n 0              # ML, full-repo gate and integration tests
@@ -39,7 +39,7 @@ uv run python scripts/generate_docs.py --check --no-build --local-only  # verify
 uv run mkdocs serve                     # preview the docs site at http://127.0.0.1:8000
 ```
 
-Headless runs probe an unavailable OS keyring at most once (within a 2-second timeout) before falling back to local `.key` files, and `--demo` runs inside a temporary workspace without writing to `$HOME`. You can still set `PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring` in CI to skip backend discovery upfront.
+Headless runs probe an unavailable OS keyring at most once (within a 2-second timeout) before falling back to local `.key` files, and `sandbox_cli.py` runs inside `sandbox/` without writing to `$HOME`. You can still set `PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring` in CI to skip backend discovery upfront.
 
 ## What the hooks and CI check
 

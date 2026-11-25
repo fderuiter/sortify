@@ -10,8 +10,11 @@ from collections.abc import Callable
 from typing import Any
 
 from app.cli.error_emitter import emit_cli_error
+from app.cli.settings_args import build_global_subparser_parent
 from app.config import AppSettings
 from app.core.metadata import matches_learned_rule_pattern
+
+_RULES_CRUD_SETTINGS_HELP = "Optional path to a specific Sortify settings.json file"
 
 _VALID_RULE_KINDS = ("keyword", "learned", "extension", "policy")
 _VALID_POLICY_TYPES = (
@@ -58,6 +61,9 @@ def register_crud_subparsers(
     """Register ``list``, ``add``, ``remove``, ``enable``, and ``disable`` subparsers."""
     p_list = rules_subparsers.add_parser(
         "list",
+        parents=[
+            build_global_subparser_parent(settings_help=_RULES_CRUD_SETTINGS_HELP)
+        ],
         help="List active and disabled rules in global or folder-scoped settings",
     )
     add_rules_common(p_list)
@@ -78,6 +84,9 @@ def register_crud_subparsers(
 
     p_add = rules_subparsers.add_parser(
         "add",
+        parents=[
+            build_global_subparser_parent(settings_help=_RULES_CRUD_SETTINGS_HELP)
+        ],
         help="Add or update a keyword, learned, extension, or policy rule",
     )
     add_rules_common(p_add)
@@ -160,6 +169,9 @@ def register_crud_subparsers(
 
     p_remove = rules_subparsers.add_parser(
         "remove",
+        parents=[
+            build_global_subparser_parent(settings_help=_RULES_CRUD_SETTINGS_HELP)
+        ],
         help="Remove a rule by pattern or expression",
     )
     add_rules_common(p_remove)
@@ -187,6 +199,9 @@ def register_crud_subparsers(
 
     p_enable = rules_subparsers.add_parser(
         "enable",
+        parents=[
+            build_global_subparser_parent(settings_help=_RULES_CRUD_SETTINGS_HELP)
+        ],
         help="Enable a disabled keyword, learned, or policy rule",
     )
     add_rules_common(p_enable)
@@ -214,6 +229,9 @@ def register_crud_subparsers(
 
     p_disable = rules_subparsers.add_parser(
         "disable",
+        parents=[
+            build_global_subparser_parent(settings_help=_RULES_CRUD_SETTINGS_HELP)
+        ],
         help="Disable an active keyword, learned, or policy rule",
     )
     add_rules_common(p_disable)
