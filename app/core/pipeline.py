@@ -550,6 +550,8 @@ class SortResult:
     moved: list[str] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
     quarantined: list[str] = field(default_factory=list)
+    staged: list[str] = field(default_factory=list)
+    trashed: list[str] = field(default_factory=list)
     failed: list[tuple[str, str]] = field(default_factory=list)
     cancelled: bool = False
     summary: dict = field(default_factory=dict)
@@ -593,19 +595,26 @@ class SortResult:
             state=state,
             rollback_completed=rollback_completed,
         )
+        from app.core.mover import DUPLICATE_STAGING_DIR
+
         report = summary.get("audit_report") or {}
         for rec in report.get("records") or []:
             src = rec.get("relative_source") or rec.get("source_path") or ""
             dst = (rec.get("relative_destination") or "").replace("\\", "/")
+            dst_parts = [p for p in dst.split("/") if p]
             status = rec.get("status")
             if status in ("MISMATCH_FAIL", "MOVE_FAIL"):
                 result.failed.append((src, rec.get("error") or status))
             elif status == "SKIPPED":
                 result.skipped.append(src)
-            elif quarantine_dir in dst.split("/"):
+            elif DUPLICATE_STAGING_DIR in dst_parts:
+                result.staged.append(src)
+            elif quarantine_dir in dst_parts:
                 result.quarantined.append(src)
             else:
                 result.moved.append(src)
+        if summary.get("trash_handoff"):
+            _apply_trash_report_to_result(result, summary["trash_handoff"])
         if result.failed and result.state == PipelineLifecycleState.COMPLETED:
             result.state = PipelineLifecycleState.FAILED
         return result
@@ -626,6 +635,10 @@ class SortResult:
     def describe(self) -> str:
         """One line for people: counts, and whether it was cancelled."""
         parts = [f"{len(self.moved)} moved"]
+        if self.staged:
+            parts.append(f"{len(self.staged)} staged")
+        if self.trashed:
+            parts.append(f"{len(self.trashed)} trashed")
         if self.quarantined:
             parts.append(f"{len(self.quarantined)} quarantined")
         if self.skipped:
@@ -634,6 +647,47 @@ class SortResult:
             parts.append(f"{len(self.failed)} failed")
         line = ", ".join(parts) + "."
         return f"Cancelled: {line}" if self.cancelled else line
+
+
+def _apply_trash_report_to_result(
+    result: SortResult, trash_report: dict[str, Any]
+) -> None:
+    """Reclassify ``result.staged`` entries exported by ``flush_trash`` into ``result.trashed``."""
+    exported_raw = trash_report.get("exported") or []
+    if not exported_raw:
+        return
+    exported_norm = {
+        os.path.normcase(os.path.normpath(os.path.abspath(str(p))))
+        for p in exported_raw
+        if p
+    }
+    report_records = (result.summary.get("audit_report") or {}).get("records") or []
+    exported_srcs: list[str] = []
+    for rec in report_records:
+        dst_abs = rec.get("destination_path") or ""
+        if (
+            dst_abs
+            and os.path.normcase(os.path.normpath(os.path.abspath(str(dst_abs))))
+            in exported_norm
+        ):
+            src = rec.get("relative_source") or rec.get("source_path") or ""
+            if src:
+                exported_srcs.append(src)
+    if exported_srcs:
+        remaining_staged = list(result.staged)
+        for src in exported_srcs:
+            if src in remaining_staged:
+                remaining_staged.remove(src)
+            if src not in result.trashed:
+                result.trashed.append(src)
+        result.staged = remaining_staged
+    else:
+        for p in exported_raw:
+            base_name = os.path.basename(str(p))
+            if base_name not in result.trashed:
+                result.trashed.append(base_name)
+        if len(result.staged) >= len(exported_raw):
+            result.staged = result.staged[: len(result.staged) - len(exported_raw)]
 
 
 class SortPipeline(LifecycleTelemetryMixin):
@@ -1056,6 +1110,8 @@ class SortPipeline(LifecycleTelemetryMixin):
             cancel_check=cancel_check,
         )
         parent_result.moved.extend(child_result.moved)
+        parent_result.staged.extend(child_result.staged)
+        parent_result.trashed.extend(child_result.trashed)
         parent_result.quarantined.extend(child_result.quarantined)
         parent_result.skipped.extend(child_result.skipped)
         parent_result.failed.extend(child_result.failed)
@@ -1146,6 +1202,7 @@ class SortPipeline(LifecycleTelemetryMixin):
                         trash_fn=trash_fn,
                     )
                     result.summary["trash_handoff"] = trash_report
+                    _apply_trash_report_to_result(result, trash_report)
 
             if hasattr(self, "_rollback_completed"):
                 result.rollback_completed = self._rollback_completed
@@ -1194,7 +1251,7 @@ class SortPipeline(LifecycleTelemetryMixin):
         self.emit_telemetry("undo_start", session_id=session_id)
 
         from app.core.mover import is_subpath_or_equal, overwrite_backup_dir
-        from app.core.moves import FAILED, INTENT
+        from app.core.moves import EXPORTED_TO_TRASH, FAILED, INTENT
         from app.core.path_utils import safe_relpath
 
         lease = None
@@ -1229,11 +1286,15 @@ class SortPipeline(LifecycleTelemetryMixin):
             session_backup_dir = overwrite_backup_dir(base_dir, session_id)
             ephemeral_paths: set[str] = set()
             moves = []
+            trashed_moves = []
             for m in sorted(
                 history.moves.list_moves(session_id),
                 key=lambda item: item.seq,
             ):
                 if m.state in (INTENT, FAILED):
+                    continue
+                if m.state == EXPORTED_TO_TRASH:
+                    trashed_moves.append(m)
                     continue
                 norm_src = os.path.normcase(os.path.abspath(m.src))
                 norm_dst = os.path.normcase(os.path.abspath(m.dst))
@@ -1248,10 +1309,18 @@ class SortPipeline(LifecycleTelemetryMixin):
             if selected_step_ids is not None:
                 sel_set = {str(x) for x in selected_step_ids}
                 moves = [m for m in moves if str(m.seq) in sel_set]
+                trashed_moves = [m for m in trashed_moves if str(m.seq) in sel_set]
 
             result = SortResult(
                 session_id=session_id, state=PipelineLifecycleState.ROLLING_BACK
             )
+            if trashed_moves:
+                for tm in trashed_moves:
+                    result.trashed.append(
+                        safe_relpath(tm.src, base_dir).replace("\\", "/")
+                    )
+                result.summary["trashed_unrestorable"] = len(trashed_moves)
+                result.summary["trashed_paths"] = list(result.trashed)
             reason = "Not moved back"
             rollback_succeeded = False
             try:
@@ -1398,12 +1467,15 @@ class DropBatchResult:
     session_id: str | None
     resolved_dest: str | None
     moved_count: int = 0
+    staged_count: int = 0
+    trashed_count: int = 0
     failed_count: int = 0
     skipped_count: int = 0
     cancelled: bool = False
     dry_run: bool = False
     target_results: list[dict[str, Any]] = field(default_factory=list)
     audit_records: list[dict[str, Any]] = field(default_factory=list)
+    trash_handoff: dict[str, Any] | None = None
 
 
 def _unwrap_plan_dict(plan_obj: Any) -> dict[str, Any]:
@@ -1886,8 +1958,35 @@ class DropBatchCoordinator:
         preview_items.sort(key=lambda it: (it.queue_priority, it.source_path))
         plan_lines: list[str] = []
         for it in preview_items:
+            dup_act = (
+                str(it.node_ref.get("duplicate_action") or "").strip().lower()
+                if isinstance(it.node_ref, dict)
+                else ""
+            )
+            pol_act = (
+                str(it.node_ref.get("policy_action") or "").strip().lower()
+                if isinstance(it.node_ref, dict)
+                else ""
+            )
             if it.is_excluded:
-                plan_lines.append(f"[EXCLUDED] {os.path.basename(it.source_path)}")
+                if dup_act == "skip" or (
+                    isinstance(it.node_ref, dict) and it.node_ref.get("is_duplicate")
+                ):
+                    plan_lines.append(
+                        f"[DUPLICATE: skip] {os.path.basename(it.source_path)}"
+                    )
+                else:
+                    plan_lines.append(f"[EXCLUDED] {os.path.basename(it.source_path)}")
+                continue
+            if pol_act == "trash" or dup_act == "trash":
+                plan_lines.append(
+                    f"[DUPLICATE: trash] {os.path.basename(it.source_path)}  ->  OS Trash (via verified staging)"
+                )
+                continue
+            if dup_act == "stage":
+                plan_lines.append(
+                    f"[DUPLICATE: stage] {os.path.basename(it.source_path)}  ->  .sortify_duplicates/"
+                )
                 continue
             pol_tag = (
                 f" [{it.conflict_policy}]"
@@ -2001,14 +2100,17 @@ class DropBatchCoordinator:
         batch_plan: DropBatchPlan,
         *,
         dry_run: bool = False,
+        flush_trash: bool = False,
+        flush_trashed_only: bool = False,
+        trash_fn: Callable[[str], Any] | None = None,
         progress_callback: Callable[[Any], None] | None = None,
         cancel_check: Callable[[], bool] | None = None,
         close_sessions: bool = True,
     ) -> DropBatchResult:
         """Execute ``batch_plan`` under sorted folder locks and a single shared undo ``session_id``."""
         from app.core.domain_contracts import _make_json_serializable
-        from app.core.mover import execute_moves
-        from app.core.moves import DONE, VERIFIED
+        from app.core.mover import DUPLICATE_STAGING_DIR, execute_moves
+        from app.core.moves import DONE, EXPORTED_TO_TRASH, VERIFIED
         from app.core.session import AppSession
 
         try:
@@ -2036,11 +2138,37 @@ class DropBatchCoordinator:
                                 },
                             }
                         )
-                active_count = sum(1 for it in batch_plan.items if not it.is_excluded)
+                active_moved = 0
+                active_staged = 0
+                active_trashed = 0
+                for it in batch_plan.items:
+                    if it.is_excluded:
+                        continue
+                    d_act = (
+                        str(it.node_ref.get("duplicate_action") or "").strip().lower()
+                        if isinstance(it.node_ref, dict)
+                        else ""
+                    )
+                    p_act = (
+                        str(it.node_ref.get("policy_action") or "").strip().lower()
+                        if isinstance(it.node_ref, dict)
+                        else ""
+                    )
+                    if p_act == "trash" or d_act == "trash":
+                        if flush_trash:
+                            active_trashed += 1
+                        else:
+                            active_staged += 1
+                    elif d_act == "stage":
+                        active_staged += 1
+                    else:
+                        active_moved += 1
                 return DropBatchResult(
                     session_id=None,
                     resolved_dest=batch_plan.resolved_dest,
-                    moved_count=active_count,
+                    moved_count=active_moved,
+                    staged_count=active_staged,
+                    trashed_count=active_trashed,
                     dry_run=True,
                     target_results=target_results,
                 )
@@ -2160,20 +2288,50 @@ class DropBatchCoordinator:
                             )
                     raise
 
+                trash_report: dict[str, Any] | None = None
+                if (
+                    flush_trash
+                    and not cancelled
+                    and failed_count == 0
+                    and shared_session_id
+                    and history_manager is not None
+                    and hasattr(history_manager, "flush_staged_duplicates")
+                ):
+                    trash_report = history_manager.flush_staged_duplicates(
+                        session_id=shared_session_id,
+                        base_dir=batch_base_dir,
+                        trashed_only=flush_trashed_only,
+                        trash_fn=trash_fn,
+                    )
+
                 real_move_count = 0
+                staged_count = 0
+                trashed_count = 0
                 if shared_session_id and history_manager is not None:
                     ledger = getattr(history_manager, "moves", None)
                     if ledger is not None and hasattr(ledger, "list_moves"):
                         recorded = ledger.list_moves(shared_session_id)
-                        real_move_count = sum(
-                            1
-                            for m in recorded
-                            if getattr(m, "state", None) in (DONE, VERIFIED)
-                        )
+                        for m in recorded:
+                            st = getattr(m, "state", None)
+                            dst_parts = [
+                                p
+                                for p in str(getattr(m, "dst", "") or "")
+                                .replace("\\", "/")
+                                .split("/")
+                                if p
+                            ]
+                            if st == EXPORTED_TO_TRASH:
+                                trashed_count += 1
+                            elif st in (DONE, VERIFIED):
+                                if DUPLICATE_STAGING_DIR in dst_parts:
+                                    staged_count += 1
+                                else:
+                                    real_move_count += 1
 
+                total_recorded = real_move_count + staged_count + trashed_count
                 final_session_id = shared_session_id
                 if shared_session_id and history_manager is not None:
-                    if real_move_count > 0:
+                    if total_recorded > 0:
                         try:
                             history_manager.complete_session(
                                 shared_session_id,
@@ -2216,6 +2374,8 @@ class DropBatchCoordinator:
                 for grp in batch_plan.groups:
                     grp_sum = dict(group_summaries.get(grp.source_root) or {})
                     grp_sum["session_id"] = final_session_id
+                    if trash_report is not None:
+                        grp_sum["trash_handoff"] = trash_report
                     serializable_plan = _make_json_serializable(grp.plan)
                     targets = grp.target_paths or [grp.source_root]
                     for tgt in targets:
@@ -2229,18 +2389,21 @@ class DropBatchCoordinator:
                         )
 
                 skipped_count = max(
-                    0, len(active_items) - real_move_count - failed_count
+                    0, len(active_items) - total_recorded - failed_count
                 )
                 return DropBatchResult(
                     session_id=final_session_id,
                     resolved_dest=batch_plan.resolved_dest,
                     moved_count=real_move_count,
+                    staged_count=staged_count,
+                    trashed_count=trashed_count,
                     failed_count=failed_count,
                     skipped_count=skipped_count,
                     cancelled=cancelled,
                     dry_run=False,
                     target_results=target_results,
                     audit_records=audit_records,
+                    trash_handoff=trash_report,
                 )
         finally:
             if close_sessions:

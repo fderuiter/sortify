@@ -3283,13 +3283,18 @@ class IncrementalAnalyzer:
                             v["duplicate_group_id"] = gid
                             if v.get("policy_action") == "trash":
                                 v["duplicate_action"] = "trash"
+                                v["duplicate_resolved"] = True
                             elif configured_dup_action == "skip":
                                 v["duplicate_action"] = "skip"
+                                v["duplicate_resolved"] = True
                                 v["is_excluded"] = True
                                 v["is_checked"] = False
                                 v["status"] = "Skipped"
                             elif configured_dup_action in ("stage", "trash"):
                                 v["duplicate_action"] = configured_dup_action
+                                v["duplicate_resolved"] = True
+                            elif configured_dup_action == "review":
+                                v["duplicate_resolved"] = False
                     else:
                         _tag_byte_duplicates(v)
 

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "a17f38e70c1c080cd475ebd498bc93282d1640aa378f0a41e704d270aead8d33"
+    "checksum": "db01bcc2dc51fb61ee040416f132ccae3a5c88eeb159030b64a081178e168c33"
   },
   "classes": [
     {
@@ -145,6 +145,29 @@
               "annotation": "str | None",
               "default": "None",
               "name": "displaced"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "mark_exported_to_trash",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            },
+            {
+              "annotation": "int",
+              "default": null,
+              "name": "seq"
             }
           ],
           "returns": "None"
@@ -367,6 +390,11 @@
           "returns": "list[int]"
         }
       ]
+    },
+    {
+      "class_name": "SessionSummaryRow",
+      "decorators": [],
+      "methods": []
     }
   ],
   "functions": [
@@ -487,6 +515,19 @@
     {
       "async": false,
       "decorators": [],
+      "name": "migrate_moves_exported_to_trash",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "conn"
+        }
+      ],
+      "returns": "None"
+    },
+    {
+      "async": false,
+      "decorators": [],
       "name": "query_session_summaries",
       "parameters": [
         {
@@ -495,7 +536,25 @@
           "name": "db_path"
         }
       ],
-      "returns": "list[tuple[str, float | None, str | None, str | None, int, int]]"
+      "returns": "list[SessionSummaryRow]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "session_summary_dicts",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "db_path"
+        },
+        {
+          "annotation": "str | None",
+          "default": "None",
+          "name": "history_db_path"
+        }
+      ],
+      "returns": "list[dict[str, Any]]"
     }
   ]
 }

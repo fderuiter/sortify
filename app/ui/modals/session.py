@@ -788,8 +788,18 @@ class RollbackConfirmModal(ResponsiveModalScreen[dict[str, Any] | None]):
                         yield Label(
                             "⚠️ Warning: Rolling back will restore checked files to their original locations. Unchecked files will remain in target folders."
                         )
+                        trashed_cnt = int(self.session_info.get("trashed_count") or 0)
+                        if trashed_cnt > 0:
+                            noun = "copy" if trashed_cnt == 1 else "copies"
+                            verb_rem = "remains" if trashed_cnt == 1 else "remain"
+                            yield Label(
+                                f"⚠️ {trashed_cnt} duplicate {noun} in this session {verb_rem} in OS Trash and cannot be restored automatically.",
+                                id="lbl-trashed-warning",
+                            )
 
-                    if self.session_info.get("step_count"):
+                    if self.session_info.get("step_count") or self.session_info.get(
+                        "trashed_count"
+                    ):
                         yield Label(
                             "Files that are no longer at their sorted location are skipped.",
                             id="lbl-confirm-missing",
@@ -1612,13 +1622,17 @@ class HistoryModal(ResponsiveModalScreen[dict[str, Any] | None]):
         sid = target.get("session_id", "N/A")
         status = target.get("status") or "completed"
         b_dir = target.get("base_dir") or "N/A"
-        step_cnt = target.get("step_count") or target.get("file_count") or 0
+        step_cnt = int(target.get("step_count") or 0)
+        trashed_cnt = int(target.get("trashed_count") or 0)
         ts = target.get("timestamp")
         ts_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts else "N/A"
+        trashed_info = (
+            f" | Trashed (OS Trash): {trashed_cnt}" if trashed_cnt > 0 else ""
+        )
 
         details_str = (
             f"Session ID: {sid}\n"
-            f"Status: {status.upper()} | Operations/Files: {step_cnt}\n"
+            f"Status: {status.upper()} | Reversible Steps: {step_cnt}{trashed_info}\n"
             f"Timestamp: {ts_str}\n"
             f"Base Directory: {b_dir}"
         )
@@ -1670,6 +1684,18 @@ class HistoryModal(ResponsiveModalScreen[dict[str, Any] | None]):
 
         if not target_sess or str(target_sess.get("status")).lower() == "rolled_back":
             self.announce("Selected session cannot be rolled back.")
+            return
+
+        if (
+            int(target_sess.get("step_count") or 0) <= 0
+            and int(target_sess.get("trashed_count") or 0) > 0
+        ):
+            sid = str(target_sess["session_id"])
+            self.query_one("#btn-rollback-session", Button).disabled = True
+            self.query_one("#btn-export", Button).disabled = True
+            self.query_one("#btn-cancel", Button).disabled = True
+            self._rollback_in_progress = True
+            self.run_rollback_worker(sid, False, None)
             return
 
         def handle_confirm_result(result: dict[str, Any] | None) -> None:
@@ -1735,13 +1761,21 @@ class HistoryModal(ResponsiveModalScreen[dict[str, Any] | None]):
             restored_count = int(
                 undo_result.summary.get("restored", len(undo_result.moved))
             )
+            trashed_remaining = int(
+                undo_result.summary.get("trashed_unrestorable")
+                or len(undo_result.trashed)
+                or 0
+            )
 
             if app_obj and hasattr(app_obj, "call_from_thread"):
                 app_obj.call_from_thread(
-                    self._on_rollback_success, session_id, restored_count
+                    self._on_rollback_success,
+                    session_id,
+                    restored_count,
+                    trashed_remaining,
                 )
             else:
-                self._on_rollback_success(session_id, restored_count)
+                self._on_rollback_success(session_id, restored_count, trashed_remaining)
         except Exception as err:
             if app_obj and hasattr(app_obj, "call_from_thread"):
                 app_obj.call_from_thread(self._on_rollback_failure, session_id, err)
@@ -1750,25 +1784,41 @@ class HistoryModal(ResponsiveModalScreen[dict[str, Any] | None]):
         finally:
             self._rollback_pipeline = None
 
-    def _on_rollback_success(self, session_id: str, restored_count: int) -> None:
+    def _on_rollback_success(
+        self, session_id: str, restored_count: int, trashed_remaining: int = 0
+    ) -> None:
         """Handle successful session rollback completion on main thread."""
         self._rollback_in_progress = False
+        from app.core.plan_format import format_session_rollback_outcome
         from app.core.session_catalog import list_sessions
 
         self.sessions = list_sessions()
         self._refresh_session_options(selected_sid=session_id)
 
-        lbl_status = self.query_one("#lbl-rollback-status", Label)
-        lbl_status.update(
-            f"✅ Session successfully rolled back. ({restored_count} operations unwound)"
+        msg, notif_type = format_session_rollback_outcome(
+            session_id, restored_count, trashed_remaining
         )
+        lbl_status = self.query_one("#lbl-rollback-status", Label)
+        if restored_count == 0 and trashed_remaining > 0:
+            noun = "copy" if trashed_remaining == 1 else "copies"
+            verb_rem = "remains" if trashed_remaining == 1 else "remain"
+            lbl_status.update(
+                f"⚠️ No reversible moves; {trashed_remaining} duplicate {noun} {verb_rem} in OS Trash."
+            )
+        elif trashed_remaining > 0:
+            lbl_status.update(
+                f"✅ Session rolled back ({restored_count} restored; {trashed_remaining} in OS Trash)."
+            )
+        else:
+            lbl_status.update(
+                f"✅ Session successfully rolled back. ({restored_count} operations unwound)"
+            )
 
-        msg = f"Session {session_id[:8]}... successfully rolled back ({restored_count} file(s) restored)."
         self.announce(msg)
         try:
             from app.ui.notifications import notify
 
-            notify(msg, type="info")
+            notify(msg, type=notif_type)
         except Exception:
             pass
 

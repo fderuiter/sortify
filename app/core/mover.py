@@ -2656,13 +2656,27 @@ def _prepare_disposal_item(
             return None
 
         dup_of_str = str(dup_of)
+        item_source_root = _get_val(content, "source_root") or base_dir
         if os.path.isabs(dup_of_str) and "::" not in dup_of_str:
             primary_orig_abs = os.path.normpath(dup_of_str)
         else:
             p_root, p_rel = parse_item_identifier(dup_of_str, base_dir)
-            primary_orig_abs = os.path.normpath(
-                os.path.abspath(os.path.join(p_root, p_rel))
-            )
+            cand_base = os.path.normpath(os.path.abspath(os.path.join(p_root, p_rel)))
+            if "::" not in dup_of_str and item_source_root != base_dir:
+                cand_src_root = os.path.normpath(
+                    os.path.abspath(os.path.join(str(item_source_root), p_rel))
+                )
+                primary_orig_abs = (
+                    cand_src_root
+                    if (
+                        os.path.lexists(cand_src_root)
+                        or os.path.normcase(cand_src_root) in path_map
+                    )
+                    and not os.path.lexists(cand_base)
+                    else cand_base
+                )
+            else:
+                primary_orig_abs = cand_base
         norm_primary_orig = os.path.normcase(os.path.abspath(primary_orig_abs))
 
         verified_primary_path: str | None = None

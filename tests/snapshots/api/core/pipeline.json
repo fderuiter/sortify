@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "5f389ca3d4a5b8b133e36e699c48ba29f5154b1747a47f068ef17bd5433ab62f"
+    "checksum": "27c696e48da435f010a3f2e9c6de28481b15321fd8abd2c08480f6fafcbd77b6"
   },
   "classes": [
     {
@@ -95,6 +95,21 @@
               "annotation": "bool",
               "default": "False",
               "name": "dry_run"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "flush_trash"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "flush_trashed_only"
+            },
+            {
+              "annotation": "Callable[[str], Any] | None",
+              "default": "None",
+              "name": "trash_fn"
             },
             {
               "annotation": "Callable[[Any], None] | None",

@@ -505,6 +505,8 @@ usage: smart-autosorter [-h] [-q] [--no-color] [--demo] [--smoke-test]
                         [--json] [--daemon] [--tui] [--interactive]
                         [--accept-ai-consent | --decline-ai-consent]
                         [--skip-wizard] [--non-interactive]
+                        [--duplicates {off,review,skip,stage,trash}]
+                        [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
                         {sort,scan,config,daemon,undo,drop,ledger,model,quarantine,rules}
                         ...
 
@@ -550,6 +552,13 @@ options:
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
+  --duplicates {off,review,skip,stage,trash}
+                        Byte-identical duplicate handling mode (off, review,
+                        skip, stage, trash; review requires --tui or
+                        --interactive)
+  --detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}
+                        Criterion used to select the surviving original in
+                        duplicate clusters
 
 examples:
   smart-autosorter                         open the full-screen TUI
@@ -595,7 +604,7 @@ usage: smart-autosorter sort [-h] [--preset {demo,downloads,documents}]
                              [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
                              [--conflict-policy {skip,rename,overwrite}]
-                             [--duplicates {off,skip,stage,trash}]
+                             [--duplicates {off,review,skip,stage,trash}]
                              [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
                              [--contextual-renaming]
                              [--no-contextual-renaming] [--tui]
@@ -629,9 +638,10 @@ options:
                         Sorting strategy
   --conflict-policy {skip,rename,overwrite}
                         Conflict resolution policy
-  --duplicates {off,skip,stage,trash}
-                        Byte-identical duplicate handling mode (off, skip,
-                        stage, trash)
+  --duplicates {off,review,skip,stage,trash}
+                        Byte-identical duplicate handling mode (off, review,
+                        skip, stage, trash; review requires --tui or
+                        --interactive)
   --detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}
                         Criterion used to select the surviving original in
                         duplicate clusters
@@ -661,7 +671,7 @@ usage: smart-autosorter scan [-h] [--preset {demo,downloads,documents}]
                              [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
                              [--conflict-policy {skip,rename,overwrite}]
-                             [--duplicates {off,skip,stage,trash}]
+                             [--duplicates {off,review,skip,stage,trash}]
                              [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
                              [--contextual-renaming]
                              [--no-contextual-renaming] [--tui]
@@ -690,9 +700,10 @@ options:
                         Sorting strategy
   --conflict-policy {skip,rename,overwrite}
                         Conflict resolution policy
-  --duplicates {off,skip,stage,trash}
-                        Byte-identical duplicate handling mode (off, skip,
-                        stage, trash)
+  --duplicates {off,review,skip,stage,trash}
+                        Byte-identical duplicate handling mode (off, review,
+                        skip, stage, trash; review requires --tui or
+                        --interactive)
   --detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}
                         Criterion used to select the surviving original in
                         duplicate clusters
@@ -721,7 +732,7 @@ usage: smart-autosorter config [-h] [--show] [--json] [--set KEY VALUE] [-q]
                                [--no-color] [--max-folders MAX_FOLDERS]
                                [--strategy {default,generative,clinical_tmf,clinical_isf}]
                                [--conflict-policy {skip,rename,overwrite}]
-                               [--duplicates {off,skip,stage,trash}]
+                               [--duplicates {off,review,skip,stage,trash}]
                                [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
                                [--contextual-renaming]
                                [--no-contextual-renaming] [--tui]
@@ -745,9 +756,10 @@ options:
                         Sorting strategy
   --conflict-policy {skip,rename,overwrite}
                         Conflict resolution policy
-  --duplicates {off,skip,stage,trash}
-                        Byte-identical duplicate handling mode (off, skip,
-                        stage, trash)
+  --duplicates {off,review,skip,stage,trash}
+                        Byte-identical duplicate handling mode (off, review,
+                        skip, stage, trash; review requires --tui or
+                        --interactive)
   --detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}
                         Criterion used to select the surviving original in
                         duplicate clusters
@@ -776,7 +788,7 @@ usage: smart-autosorter daemon [-h] [--watch] [-q] [--no-color]
                                [--max-folders MAX_FOLDERS]
                                [--strategy {default,generative,clinical_tmf,clinical_isf}]
                                [--conflict-policy {skip,rename,overwrite}]
-                               [--duplicates {off,skip,stage,trash}]
+                               [--duplicates {off,review,skip,stage,trash}]
                                [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
                                [--contextual-renaming]
                                [--no-contextual-renaming] [--tui]
@@ -804,9 +816,10 @@ options:
                         Sorting strategy
   --conflict-policy {skip,rename,overwrite}
                         Conflict resolution policy
-  --duplicates {off,skip,stage,trash}
-                        Byte-identical duplicate handling mode (off, skip,
-                        stage, trash)
+  --duplicates {off,review,skip,stage,trash}
+                        Byte-identical duplicate handling mode (off, review,
+                        skip, stage, trash; review requires --tui or
+                        --interactive)
   --detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}
                         Criterion used to select the surviving original in
                         duplicate clusters
@@ -836,7 +849,7 @@ usage: smart-autosorter undo [-h] [--session-id SESSION_ID] [--list]
                              [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
                              [--conflict-policy {skip,rename,overwrite}]
-                             [--duplicates {off,skip,stage,trash}]
+                             [--duplicates {off,review,skip,stage,trash}]
                              [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
                              [--contextual-renaming]
                              [--no-contextual-renaming] [--tui]
@@ -864,9 +877,10 @@ options:
                         Sorting strategy
   --conflict-policy {skip,rename,overwrite}
                         Conflict resolution policy
-  --duplicates {off,skip,stage,trash}
-                        Byte-identical duplicate handling mode (off, skip,
-                        stage, trash)
+  --duplicates {off,review,skip,stage,trash}
+                        Byte-identical duplicate handling mode (off, review,
+                        skip, stage, trash; review requires --tui or
+                        --interactive)
   --detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}
                         Criterion used to select the surviving original in
                         duplicate clusters
@@ -891,11 +905,12 @@ options:
 
 ##### `drop`
 ```text
-usage: smart-autosorter drop [-h] [--dest-dir DEST_DIR] [--dry-run] [--json]
-                             [-q] [--no-color] [--max-folders MAX_FOLDERS]
+usage: smart-autosorter drop [-h] [--dest-dir DEST_DIR] [--dry-run]
+                             [--flush-trash] [--json] [-q] [--no-color]
+                             [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
                              [--conflict-policy {skip,rename,overwrite}]
-                             [--duplicates {off,skip,stage,trash}]
+                             [--duplicates {off,review,skip,stage,trash}]
                              [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
                              [--contextual-renaming]
                              [--no-contextual-renaming] [--tui]
@@ -914,6 +929,8 @@ options:
   --dest-dir DEST_DIR   Destination directory for sorted files
   --dry-run             Perform dry run analysis without executing physical
                         moves
+  --flush-trash         Export staged duplicate copies to the OS Trash after
+                        move verification
   --json                Output result in structured JSON format
   -q, --quiet           Suppress informational prints and non-essential
                         progress output
@@ -924,9 +941,10 @@ options:
                         Sorting strategy
   --conflict-policy {skip,rename,overwrite}
                         Conflict resolution policy
-  --duplicates {off,skip,stage,trash}
-                        Byte-identical duplicate handling mode (off, skip,
-                        stage, trash)
+  --duplicates {off,review,skip,stage,trash}
+                        Byte-identical duplicate handling mode (off, review,
+                        skip, stage, trash; review requires --tui or
+                        --interactive)
   --detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}
                         Criterion used to select the surviving original in
                         duplicate clusters

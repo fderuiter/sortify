@@ -25,26 +25,16 @@ def _count(conn, table: str, session_id: str) -> int:
 def list_sessions(store=None) -> list:
     """Return every session in the store, newest first.
 
-    Each entry carries the session's id, timestamp, base folder, status and
-    how many moves and distinct moved files it recorded in ``moves``.
+    Each entry carries the session's id, timestamp, base folder, status,
+    reversible ``step_count`` and ``file_count``, and ``trashed_count`` for
+    duplicates handed off to native OS Trash.
     """
-    from app.core.moves import query_session_summaries
+    from app.core.moves import session_summary_dicts
     from app.core.store import open_store
 
     store = store or open_store()
-    rows = query_session_summaries(str(store.path))
-    return [
-        {
-            "session_id": sid,
-            "timestamp": ts,
-            "base_dir": base_dir,
-            "status": status,
-            "step_count": step_count,
-            "file_count": file_count,
-            "history_db_path": str(store.path),
-        }
-        for sid, ts, base_dir, status, step_count, file_count in rows
-    ]
+    store_path = str(store.path)
+    return session_summary_dicts(store_path, history_db_path=store_path)
 
 
 def _has_files(folder: str) -> bool:
