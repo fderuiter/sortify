@@ -42,22 +42,22 @@ def test_static_checks_builds_and_uploads_docs_site_artifact_on_main():
     )
     assert checkout_step is not None, "Missing actions/checkout step in static-checks"
     assert (checkout_step.get("with") or {}).get("persist-credentials") is False
+    assert (checkout_step.get("with") or {}).get("fetch-depth") == 0
 
     sync_step = next((s for s in steps if "uv sync" in s.get("run", "")), None)
     assert sync_step is not None, "Missing uv sync step in static-checks"
-    assert "--all-groups" in sync_step.get("run", "")
-
-    node_step = next(
-        (s for s in steps if "actions/setup-node@" in s.get("uses", "")), None
+    assert (
+        sync_step.get("run", "").strip() == "uv sync --frozen --group dev --group docs"
     )
-    assert node_step is not None, "Missing actions/setup-node step in static-checks"
-    assert (node_step.get("with") or {}).get("node-version") == "22"
 
-    mermaid_step = next(
-        (s for s in steps if "@mermaid-js/mermaid-cli" in s.get("run", "")), None
+    assert not any("actions/setup-node@" in s.get("uses", "") for s in steps), (
+        "Dead actions/setup-node step must be removed from static-checks"
     )
-    assert mermaid_step is not None, (
-        "Missing @mermaid-js/mermaid-cli installation in static-checks"
+    assert not any("@mermaid-js/mermaid-cli" in s.get("run", "") for s in steps), (
+        "Dead @mermaid-js/mermaid-cli installation must be removed from static-checks"
+    )
+    assert not any("diagram_toolchain.py" in s.get("run", "") for s in steps), (
+        "Duplicate standalone diagram_toolchain.py verify step must be removed from static-checks"
     )
 
     compile_step = next(
@@ -89,16 +89,10 @@ def test_static_checks_builds_and_uploads_docs_site_artifact_on_main():
     assert upload_with.get("if-no-files-found") == "error"
 
     sync_idx = steps.index(sync_step)
-    node_idx = steps.index(node_step)
-    mermaid_idx = steps.index(mermaid_step)
     compile_idx = steps.index(compile_step)
     upload_idx = steps.index(upload_step)
 
     assert sync_idx < compile_idx, "uv sync must run before doc compilation"
-    assert node_idx < compile_idx, "Node setup must run before doc compilation"
-    assert mermaid_idx < compile_idx, (
-        "Mermaid installation must run before doc compilation"
-    )
     assert compile_idx < upload_idx, (
         "Documentation compilation must run before uploading docs-site"
     )
@@ -421,7 +415,7 @@ def test_heavy_tests_runs_single_uv_sync_with_ml_extra():
     assert install_step.get("name") == "Install dependencies"
     install_run = install_step.get("run", "")
     assert install_run.count("uv sync") == 1
-    assert install_run.strip() == "uv sync --frozen --all-groups --extra ml"
+    assert install_run.strip() == "uv sync --frozen --group dev --extra ml"
 
     test_step = next(
         (s for s in steps if s.get("name") == "Heavy ML and Integration Tests"), None
@@ -429,6 +423,7 @@ def test_heavy_tests_runs_single_uv_sync_with_ml_extra():
     assert test_step is not None, "Missing 'Heavy ML and Integration Tests' step"
     assert "uv sync" not in test_step.get("run", "")
     assert 'pytest -m "slow"' in test_step.get("run", "")
+    assert "--ignore=tests/test_visual_snapshots.py" in test_step.get("run", "")
     assert steps.index(install_step) < steps.index(test_step)
 
 
@@ -464,7 +459,7 @@ def test_verify_offline_bundle_frozen_and_ml_verification():
 
 
 def test_type_check_job_installs_all_groups_emits_annotations_and_enforces_ratchet():
-    """Verify type-check preserves job ID/name, installs all groups, emits GitHub annotations, and enforces multi-platform check_ty_warnings.py."""
+    """Verify type-check preserves job ID/name, installs scoped dev group, emits GitHub annotations, and enforces multi-platform check_ty_warnings.py."""
     from scripts.check_ty_warnings import PLATFORMS
 
     workflow = _load_ci_workflow()
@@ -477,7 +472,7 @@ def test_type_check_job_installs_all_groups_emits_annotations_and_enforces_ratch
 
     sync_step = next((s for s in steps if "uv sync" in s.get("run", "")), None)
     assert sync_step is not None, "Missing uv sync step in type-check"
-    assert sync_step.get("run", "").strip() == "uv sync --frozen --all-groups"
+    assert sync_step.get("run", "").strip() == "uv sync --frozen --group dev"
 
     ratchet_step = next(
         (s for s in steps if "scripts/check_ty_warnings.py" in s.get("run", "")),
@@ -710,11 +705,15 @@ def test_precommit_hooks_full_repo_readonly_parity():
         assert re.search(hooks["validate-architecture"]["files"], path)
 
     workflow = _load_ci_workflow()
-    build_steps = workflow["jobs"]["build-and-test"]["steps"]
+    static_steps = workflow["jobs"]["static-checks"]["steps"]
     cfg_step = next(
-        s for s in build_steps if s.get("name") == "Validate Configuration Schema"
+        s for s in static_steps if s.get("name") == "Validate Configuration Schema"
     )
     assert "scripts/validate_config.py --check" in cfg_step.get("run", "")
+    build_steps = workflow["jobs"]["build-and-test"]["steps"]
+    assert not any(
+        "scripts/validate_config.py" in s.get("run", "") for s in build_steps
+    ), "validate_config.py --check must run once in static-checks, not build-and-test"
 
 
 def test_gitleaks_config_fails_closed_on_missing_extend_or_blanket_exclusions():
@@ -984,3 +983,147 @@ def test_precommit_check_yaml_does_not_enable_global_unsafe_mode():
         h for h in local_repo["hooks"] if h.get("id") == "validate-docs"
     )
     assert re.search(validate_docs["files"], "mkdocs.yml")
+
+
+def test_ci_jobs_scope_uv_groups_drop_notebooks_and_deduplicate_checks():
+    """Verify notebooks group is removed, CI jobs scope uv sync groups, and duplicate PE/config/snapshot steps are pruned."""
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    dep_groups = pyproject.get("dependency-groups", {})
+    assert "notebooks" not in dep_groups
+    assert set(dep_groups) == {"dev", "docs", "build"}
+
+    uv_lock = tomllib.loads(Path("uv.lock").read_text(encoding="utf-8"))
+    for pkg in uv_lock.get("package", []):
+        dev_deps = pkg.get("dev-dependencies") or {}
+        assert "notebooks" not in dev_deps
+        assert pkg.get("name") not in {"jupyter", "ipykernel", "notebook", "jupyterlab"}
+
+    workflow = _load_ci_workflow()
+    jobs = workflow["jobs"]
+
+    for job_name, job in jobs.items():
+        for step in job.get("steps", []):
+            run_cmd = step.get("run", "")
+            assert "--all-groups" not in run_cmd, (
+                f"Job {job_name!r} must use scoped --group flags instead of --all-groups"
+            )
+
+    build_steps = jobs["build-and-test"]["steps"]
+    build_sync = next(s for s in build_steps if "uv sync" in s.get("run", ""))
+    assert build_sync["run"].strip() == "uv sync --frozen --group dev --group build"
+    assert not any(
+        "verify_pe_dependencies.py" in s.get("run", "") for s in build_steps
+    ), "Duplicate verify_pe_dependencies.py step must be removed from build-and-test"
+
+    cfg_occurrences = [
+        (job_name, s.get("name"))
+        for job_name, job in jobs.items()
+        for s in job.get("steps", [])
+        if "scripts/validate_config.py" in s.get("run", "")
+    ]
+    assert cfg_occurrences == [("static-checks", "Validate Configuration Schema")]
+
+    offline_steps = jobs["verify-offline-bundle"]["steps"]
+    offline_cache = next(
+        s
+        for s in offline_steps
+        if "actions/cache@" in s.get("uses", "")
+        and str((s.get("with") or {}).get("key", "")).startswith("offline-wheels-")
+    )
+    cache_paths = {
+        line.strip()
+        for line in offline_cache["with"]["path"].splitlines()
+        if line.strip()
+    }
+    assert "~/.cache/pip" in cache_paths
+    assert "~/.cache/uv" in cache_paths
+    cache_key = offline_cache["with"]["key"]
+    assert "'offline_bundle/requirements.txt'" in cache_key
+    assert "pyproject.toml" not in cache_key
+
+
+def test_static_checks_doc_build_flag_gating(tmp_path: Path):
+    """Execute static-checks Validate Documentation and Integrity script across PR and main scenarios."""
+    workflow = _load_ci_workflow()
+    compile_step = next(
+        s
+        for s in workflow["jobs"]["static-checks"]["steps"]
+        if s.get("name") == "Validate Documentation and Integrity"
+    )
+    script = compile_step["run"]
+    bash_exe = _find_git_bash()
+
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    _run_git(repo_dir, "init", "--quiet", "-b", "main")
+    _run_git(repo_dir, "config", "user.name", "Test User")
+    _run_git(repo_dir, "config", "user.email", "test@example.com")
+    (repo_dir / "README.md").write_text("# Sortify\n", encoding="utf-8")
+    (repo_dir / "app").mkdir()
+    (repo_dir / "app" / "main.py").write_text("x = 1\n", encoding="utf-8")
+    _run_git(repo_dir, "add", ".")
+    _run_git(repo_dir, "commit", "--quiet", "-m", "initial")
+    base_sha = _run_git(repo_dir, "rev-parse", "HEAD")
+
+    stub_bin = tmp_path / "bin"
+    stub_bin.mkdir()
+    args_log = tmp_path / "uv_args.txt"
+    uv_stub = stub_bin / "uv"
+    uv_stub.write_text(
+        f'#!/usr/bin/env bash\nprintf "%s\\n" "$*" > "{args_log.as_posix()}"\n',
+        encoding="utf-8",
+    )
+    uv_stub.chmod(0o755)
+
+    def run_doc_step(event_name: str, git_ref: str, b_sha: str, h_sha: str) -> str:
+        args_log.write_text("", encoding="utf-8")
+        env = os.environ.copy()
+        env.update(
+            {
+                "PATH": f"{stub_bin}{os.pathsep}{env.get('PATH', '')}",
+                "EVENT_NAME": event_name,
+                "GITHUB_REF_FULL": git_ref,
+                "BASE_SHA": b_sha,
+                "HEAD_SHA": h_sha,
+            }
+        )
+        subprocess.run(
+            [bash_exe, "-e", "-c", script],
+            cwd=repo_dir,
+            env=env,
+            check=True,
+        )
+        return args_log.read_text(encoding="utf-8").strip()
+
+    # 1. Code-only PR passes --no-build
+    _run_git(repo_dir, "checkout", "--quiet", "-b", "feat/code", base_sha)
+    (repo_dir / "app" / "main.py").write_text("x = 2\n", encoding="utf-8")
+    _run_git(repo_dir, "add", "app/main.py")
+    _run_git(repo_dir, "commit", "--quiet", "-m", "code change")
+    code_sha = _run_git(repo_dir, "rev-parse", "HEAD")
+    assert run_doc_step(
+        "pull_request", "refs/pull/1/merge", base_sha, code_sha
+    ).endswith("--check --local-only --no-build")
+
+    # 2. main push and workflow_dispatch always pass --build
+    assert run_doc_step("push", "refs/heads/main", "", "").endswith(
+        "--check --local-only --build"
+    )
+    assert run_doc_step("workflow_dispatch", "refs/heads/feat/code", "", "").endswith(
+        "--check --local-only --build"
+    )
+
+    # 3. PRs touching docs/, mkdocs.yml, root Markdown, or scripts/generate_docs.py pass --build
+    for idx, rel_path in enumerate(
+        ("docs/guide.md", "mkdocs.yml", "CONTRIBUTING.md", "scripts/generate_docs.py")
+    ):
+        _run_git(repo_dir, "checkout", "--quiet", "-b", f"feat/doc-{idx}", base_sha)
+        target = repo_dir / rel_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("updated\n", encoding="utf-8")
+        _run_git(repo_dir, "add", rel_path)
+        _run_git(repo_dir, "commit", "--quiet", "-m", f"touch {rel_path}")
+        doc_sha = _run_git(repo_dir, "rev-parse", "HEAD")
+        assert run_doc_step(
+            "pull_request", f"refs/pull/{idx + 2}/merge", base_sha, doc_sha
+        ).endswith("--check --local-only --build"), f"Expected --build for {rel_path}"

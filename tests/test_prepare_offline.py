@@ -443,3 +443,42 @@ def test_validate_manifest_fails_closed_on_uv_lock_divergence(mutation: str):
     with pytest.raises(SystemExit) as exc_info:
         _validate_manifest(mutated, is_cpu=True, uv_lock_path=uv_lock_path)
     assert exc_info.value.code == 1
+
+
+def test_normalize_archive_timestamps_and_extract_preserves_mtime(tmp_path):
+    """Verify prepare_offline normalizes wheel/zip timestamps and install_offline preserves them."""
+    import os
+    import shutil
+    import zipfile
+
+    from scripts.install_offline import safe_extract_zip
+    from scripts.prepare_offline import (
+        NORMALIZED_ARCHIVE_DATE_TIME,
+        NORMALIZED_ARCHIVE_EPOCH,
+        _normalize_archive_timestamps,
+    )
+
+    bundle_dir = tmp_path / "offline_bundle"
+    wheels_dir = bundle_dir / "wheels"
+    wheels_dir.mkdir(parents=True)
+    sdist = wheels_dir / "llama_cpp_python-0.3.37.tar.gz"
+    sdist.write_bytes(b"deterministic-sdist-bytes")
+    os.utime(sdist, (1710000123, 1710000123))
+
+    _normalize_archive_timestamps(wheels_dir)
+    assert int(sdist.stat().st_mtime) == NORMALIZED_ARCHIVE_EPOCH
+
+    zip_base = tmp_path / "offline_bundle"
+    shutil.make_archive(str(zip_base), "zip", str(bundle_dir))
+    zip_path = tmp_path / "offline_bundle.zip"
+    _normalize_archive_timestamps(wheels_dir, zip_path)
+
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        for info in zf.infolist():
+            assert info.date_time == NORMALIZED_ARCHIVE_DATE_TIME
+
+    extracted = tmp_path / "extracted_bundle"
+    safe_extract_zip(zip_path, extracted)
+    extracted_sdist = extracted / "wheels" / "llama_cpp_python-0.3.37.tar.gz"
+    assert extracted_sdist.read_bytes() == b"deterministic-sdist-bytes"
+    assert int(extracted_sdist.stat().st_mtime) == NORMALIZED_ARCHIVE_EPOCH

@@ -28,29 +28,55 @@ jobs:
       checks: read
       statuses: read
     steps:
+      - name: Check Eligible Pull Requests
+        id: check-queue
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const pulls = await github.paginate(github.rest.pulls.list, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const blockedLabels = new Set([
+              'disable-automerge',
+              'automerge:blocked',
+              'automerge:conflict',
+            ]);
+            const eligible = pulls.filter((pr) => {
+              if (pr.draft) return false;
+              const names = (pr.labels || []).map((lbl) => lbl.name);
+              if (names.some((name) => blockedLabels.has(name))) return false;
+              return names.includes('automerge:eligible');
+            });
+            const hasEligible = eligible.length > 0;
+            core.info(`Found ${eligible.length} eligible open pull request(s).`);
+            core.setOutput('has_eligible', hasEligible ? 'true' : 'false');
+
       # Runs the default branch's controller; never PR code.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.check-queue.outputs.has_eligible == 'true'
         with:
           persist-credentials: false
 
       - name: Install uv
+        if: steps.check-queue.outputs.has_eligible == 'true'
         uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           version: "0.13.1"
-          enable-cache: true
+          enable-cache: false
 
       - name: Set up Python
+        if: steps.check-queue.outputs.has_eligible == 'true'
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
-        run: |
-          uv sync --frozen --group dev
-
       - name: Run Auto-Merge Controller
+        if: steps.check-queue.outputs.has_eligible == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          uv run python -m scripts.auto_merge_controller
+          uv run --no-project --with requests python -m scripts.auto_merge_controller

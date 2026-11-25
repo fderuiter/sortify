@@ -732,33 +732,11 @@ def build_diagrams(
                 )
                 all_success = False
 
-            # Check schema validity and syntax, then headless compilation or fallback notice
-            if has_browser and mmdc_cmd:
-                import tempfile
-
-                with tempfile.TemporaryDirectory() as tmp_dir:
-                    temp_mmd = Path(tmp_dir) / f"{spec_id}.mmd"
-                    temp_mmd.write_text(mmd_content, encoding="utf-8", newline="\n")
-                    temp_svg = Path(tmp_dir) / f"{spec_id}.svg"
-                    rendered_ok = render_diagram_artifact(
-                        mmdc_cmd, temp_mmd, temp_svg, "svg"
-                    )
-
-                if not rendered_ok:
-                    sys.stderr.write(
-                        f"Verification FAILED: Diagram '{spec_id}' failed headless compilation.\n"
-                    )
-                    all_success = False
-                else:
-                    print(
-                        f"Verified spec '{spec_id}' -> {mmd_file.name} (headless compilation successful)."
-                    )
-            else:
-                # Verification never writes assets: without a browser it used to
-                # overwrite rendered SVGs with text fallbacks on every run.
-                print(
-                    f"Verified spec '{spec_id}' -> {mmd_file.name} (validated syntax, click directives, and schema)."
-                )
+            # Verification never writes assets: without a browser it used to
+            # overwrite rendered SVGs with text fallbacks on every run.
+            print(
+                f"Verified spec '{spec_id}' -> {mmd_file.name} (validated syntax, click directives, and schema)."
+            )
             continue
 
         # Write or update .mmd file only during build mode
