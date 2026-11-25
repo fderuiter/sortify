@@ -1088,11 +1088,26 @@ class SortPipeline(LifecycleTelemetryMixin):
 
         call_kwargs = dict(kwargs)
         try:
+            side_effect = getattr(self.session.execute_moves, "side_effect", None)
             fn = (
-                getattr(self.session.execute_moves, "side_effect", None)
-                or self.session.execute_moves
+                side_effect
+                if (
+                    callable(side_effect)
+                    and not (
+                        isinstance(side_effect, type)
+                        and issubclass(side_effect, BaseException)
+                    )
+                )
+                else self.session.execute_moves
             )
             sig = inspect.signature(fn)
+            has_var_kw = any(
+                p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+            )
+            if not has_var_kw:
+                call_kwargs = {
+                    k: v for k, v in call_kwargs.items() if k in sig.parameters
+                }
             accepts_pipeline = "pipeline" in sig.parameters
         except (ValueError, TypeError):
             accepts_pipeline = True

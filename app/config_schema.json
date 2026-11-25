@@ -519,6 +519,16 @@
       "title": "Conflict Policy",
       "type": "string"
     },
+    "MOVE_ERROR_POLICY": {
+      "default": "rollback",
+      "description": "Failure handling policy during physical file moves: 'rollback' unwinds the entire batch atomically on error (headless/CLI default), while 'partial_commit' preserves verified moves and records failed items for targeted retry.",
+      "enum": [
+        "rollback",
+        "partial_commit"
+      ],
+      "title": "Move Error Policy",
+      "type": "string"
+    },
     "DUPLICATE_ACTION": {
       "default": "off",
       "description": "Handling mode for exact byte-identical duplicate clusters during scan and sort: 'off' treats copies normally, 'review' prompts in interactive TUI, 'skip' excludes redundant copies, 'stage' displaces copies into .sortify_duplicates/<session_id>/ for undo, and 'trash' stages verified copies for OS Trash disposal.",

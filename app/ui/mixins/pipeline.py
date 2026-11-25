@@ -832,16 +832,37 @@ class SortPipelineMixin:
 
             flush_trash = bool(self._pending_flush_trash)
             self._pending_flush_trash = False
+
+            settings_model = getattr(self.settings, "_settings_model", None)
+            fields_set = getattr(settings_model, "model_fields_set", set()) or set()
+            configured_policy = getattr(self.settings, "MOVE_ERROR_POLICY", None)
+            if "MOVE_ERROR_POLICY" in fields_set and configured_policy:
+                effective_error_policy = str(configured_policy)
+            elif (
+                isinstance(configured_policy, str)
+                and configured_policy.strip().lower() != "rollback"
+            ):
+                effective_error_policy = configured_policy
+            else:
+                effective_error_policy = "partial_commit"
+
             result = self.pipeline.execute(
                 exec_plan,
                 progress_callback=move_progress_cb,
                 flush_trash=flush_trash,
                 flush_trashed_only=flush_trash,
+                error_policy=effective_error_policy,
             )
             summary = result.summary
             if not (isinstance(summary, dict) and summary.get("cancelled")):
                 self._clear_manual_plan_edits()
-            msg = f"Execution completed successfully! [Ctrl+Z] Undo available. Summary: {summary}"
+            if result.failed:
+                msg = (
+                    f"Execution completed with {len(result.failed)} failed item(s). "
+                    f"Verified moves preserved; retry available in verification report."
+                )
+            else:
+                msg = f"Execution completed successfully! [Ctrl+Z] Undo available. Summary: {summary}"
             self.call_from_thread(self.announce, msg)
 
             from app.core.audit_reporter import resolve_audit_report
@@ -851,10 +872,16 @@ class SortPipelineMixin:
                 or self.base_dir
                 or "."
             )
+            sess_id = (
+                summary.get("session_id")
+                if isinstance(summary, dict)
+                else result.session_id
+            )
             audit_report = resolve_audit_report(
                 summary.get("audit_report") if isinstance(summary, dict) else None,
                 base_dir,
                 exec_plan,
+                session_id=sess_id,
             )
 
             if audit_report:

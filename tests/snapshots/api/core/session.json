@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "ed06067368a2ff676cc55d1757d71c6a1e82d912016a4e5772c9c4efbb701155"
+    "checksum": "91c3aac9daba76390bd2303b8c51e179561f0340c2f1f0256c53b37bf237cc8a"
   },
   "classes": [
     {
@@ -181,6 +181,34 @@
             }
           ],
           "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "retry_failed_moves",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "list[dict[str, Any]]",
+              "default": null,
+              "name": "failed_items"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "progress_callback"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "session_id"
+            }
+          ],
+          "returns": "dict[str, Any]"
         },
         {
           "async": false,

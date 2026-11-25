@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal, NotRequired, TypedDict
 
 from pydantic import (
+    BeforeValidator,
     ConfigDict,
     Field,
     ValidationError,
@@ -765,6 +766,18 @@ class Settings(BaseSettings):
         description=(
             "Resolution strategy when a destination file already exists: 'skip' leaves "
             "the source untouched, 'rename' appends a numeric suffix, and 'overwrite' replaces the target."
+        ),
+    )
+    MOVE_ERROR_POLICY: Annotated[
+        Literal["rollback", "partial_commit"],
+        BeforeValidator(lambda v: v.strip().lower() if isinstance(v, str) else v),
+    ] = Field(
+        default="rollback",
+        description=(
+            "Failure handling policy during physical file moves: 'rollback' unwinds "
+            "the entire batch atomically on error (headless/CLI default), while "
+            "'partial_commit' preserves verified moves and records failed items "
+            "for targeted retry."
         ),
     )
     DUPLICATE_ACTION: Literal["off", "review", "skip", "stage", "trash"] = Field(

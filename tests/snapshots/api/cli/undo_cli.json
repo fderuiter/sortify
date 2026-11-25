@@ -1,0 +1,101 @@
+{
+  "_metadata": {
+    "checksum": "1160655b7b4ab8b214f29afd604ca749ed53a2a6eb0a6969e65791d0103ab111"
+  },
+  "classes": [],
+  "cli": [
+    {
+      "args": [
+        "--list-moves"
+      ],
+      "caller": "parser_undo",
+      "keywords": {
+        "action": "store_true",
+        "help": "List remaining undoable file moves for the target session"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--dry-run"
+      ],
+      "caller": "parser_undo",
+      "keywords": {
+        "action": "store_true",
+        "help": "Preview rollback outcome and potential collisions without moving files"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--step-id"
+      ],
+      "caller": "parser_undo",
+      "keywords": {
+        "action": "append",
+        "default": null,
+        "dest": "step_ids",
+        "help": "Specific move step ID to revert (repeatable for selective undo)",
+        "type": "int"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--file"
+      ],
+      "caller": "parser_undo",
+      "keywords": {
+        "action": "append",
+        "default": null,
+        "dest": "files",
+        "help": "Source or destination file path/name to revert (repeatable for selective undo)",
+        "type": "str"
+      },
+      "method": "add_argument"
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "execute_undo_command",
+      "parameters": [
+        {
+          "annotation": "argparse.Namespace",
+          "default": null,
+          "name": "args"
+        },
+        {
+          "annotation": "AppSettings",
+          "default": null,
+          "name": "settings"
+        },
+        {
+          "annotation": "Callable[[AppSettings, argparse.Namespace], None] | None",
+          "default": "None",
+          "name": "apply_overrides_fn"
+        },
+        {
+          "annotation": "Callable[[], list[dict[str, Any]]]",
+          "default": "list_sessions",
+          "name": "list_sessions_fn"
+        }
+      ],
+      "returns": "None"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "extend_undo_parser",
+      "parameters": [
+        {
+          "annotation": "argparse.ArgumentParser",
+          "default": null,
+          "name": "parser_undo"
+        }
+      ],
+      "returns": "None"
+    }
+  ]
+}

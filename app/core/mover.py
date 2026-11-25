@@ -1434,46 +1434,70 @@ def _process_move_group(
     chunk_hash_map: dict | None = None,
     target_locks: dict[str, threading.Lock] | None = None,
     unarchived_children_out: list[str] | None = None,
+    error_policy: str = "rollback",
 ) -> list[bool]:
     """Execute a bucket of move items targeting the same destination sequentially in plan order."""
     results: list[bool] = []
+    partial_commit = str(error_policy or "rollback").strip().lower() == "partial_commit"
     for item in group_items:
-        if _process_move_item is _DEFAULT_PROCESS_MOVE_ITEM:
-            results.append(
-                _process_move_item(
-                    base_dir,
-                    item,
-                    db,
-                    path_map,
-                    runtime_settings,
-                    session_id,
-                    history_manager,
-                    db_lock,
-                    db_updates_batch,
-                    audit_records,
-                    pending_links,
-                    chunk_hash_map,
-                    target_locks=target_locks,
-                    unarchived_children_out=unarchived_children_out,
+        try:
+            if _process_move_item is _DEFAULT_PROCESS_MOVE_ITEM:
+                results.append(
+                    _process_move_item(
+                        base_dir,
+                        item,
+                        db,
+                        path_map,
+                        runtime_settings,
+                        session_id,
+                        history_manager,
+                        db_lock,
+                        db_updates_batch,
+                        audit_records,
+                        pending_links,
+                        chunk_hash_map,
+                        target_locks=target_locks,
+                        unarchived_children_out=unarchived_children_out,
+                    )
                 )
-            )
-        else:
-            results.append(
-                _process_move_item(
-                    base_dir,
-                    item,
-                    db,
-                    path_map,
-                    runtime_settings,
-                    session_id,
-                    history_manager,
-                    db_lock,
-                    db_updates_batch,
-                    audit_records,
-                    pending_links,
-                    chunk_hash_map,
+            else:
+                results.append(
+                    _process_move_item(
+                        base_dir,
+                        item,
+                        db,
+                        path_map,
+                        runtime_settings,
+                        session_id,
+                        history_manager,
+                        db_lock,
+                        db_updates_batch,
+                        audit_records,
+                        pending_links,
+                        chunk_hash_map,
+                    )
                 )
+        except Exception as err:
+            if not partial_commit:
+                raise
+            from app.core.move_retry import record_partial_commit_failure
+
+            logging.error(
+                f"Partial-commit move failure for {item.get('source_path')}: {err}"
             )
+            record_partial_commit_failure(
+                base_dir=base_dir,
+                item=item,
+                err=err,
+                session_id=session_id,
+                history_manager=history_manager,
+                db_lock=db_lock,
+                audit_records=audit_records,
+                chunk_hash_map=chunk_hash_map,
+                path_map=path_map,
+                pending_links=pending_links,
+            )
+            results.append(False)
     return results
 
 
@@ -2437,6 +2461,8 @@ def _execute_prepared_move_group(
     moves_ledger: Any,
     db_lock: threading.Lock,
     db: Any = None,
+    pending_links: list | None = None,
+    error_policy: str = "rollback",
 ) -> None:
     """Execute physical file moves and post-move SHA-256 verification off-thread.
 
@@ -2446,6 +2472,7 @@ def _execute_prepared_move_group(
     """
     from app.core.resilient_file_ops import resilient_move
 
+    partial_commit = str(error_policy or "rollback").strip().lower() == "partial_commit"
     for p in group:
         source_path = p["source_path"]
         dest_path = p["dest_path"]
@@ -2496,6 +2523,33 @@ def _execute_prepared_move_group(
                     _restore_displaced(displaced_path, overwritten_path)
                 raise
         except Exception as err:
+            if partial_commit:
+                if source_path and os.path.lexists(source_path):
+                    _update_path_map_entry(
+                        path_map, source_path, source_path, lock=db_lock
+                    )
+                    link_entry = p.get("link_entry")
+                    if pending_links is not None and link_entry is not None:
+                        with db_lock:
+                            pending_links[:] = [
+                                entry
+                                for entry in pending_links
+                                if entry is not link_entry
+                            ]
+                p["outcome"] = {
+                    "state": MoveOpState.FAILED.value,
+                    "error": str(err),
+                    "required": False,
+                    "audit_record": {
+                        "source_path": source_path,
+                        "destination_path": dest_path,
+                        "pre_hash": pre_hash,
+                        "post_hash": None,
+                        "status": MoveVerificationStatus.MOVE_FAIL.value,
+                        "error": str(err),
+                    },
+                }
+                continue
             p["outcome"] = {
                 "state": MoveOpState.FAILED.value,
                 "error": str(err),
@@ -2790,12 +2844,14 @@ def _stage_disposal_chunk(
     *,
     moves_by_src: dict[str, list[Any]] | None = None,
     flush_db: bool = True,
+    error_policy: str = "rollback",
 ) -> tuple[list[dict[str, Any]], bool]:
     """Stage a chunk of duplicate or policy-trashed items with batched MoveLedger commits."""
     from app.core.extractor import get_file_hash
     from app.core.moves import STATUS_ABORTED, format_move_failure
     from app.core.resilient_file_ops import resilient_move
 
+    partial_commit = str(error_policy or "rollback").strip().lower() == "partial_commit"
     moves_ledger = getattr(history_manager, "moves", None) if history_manager else None
     reserved_stage_dests: set[str] = set()
     prepared_disposals: list[dict[str, Any]] = []
@@ -2842,6 +2898,27 @@ def _stage_disposal_chunk(
                         "required": False,
                     }
                 )
+            if partial_commit:
+                logging.error(
+                    f"Partial-commit staging failure for {pd['source_path']}: {err}"
+                )
+                if pd["source_path"] and os.path.lexists(pd["source_path"]):
+                    _update_path_map_entry(
+                        path_map, pd["source_path"], pd["source_path"], lock=db_lock
+                    )
+                if audit_records is not None:
+                    with db_lock:
+                        audit_records.append(
+                            {
+                                "source_path": pd["source_path"],
+                                "destination_path": pd["dest_path"],
+                                "pre_hash": pd["pre_hash"],
+                                "post_hash": None,
+                                "status": MoveVerificationStatus.MOVE_FAIL.value,
+                                "error": str(err),
+                            }
+                        )
+                continue
             for rem_seq in disp_seqs[idx_d + 1 :]:
                 if rem_seq is not None:
                     disp_completions.append(
@@ -2961,18 +3038,25 @@ def _submit_bounded_to_pool(
     max_concurrency: int,
     fn: Any,
     task_args: list[tuple[Any, ...]],
+    *,
+    stop_on_error: bool = True,
 ) -> tuple[list[Any], BaseException | None]:
-    """Submit tasks to ``SharedWorkerPool`` bounded by ``max_concurrency`` and stop on first error."""
+    """Submit tasks to ``SharedWorkerPool`` bounded by ``max_concurrency``."""
     limit = max(1, int(max_concurrency))
     if limit == 1:
         results: list[Any] = []
+        first_single_exc: BaseException | None = None
         for args in task_args:
             fut = pool.submit(fn, *args)
             exc = fut.exception()
             if exc is not None:
-                return results, exc
+                if stop_on_error:
+                    return results, exc
+                if first_single_exc is None:
+                    first_single_exc = exc
+                continue
             results.append(fut.result())
-        return results, None
+        return results, first_single_exc
 
     it = iter(enumerate(task_args))
     in_flight: dict[concurrent.futures.Future[Any], int] = {}
@@ -2997,7 +3081,7 @@ def _submit_bounded_to_pool(
                     first_exc = exc
                 elif exc is None:
                     ordered_results[idx] = fut.result()
-        if first_exc is not None:
+        if first_exc is not None and stop_on_error:
             for pending_fut in list(in_flight.keys()):
                 pending_fut.cancel()
             if in_flight:
@@ -3179,6 +3263,13 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
             )
 
             effective_priority = priority or getattr(runtime_settings, "priority", None)
+            raw_error_policy = (
+                kwargs.get("error_policy")
+                or getattr(runtime_settings, "MOVE_ERROR_POLICY", "rollback")
+                or "rollback"
+            )
+            effective_error_policy = str(raw_error_policy).strip().lower()
+            is_partial_commit = effective_error_policy == "partial_commit"
 
             from app.core.scanner import ScanFilter
 
@@ -3440,9 +3531,11 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                                 chunk_hash_map,
                                 target_locks,
                                 unarchived_children_out,
+                                effective_error_policy,
                             )
                             for bucket_items in target_buckets.values()
                         ],
+                        stop_on_error=not is_partial_commit,
                     )
                     if group_exc is not None:
                         raise group_exc
@@ -3469,8 +3562,9 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                             )
                             for item in chunk
                         ],
+                        stop_on_error=not is_partial_commit,
                     )
-                    if prep_exc is not None:
+                    if prep_exc is not None and not is_partial_commit:
                         raise prep_exc
                     prepared_items = [
                         prep_res for prep_res in prep_results if prep_res is not None
@@ -3480,16 +3574,40 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                     active_prepared: list[dict[str, Any]] = []
                     special_policy_prepared: list[dict[str, Any]] = []
                     for p in prepared_items:
-                        resolution = _resolve_prepared_destination(
-                            base_dir=base_dir,
-                            prepared=p,
-                            db=db,
-                            path_map=path_map,
-                            db_lock=db_lock,
-                            db_updates_batch=db_updates_batch,
-                            pending_links=pending_links,
-                            reserved_dests=reserved_dests,
-                        )
+                        try:
+                            resolution = _resolve_prepared_destination(
+                                base_dir=base_dir,
+                                prepared=p,
+                                db=db,
+                                path_map=path_map,
+                                db_lock=db_lock,
+                                db_updates_batch=db_updates_batch,
+                                pending_links=pending_links,
+                                reserved_dests=reserved_dests,
+                            )
+                        except Exception as res_err:
+                            if not is_partial_commit:
+                                raise
+                            from app.core.move_retry import (
+                                record_partial_commit_failure,
+                            )
+
+                            logging.error(
+                                f"Partial-commit destination resolution failure for {p.get('source_path')}: {res_err}"
+                            )
+                            record_partial_commit_failure(
+                                base_dir=base_dir,
+                                item=p,
+                                err=res_err,
+                                session_id=session_id,
+                                history_manager=history_manager,
+                                db_lock=db_lock,
+                                audit_records=audit_records,
+                                chunk_hash_map=chunk_hash_map,
+                                path_map=path_map,
+                                pending_links=pending_links,
+                            )
+                            continue
                         if resolution == "ready":
                             active_prepared.append(p)
                         elif resolution == "special_policy":
@@ -3499,19 +3617,44 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                         sp_target_path = os.path.normpath(
                             os.path.join(sp["dest_dir"], sp["filename"])
                         )
-                        with _get_target_lock(target_locks, db_lock, sp_target_path):
-                            _execute_special_policy_move(
+                        try:
+                            with _get_target_lock(
+                                target_locks, db_lock, sp_target_path
+                            ):
+                                _execute_special_policy_move(
+                                    base_dir=base_dir,
+                                    prepared=sp,
+                                    target_path=sp_target_path,
+                                    db=db,
+                                    path_map=path_map,
+                                    session_id=str(session_id or ""),
+                                    history_manager=history_manager,
+                                    db_lock=db_lock,
+                                    db_updates_batch=db_updates_batch,
+                                    audit_records=audit_records,
+                                    unarchived_children_out=unarchived_children_out,
+                                )
+                        except Exception as sp_err:
+                            if not is_partial_commit:
+                                raise
+                            from app.core.move_retry import (
+                                record_partial_commit_failure,
+                            )
+
+                            logging.error(
+                                f"Partial-commit special policy failure for {sp.get('source_path')}: {sp_err}"
+                            )
+                            record_partial_commit_failure(
                                 base_dir=base_dir,
-                                prepared=sp,
-                                target_path=sp_target_path,
-                                db=db,
-                                path_map=path_map,
-                                session_id=str(session_id or ""),
+                                item=sp,
+                                err=sp_err,
+                                session_id=session_id,
                                 history_manager=history_manager,
                                 db_lock=db_lock,
-                                db_updates_batch=db_updates_batch,
                                 audit_records=audit_records,
-                                unarchived_children_out=unarchived_children_out,
+                                chunk_hash_map=chunk_hash_map,
+                                path_map=path_map,
+                                pending_links=pending_links,
                             )
 
                     moves_ledger = (
@@ -3543,8 +3686,9 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                             norm_dst = os.path.normcase(os.path.abspath(p["dest_path"]))
                             dest_groups.setdefault(norm_dst, []).append(p)
 
-                        # Never leave moves in flight: on the first failure, cancel
-                        # what hasn't started and wait for the rest before any rollback.
+                        # Never leave moves in flight: under rollback policy, cancel
+                        # what hasn't started and wait for the rest before any rollback;
+                        # under partial_commit, let sibling destinations complete normally.
                         _, first_exc = _submit_bounded_to_pool(
                             pool,
                             effective_max_workers,
@@ -3558,9 +3702,12 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                                     moves_ledger,
                                     db_lock,
                                     db,
+                                    pending_links,
+                                    effective_error_policy,
                                 )
                                 for group in dest_groups.values()
                             ],
+                            stop_on_error=not is_partial_commit,
                         )
 
                         from app.core.moves import STATUS_ABORTED, format_move_failure
@@ -3699,6 +3846,7 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                             audit_records=audit_records,
                             moves_by_src=moves_by_src,
                             flush_db=True,
+                            error_policy=effective_error_policy,
                         )
                         staged_duplicates.extend(chunk_staged)
                         if chunk_flushed:
@@ -3813,7 +3961,25 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                         db_updates_batch.clear()
                         has_flushed_db = True
 
-                real_move_count = len(audit_records)
+                has_failed_audit = any(
+                    r.get("status")
+                    in (
+                        MoveVerificationStatus.MOVE_FAIL.value,
+                        MoveVerificationStatus.MISMATCH_FAIL.value,
+                    )
+                    or bool(r.get("error"))
+                    for r in audit_records
+                )
+                real_move_count = sum(
+                    1
+                    for r in audit_records
+                    if r.get("status")
+                    not in (
+                        MoveVerificationStatus.MOVE_FAIL.value,
+                        MoveVerificationStatus.MISMATCH_FAIL.value,
+                    )
+                    and not r.get("error")
+                )
                 if session_id and history_manager:
                     ledger = getattr(history_manager, "moves", None)
                     if ledger is not None and hasattr(ledger, "list_moves"):
@@ -3827,7 +3993,7 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                                 if getattr(m, "state", None) in (DONE, VERIFIED)
                             )
                         except Exception:
-                            real_move_count = len(audit_records)
+                            pass
 
                 summary["real_move_count"] = real_move_count
                 if (
@@ -3850,6 +4016,11 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                     and history_manager
                     and real_move_count == 0
                 ):
+                    target_empty_status = (
+                        "failed"
+                        if (is_partial_commit and has_failed_audit)
+                        else "abandoned"
+                    )
                     try:
                         if hasattr(history_manager, "_transition_session_status"):
                             hm_db = getattr(history_manager, "db", None)
@@ -3859,18 +4030,18 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                             ):
                                 hm_worker.execute_write(
                                     lambda: history_manager._transition_session_status(
-                                        session_id, "abandoned"
+                                        session_id, target_empty_status
                                     )
                                 )
                             else:
                                 history_manager._transition_session_status(
-                                    session_id, "abandoned"
+                                    session_id, target_empty_status
                                 )
-                    except Exception as abandon_err:
+                    except Exception as empty_err:
                         logging.debug(
-                            f"Could not mark empty session {session_id} abandoned: {abandon_err}"
+                            f"Could not mark session {session_id} {target_empty_status}: {empty_err}"
                         )
-                    if not resume:
+                    if target_empty_status == "abandoned" and not resume:
                         session_id = None
                         summary["session_id"] = None
 
@@ -3881,7 +4052,19 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
 
             if summary.get("cancelled"):
                 summary["lifecycle_state"] = PipelineLifecycleState.CANCELLED
-            summary["audit_report"] = generate_audit_report(base_dir, audit_records)
+            elif is_partial_commit and any(
+                r.get("status")
+                in (
+                    MoveVerificationStatus.MOVE_FAIL.value,
+                    MoveVerificationStatus.MISMATCH_FAIL.value,
+                )
+                or bool(r.get("error"))
+                for r in audit_records
+            ):
+                summary["lifecycle_state"] = PipelineLifecycleState.FAILED
+            summary["audit_report"] = generate_audit_report(
+                base_dir, audit_records, session_id=session_id
+            )
             summary["unarchived_children"] = list(unarchived_children_out)
             self.emit_telemetry(
                 "move_finish",
@@ -4033,83 +4216,10 @@ def retry_failed_moves(
     -------
         dict: Updated execution summary containing regenerated audit report.
     """
-    from app.core.audit_reporter import generate_audit_report
+    from app.core.move_retry import execute_journaled_retry
 
-    base_dir = os.path.normpath(base_dir) if base_dir else ""
-    retried_records: list[dict[str, Any]] = []
-    total = len(failed_items)
-
-    for idx, item in enumerate(failed_items):
-        src = item.get("source_path") or item.get("relative_source") or ""
-        dst = item.get("destination_path") or item.get("relative_destination") or ""
-
-        if src and not os.path.isabs(src) and base_dir:
-            src = os.path.normpath(os.path.join(base_dir, src))
-        if dst and not os.path.isabs(dst) and base_dir:
-            dst = os.path.normpath(os.path.join(base_dir, dst))
-
-        pre_hash = item.get("pre_hash") or ""
-        post_hash = None
-        move_error = None
-
-        if src and os.path.exists(src):
-            try:
-                dst_dir = os.path.dirname(dst)
-                if dst_dir:
-                    os.makedirs(dst_dir, exist_ok=True)
-
-                from app.core.resilient_file_ops import resilient_move
-
-                dst = resilient_move(src, dst)
-            except Exception as err:
-                move_error = str(err)
-                logging.error(f"Retry move failed for {src} -> {dst}: {err}")
-
-        # Post-move verification
-        if not move_error and os.path.exists(dst):
-            try:
-                from app.core.extractor import get_file_hash
-
-                post_hash = get_file_hash(dst)
-            except Exception:
-                post_hash = None
-
-            if not pre_hash:
-                pre_hash = post_hash
-
-            status = (
-                MoveVerificationStatus.VERIFIED_PASS
-                if (pre_hash == post_hash)
-                else MoveVerificationStatus.MISMATCH_FAIL
-            )
-            if status == MoveVerificationStatus.MISMATCH_FAIL:
-                move_error = "Pre-sort and post-sort SHA-256 hash mismatch"
-        else:
-            status = MoveVerificationStatus.MOVE_FAIL
-            if not move_error:
-                move_error = "Source file does not exist or move failed"
-
-        rec = {
-            "source_path": src,
-            "destination_path": dst,
-            "pre_hash": pre_hash,
-            "post_hash": post_hash,
-            "status": status.value,
-            "error": (
-                move_error if status != MoveVerificationStatus.VERIFIED_PASS else None
-            ),
-        }
-        retried_records.append(rec)
-
-        if progress_callback:
-            try:
-                progress_callback((idx + 1) / total if total > 0 else 1.0)
-            except Exception:
-                pass
-
-    report = generate_audit_report(base_dir, retried_records)
-    return {
-        "base_dir": base_dir,
-        "retried_count": total,
-        "audit_report": report,
-    }
+    return execute_journaled_retry(
+        base_dir,
+        failed_items,
+        progress_callback=progress_callback,
+    )

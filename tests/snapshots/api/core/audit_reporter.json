@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "2457a97edd030b79de70f35003131160fa48b7f4e1bf658a7e023130b16fb3b9"
+    "checksum": "f3ab5c80f051900abbf92bddeb2ff9c8b28494bbfb957e2a5dbf95bf07db58e3"
   },
   "classes": [],
   "functions": [
@@ -92,6 +92,11 @@
           "annotation": "list[dict[str, Any]]",
           "default": null,
           "name": "move_records"
+        },
+        {
+          "annotation": "str | None",
+          "default": "None",
+          "name": "session_id"
         }
       ],
       "returns": "dict[str, Any]"
@@ -115,6 +120,11 @@
           "annotation": "Any",
           "default": null,
           "name": "plan"
+        },
+        {
+          "annotation": "str | None",
+          "default": "None",
+          "name": "session_id"
         }
       ],
       "returns": "dict[str, Any] | None"

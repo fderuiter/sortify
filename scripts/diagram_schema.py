@@ -650,6 +650,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
                     "core_audit_reporter",
                     "core_accessible_html",
                     "core_mover",
+                    "core_move_retry",
                     "core_file_renamer",
                     "core_resilient_file_ops",
                     "core_scanner",
@@ -759,6 +760,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             DiagramNode(id="core_audit_reporter", label="app.core.audit_reporter"),
             DiagramNode(id="core_accessible_html", label="app.core.accessible_html"),
             DiagramNode(id="core_mover", label="app.core.mover"),
+            DiagramNode(id="core_move_retry", label="app.core.move_retry"),
             DiagramNode(id="core_file_renamer", label="app.core.file_renamer"),
             DiagramNode(
                 id="core_pattern_formatter", label="app.core.pattern_formatter"
@@ -802,6 +804,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             DiagramEdge(source="core_session", target="core_policy_engine"),
             DiagramEdge(source="core_session", target="core_verifier"),
             DiagramEdge(source="core_session", target="core_mover"),
+            DiagramEdge(source="core_session", target="core_move_retry"),
             DiagramEdge(source="core_daemon", target="core_session"),
             DiagramEdge(source="core_daemon", target="core_ipc"),
             DiagramEdge(source="core_extractor", target="core_extractor_strategies"),
@@ -851,6 +854,8 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             ),
             DiagramEdge(source="core_policy_engine", target="core_mover"),
             DiagramEdge(source="core_verifier", target="core_mover"),
+            DiagramEdge(source="core_mover", target="core_move_retry"),
+            DiagramEdge(source="core_move_retry", target="core_moves"),
             DiagramEdge(source="core_mover", target="core_file_renamer"),
             DiagramEdge(source="core_mover", target="core_resilient_file_ops"),
             DiagramEdge(source="core_mover", target="core_progress"),

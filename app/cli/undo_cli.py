@@ -1,0 +1,375 @@
+"""CLI subcommand helpers and execution handler for full and selective session rollback."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import time
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any, cast
+
+from app.cli.error_emitter import emit_cli_error
+from app.config import AppSettings
+from app.core.session_catalog import (
+    get_session_moves,
+    has_remaining_undo_moves,
+    list_sessions,
+    preview_session_rollback,
+)
+
+
+def extend_undo_parser(parser_undo: argparse.ArgumentParser) -> None:
+    """Register selective rollback, move listing, and dry-run flags on ``parser_undo``.
+
+    Parameters
+    ----------
+    parser_undo : argparse.ArgumentParser
+        The ``undo`` subcommand parser registered by ``build_parser``.
+    """
+    parser_undo.add_argument(
+        "--list-moves",
+        action="store_true",
+        help="List remaining undoable file moves for the target session",
+    )
+    parser_undo.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview rollback outcome and potential collisions without moving files",
+    )
+    parser_undo.add_argument(
+        "--step-id",
+        dest="step_ids",
+        type=int,
+        action="append",
+        default=None,
+        help="Specific move step ID to revert (repeatable for selective undo)",
+    )
+    parser_undo.add_argument(
+        "--file",
+        dest="files",
+        type=str,
+        action="append",
+        default=None,
+        help="Source or destination file path/name to revert (repeatable for selective undo)",
+    )
+
+
+def _match_undo_file_arg(
+    raw_file: str,
+    moves: list[dict[str, Any]],
+    base_dir: str | None = None,
+) -> list[int]:
+    """Match a CLI ``--file`` selector against a session's active move records."""
+    cleaned = raw_file.strip()
+    if not cleaned:
+        return []
+    norm_slash = cleaned.replace("\\", "/").strip("/")
+    norm_lower = norm_slash.lower()
+
+    candidates_abs: set[str] = {os.path.normcase(os.path.abspath(cleaned))}
+    if base_dir and not os.path.isabs(cleaned):
+        candidates_abs.add(
+            os.path.normcase(os.path.abspath(os.path.join(base_dir, cleaned)))
+        )
+
+    exact_matches: list[int] = []
+    rel_or_name_matches: list[int] = []
+    for move in moves:
+        step_id = int(move["step_id"])
+        src = str(move.get("source_path") or "")
+        dst = str(move.get("target_path") or "")
+        src_abs = os.path.normcase(os.path.abspath(src)) if src else ""
+        dst_abs = os.path.normcase(os.path.abspath(dst)) if dst else ""
+        if src_abs in candidates_abs or dst_abs in candidates_abs:
+            exact_matches.append(step_id)
+            continue
+
+        rel_candidates = {
+            os.path.basename(src).lower(),
+            os.path.basename(dst).lower(),
+            src.replace("\\", "/").strip("/").lower(),
+            dst.replace("\\", "/").strip("/").lower(),
+        }
+        if base_dir:
+            for p_str in (src, dst):
+                if p_str:
+                    try:
+                        rel_p = (
+                            Path(p_str)
+                            .resolve(strict=False)
+                            .relative_to(Path(base_dir).resolve(strict=False))
+                            .as_posix()
+                            .lower()
+                        )
+                        rel_candidates.add(rel_p)
+                    except ValueError:
+                        pass
+        if norm_lower in rel_candidates or any(
+            rc.endswith("/" + norm_lower) for rc in rel_candidates if rc
+        ):
+            rel_or_name_matches.append(step_id)
+
+    return exact_matches if exact_matches else rel_or_name_matches
+
+
+def execute_undo_command(
+    args: argparse.Namespace,
+    settings: AppSettings,
+    *,
+    apply_overrides_fn: Callable[[AppSettings, argparse.Namespace], None] | None = None,
+    list_sessions_fn: Callable[[], list[dict[str, Any]]] = list_sessions,
+) -> None:
+    """Execute ``smart-autosorter undo`` for full/selective rollback, listing, or dry-run preview.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Parsed CLI namespace for the ``undo`` subcommand.
+    settings : AppSettings
+        Active application configuration wrapper.
+    apply_overrides_fn : Callable[[AppSettings, argparse.Namespace], None] | None, optional
+        Optional callback to apply common CLI config overrides before execution.
+    list_sessions_fn : Callable[[], list[dict[str, Any]]], optional
+        Session listing callable (defaults to ``app.core.session_catalog.list_sessions``).
+    """
+    if apply_overrides_fn is not None:
+        apply_overrides_fn(settings, args)
+
+    list_flag = getattr(args, "list", False)
+    list_moves_flag = getattr(args, "list_moves", False)
+    dry_run_flag = getattr(args, "dry_run", False)
+    latest_flag = getattr(args, "latest", False)
+    session_id_arg = getattr(args, "session_id", None)
+    force_flag = getattr(args, "force", False)
+    json_output = getattr(args, "json", False)
+    quiet = getattr(args, "quiet", False)
+    raw_step_ids: list[int] = list(getattr(args, "step_ids", None) or [])
+    raw_files: list[str] = list(getattr(args, "files", None) or [])
+
+    # Constraint: Default to --latest when no session ID or --list flag specified
+    if not list_flag and not latest_flag and not session_id_arg:
+        latest_flag = True
+
+    all_sessions = list_sessions_fn()
+
+    if list_flag:
+        if json_output:
+            sys.stdout.write(json.dumps(all_sessions, indent=2) + "\n")
+            sys.stdout.flush()
+        else:
+            if not all_sessions:
+                print("No historical sorting sessions found.", file=sys.stderr)
+            else:
+                if not quiet:
+                    print("Historical Sorting Sessions:", file=sys.stderr)
+                for s in all_sessions:
+                    ts = s.get("timestamp")
+                    ts_str = (
+                        time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
+                        if ts
+                        else "N/A"
+                    )
+                    print(
+                        f"  Session ID: {s['session_id']} | Base: {s.get('base_dir', 'N/A')} | Status: {s.get('status', 'N/A')} | Time: {ts_str}"
+                    )
+        sys.exit(0)
+
+    target_session: dict[str, Any] | None = None
+    if session_id_arg:
+        for s in all_sessions:
+            if s["session_id"] == session_id_arg:
+                target_session = s
+                break
+        if not target_session:
+            target_session = {
+                "session_id": session_id_arg,
+                "history_db_path": None,
+                "base_dir": None,
+            }
+    elif latest_flag:
+        # Include both completed and partially_rolled_back sessions that still have active moves.
+        undoable = [
+            s
+            for s in all_sessions
+            if str(s.get("status", "")).lower()
+            in ("completed", "partially_rolled_back")
+            and has_remaining_undo_moves(s)
+        ]
+        if not undoable:
+            undoable = [
+                s
+                for s in all_sessions
+                if str(s.get("status", "")).lower() not in ("rolled_back", "abandoned")
+                and int(s.get("step_count") or 0) > 0
+                and has_remaining_undo_moves(s)
+            ]
+        if undoable:
+            target_session = undoable[0]
+        else:
+            emit_cli_error(
+                "Error: No historical sorting sessions available to undo.",
+                json_mode=json_output,
+                exit_code=1,
+            )
+
+    target_session_dict = cast(dict[str, Any], target_session)
+    target_session_id: str = target_session_dict["session_id"]
+    target_base_dir: str | None = target_session_dict.get("base_dir")
+
+    active_moves: list[dict[str, Any]] | None = None
+    if list_moves_flag or raw_step_ids or raw_files:
+        active_moves = get_session_moves(target_session_id)
+
+    if list_moves_flag:
+        moves_list = active_moves or []
+        if json_output:
+            payload = {
+                "status": "success",
+                "session_id": target_session_id,
+                "base_dir": target_base_dir,
+                "count": len(moves_list),
+                "moves": moves_list,
+            }
+            sys.stdout.write(json.dumps(payload, indent=2) + "\n")
+            sys.stdout.flush()
+        else:
+            if not moves_list:
+                print(
+                    f"No remaining undoable moves for session '{target_session_id}'.",
+                    file=sys.stderr,
+                )
+            else:
+                if not quiet:
+                    print(
+                        f"Remaining Undoable Moves for Session '{target_session_id}' ({len(moves_list)}):",
+                        file=sys.stderr,
+                    )
+                for m in moves_list:
+                    print(
+                        f"  [{m['step_id']}] {m.get('target_path', '')} -> {m.get('source_path', '')}"
+                    )
+        sys.exit(0)
+
+    selected_step_ids: list[int] | None = None
+    if raw_step_ids or raw_files:
+        moves_pool = active_moves or []
+        valid_ids = {int(m["step_id"]) for m in moves_pool}
+        resolved_ids: list[int] = []
+        seen_ids: set[int] = set()
+
+        for sid in raw_step_ids:
+            if sid not in valid_ids:
+                emit_cli_error(
+                    f"Error: Step ID {sid} is not an active undoable move in session '{target_session_id}'.",
+                    json_mode=json_output,
+                    exit_code=1,
+                    extra={"session_id": target_session_id, "step_id": sid},
+                )
+            if sid not in seen_ids:
+                seen_ids.add(sid)
+                resolved_ids.append(sid)
+
+        for file_arg in raw_files:
+            matched_ids = _match_undo_file_arg(
+                file_arg, moves_pool, base_dir=target_base_dir
+            )
+            if not matched_ids:
+                emit_cli_error(
+                    f"Error: No active undoable move matching '{file_arg}' in session '{target_session_id}'.",
+                    json_mode=json_output,
+                    exit_code=1,
+                    extra={"session_id": target_session_id, "file": file_arg},
+                )
+            for mid in matched_ids:
+                if mid not in seen_ids:
+                    seen_ids.add(mid)
+                    resolved_ids.append(mid)
+
+        selected_step_ids = resolved_ids
+
+    if dry_run_flag:
+        preview = preview_session_rollback(
+            target_session_id,
+            selected_step_ids=selected_step_ids,
+            ignore_missing=force_flag,
+        )
+        preview["status"] = "success"
+        preview["dry_run"] = True
+        if json_output:
+            sys.stdout.write(json.dumps(preview, indent=2) + "\n")
+            sys.stdout.flush()
+        else:
+            summary_counts = preview.get("summary", {})
+            if not quiet:
+                print(
+                    f"Dry-Run Undo Preview for Session '{target_session_id}':",
+                    file=sys.stderr,
+                )
+            print(
+                f"  Total: {preview.get('total_operations', 0)} | "
+                f"Clean: {summary_counts.get('clean', 0)} | "
+                f"Collisions: {summary_counts.get('collision', 0)} | "
+                f"Missing: {summary_counts.get('missing', 0)}"
+            )
+            for item in preview.get("items", []):
+                marker = str(item.get("status", "clean")).upper()
+                print(
+                    f"  [{item.get('step_id')}] ({marker}) {item.get('target_path')} -> {item.get('source_path')}"
+                )
+        sys.exit(0)
+
+    try:
+        from app.core.pipeline import SortPipeline
+
+        undo_result = SortPipeline(None, settings=settings).undo(
+            target_session_id,
+            selected_step_ids=selected_step_ids,
+            ignore_missing=force_flag,
+        )
+        if "error" in undo_result.summary:
+            raise RuntimeError(str(undo_result.summary["error"]))
+
+        restored_cnt = undo_result.summary.get("restored")
+        is_selective = selected_step_ids is not None
+        msg = (
+            f"Successfully rolled back {len(selected_step_ids)} selected move(s) in session '{target_session_id}'."
+            if is_selective and selected_step_ids is not None
+            else f"Successfully rolled back sorting session '{target_session_id}'."
+        )
+        result: dict[str, Any] = {
+            "status": "success",
+            "session_id": target_session_id,
+            "message": msg,
+        }
+        if restored_cnt is not None:
+            result["restored"] = restored_cnt
+        if selected_step_ids is not None:
+            result["selected_step_ids"] = selected_step_ids
+
+        if json_output:
+            sys.stdout.write(json.dumps(result, indent=2) + "\n")
+            sys.stdout.flush()
+        else:
+            if not quiet:
+                if is_selective and selected_step_ids is not None:
+                    print(
+                        f"Rollback completed successfully for {len(selected_step_ids)} selected move(s) in session '{target_session_id}'.",
+                        file=sys.stderr,
+                    )
+                else:
+                    print(
+                        f"Rollback completed successfully for session '{target_session_id}'.",
+                        file=sys.stderr,
+                    )
+
+        sys.exit(0)
+    except (OSError, RuntimeError, ValueError, LookupError, TypeError) as ex:
+        emit_cli_error(
+            f"Rollback failed for session '{target_session_id}': {ex}",
+            json_mode=json_output,
+            exit_code=1,
+            extra={"session_id": target_session_id},
+        )
