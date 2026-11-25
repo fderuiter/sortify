@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any, Literal, Optional, Protocol, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeVar, overload
 
 from textual.app import AwaitMount, ScreenResultCallbackType, ScreenResultType
 from textual.css.query import DOMQuery
@@ -25,15 +25,15 @@ class TUIHostProtocol(Protocol):
     """Structural interface of ``AutoSorterTUI`` consumed by TUI behaviour mixins."""
 
     settings: Any
-    db: Optional[Any]
+    db: Any | None
     base_dir: str
     source_dirs: list[str]
     plan: dict[str, Any]
     locked_files: dict[str, str]
     _ratings_cache: dict[str, str]
-    app_session: Optional[Any]
-    pipeline: Optional[Any]
-    active_tree_node: Optional[TreeNode[Any]]
+    app_session: Any | None
+    pipeline: Any | None
+    active_tree_node: TreeNode[Any] | None
     visual_select_active: bool
     visual_selected_nodes: list[TreeNode[Any]]
     _wizard_dismissed_this_session: bool
@@ -45,10 +45,10 @@ class TUIHostProtocol(Protocol):
     _daemon_state: str
     _daemon_is_moving: bool
     _tree_expansion_memory: dict[str, bool]
-    _last_cursor_key: Optional[str]
+    _last_cursor_key: str | None
     _pending_flush_trash: bool
-    initial_dest_dir: Optional[str]
-    _last_drop_session_id: Optional[str]
+    initial_dest_dir: str | None
+    _last_drop_session_id: str | None
     _manual_plan_edits: dict[str, dict[str, Any]]
     _manual_empty_folders: set[str]
 
@@ -114,12 +114,12 @@ class TUIHostProtocol(Protocol):
         self,
         message: str,
         priority: str = "polite",
-        help_url: Optional[str] = None,
+        help_url: str | None = None,
     ) -> str:
         """Emit screen reader announcement and write to the TUI execution log."""
         ...
 
-    def update_status(self, text: Optional[str] = None) -> None:
+    def update_status(self, text: str | None = None) -> None:
         """Update the TUI status bar text and badges."""
         ...
 
@@ -130,9 +130,9 @@ class TUIHostProtocol(Protocol):
     def _handle_progress_update(
         self,
         update_or_prog: Any = 0.0,
-        stage: Optional[str] = None,
-        unit_count: Optional[int] = None,
-        unit_type: Optional[str] = None,
+        stage: str | None = None,
+        unit_count: int | None = None,
+        unit_type: str | None = None,
         **kwargs: Any,
     ) -> None:
         """Dispatch worker progress updates onto the main UI progress widgets."""
@@ -146,7 +146,7 @@ class TUIHostProtocol(Protocol):
         """Toggle visibility between the onboarding CTA card and inspector pane."""
         ...
 
-    def _get_active_node(self) -> Optional[TreeNode[Any]]:
+    def _get_active_node(self) -> TreeNode[Any] | None:
         """Return the currently highlighted or active plan tree node."""
         ...
 
@@ -167,7 +167,7 @@ class TUIHostProtocol(Protocol):
         ...
 
     def action_open_audit_report(
-        self, audit_report: Optional[dict[str, Any]] = None
+        self, audit_report: dict[str, Any] | None = None
     ) -> None:
         """Open the post-move audit report modal."""
         ...
@@ -261,7 +261,7 @@ class TUIHostProtocol(Protocol):
         ...
 
     def _get_executable_plan(
-        self, plan_dict: Optional[dict[str, Any]] = None
+        self, plan_dict: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         """Filter ``plan_dict`` down to checked, non-excluded file entries."""
         ...
@@ -300,7 +300,7 @@ class TUIHostProtocol(Protocol):
 
     # --- TreeViewMixin methods ---
 
-    def _build_path_lookup_index(self, paths: Optional[Any] = None) -> PathLookupIndex:
+    def _build_path_lookup_index(self, paths: Any | None = None) -> PathLookupIndex:
         """Pre-index path and basename variants for O(1) membership checks."""
         ...
 
@@ -330,12 +330,12 @@ class TUIHostProtocol(Protocol):
         """Collect object IDs of plan nodes matching ``query``."""
         ...
 
-    def render_tree(self, search_query: Optional[str] = None) -> None:
+    def render_tree(self, search_query: str | None = None) -> None:
         """Render the plan tree widget without triggering background validation."""
         ...
 
     def rebuild_tree(
-        self, search_query: Optional[str] = None, run_validation: bool = True
+        self, search_query: str | None = None, run_validation: bool = True
     ) -> None:
         """Re-render the plan tree widget and optionally run integrity validation."""
         ...
@@ -350,7 +350,7 @@ class TUIHostProtocol(Protocol):
         current_folder: str = "",
         query: str = "",
         parent_folder_matches: bool = False,
-        matching_ids: Optional[set[int]] = None,
+        matching_ids: set[int] | None = None,
     ) -> list[dict[str, Any]]:
         """Collect file info dicts visible under the active search query."""
         ...
@@ -368,10 +368,10 @@ class TUIHostProtocol(Protocol):
         current_folder: str,
         query: str = "",
         parent_folder_matches: bool = False,
-        matching_ids: Optional[set[int]] = None,
-        crit_index: Optional[tuple[set[str], set[str]]] = None,
-        warn_index: Optional[tuple[set[str], set[str]]] = None,
-        collision_index: Optional[tuple[set[str], set[str]]] = None,
+        matching_ids: set[int] | None = None,
+        crit_index: tuple[set[str], set[str]] | None = None,
+        warn_index: tuple[set[str], set[str]] | None = None,
+        collision_index: tuple[set[str], set[str]] | None = None,
     ) -> int:
         """Recursively populate ``parent_item`` from ``node_dict``."""
         ...

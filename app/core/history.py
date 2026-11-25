@@ -9,9 +9,9 @@ import time
 import uuid
 from collections.abc import Callable, Collection, Generator, Sequence
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from app.core.db_conn import DB_ERRORS, get_db_connection
 from app.core.exceptions import InvalidStateTransitionError
@@ -122,7 +122,7 @@ def _ensure_lifecycle_audit_schema(conn) -> None:
 class SessionStateMachine(LifecycleTelemetryMixin):
     """Enforces lifecycle transition rules and records structured audit and telemetry events."""
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: str | None = None):
         self.db_path = db_path
         self._listeners: list[Callable[[dict[str, Any]], None]] = []
 
@@ -140,7 +140,7 @@ class SessionStateMachine(LifecycleTelemetryMixin):
             self._listeners.remove(callback)
 
     @staticmethod
-    def validate_transition(current_status: Optional[str], new_status: str) -> None:
+    def validate_transition(current_status: str | None, new_status: str) -> None:
         """Validate whether a status transition is permitted by the explicit transition matrix.
 
         Raises InvalidStateTransitionError if the transition is disallowed.
@@ -162,8 +162,8 @@ class SessionStateMachine(LifecycleTelemetryMixin):
         new_status: str,
         conn=None,
         *,
-        error_details: Optional[str] = None,
-        metadata: Optional[dict[str, Any]] = None,
+        error_details: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> tuple[str, str]:
         """Atomically validate and execute a session status transition in the database.
 
@@ -199,8 +199,8 @@ class SessionStateMachine(LifecycleTelemetryMixin):
         session_id: str,
         new_status: str,
         *,
-        error_details: Optional[str] = None,
-        metadata: Optional[dict[str, Any]] = None,
+        error_details: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> tuple[str, str]:
         cur = conn.execute(
             "SELECT status FROM sessions WHERE session_id = ?",
@@ -279,7 +279,7 @@ class SessionStateMachine(LifecycleTelemetryMixin):
         return previous_status, new_status
 
     def get_audit_events(
-        self, session_id: Optional[str] = None, conn=None
+        self, session_id: str | None = None, conn=None
     ) -> list[dict[str, Any]]:
         """Retrieve historical lifecycle audit events for a session."""
         close_conn = False
@@ -688,8 +688,8 @@ class HistoryManager:
         new_status: str,
         conn=None,
         *,
-        error_details: Optional[str] = None,
-        metadata: Optional[dict[str, Any]] = None,
+        error_details: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> tuple[str, str]:
         """Atomically validate and execute a session status transition."""
         if conn is not None:
@@ -715,7 +715,7 @@ class HistoryManager:
         return self._run_write(_write)
 
     def _start_session_internal(
-        self, base_dir: str, session_id: Optional[str] = None
+        self, base_dir: str, session_id: str | None = None
     ) -> str:
         if not base_dir or not os.path.isdir(base_dir):
             raise OSError(f"Base directory does not exist: {base_dir}")
@@ -740,7 +740,7 @@ class HistoryManager:
             self._prune_snapshots(conn, policies=policies)
         return sid
 
-    def start_session(self, base_dir: str, session_id: Optional[str] = None) -> str:
+    def start_session(self, base_dir: str, session_id: str | None = None) -> str:
         """Register a new sort session in ``sessions`` without walking ``base_dir``."""
 
         def _write() -> str:
@@ -749,7 +749,7 @@ class HistoryManager:
         return self.db.worker.execute_write(_write)
 
     def complete_session(
-        self, session_id: str, metadata: Optional[dict[str, Any]] = None
+        self, session_id: str, metadata: dict[str, Any] | None = None
     ) -> None:
         """Mark ``session_id`` as ``completed`` while keeping its ``moves`` ledger intact."""
         if not session_id:
@@ -902,7 +902,7 @@ class HistoryManager:
         output_path: str,
         session_id: Any = None,
         format: Any = None,
-        base_dir: Optional[str] = None,
+        base_dir: str | None = None,
     ) -> dict[str, Any]:
         """Export canonical session and move records into standard CSV or JSON audit log formats."""
         sessions_map: dict[str, dict[str, Any]] = {}
@@ -949,9 +949,7 @@ class HistoryManager:
                     ts_iso = ""
                     if ts:
                         try:
-                            ts_iso = datetime.fromtimestamp(
-                                ts, tz=timezone.utc
-                            ).isoformat()
+                            ts_iso = datetime.fromtimestamp(ts, tz=UTC).isoformat()
                         except Exception:
                             pass
                     if state_val in ("done", "verified"):
@@ -1115,7 +1113,7 @@ class HistoryManager:
                     writer.writerow(step)
         else:
             export_payload = {
-                "export_timestamp": datetime.now(timezone.utc).isoformat(),
+                "export_timestamp": datetime.now(UTC).isoformat(),
                 "session_id": session_id,
                 "sessions": sessions,
                 "total_steps": len(steps),
@@ -1136,7 +1134,7 @@ class HistoryManager:
         self,
         session_id: str,
         db=None,
-        selected_step_ids: Optional[Collection[int | str]] = None,
+        selected_step_ids: Collection[int | str] | None = None,
     ) -> int:
         """Unwind completed relocation steps in reverse order using the canonical move ledger."""
         return self._unwind_session_internal(
@@ -1147,7 +1145,7 @@ class HistoryManager:
         self,
         session_id: str,
         db=None,
-        selected_step_ids: Optional[Collection[int | str]] = None,
+        selected_step_ids: Collection[int | str] | None = None,
     ) -> int:
         if db and hasattr(db, "invalidate_cache"):
             db.invalidate_cache()
@@ -1208,7 +1206,7 @@ class HistoryManager:
         candidate_roots: list[str] = []
         seen_root_keys: set[str] = set()
 
-        def _add_candidate_root(raw_root: Optional[str]) -> None:
+        def _add_candidate_root(raw_root: str | None) -> None:
             if not raw_root or not isinstance(raw_root, str):
                 return
             norm_root = os.path.normpath(os.path.abspath(raw_root))
@@ -1256,18 +1254,18 @@ class HistoryManager:
             overwrite_backup_dir(r, session_id) for r in effective_roots if r
         ]
 
-        def _is_in_session_backup(path_str: Optional[str]) -> bool:
+        def _is_in_session_backup(path_str: str | None) -> bool:
             if not path_str:
                 return False
             return any(
                 is_subpath_or_equal(path_str, b_root) for b_root in session_backup_roots
             )
 
-        def _best_root_for(path_str: str) -> Optional[str]:
+        def _best_root_for(path_str: str) -> str | None:
             if not path_str:
                 return base_dir
             norm_p = os.path.normcase(os.path.normpath(os.path.abspath(path_str)))
-            best: Optional[str] = None
+            best: str | None = None
             for cand in candidate_roots:
                 norm_c = os.path.normcase(cand)
                 prefix = norm_c.rstrip("/\\") + os.sep
@@ -1539,7 +1537,7 @@ class HistoryManager:
         self,
         session_id: str,
         ignore_missing: bool = False,
-        selected_step_ids: Optional[Collection[int | str]] = None,
+        selected_step_ids: Collection[int | str] | None = None,
     ):
         """Undo a session solely by replaying its recorded moves backwards (ADR 0006)."""
         if hasattr(self.db, "invalidate_cache"):
@@ -1568,13 +1566,13 @@ class HistoryManager:
 
     def flush_staged_duplicates(
         self,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         *,
-        base_dir: Optional[str] = None,
-        max_age_days: Optional[float] = None,
+        base_dir: str | None = None,
+        max_age_days: float | None = None,
         trashed_only: bool = False,
-        trash_fn: Optional[Any] = None,
-        audit_ledger: Optional[Any] = None,
+        trash_fn: Any | None = None,
+        audit_ledger: Any | None = None,
     ) -> dict[str, Any]:
         """Export staged duplicates in ``.sortify_duplicates/<session>/`` to native OS Trash.
 
@@ -1729,7 +1727,7 @@ class HistoryManager:
     def simulate_rollback_steps(
         steps_to_analyze: Sequence[dict[str, Any]],
         *,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         ignore_missing: bool = False,
     ) -> dict[str, Any]:
         """Simulate pre-flight rollback outcomes for a sequence of move step records."""
@@ -1820,7 +1818,7 @@ class HistoryManager:
     def preview_rollback(
         self,
         session_id: str,
-        selected_step_ids: Optional[Collection[int | str]] = None,
+        selected_step_ids: Collection[int | str] | None = None,
         ignore_missing: bool = False,
     ) -> dict[str, Any]:
         """Simulate pre-flight session rollback without making any disk modifications."""

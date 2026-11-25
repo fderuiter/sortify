@@ -159,7 +159,7 @@ def test_multiprocess_few_shot_prefetch_flow(db, temp_dir, monkeypatch):
     assert prompt_dump_path.exists(), (
         "Prompt dump file was not created by the child process"
     )
-    with open(prompt_dump_path, "r") as f:
+    with open(prompt_dump_path) as f:
         prompts_text = f.read()
 
     # Verify that pre-fetched historical examples are represented as redacted placeholders and folder names are injected

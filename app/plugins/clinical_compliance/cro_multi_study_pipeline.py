@@ -10,8 +10,8 @@ import os
 import shutil
 import threading
 from collections.abc import Callable
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -32,7 +32,7 @@ from app.plugins.clinical_compliance.study_disambiguator import StudyDisambiguat
 logger = logging.getLogger(__name__)
 
 
-class CROPipelineState(str, Enum):
+class CROPipelineState(StrEnum):
     """Lifecycle states for CRO Multi-Study pipeline execution."""
 
     IDLE = "IDLE"
@@ -209,7 +209,7 @@ class CROMultiStudyPipeline(LifecycleTelemetryMixin):
                 return MasterPipelineResult(
                     source_root=source_root,
                     target_root=target_root,
-                    timestamp_utc=datetime.now(timezone.utc).isoformat(),
+                    timestamp_utc=datetime.now(UTC).isoformat(),
                     total_scanned_files=0,
                     total_unique_documents=0,
                     total_duplicates_detected=0,
@@ -248,7 +248,7 @@ class CROMultiStudyPipeline(LifecycleTelemetryMixin):
                 return MasterPipelineResult(
                     source_root=source_root,
                     target_root=target_root,
-                    timestamp_utc=datetime.now(timezone.utc).isoformat(),
+                    timestamp_utc=datetime.now(UTC).isoformat(),
                     total_scanned_files=len(discovered_docs),
                     total_unique_documents=0,
                     total_duplicates_detected=0,
@@ -277,7 +277,7 @@ class CROMultiStudyPipeline(LifecycleTelemetryMixin):
                 return MasterPipelineResult(
                     source_root=source_root,
                     target_root=target_root,
-                    timestamp_utc=datetime.now(timezone.utc).isoformat(),
+                    timestamp_utc=datetime.now(UTC).isoformat(),
                     total_scanned_files=len(discovered_docs),
                     total_unique_documents=len(
                         [d for d in discovered_docs if not d.is_duplicate]
@@ -422,9 +422,7 @@ class CROMultiStudyPipeline(LifecycleTelemetryMixin):
                                 "duplicate_status": "skipped",
                                 "is_duplicate": doc.is_duplicate,
                                 "duplicate_of": doc.duplicate_of,
-                                "ingest_timestamp": datetime.now(
-                                    timezone.utc
-                                ).isoformat(),
+                                "ingest_timestamp": datetime.now(UTC).isoformat(),
                             }
                         )
                         continue
@@ -463,9 +461,7 @@ class CROMultiStudyPipeline(LifecycleTelemetryMixin):
                                 "duplicate_status": "archived",
                                 "is_duplicate": doc.is_duplicate,
                                 "duplicate_of": doc.duplicate_of,
-                                "ingest_timestamp": datetime.now(
-                                    timezone.utc
-                                ).isoformat(),
+                                "ingest_timestamp": datetime.now(UTC).isoformat(),
                             }
                         )
                         continue
@@ -530,7 +526,7 @@ class CROMultiStudyPipeline(LifecycleTelemetryMixin):
                         "duplicate_status": "copied",
                         "is_duplicate": doc.is_duplicate,
                         "duplicate_of": doc.duplicate_of,
-                        "ingest_timestamp": datetime.now(timezone.utc).isoformat(),
+                        "ingest_timestamp": datetime.now(UTC).isoformat(),
                     }
                     if primary_rel_dest is not None:
                         record_entry["primary_destination_path"] = primary_rel_dest
@@ -579,7 +575,7 @@ class CROMultiStudyPipeline(LifecycleTelemetryMixin):
                 return MasterPipelineResult(
                     source_root=source_root,
                     target_root=target_root,
-                    timestamp_utc=datetime.now(timezone.utc).isoformat(),
+                    timestamp_utc=datetime.now(UTC).isoformat(),
                     total_scanned_files=len(discovered_docs),
                     total_unique_documents=len(
                         [d for d in discovered_docs if not d.is_duplicate]
@@ -601,7 +597,7 @@ class CROMultiStudyPipeline(LifecycleTelemetryMixin):
                 return MasterPipelineResult(
                     source_root=source_root,
                     target_root=target_root,
-                    timestamp_utc=datetime.now(timezone.utc).isoformat(),
+                    timestamp_utc=datetime.now(UTC).isoformat(),
                     total_scanned_files=len(discovered_docs),
                     total_unique_documents=len(
                         [d for d in discovered_docs if not d.is_duplicate]
@@ -630,7 +626,7 @@ class CROMultiStudyPipeline(LifecycleTelemetryMixin):
                 "regulatory_standard": "ICH-GCP E6(R2), 21 CFR Part 11, DIA TMF Reference Model",
                 "source_storage_root": source_root,
                 "target_destination_root": target_root,
-                "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+                "timestamp_utc": datetime.now(UTC).isoformat(),
                 "summary_metrics": {
                     "total_documents_scanned": len(discovered_docs),
                     "total_unique_documents": unique_docs_count,
@@ -653,7 +649,7 @@ class CROMultiStudyPipeline(LifecycleTelemetryMixin):
             return MasterPipelineResult(
                 source_root=source_root,
                 target_root=target_root,
-                timestamp_utc=datetime.now(timezone.utc).isoformat(),
+                timestamp_utc=datetime.now(UTC).isoformat(),
                 total_scanned_files=len(discovered_docs),
                 total_unique_documents=unique_docs_count,
                 total_duplicates_detected=dups_count,

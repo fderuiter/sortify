@@ -9,7 +9,7 @@ import logging
 import os
 import re
 from collections import defaultdict
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 from pydantic import BaseModel
 
@@ -33,7 +33,7 @@ _UNSPECIFIED = _Unspecified()
 _SortingPlanNodeSchema = SortingPlanNodeModel
 
 
-def _extract_policy_priority(matched_pol: Any) -> Optional[int]:
+def _extract_policy_priority(matched_pol: Any) -> int | None:
     """Extract an integer priority from a policy rule or matched_policies_map entry."""
     if matched_pol is None:
         return None
@@ -114,7 +114,7 @@ class SortingPlanNode(dict):
 class SortingPlan(dict):
     """Pydantic-validated dict representing a complete hierarchical sorting plan."""
 
-    def __init__(self, plan: Optional[dict[str, Any]] = None, **kwargs):
+    def __init__(self, plan: dict[str, Any] | None = None, **kwargs):
         self.model_status = kwargs.pop(
             "model_status", getattr(plan, "model_status", "HEALTHY")
         )
@@ -758,9 +758,9 @@ class IncrementalAnalyzer:
     def _build_folder_anchor_profile(
         cls,
         folder_name: str,
-        base_dir: Optional[str] = None,
-        dest_dir: Optional[str] = None,
-        exclude_rel_paths: Optional[set[str]] = None,
+        base_dir: str | None = None,
+        dest_dir: str | None = None,
+        exclude_rel_paths: set[str] | None = None,
     ) -> str:
         split_camel = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", folder_name)
         raw_tokens = re.findall(r"[a-zA-Z0-9]{2,}", split_camel.lower())
@@ -805,10 +805,10 @@ class IncrementalAnalyzer:
         filenames: list[str],
         documents: list[str],
         existing_folders: list[str],
-        base_dir: Optional[str],
-        dest_dir: Optional[str],
+        base_dir: str | None,
+        dest_dir: str | None,
         is_rejected_fn,
-    ) -> tuple[list[tuple[str, str, str, str, Optional[str]]], list[str], list[str]]:
+    ) -> tuple[list[tuple[str, str, str, str, str | None]], list[str], list[str]]:
         """Match candidate files against existing folders using ONNX and TF-IDF similarity."""
         if not filenames or not existing_folders:
             return [], filenames, documents
@@ -908,7 +908,7 @@ class IncrementalAnalyzer:
             except (ValueError, RuntimeError, TypeError, OSError):
                 sims = tfidf_sims
 
-        anchored: list[tuple[str, str, str, str, Optional[str]]] = []
+        anchored: list[tuple[str, str, str, str, str | None]] = []
         rem_files: list[str] = []
         rem_docs: list[str] = []
         threshold = 0.18
@@ -1086,7 +1086,7 @@ class IncrementalAnalyzer:
     def _build_sorting_plan(
         self,
         validated_plan: dict,
-        invalid_locks: Optional[dict[str, str]] = None,
+        invalid_locks: dict[str, str] | None = None,
     ) -> SortingPlan:
         """Construct a SortingPlan object and attach model health telemetry metadata."""
         from app.core.shared_registry import SharedModelRegistry
@@ -1149,14 +1149,14 @@ class IncrementalAnalyzer:
         self,
         base_dir: str,
         runtime_settings=None,
-        locked_files: Optional[dict] = None,
+        locked_files: dict | None = None,
         cancel_check=None,
         fast_path_only: bool = False,
-        target_paths: Optional[list[str]] = None,
-        jev_results: Optional[dict[str, Any]] = None,
-        source_dirs: Optional[list[str]] = None,
-        existing_folders: Optional[list[str]] = None,
-        dest_dir: Optional[str] = None,
+        target_paths: list[str] | None = None,
+        jev_results: dict[str, Any] | None = None,
+        source_dirs: list[str] | None = None,
+        existing_folders: list[str] | None = None,
+        dest_dir: str | None = None,
     ) -> SortingPlan:
         """Generate a sorting plan mapping file paths to destination paths based on current model state.
 
@@ -1364,7 +1364,7 @@ class IncrementalAnalyzer:
             def _get_or_resolve_file_date(
                 f_key: str,
                 abs_path: str,
-                matched_pol: Optional[Any] = None,
+                matched_pol: Any | None = None,
             ) -> str:
                 if f_key in resolved_dates_map:
                     return resolved_dates_map[f_key]
@@ -1455,7 +1455,7 @@ class IncrementalAnalyzer:
                         rejected_targets[norm_df].add(rej.lower())
                         rejected_targets[norm_df].add(rej.split("/")[0].lower())
 
-            def _is_target_rejected(f_path: str, candidate: Optional[str]) -> bool:
+            def _is_target_rejected(f_path: str, candidate: str | None) -> bool:
                 if not candidate:
                     return False
                 rej_set = rejected_targets.get(str(f_path).replace("\\", "/"))
@@ -1466,7 +1466,7 @@ class IncrementalAnalyzer:
                     return False
                 return cand_norm in rej_set or cand_norm.split("/")[0] in rej_set
 
-            def _clean_verified_folder(val: Optional[str]) -> Optional[str]:
+            def _clean_verified_folder(val: str | None) -> str | None:
                 if val is None:
                     return None
                 s = str(val).strip().replace("\\", "/")
@@ -2607,7 +2607,7 @@ class IncrementalAnalyzer:
             rename_seq_counters: dict[str, int] = defaultdict(int)
             policy_target_filenames: dict[str, str] = {}
 
-            def _compute_policy_rename(f_key: str, target_fld: str) -> Optional[str]:
+            def _compute_policy_rename(f_key: str, target_fld: str) -> str | None:
                 if f_key in policy_target_filenames:
                     return policy_target_filenames[f_key]
                 matched_pol = matched_policies_map.get(f_key)
@@ -3118,7 +3118,7 @@ class IncrementalAnalyzer:
                 src_rel: str,
                 dst_folder: str,
                 raw_key: str,
-                target_filename: Optional[str] = None,
+                target_filename: str | None = None,
             ) -> bool:
                 src_abs = os.path.normcase(
                     os.path.normpath(os.path.abspath(os.path.join(s_root, src_rel)))

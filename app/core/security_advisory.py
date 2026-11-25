@@ -9,7 +9,6 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
-from typing import Optional
 
 from app.core.exceptions import ModelVerificationError
 from app.core.network_guard import (
@@ -44,8 +43,8 @@ def _validate_advisory_url(url: str, trusted_hosts=None) -> None:
 
 def _build_advisory_query_url(
     base_endpoint: str,
-    norm_repo: Optional[str],
-    norm_hash: Optional[str],
+    norm_repo: str | None,
+    norm_hash: str | None,
 ) -> str:
     """Construct the HTTPS query URL for either Hugging Face models API or a custom advisory mirror."""
     parsed = urllib.parse.urlsplit(base_endpoint.strip())
@@ -96,7 +95,7 @@ def _build_advisory_query_url(
 
 def _parse_advisory_payload(
     resp_data: object, asset_label: str
-) -> tuple[bool, Optional[str], Optional[str], Optional[str]]:
+) -> tuple[bool, str | None, str | None, str | None]:
     """Extract advisory flag, ID, severity, and details from HF metadata or custom mirror JSON."""
     if isinstance(resp_data, dict):
         if resp_data.get("disabled") is True:
@@ -228,16 +227,16 @@ class SecurityAdvisoryResult:
     """Dataclass encapsulating security advisory verification results."""
 
     has_advisory: bool
-    advisory_id: Optional[str] = None
-    severity: Optional[str] = None
-    details: Optional[str] = None
+    advisory_id: str | None = None
+    severity: str | None = None
+    details: str | None = None
     timestamp: float = field(default_factory=time.time)
 
 
 class SecurityAdvisoryClient:
     """Thread-safe client to query remote security advisory endpoints with in-memory caching."""
 
-    _instance: Optional["SecurityAdvisoryClient"] = None
+    _instance: "SecurityAdvisoryClient | None" = None
     _lock = threading.RLock()
 
     @classmethod
@@ -259,13 +258,13 @@ class SecurityAdvisoryClient:
     def __init__(
         self,
         settings=None,
-        endpoint: Optional[str] = None,
-        ttl: Optional[float] = None,
-        fallback_policy: Optional[str] = None,
+        endpoint: str | None = None,
+        ttl: float | None = None,
+        fallback_policy: str | None = None,
     ):
         """Initialize SecurityAdvisoryClient with configurable endpoint, TTL, and fallback policy."""
         self._cache: dict[
-            tuple[Optional[str], Optional[str]], tuple[SecurityAdvisoryResult, float]
+            tuple[str | None, str | None], tuple[SecurityAdvisoryResult, float]
         ] = {}
         self._cache_lock = threading.RLock()
         self._settings = settings
@@ -371,8 +370,8 @@ class SecurityAdvisoryClient:
 
     def cache_advisory(
         self,
-        repo_id: Optional[str],
-        file_hash: Optional[str],
+        repo_id: str | None,
+        file_hash: str | None,
         result: SecurityAdvisoryResult,
     ) -> None:
         """Manually store or update a security advisory result in the in-memory cache."""
@@ -388,8 +387,8 @@ class SecurityAdvisoryClient:
             self._cache.clear()
 
     def get_cached_advisory(
-        self, repo_id: Optional[str], file_hash: Optional[str]
-    ) -> Optional[SecurityAdvisoryResult]:
+        self, repo_id: str | None, file_hash: str | None
+    ) -> SecurityAdvisoryResult | None:
         """Retrieve cached advisory result if present and within TTL."""
         norm_repo = self.extract_repo_id(repo_id) if repo_id else None
         norm_hash = file_hash.strip().lower() if file_hash else None
@@ -454,10 +453,10 @@ class SecurityAdvisoryClient:
 
     def check_advisory(
         self,
-        repo_id: Optional[str] = None,
-        file_hash: Optional[str] = None,
+        repo_id: str | None = None,
+        file_hash: str | None = None,
         timeout: float = MAX_API_TIMEOUT,
-        fallback_policy: Optional[str] = None,
+        fallback_policy: str | None = None,
         raise_on_advisory: bool = True,
     ) -> SecurityAdvisoryResult:
         """Verify remote security advisories for repository identifier and/or file SHA-256 hash.

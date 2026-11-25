@@ -94,7 +94,7 @@ def test_parse_eml_legitimate_attachment():
         att_file = attachments[0]
         assert os.path.basename(att_file) == "protocol_v2.txt"
         assert os.path.isfile(att_file)
-        with open(att_file, "r") as f:
+        with open(att_file) as f:
             assert "Protocol amendment version 2 content." in f.read()
         scanner.cleanup()
 

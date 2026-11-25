@@ -5,9 +5,9 @@ import html
 import json
 import os
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from app.core.accessible_html import (
     AccessibleHtmlBuilder,
@@ -29,7 +29,7 @@ class SimulationExporter:
         self,
         plan: Any,
         base_dir: str = "",
-        simulation_results: Optional[dict[str, Any]] = None,
+        simulation_results: dict[str, Any] | None = None,
     ):
         self.plan = plan
         self.base_dir = os.path.normpath(base_dir) if base_dir else ""
@@ -40,7 +40,7 @@ class SimulationExporter:
                 self.base_dir, self.plan
             )
 
-        self._cached_report_data: Optional[dict[str, Any]] = None
+        self._cached_report_data: dict[str, Any] | None = None
         self._scrub_cache: dict[str, str] = {}
 
         # Build compiled regex for user home paths and secret triggers
@@ -63,7 +63,7 @@ class SimulationExporter:
         if self._home_dir_strs:
             sorted_homes = sorted(self._home_dir_strs, key=len, reverse=True)
             pattern = "|".join(re.escape(h) for h in sorted_homes)
-            self._home_re: Optional[re.Pattern] = re.compile(pattern, re.IGNORECASE)
+            self._home_re: re.Pattern | None = re.compile(pattern, re.IGNORECASE)
         else:
             self._home_re = None
 
@@ -72,7 +72,7 @@ class SimulationExporter:
             re.IGNORECASE,
         )
 
-    def _scrub(self, text: Optional[str]) -> str:
+    def _scrub(self, text: str | None) -> str:
         """Scrub user home paths and sensitive credentials from text string with fast-path optimization."""
         if not text or not isinstance(text, str):
             return "" if text is None else str(text)
@@ -287,7 +287,7 @@ class SimulationExporter:
         else:
             safety_status = "PASSED_SAFETY_CHECK"
 
-        now_str = datetime.now(timezone.utc).isoformat()
+        now_str = datetime.now(UTC).isoformat()
 
         res = {
             "title": "Sortify Dry-Run Simulation Report",
@@ -320,7 +320,7 @@ class SimulationExporter:
         self._cached_report_data = res
         return res
 
-    def export_json(self, output_path: Optional[str | Path] = None) -> str:
+    def export_json(self, output_path: str | Path | None = None) -> str:
         """Serialize simulation report into JSON format and write to output_path if specified."""
         data = self.generate_report_data()
         json_content = json.dumps(data, indent=2)
@@ -333,7 +333,7 @@ class SimulationExporter:
 
         return json_content
 
-    def export_html(self, output_path: Optional[str | Path] = None) -> str:
+    def export_html(self, output_path: str | Path | None = None) -> str:
         """Serialize simulation report into standalone HTML format and write to output_path if specified."""
         data = self.generate_report_data()
         summary = data["summary"]

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "bba0f958724b478ca3e0b67b59bfe8d7b1474789e8989cae460ac6f5304e84d0"
+    "checksum": "aefe919a43c70e4a61e6ec7c17c2eb545f2745ce8b52f01b932011aa9f796d46"
   },
   "classes": [
     {
@@ -18,7 +18,7 @@
       "name": "emit_progress",
       "parameters": [
         {
-          "annotation": "Optional[Callable[..., Any]]",
+          "annotation": "Callable[..., Any] | None",
           "default": null,
           "name": "callback"
         },
@@ -28,17 +28,17 @@
           "name": "progress_or_update"
         },
         {
-          "annotation": "Optional[str]",
+          "annotation": "str | None",
           "default": "None",
           "name": "stage"
         },
         {
-          "annotation": "Optional[int]",
+          "annotation": "int | None",
           "default": "None",
           "name": "unit_count"
         },
         {
-          "annotation": "Optional[str]",
+          "annotation": "str | None",
           "default": "None",
           "name": "unit_type"
         },

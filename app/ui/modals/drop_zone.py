@@ -5,7 +5,7 @@ import os
 import re
 import shlex
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from textual import events, on, work
 from textual.app import ComposeResult
@@ -114,7 +114,7 @@ class DropPlanConfirmModal(ResponsiveModalScreen[bool]):
         summary: str,
         plan_lines: list[str],
         *,
-        warnings: Optional[list[str]] = None,
+        warnings: list[str] | None = None,
         batch_plan: Any = None,
         coordinator: Any = None,
     ):
@@ -337,7 +337,7 @@ class DropPlanConfirmModal(ResponsiveModalScreen[bool]):
         verb = "Excluded" if new_excl else "Included"
         self.announce(f"{verb} '{os.path.basename(sel.source_path)}'.")
 
-    def apply_folder_override(self, folder: Optional[str] = None) -> None:
+    def apply_folder_override(self, folder: str | None = None) -> None:
         """Override the target category folder of the currently highlighted plan item."""
         if self.batch_plan is None or self.coordinator is None:
             return
@@ -416,7 +416,7 @@ class DropPlanConfirmModal(ResponsiveModalScreen[bool]):
         self.dismiss(False)
 
 
-class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
+class DropZoneModal(ResponsiveModalScreen[dict[str, Any] | None]):
     """Floating overlay modal dialog for quick drag-and-drop or paste file triage."""
 
     HELP_URL = f"{TROUBLESHOOTING_URL}#dropzone-errors"
@@ -614,19 +614,19 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
     def __init__(
         self,
         settings: Any = None,
-        base_dir: Optional[str] = None,
-        initial_paths: Optional[list[str]] = None,
-        initial_dest_dir: Optional[str] = None,
+        base_dir: str | None = None,
+        initial_paths: list[str] | None = None,
+        initial_dest_dir: str | None = None,
     ):
         super().__init__()
         self.settings = settings
         self.base_dir = base_dir
         self.initial_dest_dir = initial_dest_dir
         self.initial_paths: list[str] = list(initial_paths) if initial_paths else []
-        self.processed_result: Optional[dict[str, Any]] = None
+        self.processed_result: dict[str, Any] | None = None
         self.staged_items: list[dict[str, Any]] = []
-        self._coordinator: Optional[Any] = None
-        self._pending_batch_plan: Optional[Any] = None
+        self._coordinator: Any | None = None
+        self._pending_batch_plan: Any | None = None
         self._pending_drop: list[dict[str, Any]] = []
 
     def compose(self) -> ComposeResult:
@@ -824,7 +824,7 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
             )
         self.update_active_metadata_preview()
 
-    def update_metadata_preview(self, item: Optional[dict[str, Any]] = None) -> None:
+    def update_metadata_preview(self, item: dict[str, Any] | None = None) -> None:
         """Update metadata preview card panel for given staged item."""
         if item is None:
             path_str = "N/A"
@@ -1066,7 +1066,7 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         detail = getattr(issue, "detail", None)
         reason = getattr(issue, "reason", None)
 
-        block_reason: Optional[str] = None
+        block_reason: str | None = None
         if is_protected or reason == "protected":
             status = "BLOCKED"
             block_reason = "protected"
@@ -1106,8 +1106,8 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
     def _add_single_file_to_staging(
         self,
         abs_p: str,
-        protected: Optional[list[str]] = None,
-        root_dir: Optional[str] = None,
+        protected: list[str] | None = None,
+        root_dir: str | None = None,
     ) -> None:
         """Validate and append a single file path to staged_items."""
         from app.core.mover import is_subpath_or_equal
@@ -1125,7 +1125,7 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         ext = os.path.splitext(abs_p)[1].lower()
         group_root = root_dir or os.path.dirname(abs_p)
 
-        block_reason: Optional[str] = None
+        block_reason: str | None = None
         if is_prot:
             status = "BLOCKED"
             block_reason = "protected"
@@ -1307,7 +1307,7 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         self._browse_dest_worker(initial_dir)
 
     @work(thread=True)
-    def _browse_dest_worker(self, initial_dir: Optional[str]) -> None:
+    def _browse_dest_worker(self, initial_dir: str | None) -> None:
         """Launch native folder selection dialog in a background thread."""
         from app.core.native_dialog import NativeDialogError, select_native_directory
 
@@ -1408,14 +1408,14 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
 
         help_url = f"{TROUBLESHOOTING_URL}#dropzone-errors"
 
-        raw_dest: Optional[str] = None
+        raw_dest: str | None = None
         try:
             dest_inp = self.query_one("#input-dest-dir", Input)
             raw_dest = dest_inp.value.strip()
         except Exception:
             raw_dest = (self.initial_dest_dir or "").strip()
 
-        resolved_dest: Optional[str] = None
+        resolved_dest: str | None = None
         if raw_dest:
             from app.core.pipeline import validate_drop_destination
             from app.ui.notifications import notify
@@ -1442,7 +1442,7 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
             blocked_items = [
                 item for item in filtered if item["status"] == "BLOCKED"
             ] or [item for item in self.staged_items if item["status"] == "BLOCKED"]
-            status_err_detail: Optional[str] = None
+            status_err_detail: str | None = None
             if blocked_items:
                 first_blk = blocked_items[0]
                 blk_reason = first_blk.get("block_reason")
@@ -1477,7 +1477,7 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         self.update_status_msg(f"Processing {len(ready_paths)} dropped item(s)...")
         self.run_drop_worker(ready_paths, dest_dir=resolved_dest)
 
-    def update_status_msg(self, msg: str, help_url: Optional[str] = None) -> None:
+    def update_status_msg(self, msg: str, help_url: str | None = None) -> None:
         """Update live status message region and screen reader announcement."""
         display_msg = f"{msg} [Help: {help_url}]" if help_url else msg
         try:
@@ -1506,7 +1506,7 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
 
     @work(exclusive=True, thread=True)
     def run_drop_worker(
-        self, target_paths: list[str], dest_dir: Optional[str] = None
+        self, target_paths: list[str], dest_dir: str | None = None
     ) -> None:
         """Plan the dropped items via DropBatchCoordinator in a worker thread, then ask before moving."""
         app_ref = getattr(self, "_app_ref", None)
@@ -1605,7 +1605,7 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         )
         self.update_status_msg(f"Review the plan: {summary}")
 
-        def _on_answer(confirmed: Optional[bool]) -> None:
+        def _on_answer(confirmed: bool | None) -> None:
             if confirmed:
                 self.update_status_msg(
                     "Relocating items according to generated sorting plan..."

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "d3044aab2245b15d57d3c71e9799c344013a2df361c61a32e494706638cbb3f6"
+    "checksum": "4bb34ac955ddcfa8332c84f827a5c629f785bd34f065384fc158835e601f876e"
   },
   "classes": [
     {
@@ -23,17 +23,17 @@
               "name": "settings"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "endpoint"
             },
             {
-              "annotation": "Optional[float]",
+              "annotation": "float | None",
               "default": "None",
               "name": "ttl"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "fallback_policy"
             }
@@ -51,12 +51,12 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": null,
               "name": "repo_id"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": null,
               "name": "file_hash"
             },
@@ -79,12 +79,12 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "repo_id"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "file_hash"
             },
@@ -94,7 +94,7 @@
               "name": "timeout"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "fallback_policy"
             },
@@ -180,17 +180,17 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": null,
               "name": "repo_id"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": null,
               "name": "file_hash"
             }
           ],
-          "returns": "Optional[SecurityAdvisoryResult]"
+          "returns": "SecurityAdvisoryResult | None"
         },
         {
           "async": false,

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "bbda8f9585e3bf5011cba4ad4dd51531fdabf17a9ce42c5da86501360e145cef"
+    "checksum": "a5ffceffd9b4f2e9cbdd7bc6bc5e65a3b24e20f3f660f3a65973080c7b67c1d8"
   },
   "classes": [
     {
@@ -104,7 +104,7 @@
               "name": "runtime_settings"
             },
             {
-              "annotation": "Optional[dict]",
+              "annotation": "dict | None",
               "default": "None",
               "name": "locked_files"
             },
@@ -119,27 +119,27 @@
               "name": "fast_path_only"
             },
             {
-              "annotation": "Optional[list[str]]",
+              "annotation": "list[str] | None",
               "default": "None",
               "name": "target_paths"
             },
             {
-              "annotation": "Optional[dict[str, Any]]",
+              "annotation": "dict[str, Any] | None",
               "default": "None",
               "name": "jev_results"
             },
             {
-              "annotation": "Optional[list[str]]",
+              "annotation": "list[str] | None",
               "default": "None",
               "name": "source_dirs"
             },
             {
-              "annotation": "Optional[list[str]]",
+              "annotation": "list[str] | None",
               "default": "None",
               "name": "existing_folders"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "dest_dir"
             }
@@ -222,7 +222,7 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[dict[str, Any]]",
+              "annotation": "dict[str, Any] | None",
               "default": "None",
               "name": "plan"
             },

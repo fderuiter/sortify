@@ -247,7 +247,7 @@ def test_pii_scrubbing_and_release_pipeline():
     released_path = os.path.join(sample_dir, "Clean_Out", "trial_data.txt")
     assert os.path.exists(released_path)
 
-    with open(released_path, "r", encoding="utf-8") as f:
+    with open(released_path, encoding="utf-8") as f:
         sanitized_content = f.read()
 
     assert (
@@ -478,7 +478,7 @@ def test_atomic_quarantine_relocation_context_manager_rollback():
     # File is restored back to dest_path
     assert os.path.exists(dest_path)
     assert not os.path.exists(staged_path)
-    with open(dest_path, "r", encoding="utf-8") as f:
+    with open(dest_path, encoding="utf-8") as f:
         assert f.read() == "Important staged content"
 
 
@@ -843,11 +843,11 @@ def test_release_quarantine_conflict_policy_rename():
     assert dest_path.endswith("data_1.txt")
 
     # Original collision file remained untouched
-    with open(collision_path, "r", encoding="utf-8") as f:
+    with open(collision_path, encoding="utf-8") as f:
         assert f.read() == "Original collision data"
 
     # Newly released file has new content
-    with open(dest_path, "r", encoding="utf-8") as f:
+    with open(dest_path, encoding="utf-8") as f:
         assert f.read() == "New released data"
 
 
@@ -880,7 +880,7 @@ def test_release_quarantine_conflict_policy_skip():
     assert "already exists" in results[0]["error"].lower()
 
     # Destination file still intact
-    with open(collision_path, "r", encoding="utf-8") as f:
+    with open(collision_path, encoding="utf-8") as f:
         assert f.read() == "Existing destination report"
 
     # Staged file remains preserved in staging
@@ -920,7 +920,7 @@ def test_release_quarantine_conflict_policy_overwrite():
     assert results[0]["destination"] == target_path
 
     # Target path now contains the new version
-    with open(target_path, "r", encoding="utf-8") as f:
+    with open(target_path, encoding="utf-8") as f:
         assert f.read() == "Updated critical document version"
 
     # Backup file must exist in session's overwrite backup directory
@@ -930,7 +930,7 @@ def test_release_quarantine_conflict_policy_overwrite():
     if not os.path.exists(backup_file):
         backup_file = os.path.join(backup_folder, "critical_doc.txt")
     assert os.path.exists(backup_file)
-    with open(backup_file, "r", encoding="utf-8") as f:
+    with open(backup_file, encoding="utf-8") as f:
         assert f.read() == "Previous critical document version"
 
 

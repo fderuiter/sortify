@@ -87,7 +87,7 @@ def test_export_audit_log_csv(test_history_env):
     assert res["format"] == "csv"
     assert os.path.exists(csv_path)
 
-    with open(csv_path, "r", encoding="utf-8") as f:
+    with open(csv_path, encoding="utf-8") as f:
         reader = csv.DictReader(f)
         rows = list(reader)
 
@@ -122,7 +122,7 @@ def test_export_audit_log_json(test_history_env):
     assert res["format"] == "json"
     assert os.path.exists(json_path)
 
-    with open(json_path, "r", encoding="utf-8") as f:
+    with open(json_path, encoding="utf-8") as f:
         data = json.load(f)
 
     assert data["session_id"] == session_id
@@ -248,7 +248,7 @@ def test_export_audit_log_all_sessions(tmp_path, monkeypatch):
     assert res["status"] == "success"
     assert res["count"] == 3
 
-    with open(json_out, "r", encoding="utf-8") as f:
+    with open(json_out, encoding="utf-8") as f:
         data = json.load(f)
 
     assert data["total_steps"] == 3
@@ -295,7 +295,7 @@ def test_cli_ledger_export_without_session_id(tmp_path, monkeypatch):
     assert exc_info.value.code == 0
     assert os.path.exists(csv_out)
 
-    with open(csv_out, "r", encoding="utf-8") as f:
+    with open(csv_out, encoding="utf-8") as f:
         reader = csv.DictReader(f)
         rows = list(reader)
 

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "2bdc97818b05a1eceed50ff3798f3758ed7d405e09c51375da97d3e6a627c87f"
+    "checksum": "96ba0427f288fa27f434e7e09be9082bbb3e93a75034fa8aa2b6bba6e3c98df1"
   },
   "classes": [
     {
@@ -18,17 +18,17 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[list[str] | tuple[str, ...]]",
+              "annotation": "list[str] | tuple[str, ...] | None",
               "default": "None",
               "name": "protected_paths"
             },
             {
-              "annotation": "Optional[list[str] | tuple[str, ...]]",
+              "annotation": "list[str] | tuple[str, ...] | None",
               "default": "None",
               "name": "ignored_extensions"
             },
             {
-              "annotation": "Optional[tuple[str, ...]]",
+              "annotation": "tuple[str, ...] | None",
               "default": "None",
               "name": "quarantine_prefixes"
             },
@@ -38,12 +38,12 @@
               "name": "include_hidden"
             },
             {
-              "annotation": "Optional[int]",
+              "annotation": "int | None",
               "default": "None",
               "name": "max_depth"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "base_dir"
             }
@@ -76,7 +76,7 @@
               "name": "current_depth"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "base_dir"
             }
@@ -99,7 +99,7 @@
               "name": "path_str"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "base_dir"
             },
@@ -114,7 +114,7 @@
               "name": "check_hidden"
             }
           ],
-          "returns": "Optional[str]"
+          "returns": "str | None"
         },
         {
           "async": false,
@@ -132,7 +132,7 @@
               "name": "rel_file_path"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "base_dir"
             }
@@ -157,7 +157,7 @@
               "name": "settings"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "base_dir"
             },
@@ -167,7 +167,7 @@
               "name": "include_hidden"
             },
             {
-              "annotation": "Optional[int]",
+              "annotation": "int | None",
               "default": "None",
               "name": "max_depth"
             }
@@ -208,7 +208,7 @@
               "name": "path_str"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "base_dir"
             }
@@ -231,7 +231,7 @@
               "name": "path_str"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "base_dir"
             }
@@ -254,7 +254,7 @@
               "name": "path_str"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "base_dir"
             }
@@ -277,7 +277,7 @@
               "name": "path_str"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "base_dir"
             }
@@ -309,12 +309,12 @@
       "name": "discover_existing_folders",
       "parameters": [
         {
-          "annotation": "Optional[str]",
+          "annotation": "str | None",
           "default": null,
           "name": "base_dir"
         },
         {
-          "annotation": "Optional[str]",
+          "annotation": "str | None",
           "default": "None",
           "name": "dest_dir"
         },
@@ -347,7 +347,7 @@
           "name": "include_hidden"
         },
         {
-          "annotation": "Optional[int]",
+          "annotation": "int | None",
           "default": "None",
           "name": "max_depth"
         },
@@ -357,7 +357,7 @@
           "name": "settings"
         },
         {
-          "annotation": "Optional[ScanFilter]",
+          "annotation": "ScanFilter | None",
           "default": "None",
           "name": "scan_filter"
         }
@@ -385,7 +385,7 @@
           "name": "include_hidden"
         },
         {
-          "annotation": "Optional[int]",
+          "annotation": "int | None",
           "default": "None",
           "name": "max_depth"
         },
@@ -395,7 +395,7 @@
           "name": "settings"
         },
         {
-          "annotation": "Optional[ScanFilter]",
+          "annotation": "ScanFilter | None",
           "default": "None",
           "name": "scan_filter"
         }

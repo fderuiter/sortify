@@ -9,7 +9,7 @@ import argparse
 import asyncio
 import contextlib
 import sys
-from typing import Any, Optional
+from typing import Any
 
 from app.config import AppSettings
 from app.plugins.clinical_compliance.tui_views import CROForensicModal
@@ -449,7 +449,7 @@ async def _audit_components_async(
 
 
 def run_catalog_audit(
-    component_id: Optional[str] = None, settings: Optional[AppSettings] = None
+    component_id: str | None = None, settings: AppSettings | None = None
 ) -> tuple[int, list[A11yViolation]]:
     """Execute headless accessibility audit against all or specified component(s)."""
     settings_obj = settings or _build_default_settings()
@@ -471,7 +471,7 @@ def run_catalog_audit(
     return asyncio.run(_audit_components_async(target_components, settings_obj))
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     """CLI launcher and accessibility gate handler for Component Catalog."""
     parser = argparse.ArgumentParser(
         description="Standalone Textual TUI Component Catalog & Accessibility Gate"

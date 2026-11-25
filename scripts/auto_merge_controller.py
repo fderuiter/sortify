@@ -20,8 +20,8 @@ import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from enum import Enum
-from typing import Any, Optional
+from enum import StrEnum
+from typing import Any
 
 import requests
 
@@ -49,7 +49,7 @@ AUTOMERGE_OPT_IN_LABEL = "automerge"
 PENDING_CI_STATES = {None, "queued", "in_progress", "waiting", "pending", "requested"}
 
 
-class AutoMergeAction(str, Enum):
+class AutoMergeAction(StrEnum):
     """Actions performed by the auto-merge queue processor."""
 
     MERGED = "MERGED"
@@ -62,14 +62,14 @@ class AutoMergeResult:
     """Result object returned by process_auto_merge_queue."""
 
     action: AutoMergeAction
-    pr_id: Optional[int] = None
+    pr_id: int | None = None
 
     @property
-    def pr_number(self) -> Optional[int]:
+    def pr_number(self) -> int | None:
         return self.pr_id
 
     @property
-    def pull_request_id(self) -> Optional[int]:
+    def pull_request_id(self) -> int | None:
         return self.pr_id
 
 
@@ -86,7 +86,7 @@ class GitHubClient:
             "Accept": "application/vnd.github.v3+json",
         }
 
-    def _get(self, endpoint: str, params: Optional[dict[str, Any]] = None) -> Any:
+    def _get(self, endpoint: str, params: dict[str, Any] | None = None) -> Any:
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         resp = requests.get(url, headers=self.headers, params=params, timeout=30)
         resp.raise_for_status()
@@ -111,7 +111,7 @@ class GitHubClient:
             return
         resp.raise_for_status()
 
-    def get_file_content(self, path: str, ref: str) -> Optional[str]:
+    def get_file_content(self, path: str, ref: str) -> str | None:
         """Fetch raw UTF-8 text content of a repository file at a specific git ref."""
         url = f"{self.base_url}/contents/{path.lstrip('/')}"
         headers = {**self.headers, "Accept": "application/vnd.github.raw+json"}
@@ -149,7 +149,7 @@ class GitHubClient:
             raise
 
     def _get_paginated(
-        self, endpoint: str, params: Optional[dict[str, Any]] = None
+        self, endpoint: str, params: dict[str, Any] | None = None
     ) -> list[Any]:
         items: list[Any] = []
         page = 1
@@ -170,7 +170,7 @@ class GitHubClient:
         """List the commits of a pull request."""
         return self._get_paginated(f"pulls/{pr_number}/commits")
 
-    def get_required_ci_conclusion(self, sha: str) -> Optional[str]:
+    def get_required_ci_conclusion(self, sha: str) -> str | None:
         """Return the conclusion of the latest GitHub Actions ``Required CI`` check run.
 
         Commit statuses and check runs from other apps are ignored, because anything
@@ -249,7 +249,7 @@ class GitHubClient:
         self,
         workflow_id: str,
         ref: str,
-        inputs: Optional[dict[str, Any]] = None,
+        inputs: dict[str, Any] | None = None,
     ) -> None:
         """Trigger a workflow_dispatch event for a workflow on the given branch ref."""
         payload: dict[str, Any] = {"ref": ref}
@@ -461,7 +461,7 @@ def wait_for_updated_head_sha(
     max_attempts: int = BRANCH_UPDATE_POLL_ATTEMPTS,
     poll_interval_seconds: float = BRANCH_UPDATE_POLL_INTERVAL_SECONDS,
     sleep_fn: Callable[[float], None] = time.sleep,
-) -> Optional[str]:
+) -> str | None:
     """Poll pull request metadata briefly until head SHA advances past previous_head_sha."""
     for attempt in range(max_attempts):
         if attempt > 0:

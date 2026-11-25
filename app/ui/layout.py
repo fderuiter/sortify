@@ -1,6 +1,6 @@
 """Responsive layout behaviour and shared modal base screen for TUI dialogs."""
 
-from typing import Any, ClassVar, Optional
+from typing import Any, ClassVar
 
 from textual import events
 from textual.binding import Binding, BindingType
@@ -83,7 +83,7 @@ Button.hidden {
 class ModalBox(Vertical):
     """Modal outer container that forwards scroll helpers to an inner ``.modal-body``."""
 
-    def _body_scroll_target(self, widget: Optional[Widget] = None) -> Optional[Widget]:
+    def _body_scroll_target(self, widget: Widget | None = None) -> Widget | None:
         """Return inner scrollable ``.modal-body`` when outer box itself does not scroll.
 
         Parameters
@@ -162,7 +162,7 @@ class ResponsiveLayoutMixin:
     COMPACT_WIDTH_BREAKPOINT: ClassVar[int] = 100
     COMPACT_HEIGHT_BREAKPOINT: ClassVar[int] = 30
 
-    def _resolve_viewport_height(self, height: Optional[int] = None) -> int:
+    def _resolve_viewport_height(self, height: int | None = None) -> int:
         """Resolve effective viewport height from argument or mounted widget size.
 
         Parameters
@@ -188,7 +188,7 @@ class ResponsiveLayoutMixin:
             return app_height
         return 24
 
-    def _update_layout(self, width: int, height: Optional[int] = None) -> None:
+    def _update_layout(self, width: int, height: int | None = None) -> None:
         """Update layout classes based on viewport width and height breakpoints.
 
         Parameters

@@ -7,7 +7,7 @@ and ICH-GCP Investigator Site File (ISF) regulatory binder structures with compl
 import logging
 import os
 import re
-from typing import Any, Optional
+from typing import Any
 
 from app.core.analyzer import SortingPlan, _validate_sorting_plan_nodes
 from app.core.analyzer_strategies import IsolatedStrategyMixin
@@ -40,7 +40,7 @@ class ClinicalTMFStrategy(IsolatedStrategyMixin):
         self.compliance_engine = ClinicalComplianceEngine()
         self.last_compliance_result: Any = None
         self.last_classified_artifacts: dict[
-            str, Optional[ClinicalArtifactDefinition]
+            str, ClinicalArtifactDefinition | None
         ] = {}
         self.last_classified_map: dict[str, str] = {}
 
@@ -49,9 +49,9 @@ class ClinicalTMFStrategy(IsolatedStrategyMixin):
         filename: str,
         text: str,
         confidence_threshold: float = 3.0,
-    ) -> tuple[Optional[ClinicalArtifactDefinition], float]:
+    ) -> tuple[ClinicalArtifactDefinition | None, float]:
         """Match document against clinical artifact signatures and keyword weights."""
-        best_artifact: Optional[ClinicalArtifactDefinition] = None
+        best_artifact: ClinicalArtifactDefinition | None = None
         best_score = 0.0
 
         clean_text = text or ""
@@ -89,12 +89,12 @@ class ClinicalTMFStrategy(IsolatedStrategyMixin):
         filenames: list[str],
         documents: list[str],
         max_folders: int = 15,
-        stop_words: Optional[set] = None,
+        stop_words: set | None = None,
         max_depth: int = 5,
         max_features: int = 3,
-        pre_fetched_vectors: Optional[list[list]] = None,
+        pre_fetched_vectors: list[list] | None = None,
         cancel_check=None,
-        pre_fetched_corpus: Optional[Any] = None,
+        pre_fetched_corpus: Any | None = None,
     ) -> tuple[dict, float]:
         """Generate a structured clinical regulatory sorting plan and compliance audit."""
         self._error = 0.0

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "95f62895f3de4f43a9660dfea2ffd749e35ecd5671a9efb7a00d01e12503e2ad"
+    "checksum": "8ae66c1bad662288e6b699d002151583f5ab9ebf46ff860263a9615abb1a21c6"
   },
   "classes": [
     {
@@ -28,7 +28,7 @@
               "name": "base_dir"
             },
             {
-              "annotation": "Optional[dict[str, Any]]",
+              "annotation": "dict[str, Any] | None",
               "default": "None",
               "name": "simulation_results"
             }
@@ -46,7 +46,7 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[str | Path]",
+              "annotation": "str | Path | None",
               "default": "None",
               "name": "output_path"
             }
@@ -64,7 +64,7 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[str | Path]",
+              "annotation": "str | Path | None",
               "default": "None",
               "name": "output_path"
             }

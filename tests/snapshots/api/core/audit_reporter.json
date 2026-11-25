@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "e83914a2a4fe418bfc2ee94dcc2945de3268949ce861f233968ea457dbd1a952"
+    "checksum": "2457a97edd030b79de70f35003131160fa48b7f4e1bf658a7e023130b16fb3b9"
   },
   "classes": [],
   "functions": [
@@ -25,7 +25,7 @@
           "name": "format_type"
         },
         {
-          "annotation": "Optional[str]",
+          "annotation": "str | None",
           "default": "None",
           "name": "base_dir"
         }
@@ -48,7 +48,7 @@
           "name": "output_path"
         },
         {
-          "annotation": "Optional[str]",
+          "annotation": "str | None",
           "default": "None",
           "name": "base_dir"
         }
@@ -71,7 +71,7 @@
           "name": "output_path"
         },
         {
-          "annotation": "Optional[str]",
+          "annotation": "str | None",
           "default": "None",
           "name": "base_dir"
         }
@@ -102,12 +102,12 @@
       "name": "resolve_audit_report",
       "parameters": [
         {
-          "annotation": "Optional[dict[str, Any]]",
+          "annotation": "dict[str, Any] | None",
           "default": null,
           "name": "audit_report"
         },
         {
-          "annotation": "Optional[str]",
+          "annotation": "str | None",
           "default": null,
           "name": "base_dir"
         },
@@ -117,7 +117,7 @@
           "name": "plan"
         }
       ],
-      "returns": "Optional[dict[str, Any]]"
+      "returns": "dict[str, Any] | None"
     }
   ]
 }

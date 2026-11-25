@@ -11,7 +11,7 @@ import threading
 from collections import defaultdict
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Optional, Protocol, cast
+from typing import Any, Protocol, cast
 
 from app.core.crypto import (
     EphemeralSessionCrypto,
@@ -2175,8 +2175,8 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         prompt: str,
         max_tokens: int,
         grammar: str | None = None,
-        stop: Optional[list[str] | str] = None,
-        stop_sequences: Optional[list[str] | str] = None,
+        stop: list[str] | str | None = None,
+        stop_sequences: list[str] | str | None = None,
     ) -> str:
         stop_seqs = stop if stop is not None else stop_sequences
 
@@ -3536,7 +3536,7 @@ class ClusteringRegistry:
         """Register a new clustering strategy under the given name."""
         self._strategies[name] = strategy
 
-    def get_strategy(self, name: str) -> Optional[ClusteringStrategy]:
+    def get_strategy(self, name: str) -> ClusteringStrategy | None:
         """Retrieve a clustering strategy by name."""
         if name not in self._strategies:
             if name == "default":

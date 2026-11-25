@@ -11,7 +11,6 @@ import logging
 import os
 import re
 from collections import Counter
-from typing import Optional
 
 from app.core.mover import is_subpath_or_equal
 from app.core.path_utils import sanitize_name
@@ -235,7 +234,7 @@ class ContextExtractor:
     """Extracts semantic and statistical key terms and dates from document text."""
 
     @staticmethod
-    def extract_document_date(text: str) -> Optional[str]:
+    def extract_document_date(text: str) -> str | None:
         """Extract an explicit calendar date from document text as YYYY-MM-DD."""
         if not text or not isinstance(text, str) or text.startswith("[STATUS:"):
             return None
@@ -283,7 +282,7 @@ class ContextExtractor:
 
     @staticmethod
     def extract_keywords_tfidf(
-        text: str, stop_words: Optional[set[str]] = None, max_keywords: int = 3
+        text: str, stop_words: set[str] | None = None, max_keywords: int = 3
     ) -> list[str]:
         """Extract key terms using TF-IDF / term frequency analysis on single document text."""
         if not text or not text.strip():
@@ -330,9 +329,9 @@ class ContextExtractor:
     def extract_keyphrases_semantic(
         text: str,
         embedding_manager: object,
-        stop_words: Optional[set[str]] = None,
+        stop_words: set[str] | None = None,
         max_keywords: int = 3,
-    ) -> Optional[list[str]]:
+    ) -> list[str] | None:
         """Rank candidate phrases and terms by semantic cosine similarity against the document embedding.
 
         Returns None when embeddings are unavailable or non-numeric so callers fall back to TF-IDF.
@@ -441,9 +440,9 @@ class ContextExtractor:
 
 def is_file_protected_or_locked(
     filepath: str,
-    locked_files: Optional[dict] = None,
-    protected_paths: Optional[list] = None,
-    matched_policies: Optional[dict] = None,
+    locked_files: dict | None = None,
+    protected_paths: list | None = None,
+    matched_policies: dict | None = None,
 ) -> bool:
     """Check if a file path is protected or manually locked."""
     # 1. Manual user lock check
@@ -481,11 +480,11 @@ class FileRenamerEngine:
         self,
         original_filename: str,
         text: str,
-        stop_words: Optional[set[str]] = None,
-        file_date: Optional[str] = None,
+        stop_words: set[str] | None = None,
+        file_date: str | None = None,
         category: str = "",
         seq: int = 1,
-        file_path: Optional[str] = None,
+        file_path: str | None = None,
     ) -> str:
         """Generate a context-aware descriptive filename for a file.
 
@@ -600,8 +599,8 @@ class FileRenamerEngine:
         plan: dict,
         documents_map: dict[str, str],
         base_dir: str,
-        locked_files: Optional[dict] = None,
-        stop_words: Optional[set[str]] = None,
+        locked_files: dict | None = None,
+        stop_words: set[str] | None = None,
     ) -> dict:
         """Traverse and update sorting plan with target_filename for poorly-named files.
 

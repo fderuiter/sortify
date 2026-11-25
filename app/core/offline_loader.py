@@ -13,7 +13,7 @@ import re
 import socket
 import sys
 from collections.abc import Callable
-from typing import Any, Optional
+from typing import Any
 
 from app.core.exceptions import (
     ArchiveCorruptionError,
@@ -44,7 +44,7 @@ class OfflineModelLoader:
 
     @classmethod
     def register_model(
-        cls, model_id: str, expected_files: Optional[list[str]] = None
+        cls, model_id: str, expected_files: list[str] | None = None
     ) -> None:
         """Register a model's expected files to enable automatic resolution and integrity verification.
 
@@ -167,9 +167,9 @@ class OfflineModelLoader:
     @classmethod
     def hydrate_sidecar_models(
         cls,
-        sidecar_zip_path: Optional[str] = None,
-        target_dir: Optional[str] = None,
-        progress_callback: Optional[Callable[..., Any]] = None,
+        sidecar_zip_path: str | None = None,
+        target_dir: str | None = None,
+        progress_callback: Callable[..., Any] | None = None,
     ) -> bool:
         """Extract and verify sidecar model weights archive into local user profile directory.
 
@@ -248,7 +248,7 @@ class OfflineModelLoader:
         cls,
         sidecar_zip_path: str,
         target_path: str,
-        progress_callback: Optional[Callable[..., Any]] = None,
+        progress_callback: Callable[..., Any] | None = None,
     ) -> None:
         """Extract the sidecar archive into `target_path` and verify every model in it."""
         import zipfile
@@ -320,7 +320,7 @@ class OfflineModelLoader:
 
     @classmethod
     def resolve_model_path(
-        cls, model_id: str, progress_callback: Optional[Callable[..., Any]] = None
+        cls, model_id: str, progress_callback: Callable[..., Any] | None = None
     ) -> str:
         """Resolve the local path of a model by checking pre-defined fallback search directories.
 
@@ -382,7 +382,7 @@ class OfflineModelLoader:
         searched_paths.append(home_path)
 
         # Helper to test path existence
-        def check_paths(paths: list[str]) -> Optional[str]:
+        def check_paths(paths: list[str]) -> str | None:
             unique_paths = []
             for p in paths:
                 normalized_p = os.path.abspath(p)
@@ -595,7 +595,7 @@ class Florence2VisualProcessor:
         self.model_id = model_id
         self.model: Any = None
         self.processor: Any = None
-        self._model_path: Optional[str] = None
+        self._model_path: str | None = None
 
     def load(self) -> None:
         """Load the Florence-2 model and processor safely offline.
@@ -712,7 +712,7 @@ class Florence2VisualProcessor:
         self,
         image_path: Any,
         task_prompt: str = "<OD>",
-        image_size: Optional[tuple[int, int]] = None,
+        image_size: tuple[int, int] | None = None,
     ) -> dict[str, Any]:
         """Perform visual analysis task on local image and return parsed results.
 

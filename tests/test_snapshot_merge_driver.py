@@ -24,7 +24,7 @@ def test_gitattributes_registration(base_dir):
     """Verify .gitattributes defines custom merge drivers for API snapshots and TUI SVGs."""
     gitattributes_path = os.path.join(base_dir, ".gitattributes")
     assert os.path.exists(gitattributes_path)
-    with open(gitattributes_path, "r", encoding="utf-8") as f:
+    with open(gitattributes_path, encoding="utf-8") as f:
         content = f.read()
 
     assert "tests/snapshots/api_snapshot.json merge=snapshot-json" in content

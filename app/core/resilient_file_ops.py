@@ -18,7 +18,7 @@ import time
 import uuid
 from collections.abc import Callable, Sequence
 from contextlib import contextmanager
-from typing import Any, Optional
+from typing import Any
 
 from app.core.exceptions import PartialMoveError
 from app.core.path_utils import is_junction_path
@@ -388,7 +388,7 @@ def resilient_move(src: str, dst: str) -> str:
 
 @contextmanager
 def atomic_quarantine_relocation(
-    staged_path: Optional[str | os.PathLike],
+    staged_path: str | os.PathLike | None,
     dest_file_path: str | os.PathLike,
 ):
     """Context-managed resilient file relocation with automatic rollback.
@@ -552,7 +552,7 @@ def resilient_file_hash(
         try:
             if normalize_text:
                 try:
-                    with open(str_path, "r", encoding="utf-8-sig", newline=None) as f:
+                    with open(str_path, encoding="utf-8-sig", newline=None) as f:
                         content = f.read()
                     normalized_bytes = content.replace("\r\n", "\n").encode("utf-8")
                     hasher.update(normalized_bytes)
@@ -949,7 +949,7 @@ def group_byte_identical_files(
 def duplicate_staging_relpath(
     source_path: str | os.PathLike,
     base_dir: str | os.PathLike,
-    source_root: Optional[str | os.PathLike] = None,
+    source_root: str | os.PathLike | None = None,
 ) -> str:
     """Compute a collision-free relative path under ``.sortify_duplicates/<session>/`` for a source file.
 
@@ -1003,8 +1003,8 @@ def duplicate_staging_relpath(
 def send_to_os_trash(
     path: str | os.PathLike,
     *,
-    trash_fn: Optional[Callable[[str], Any]] = None,
-) -> tuple[bool, Optional[str]]:
+    trash_fn: Callable[[str], Any] | None = None,
+) -> tuple[bool, str | None]:
     """Export a confirmed staged file to native OS Trash with graceful headless fallback.
 
     Parameters

@@ -69,13 +69,13 @@ def test_export_json_and_html_reports():
 
         engine.export_json_report(res, json_path)
         assert os.path.exists(json_path)
-        with open(json_path, "r") as f:
+        with open(json_path) as f:
             data = json.load(f)
             assert data["total_essential_found"] == 3
 
         engine.generate_html_report(res, html_path)
         assert os.path.exists(html_path)
-        with open(html_path, "r") as f:
+        with open(html_path) as f:
             html_text = f.read()
             assert "Clinical Trial Regulatory Compliance Audit Dossier" in html_text
             assert "Form FDA 1572" in html_text

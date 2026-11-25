@@ -4,8 +4,8 @@ import logging
 import sys
 import threading
 from collections.abc import Callable
-from enum import Enum
-from typing import Any, Optional
+from enum import StrEnum
+from typing import Any
 
 from app.core.path_utils import scrub_user_home_paths
 from app.core.text_utils import sanitize_secret_patterns
@@ -19,7 +19,7 @@ TROUBLESHOOTING_URL = (
 )
 
 
-class NotificationMode(str, Enum):
+class NotificationMode(StrEnum):
     """Runtime environment modes for notification dispatching."""
 
     AUTO = "auto"
@@ -27,7 +27,7 @@ class NotificationMode(str, Enum):
     CLI = "cli"
 
 
-def _sanitize_notification_text(val: Any) -> Optional[str]:
+def _sanitize_notification_text(val: Any) -> str | None:
     """Scrub secrets and user home paths safely from notification text."""
     if val is None:
         return None
@@ -48,12 +48,12 @@ def _sanitize_notification_text(val: Any) -> Optional[str]:
 class NotificationManager:
     """Central dispatcher for environment-aware notifications."""
 
-    _instance: Optional["NotificationManager"] = None
+    _instance: "NotificationManager | None" = None
     _lock = threading.RLock()
 
     def __init__(self):
         self._mode: NotificationMode = NotificationMode.AUTO
-        self._active_tui_app: Optional[Any] = None
+        self._active_tui_app: Any | None = None
         self._output_stream = sys.stderr
         self._custom_handlers: list[Callable[..., Any]] = []
 
@@ -111,7 +111,7 @@ class NotificationManager:
 
         return NotificationMode.CLI
 
-    def _get_active_tui_app(self) -> Optional[Any]:
+    def _get_active_tui_app(self) -> Any | None:
         if self._active_tui_app is not None:
             return self._active_tui_app
         try:
@@ -128,9 +128,9 @@ class NotificationManager:
         self,
         message: Any,
         type: str = "info",
-        caption: Optional[str] = None,
-        timeout: Optional[int] = None,
-        help_url: Optional[str] = None,
+        caption: str | None = None,
+        timeout: int | None = None,
+        help_url: str | None = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
         """Dispatch a notification based on the active runtime environment mode.
@@ -190,9 +190,9 @@ class NotificationManager:
         self,
         message: str,
         type: str = "info",
-        caption: Optional[str] = None,
-        timeout: Optional[int] = None,
-        help_url: Optional[str] = None,
+        caption: str | None = None,
+        timeout: int | None = None,
+        help_url: str | None = None,
         **kwargs: Any,
     ) -> None:
         tui_app = self._get_active_tui_app()
@@ -268,8 +268,8 @@ class NotificationManager:
         self,
         message: str,
         type: str = "info",
-        caption: Optional[str] = None,
-        help_url: Optional[str] = None,
+        caption: str | None = None,
+        help_url: str | None = None,
         **kwargs: Any,
     ) -> None:
         clean_msg = sanitize_secret_patterns(scrub_user_home_paths(message))
@@ -299,9 +299,9 @@ class NotificationManager:
 def notify(
     message: Any,
     type: str = "info",
-    caption: Optional[str] = None,
-    timeout: Optional[int] = None,
-    help_url: Optional[str] = None,
+    caption: str | None = None,
+    timeout: int | None = None,
+    help_url: str | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
     """Top-level convenience function for sending notifications."""

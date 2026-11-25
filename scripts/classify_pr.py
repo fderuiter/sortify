@@ -716,7 +716,7 @@ def main() -> None:
     elif args.json_input.startswith("{"):
         raw_data = args.json_input
     else:
-        with open(args.json_input, "r", encoding="utf-8") as f:
+        with open(args.json_input, encoding="utf-8") as f:
             raw_data = f.read()
 
     data = json.loads(raw_data)

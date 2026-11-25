@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "a0c153124c1b1a8ec8b00a6ef1181f02ac06c1c157d58ce120a346c8a43a7a22"
+    "checksum": "6bfb089599a596842870022a59ded7d656f653f2770d24b891f4bc74902ea3b7"
   },
   "classes": [
     {
@@ -84,7 +84,7 @@
               "name": "task_prompt"
             },
             {
-              "annotation": "Optional[tuple[int, int]]",
+              "annotation": "tuple[int, int] | None",
               "default": "None",
               "name": "image_size"
             }
@@ -123,17 +123,17 @@
               "name": "cls"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "sidecar_zip_path"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "target_dir"
             },
             {
-              "annotation": "Optional[Callable[..., Any]]",
+              "annotation": "Callable[..., Any] | None",
               "default": "None",
               "name": "progress_callback"
             }
@@ -193,7 +193,7 @@
               "name": "model_id"
             },
             {
-              "annotation": "Optional[list[str]]",
+              "annotation": "list[str] | None",
               "default": "None",
               "name": "expected_files"
             }
@@ -218,7 +218,7 @@
               "name": "model_id"
             },
             {
-              "annotation": "Optional[Callable[..., Any]]",
+              "annotation": "Callable[..., Any] | None",
               "default": "None",
               "name": "progress_callback"
             }

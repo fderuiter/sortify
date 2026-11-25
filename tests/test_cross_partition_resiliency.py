@@ -96,7 +96,7 @@ def test_single_file_cross_partition_move_failure(test_history_env):
         try:
             # Source file must exist intact in original location
             assert os.path.exists(file1_src)
-            with open(file1_src, "r", newline="") as f:
+            with open(file1_src, newline="") as f:
                 assert f.read().strip() == "file1 content"
 
             # Destination file and folders must be cleaned up
@@ -195,11 +195,11 @@ def test_batch_file_cross_partition_move_failure(test_history_env):
         try:
             # Both files must exist at their original source locations with correct contents
             assert os.path.exists(fileA_src)
-            with open(fileA_src, "r", newline="") as f:
+            with open(fileA_src, newline="") as f:
                 assert f.read().strip() == "fileA content"
 
             assert os.path.exists(fileB_src)
-            with open(fileB_src, "r", newline="") as f:
+            with open(fileB_src, newline="") as f:
                 assert (
                     f.read().strip()
                     == "fileB content with distinct size for resiliency"

@@ -7,7 +7,7 @@ import os
 import re
 import sys
 from datetime import datetime, timedelta
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -90,7 +90,7 @@ def _parse_size_quantity(token: str) -> int:
     return int(round(num * _SIZE_UNIT_MULTIPLIERS[unit]))
 
 
-def _parse_size_expression(expression: str) -> tuple[str, int, Optional[int]]:
+def _parse_size_expression(expression: str) -> tuple[str, int, int | None]:
     """Parse a size rule expression into (operator, primary_bytes, secondary_bytes)."""
     cleaned = str(expression or "").strip()
     if not cleaned:
@@ -335,7 +335,7 @@ def _to_local_naive(dt: datetime) -> datetime:
 
 
 def evaluate_age_expression(
-    expression: str, mtime: datetime, now: Optional[datetime] = None
+    expression: str, mtime: datetime, now: datetime | None = None
 ) -> bool:
     """Evaluate a parsed age expression against a file's modification timestamp."""
     ref_now = _to_local_naive(now) if now is not None else datetime.now()
@@ -362,7 +362,7 @@ def evaluate_age_expression(
 
 
 def evaluate_date_expression(
-    expression: str, target_dt: datetime, now: Optional[datetime] = None
+    expression: str, target_dt: datetime, now: datetime | None = None
 ) -> bool:
     """Evaluate a parsed date expression against a resolved datetime."""
     ref_now = _to_local_naive(now) if now is not None else datetime.now()
@@ -902,7 +902,7 @@ class PolicyEvaluationResult(BaseModel):
     halting: bool = False
     halt_evaluation: bool = False
     rename_pattern: str = ""
-    resolved_date: Optional[str] = None
+    resolved_date: str | None = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -944,14 +944,14 @@ def _rule_attr(rule: Any, key: str, default: Any = None) -> Any:
 class _LazyFileAttributes:
     """Per-evaluation lazy cache for os.stat and embedded header metadata."""
 
-    def __init__(self, disk_path: Optional[str]) -> None:
+    def __init__(self, disk_path: str | None) -> None:
         self.disk_path = disk_path
         self._stat_loaded = False
-        self._stat: Optional[os.stat_result] = None
+        self._stat: os.stat_result | None = None
         self._embedded_loaded = False
-        self._embedded_dt: Optional[datetime] = None
+        self._embedded_dt: datetime | None = None
 
-    def get_stat(self) -> Optional[os.stat_result]:
+    def get_stat(self) -> os.stat_result | None:
         if not self._stat_loaded:
             self._stat_loaded = True
             if self.disk_path and os.path.isfile(self.disk_path):
@@ -961,7 +961,7 @@ class _LazyFileAttributes:
                     self._stat = None
         return self._stat
 
-    def get_mtime(self) -> Optional[datetime]:
+    def get_mtime(self) -> datetime | None:
         st = self.get_stat()
         if st is None:
             return None
@@ -970,7 +970,7 @@ class _LazyFileAttributes:
         except (OSError, OverflowError, ValueError):
             return None
 
-    def get_ctime(self) -> Optional[datetime]:
+    def get_ctime(self) -> datetime | None:
         st = self.get_stat()
         if st is None:
             return None
@@ -985,7 +985,7 @@ class _LazyFileAttributes:
         except (OSError, OverflowError, ValueError):
             return None
 
-    def get_embedded_date(self) -> Optional[datetime]:
+    def get_embedded_date(self) -> datetime | None:
         if not self._embedded_loaded:
             self._embedded_loaded = True
             if self.disk_path:
@@ -994,9 +994,9 @@ class _LazyFileAttributes:
                 self._embedded_dt = extract_embedded_date(self.disk_path)
         return self._embedded_dt
 
-    def resolve_date_str(self, rule_type: str) -> Optional[str]:
+    def resolve_date_str(self, rule_type: str) -> str | None:
         rtype = str(rule_type or "").lower()
-        dt: Optional[datetime] = None
+        dt: datetime | None = None
         if rtype == "exif_date":
             dt = self.get_embedded_date()
         elif rtype == "created_date":
@@ -1374,7 +1374,7 @@ class PolicyEngine:
         rule_type: str,
         raw_expression: str,
         attrs: _LazyFileAttributes,
-        now: Optional[datetime] = None,
+        now: datetime | None = None,
     ) -> bool:
         """Evaluate a metadata-based policy rule lazily using cached file attributes."""
         if not raw_expression or not raw_expression.strip():

@@ -222,7 +222,7 @@ def test_api_signature_snapshot_matches():
             f"Missing snapshot for {m['source_rel']} at {snap_path}"
         )
 
-        with open(snap_path, "r", encoding="utf-8") as f:
+        with open(snap_path, encoding="utf-8") as f:
             snapshot_data = json.load(f)
 
         is_valid, err_msg, snapshot_payload = verify_snapshot_integrity(
@@ -521,7 +521,7 @@ def test_validation_local_fails_by_default_on_mismatch(tmp_path, monkeypatch):
     assert exited_code == 1
 
     # Ensure baseline file was NOT modified
-    with open(module_snap, "r", encoding="utf-8") as f:
+    with open(module_snap, encoding="utf-8") as f:
         data = json.load(f)
     assert data["classes"][0]["methods"][0]["async"] is True
 
@@ -590,7 +590,7 @@ def test_validation_local_success_on_regenerate(tmp_path, monkeypatch):
     assert exc_info.value.code == 0
     assert exited_code == 0
 
-    with open(module_snap, "r", encoding="utf-8") as f:
+    with open(module_snap, encoding="utf-8") as f:
         data = json.load(f)
     assert data["classes"][0]["methods"][0]["async"] is False
     assert "_metadata" in data
@@ -678,12 +678,12 @@ def test_validation_partial_update_preserves_other_snapshots(tmp_path, monkeypat
     assert exited_code == 0
 
     # snap1 should be updated to payload1_new
-    with open(snap1, "r", encoding="utf-8") as f:
+    with open(snap1, encoding="utf-8") as f:
         data1 = json.load(f)
     assert data1["classes"][0]["class_name"] == "A_Modified"
 
     # snap2 should NOT be updated (should still be payload2_old)
-    with open(snap2, "r", encoding="utf-8") as f:
+    with open(snap2, encoding="utf-8") as f:
         data2 = json.load(f)
     assert data2["classes"][0]["class_name"] == "B"
 

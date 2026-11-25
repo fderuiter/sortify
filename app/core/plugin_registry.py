@@ -4,7 +4,7 @@ import importlib
 import logging
 import threading
 from collections.abc import Callable
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ def _get_plugin_candidates(plugin_name_or_module: str) -> list[str]:
 class PluginRegistry:
     """Registry for discovering, registering, and triggering dynamic extension plugin hooks."""
 
-    _instance: Optional["PluginRegistry"] = None
+    _instance: "PluginRegistry | None" = None
     _lock = threading.Lock()
 
     def __init__(self):
@@ -110,7 +110,7 @@ class PluginRegistry:
                 exc_info=True,
             )
 
-    def get_clustering_strategy(self, name: str) -> Optional[Any]:
+    def get_clustering_strategy(self, name: str) -> Any | None:
         """Retrieve a plugin-supplied clustering strategy by name."""
         if name not in self._clustering_strategies and name.startswith("clinical"):
             self.load_plugin("clinical_compliance")
@@ -130,7 +130,7 @@ class PluginRegistry:
         """Register a TUI modal or screen component class."""
         self._tui_views[view_name] = view_component
 
-    def get_tui_view(self, view_name: str) -> Optional[Any]:
+    def get_tui_view(self, view_name: str) -> Any | None:
         """Retrieve registered TUI view component by name."""
         return self._tui_views.get(view_name)
 

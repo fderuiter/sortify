@@ -203,10 +203,8 @@ class AppSession:
 
             allowed = _ALLOWED_TRANSITIONS.get(current_state, set())
             if target_state not in allowed:
-                state_val = getattr(current_state, "value", str(current_state))
-                target_val = getattr(target_state, "value", str(target_state))
                 raise IllegalStateTransitionError(
-                    f"Illegal state transition from '{state_val}' to '{target_val}'."
+                    f"Illegal state transition from '{current_state}' to '{target_state}'."
                 )
             self.lifecycle_state = target_state
 

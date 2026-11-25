@@ -45,7 +45,7 @@ def test_spec_file_partitioning():
     )
     assert os.path.exists(spec_path)
 
-    with open(spec_path, "r", encoding="utf-8") as f:
+    with open(spec_path, encoding="utf-8") as f:
         spec_content = f.read()
 
     # We will mock the PyInstaller classes/functions that are globally available when running a spec file.
@@ -232,7 +232,7 @@ def test_is_standard_sqlite_binary():
     spec_path = os.path.join(
         os.path.dirname(os.path.dirname(__file__)), "smart-autosorter.spec"
     )
-    with open(spec_path, "r", encoding="utf-8") as f:
+    with open(spec_path, encoding="utf-8") as f:
         spec_content = f.read()
 
     mock_globals = {
@@ -319,7 +319,7 @@ def test_spec_file_cli_target_executable():
     )
     assert os.path.exists(spec_path)
 
-    with open(spec_path, "r", encoding="utf-8") as f:
+    with open(spec_path, encoding="utf-8") as f:
         spec_content = f.read()
 
     mock_exe = MagicMock()
@@ -369,7 +369,7 @@ def test_destination_path_normalization_and_assertion():
     spec_path = os.path.join(
         os.path.dirname(os.path.dirname(__file__)), "smart-autosorter.spec"
     )
-    with open(spec_path, "r", encoding="utf-8") as f:
+    with open(spec_path, encoding="utf-8") as f:
         spec_content = f.read()
 
     mock_globals = {
@@ -471,7 +471,7 @@ def test_spec_file_recursive_metadata_collection_and_excludes(tmp_path, monkeypa
     spec_path = os.path.join(
         os.path.dirname(os.path.dirname(__file__)), "smart-autosorter.spec"
     )
-    with open(spec_path, "r", encoding="utf-8") as f:
+    with open(spec_path, encoding="utf-8") as f:
         spec_content = f.read()
 
     monkeypatch.chdir(tmp_path)

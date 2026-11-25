@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "76818730fe85a2984d04538867c817936ef2ab06d58ce725ec60704a242b41aa"
+    "checksum": "b4f79eaa8d971088a43fbda17b56bc752b1821ac81dad7e6afad56b41c8291b3"
   },
   "classes": [
     {
@@ -70,7 +70,7 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[dict[str, Any]]",
+              "annotation": "dict[str, Any] | None",
               "default": "None",
               "name": "audit_report"
             }
@@ -228,7 +228,7 @@
               "name": "priority"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "help_url"
             }
@@ -487,7 +487,7 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "search_query"
             },
@@ -528,7 +528,7 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "search_query"
             }
@@ -598,7 +598,7 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "text"
             }
@@ -683,7 +683,7 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[Any]",
+              "annotation": "Any | None",
               "default": "None",
               "name": "paths"
             }
@@ -726,22 +726,22 @@
               "name": "parent_folder_matches"
             },
             {
-              "annotation": "Optional[set[int]]",
+              "annotation": "set[int] | None",
               "default": "None",
               "name": "matching_ids"
             },
             {
-              "annotation": "Optional[tuple[set[str], set[str]]]",
+              "annotation": "tuple[set[str], set[str]] | None",
               "default": "None",
               "name": "crit_index"
             },
             {
-              "annotation": "Optional[tuple[set[str], set[str]]]",
+              "annotation": "tuple[set[str], set[str]] | None",
               "default": "None",
               "name": "warn_index"
             },
             {
-              "annotation": "Optional[tuple[set[str], set[str]]]",
+              "annotation": "tuple[set[str], set[str]] | None",
               "default": "None",
               "name": "collision_index"
             }
@@ -833,7 +833,7 @@
               "name": "parent_folder_matches"
             },
             {
-              "annotation": "Optional[set[int]]",
+              "annotation": "set[int] | None",
               "default": "None",
               "name": "matching_ids"
             }
@@ -851,7 +851,7 @@
               "name": "self"
             }
           ],
-          "returns": "Optional[TreeNode[Any]]"
+          "returns": "TreeNode[Any] | None"
         },
         {
           "async": false,
@@ -903,7 +903,7 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[dict[str, Any]]",
+              "annotation": "dict[str, Any] | None",
               "default": "None",
               "name": "plan_dict"
             }
@@ -990,17 +990,17 @@
               "name": "update_or_prog"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "stage"
             },
             {
-              "annotation": "Optional[int]",
+              "annotation": "int | None",
               "default": "None",
               "name": "unit_count"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "unit_type"
             },
@@ -1314,7 +1314,7 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[dict[str, Any]]",
+              "annotation": "dict[str, Any] | None",
               "default": "None",
               "name": "audit_report"
             }
@@ -1472,7 +1472,7 @@
               "name": "priority"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "help_url"
             }
@@ -1731,7 +1731,7 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "search_query"
             },
@@ -1772,7 +1772,7 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "search_query"
             }
@@ -1842,7 +1842,7 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "text"
             }

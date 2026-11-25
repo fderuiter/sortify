@@ -4,7 +4,7 @@ import json
 import logging
 import time
 import uuid
-from typing import Any, Optional
+from typing import Any
 
 from app.config import get_app_dir
 from app.core.db_conn import get_db_connection
@@ -134,7 +134,7 @@ LEDGER_DB_MIGRATIONS = (Migration(1, "baseline", _ledger_db_baseline),)
 class KeyAuditLedger:
     """Persistent SQLite audit ledger for cryptographic key export and rotation events."""
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: str | None = None):
         self.db_path = db_path or get_default_ledger_path()
         self._init_db()
 
@@ -151,9 +151,9 @@ class KeyAuditLedger:
         db_path_hash: str,
         session_id: str = "system",
         status: str = "SUCCESS",
-        metadata: Optional[dict[str, Any]] = None,
-        event_id: Optional[str] = None,
-        created_at: Optional[float] = None,
+        metadata: dict[str, Any] | None = None,
+        event_id: str | None = None,
+        created_at: float | None = None,
     ) -> str:
         """Log a key management lifecycle event into key_audit_ledger."""
         if not event_id:
@@ -200,8 +200,8 @@ class KeyAuditLedger:
         original_source: str = "",
         sha256: str = "",
         status: str = "EXPORTED_TO_OS_TRASH",
-        reason: Optional[str] = None,
-        db_path: Optional[str] = None,
+        reason: str | None = None,
+        db_path: str | None = None,
     ) -> str:
         """Record an irreversible staged-duplicate handoff (or headless fallback) to OS Trash."""
         db_hash = "duplicate_trash"
@@ -232,13 +232,13 @@ class KeyAuditLedger:
 
     def get_key_audit_events(
         self,
-        session_id: Optional[str] = None,
-        event_type: Optional[str] = None,
-        db_path_hash: Optional[str] = None,
-        db_path: Optional[Any] = None,
-        start_time: Optional[float] = None,
-        end_time: Optional[float] = None,
-        limit: Optional[int] = None,
+        session_id: str | None = None,
+        event_type: str | None = None,
+        db_path_hash: str | None = None,
+        db_path: Any | None = None,
+        start_time: float | None = None,
+        end_time: float | None = None,
+        limit: int | None = None,
     ) -> list[dict[str, Any]]:
         """Query historical key management events from key_audit_ledger."""
         if not db_path_hash and db_path:

@@ -11,7 +11,7 @@ import logging
 import os
 import re
 import time
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -212,7 +212,7 @@ def _extract_rtf_snippet(file_path: str) -> str:
     try:
         from app.core.extractor_strategies import _extract_rtf_text
 
-        with open(file_path, "r", encoding="latin-1", errors="ignore") as f:
+        with open(file_path, encoding="latin-1", errors="ignore") as f:
             raw_rtf = f.read(65536)
         raw_text, _ = _extract_rtf_text(raw_rtf, max_rows=200, max_chars=4096)
         return " ".join(raw_text.split())[:4096].lower()
@@ -244,7 +244,7 @@ def _extract_html_snippet(file_path: str) -> str:
     try:
         from app.core.extractor_strategies import _strip_html_to_text
 
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        with open(file_path, encoding="utf-8", errors="ignore") as f:
             raw_html = f.read(65536)
         raw_text, _ = _strip_html_to_text(raw_html, max_rows=200, max_chars=4096)
         return " ".join(raw_text.split())[:4096].lower()
@@ -470,7 +470,7 @@ class JevClassifierEngine:
     def __init__(
         self,
         confidence_threshold: float = 0.5,
-        db_path: Optional[str] = None,
+        db_path: str | None = None,
         worker: Any = None,
         max_cache_size: int = 1000,
     ):
@@ -525,7 +525,7 @@ class JevClassifierEngine:
                 exc_info=True,
             )
 
-    def _get_file_stat_key(self, file_path: str) -> Optional[tuple[str, float, int]]:
+    def _get_file_stat_key(self, file_path: str) -> tuple[str, float, int] | None:
         """Calculate a fast file stat key (abs_path, mtime, size) before inspecting file contents."""
         try:
             if (
@@ -598,7 +598,7 @@ class JevClassifierEngine:
 
     def _get_from_db(
         self, stat_key: tuple[str, float, int]
-    ) -> Optional[JevClassificationResult]:
+    ) -> JevClassificationResult | None:
         """Query persistent SQLite database table for a cached result matching file path, mtime, and size."""
         if not self.db_path:
             return None
@@ -719,7 +719,7 @@ class JevClassifierEngine:
             )
 
     def classify(
-        self, file_path: str, text_content: Optional[str] = None
+        self, file_path: str, text_content: str | None = None
     ) -> JevClassificationResult:
         """Classify a file using deterministic non-generative fast-path rules with two-tier caching.
 
@@ -777,7 +777,7 @@ class JevClassifierEngine:
                             ".js",
                         }:
                             with open(
-                                file_path, "r", encoding="utf-8", errors="ignore"
+                                file_path, encoding="utf-8", errors="ignore"
                             ) as f:
                                 snippet = f.read(4096).lower()
                         elif ext in {".html", ".htm"}:

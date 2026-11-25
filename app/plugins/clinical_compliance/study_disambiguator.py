@@ -8,7 +8,6 @@ import logging
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Optional
 
 from app.core.forensic_scanner import DiscoveredDocument
 from app.plugins.clinical_compliance.clinical_renamer import ClinicalRenamer
@@ -37,7 +36,7 @@ class StudyDisambiguator:
         self.cross_study_shared_docs: list[DiscoveredDocument] = []
         self.unassigned_docs: list[DiscoveredDocument] = []
 
-    def extract_site_number(self, text: str, path: str) -> Optional[str]:
+    def extract_site_number(self, text: str, path: str) -> str | None:
         """Extract clinical trial site number from text or file path."""
         text = str(text or "")
         match = re.search(

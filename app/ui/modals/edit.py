@@ -4,7 +4,7 @@ import contextlib
 import logging
 import os
 import re
-from typing import Any, Optional
+from typing import Any
 
 from textual import on, work
 from textual.app import ComposeResult
@@ -22,15 +22,15 @@ logger = logging.getLogger(__name__)
 class RenameResult(str):
     """String subclass representing rename outcome with optional destination override."""
 
-    destination_override: Optional[str] = None
-    batch_items: Optional[list[dict[str, Any]]] = None
+    destination_override: str | None = None
+    batch_items: list[dict[str, Any]] | None = None
     is_batch: bool = False
 
     def __new__(
         cls,
         value: str,
-        destination_override: Optional[str] = None,
-        batch_items: Optional[list[dict[str, Any]]] = None,
+        destination_override: str | None = None,
+        batch_items: list[dict[str, Any]] | None = None,
         is_batch: bool = False,
     ):
         """Instantiate string value with optional destination path override."""
@@ -45,7 +45,7 @@ class RenameResult(str):
         """Return base string name value."""
         return str(self)
 
-    def to_tuple(self) -> tuple[str, Optional[str]]:
+    def to_tuple(self) -> tuple[str, str | None]:
         """Return (name, destination_override) tuple representation."""
         return (str(self), self.destination_override)
 
@@ -89,7 +89,7 @@ class _CollisionWarningMixin:
 class RenameModal(
     _CollisionWarningMixin,
     _SubmittableModalMixin,
-    ResponsiveModalScreen[Optional[str | RenameResult]],
+    ResponsiveModalScreen[str | RenameResult | None],
 ):
     """Modal dialog for renaming a file or folder node with pattern token formatting and destination path override support."""
 
@@ -142,10 +142,10 @@ class RenameModal(
         seq: int = 1,
         destination_override: str = "",
         is_folder: bool = False,
-        plan: Optional[dict[str, Any]] = None,
-        base_dir: Optional[str] = None,
-        source_path: Optional[str] = None,
-        files: Optional[list[Any]] = None,
+        plan: dict[str, Any] | None = None,
+        base_dir: str | None = None,
+        source_path: str | None = None,
+        files: list[Any] | None = None,
     ):
         super().__init__()
         self.modal_title = title
@@ -166,11 +166,11 @@ class RenameModal(
             self.file_date = resolve_disk_file_date(
                 self.source_path, base_dir=self.base_dir
             )
-        self._last_collision_state: Optional[str] = None
+        self._last_collision_state: str | None = None
 
     def _extract_file_metadata(
         self, f: Any, seq: int
-    ) -> tuple[dict[str, Any], str, str, str, Optional[dict[str, Any]]]:
+    ) -> tuple[dict[str, Any], str, str, str, dict[str, Any] | None]:
         """Extract metadata dict, fallback filename, key, folder, and info dict from a file item."""
         from app.core.pattern_formatter import resolve_disk_file_date
 
@@ -404,7 +404,7 @@ class RenameModal(
         )
         self._check_collision_and_update_ui()
 
-    def _validate_path_security(self, path_str: str) -> Optional[str]:
+    def _validate_path_security(self, path_str: str) -> str | None:
         """Validate path string for directory traversal and illegal characters."""
         if not path_str:
             return None
@@ -415,7 +415,7 @@ class RenameModal(
             return "Directory traversal ('..') segments are not permitted."
         return None
 
-    def _check_collision_and_update_ui(self) -> tuple[bool, Optional[str]]:
+    def _check_collision_and_update_ui(self) -> tuple[bool, str | None]:
         """Run live collision check and path validation across plan and filesystem.
 
         Returns (is_blocked, message).
@@ -476,7 +476,7 @@ class RenameModal(
                 self._set_collision_warning(f"⚠️ Validation Error: {msg}", is_error=True)
                 return True, msg
 
-        collision_msg: Optional[str] = None
+        collision_msg: str | None = None
 
         if self.is_folder:
             target_folder = dest_val if dest_val else formatted_name
@@ -672,7 +672,7 @@ class RenameModal(
         self.dismiss(None)
 
 
-class NewFolderModal(_SubmittableModalMixin, ResponsiveModalScreen[Optional[str]]):
+class NewFolderModal(_SubmittableModalMixin, ResponsiveModalScreen[str | None]):
     """Modal dialog for creating a new folder node in the plan."""
 
     BINDINGS = [
@@ -744,7 +744,7 @@ class NewFolderModal(_SubmittableModalMixin, ResponsiveModalScreen[Optional[str]
 class ReassignModal(
     _CollisionWarningMixin,
     _SubmittableModalMixin,
-    ResponsiveModalScreen[Optional[str]],
+    ResponsiveModalScreen[str | None],
 ):
     """Modal dialog for reassigning checked file nodes to a target category folder."""
 
@@ -783,10 +783,10 @@ class ReassignModal(
         self,
         existing_folders: list[str],
         count: int = 1,
-        plan: Optional[dict[str, Any]] = None,
-        base_dir: Optional[str] = None,
-        target_files: Optional[list[dict[str, Any]]] = None,
-        dest_dir: Optional[str] = None,
+        plan: dict[str, Any] | None = None,
+        base_dir: str | None = None,
+        target_files: list[dict[str, Any]] | None = None,
+        dest_dir: str | None = None,
         settings: Any = None,
     ):
         super().__init__()
@@ -811,7 +811,7 @@ class ReassignModal(
         self.dest_dir = dest_dir
         self.settings = settings
         self.target_files = target_files or []
-        self._last_collision_state: Optional[str] = None
+        self._last_collision_state: str | None = None
 
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
@@ -854,7 +854,7 @@ class ReassignModal(
         self.announce(f"Opened bulk reassign dialog for {self.count} items.")
         self._check_collision_and_update_ui()
 
-    def _check_collision_and_update_ui(self) -> tuple[bool, Optional[str]]:
+    def _check_collision_and_update_ui(self) -> tuple[bool, str | None]:
         """Run live collision check and path validation across plan and filesystem."""
         try:
             inp = self.query_one("#input-target-folder", Input)
@@ -992,7 +992,7 @@ class ReassignModal(
 
 class DirectorySelectModal(
     _SubmittableModalMixin,
-    ResponsiveModalScreen[Optional[str | list[str]]],
+    ResponsiveModalScreen[str | list[str] | None],
 ):
     """Modal dialog for choosing target base directory or presets."""
 
@@ -1087,7 +1087,7 @@ class DirectorySelectModal(
     }
     """
 
-    def __init__(self, current_dir: str = "", source_dirs: Optional[list[str]] = None):
+    def __init__(self, current_dir: str = "", source_dirs: list[str] | None = None):
         super().__init__()
         self.current_dir = current_dir
         self.added_via_btn = False
@@ -1107,7 +1107,7 @@ class DirectorySelectModal(
             self.selected_sources = []
 
     @staticmethod
-    def _validate_directory_path(path_str: str) -> Optional[str]:
+    def _validate_directory_path(path_str: str) -> str | None:
         """Validate if path_str exists, is a directory, and allows read access.
 
         Returns error message string if invalid, or None if valid.
@@ -1431,7 +1431,7 @@ class DirectorySelectModal(
             pass
 
 
-class ManualPathFallbackModal(ResponsiveModalScreen[Optional[str]]):
+class ManualPathFallbackModal(ResponsiveModalScreen[str | None]):
     """Fallback modal dialog for manual directory path entry when native selection fails."""
 
     BINDINGS = [
@@ -1522,7 +1522,7 @@ def _format_file_size(size_bytes: int) -> str:
     return f"{size:.1f} TB"
 
 
-class _BaseGroupSelectionModal(ResponsiveModalScreen[Optional[dict[str, str]]]):
+class _BaseGroupSelectionModal(ResponsiveModalScreen[dict[str, str] | None]):
     """Shared base modal screen for per-group collision and duplicate review dialogs."""
 
     NARROW_WIDTH_BREAKPOINT = 60
@@ -1729,8 +1729,8 @@ class InteractiveCollisionResolverModal(_BaseGroupSelectionModal):
 
     def __init__(
         self,
-        duplicate_groups: Optional[list[dict[str, Any]]] = None,
-        collision_groups: Optional[list[dict[str, Any]]] = None,
+        duplicate_groups: list[dict[str, Any]] | None = None,
+        collision_groups: list[dict[str, Any]] | None = None,
     ):
         super().__init__()
         groups = (
@@ -1891,7 +1891,7 @@ class DuplicateReviewModal(_BaseGroupSelectionModal):
 
     def __init__(
         self,
-        duplicate_groups: Optional[list[dict[str, Any]]] = None,
+        duplicate_groups: list[dict[str, Any]] | None = None,
     ):
         super().__init__()
         self.duplicate_groups = duplicate_groups or []
