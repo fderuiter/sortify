@@ -53,7 +53,7 @@ The Settings dialog (`[Ctrl+O]`) checks values when you press **Save**. If one i
 
 | Setting | Allowed values |
 |---|---|
-| Worker concurrency | A whole number greater than 0 |
+| Worker concurrency | 1 to 64 |
 | Max folders | 1 to 50. It limits the folders created at each level of the tree, not the total |
 | PDF text density threshold | 0 or more. PDF pages with fewer characters than this are treated as scanned and sent to OCR when the `ml` extra is installed |
 
