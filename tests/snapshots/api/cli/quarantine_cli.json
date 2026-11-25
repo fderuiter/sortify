@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "7ee6dac14c3212618ff3349426e263222cca79270f26bbe74bf9c18a00e22ea4"
+    "checksum": "45b9dfb18b15db206c8d48586d70753a1ea9fb429b53087a39d4205cdfbf9e80"
   },
   "classes": [],
   "cli": [
@@ -10,20 +10,10 @@
       ],
       "caller": "subparsers",
       "keywords": {
-        "help": "Manage compliance quarantine staging, inspection, and release"
+        "help": "Manage compliance quarantine staging, inspection, and release",
+        "parents": "[build_global_subparser_parent()]"
       },
       "method": "add_parser"
-    },
-    {
-      "args": [
-        "--json"
-      ],
-      "caller": "parser_quarantine",
-      "keywords": {
-        "action": "store_true",
-        "help": "Output response in structured JSON format"
-      },
-      "method": "add_argument"
     },
     {
       "args": [
@@ -31,7 +21,8 @@
       ],
       "caller": "quarantine_subparsers",
       "keywords": {
-        "help": "List staged and quarantined compliance items"
+        "help": "List staged and quarantined compliance items",
+        "parents": "[build_global_subparser_parent()]"
       },
       "method": "add_parser"
     },
@@ -65,7 +56,8 @@
       ],
       "caller": "quarantine_subparsers",
       "keywords": {
-        "help": "Inspect a specific quarantine job record and audit trail"
+        "help": "Inspect a specific quarantine job record and audit trail",
+        "parents": "[build_global_subparser_parent()]"
       },
       "method": "add_parser"
     },
@@ -100,7 +92,8 @@
       ],
       "caller": "quarantine_subparsers",
       "keywords": {
-        "help": "Trigger forensic scanning and policy evaluation for quarantine jobs"
+        "help": "Trigger forensic scanning and policy evaluation for quarantine jobs",
+        "parents": "[build_global_subparser_parent()]"
       },
       "method": "add_parser"
     },
@@ -159,7 +152,8 @@
       ],
       "caller": "quarantine_subparsers",
       "keywords": {
-        "help": "Release quarantined items to destination directory"
+        "help": "Release quarantined items to destination directory",
+        "parents": "[build_global_subparser_parent()]"
       },
       "method": "add_parser"
     },
@@ -247,7 +241,8 @@
       ],
       "caller": "quarantine_subparsers",
       "keywords": {
-        "help": "Dismiss quarantine items without restoring files"
+        "help": "Dismiss quarantine items without restoring files",
+        "parents": "[build_global_subparser_parent()]"
       },
       "method": "add_parser"
     },
@@ -297,44 +292,6 @@
         "default": null,
         "help": "Path to database file",
         "type": "str"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "-q",
-        "--quiet"
-      ],
-      "caller": "p",
-      "keywords": {
-        "action": "store_true",
-        "default": "argparse.SUPPRESS",
-        "dest": "quiet",
-        "help": "Suppress informational prints"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--no-color"
-      ],
-      "caller": "p",
-      "keywords": {
-        "action": "store_true",
-        "default": "argparse.SUPPRESS",
-        "dest": "no_color",
-        "help": "Disable ANSI color formatting"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--json"
-      ],
-      "caller": "p",
-      "keywords": {
-        "action": "store_true",
-        "help": "Output response in structured JSON format"
       },
       "method": "add_argument"
     }

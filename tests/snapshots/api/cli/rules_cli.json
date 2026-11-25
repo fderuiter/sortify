@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "7a69982972f78157606424eb4b326abeb661d6dc8a2c2db45056f7a5decebd20"
+    "checksum": "993bbab8beec53a1a69d73360a5037bd75b9e44a084fc93e57bbdf5414add8a5"
   },
   "classes": [],
   "cli": [
@@ -10,20 +10,10 @@
       ],
       "caller": "subparsers",
       "keywords": {
-        "help": "Manage, import, or export routing rules (global or folder-scoped)"
+        "help": "Manage, import, or export routing rules (global or folder-scoped)",
+        "parents": "[build_global_subparser_parent(settings_help=_RULES_SETTINGS_HELP)]"
       },
       "method": "add_parser"
-    },
-    {
-      "args": [
-        "--json"
-      ],
-      "caller": "parser_rules",
-      "keywords": {
-        "action": "store_true",
-        "help": "Output response in structured JSON format"
-      },
-      "method": "add_argument"
     },
     {
       "args": [
@@ -43,7 +33,8 @@
       ],
       "caller": "rules_subparsers",
       "keywords": {
-        "help": "Parse, preview, and merge external rule packages into Sortify settings"
+        "help": "Parse, preview, and merge external rule packages into Sortify settings",
+        "parents": "[build_global_subparser_parent(settings_help=_RULES_SETTINGS_HELP)]"
       },
       "method": "add_parser"
     },
@@ -142,7 +133,8 @@
       ],
       "caller": "rules_subparsers",
       "keywords": {
-        "help": "Export active keyword rules and policies to Sortify JSON, Hazel, or DropIt INI"
+        "help": "Export active keyword rules and policies to Sortify JSON, Hazel, or DropIt INI",
+        "parents": "[build_global_subparser_parent(settings_help=_RULES_SETTINGS_HELP)]"
       },
       "method": "add_parser"
     },
@@ -215,44 +207,6 @@
         "default": "argparse.SUPPRESS",
         "help": "Scope rule operation to a specific target directory",
         "type": "str"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "-q",
-        "--quiet"
-      ],
-      "caller": "target_parser",
-      "keywords": {
-        "action": "store_true",
-        "default": "argparse.SUPPRESS",
-        "dest": "quiet",
-        "help": "Suppress non-essential informational output"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--no-color"
-      ],
-      "caller": "target_parser",
-      "keywords": {
-        "action": "store_true",
-        "default": "argparse.SUPPRESS",
-        "dest": "no_color",
-        "help": "Disable ANSI color formatting"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--json"
-      ],
-      "caller": "target_parser",
-      "keywords": {
-        "action": "store_true",
-        "help": "Output response in structured JSON format"
       },
       "method": "add_argument"
     }
