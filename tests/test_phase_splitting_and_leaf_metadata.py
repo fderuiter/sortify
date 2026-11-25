@@ -153,56 +153,6 @@ def test_clinical_strategy_leaf_metadata():
     _verify_leaves(plan)
 
 
-def test_interactive_plan_splitter_defaults_non_dict_and_unclassified_leaves_to_slow_path():
-    """Verify interactive plan splitter routes non-dict and unclassified leaves to Phase 2."""
-    from app.core.session import split_plan_phases
-
-    # Construct plan with deterministic rules, AI clustering leaves, and non-dict/unclassified leaves
-    test_plan = {
-        "Invoices": {
-            "keyword_match.txt": {
-                "__type__": "file",
-                "routed_by": "keyword",
-                "relative_source": "keyword_match.txt",
-            },
-            "override_match.txt": {
-                "__type__": "file",
-                "routed_by": "override",
-                "relative_source": "override_match.txt",
-            },
-        },
-        "AI_Cluster": {
-            "ai_clustered.txt": {
-                "__type__": "file",
-                "routed_by": "clustering",
-                "relative_source": "ai_clustered.txt",
-            },
-            "empty_leaf.txt": None,
-            "string_leaf.txt": "unclassified_raw_path",
-        },
-        "Unclassified": {
-            "orphan_file.pdf": None,
-        },
-    }
-
-    fast_plan, slow_plan = split_plan_phases(test_plan)
-
-    # Phase 1 Fast-Path assertions:
-    assert "Invoices" in fast_plan
-    assert "keyword_match.txt" in fast_plan["Invoices"]
-    assert "override_match.txt" in fast_plan["Invoices"]
-    assert "AI_Cluster" not in fast_plan
-    assert "Unclassified" not in fast_plan
-
-    # Phase 2 Slow-Path assertions:
-    assert "AI_Cluster" in slow_plan
-    assert "ai_clustered.txt" in slow_plan["AI_Cluster"]
-    assert "empty_leaf.txt" in slow_plan["AI_Cluster"]
-    assert "string_leaf.txt" in slow_plan["AI_Cluster"]
-    assert "Unclassified" in slow_plan
-    assert "orphan_file.pdf" in slow_plan["Unclassified"]
-
-
 def test_end_to_end_phase_splitting_and_model_unloading(tmp_path):
     """Verify Phase 1 only moves deterministic rules and Phase 2 unloads models and moves AI files."""
     src_dir = tmp_path / "source"
@@ -271,46 +221,6 @@ def test_end_to_end_phase_splitting_and_model_unloading(tmp_path):
     assert "ai_doc3.txt" in all_ai_files
 
     session.close()
-
-
-def test_plan_splitter_routes_jev_classifier_to_fast_path():
-    """Verify split_plan_phases assigns jev_classifier routed files to Phase 1 fast-path."""
-    from app.core.session import split_plan_phases
-
-    test_plan = {
-        "Finance": {
-            "jev_doc.pdf": {
-                "__type__": "file",
-                "routed_by": "jev_classifier",
-                "category": "Finance",
-                "sensitivity_rating": "HIGH",
-                "archival_priority": 1,
-                "relative_source": "jev_doc.pdf",
-            },
-            "keyword_doc.pdf": {
-                "__type__": "file",
-                "routed_by": "keyword",
-                "relative_source": "keyword_doc.pdf",
-            },
-        },
-        "Uncategorized": {
-            "ai_doc.pdf": {
-                "__type__": "file",
-                "routed_by": "clustering",
-                "relative_source": "ai_doc.pdf",
-            },
-        },
-    }
-
-    fast_plan, slow_plan = split_plan_phases(test_plan)
-
-    assert "Finance" in fast_plan
-    assert "jev_doc.pdf" in fast_plan["Finance"]
-    assert "keyword_doc.pdf" in fast_plan["Finance"]
-
-    assert "Uncategorized" in slow_plan
-    assert "ai_doc.pdf" in slow_plan["Uncategorized"]
-    assert "jev_doc.pdf" not in slow_plan.get("Finance", {})
 
 
 def test_unsplittable_sub_cluster_is_not_nested_under_its_own_name():

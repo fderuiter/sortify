@@ -177,11 +177,6 @@ def test_daemon_execution_flow(tmp_path):
         ),
         mock.patch("app.core.daemon.MetadataPass.run", return_value=[]),
     ):
-        # We also mock process_items_async
-        async def dummy_process_items(items, cancel_check, **kwargs):
-            yield "invoice.txt", "extracted text", "hash123", False
-
-        mock_app_session_inst.process_items_async = dummy_process_items
         mock_app_session_inst.generate_sorting_plan.side_effect = [
             {"invoice.txt": "dest/invoice.txt"},  # Phase 1: Fast-Path
             {},  # Phase 2: Slow-Path

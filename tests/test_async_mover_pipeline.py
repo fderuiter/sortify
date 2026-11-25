@@ -1,4 +1,3 @@
-import asyncio
 import os
 import threading
 
@@ -15,7 +14,6 @@ from app.core.mover import (
     MoveVerificationStatus,
     _process_move_item,
     execute_moves,
-    execute_moves_async,
 )
 
 
@@ -193,30 +191,6 @@ def test_async_mover_off_thread_hashing(tmp_path, monkeypatch):
     assert len(hashed_threads) > 0
     # The hash function must have executed on a worker thread, not the main thread!
     assert hashed_threads[0] != main_thread_name
-
-
-def test_async_mover_execute_moves_async(tmp_path):
-    """Test execute_moves_async coroutine wrapper."""
-    base_dir = str(tmp_path)
-    fname = "async_coro.txt"
-    fpath = tmp_path / fname
-    fpath.write_text("async coroutine test")
-
-    plan = {
-        fname: {
-            "__type__": "file",
-            "relative_source": fname,
-            "target_filename": "async_dest.txt",
-            "status": "Confirmed",
-        }
-    }
-
-    db = DummyDB()
-    hm = DummyHistoryManager()
-
-    summary = asyncio.run(execute_moves_async(base_dir, plan, db, hm))
-    assert not summary.get("cancelled")
-    assert os.path.exists(tmp_path / "async_dest.txt")
 
 
 def test_async_mover_progress_callback_propagation(tmp_path):

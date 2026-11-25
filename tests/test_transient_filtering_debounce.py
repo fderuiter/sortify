@@ -162,17 +162,10 @@ def test_scanning_stage_filters_out_transient_files(tmp_path):
         mock.patch(
             "app.core.daemon.get_files_recursively", return_value=scanned_files
         ) as mock_scan,
-        mock.patch("app.core.daemon.MetadataPass.run", return_value=[]),
+        mock.patch(
+            "app.core.daemon.MetadataPass.run", return_value=[]
+        ) as mock_meta_run,
     ):
-        # We also mock process_items_async
-        async def dummy_process_items(items, cancel_check, **kwargs):
-            # Verify only non-ignored files are processed!
-            assert len(items) == 2
-            assert all("crdownload" not in f and "tmp" not in f for f in items)
-            for f in items:
-                yield f, "extracted text", "hash123", False
-
-        mock_app_session_inst.process_items_async = dummy_process_items
         mock_app_session_inst.generate_sorting_plan.return_value = {}
 
         # Run the sorting sync manually
@@ -182,6 +175,11 @@ def test_scanning_stage_filters_out_transient_files(tmp_path):
         # Verify scan was executed for directory
         mock_scan.assert_called_with(str(tmp_path))
         assert mock_scan.call_count >= 1
+        assert mock_meta_run.call_count >= 1
+        for call in mock_meta_run.call_args_list:
+            filtered_items = call.args[1]
+            assert len(filtered_items) == 2
+            assert all(not f.endswith((".crdownload", ".tmp")) for f in filtered_items)
 
 
 def test_direct_timer_callback_execution_at_max_debounce_limit(tmp_path):

@@ -4,7 +4,6 @@ from app.config import AppSettings
 from app.core.db import Database
 from app.core.db_worker import DBWorker
 from app.core.extractor import build_corpus_generator_async, get_file_hash
-from app.core.session import AppSession
 
 
 @pytest.mark.anyio
@@ -121,28 +120,3 @@ async def test_build_corpus_generator_async_cancellation(tmp_path):
 
     assert len(results) == 1
     assert results[0][0] == "file1.txt"
-
-
-@pytest.mark.anyio
-async def test_process_items_async_wrapping(tmp_path):
-    base_dir = tmp_path / "test_base"
-    base_dir.mkdir()
-
-    file1 = base_dir / "file1.txt"
-    file1.write_text("Wrappy wrap")
-
-    settings = AppSettings()
-    session = AppSession(settings, str(base_dir))
-
-    gen = session.process_items_async(["file1.txt"], lambda: False)
-
-    results = []
-    async for res in gen:
-        results.append(res)
-
-    assert len(results) == 1
-    assert results[0][0] == "file1.txt"
-    assert "Wrappy wrap" in results[0][1]
-    assert results[0][3] is False
-
-    session.close()

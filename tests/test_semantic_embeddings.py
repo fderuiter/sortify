@@ -1192,6 +1192,8 @@ def test_session_startup_missing_vocab_and_missing_onnxruntime_degrades_to_tfidf
                 "falling back to TF-IDF" in rec.message for rec in caplog.records
             )
 
+            from app.core.extractor import build_corpus_generator_async
+
             async def _ingest():
                 chunk: dict[str, dict[str, str]] = {}
                 async for (
@@ -1199,8 +1201,13 @@ def test_session_startup_missing_vocab_and_missing_onnxruntime_degrades_to_tfidf
                     text,
                     fhash,
                     was_skipped,
-                ) in session.process_items_async(
-                    item_paths, cancel_check=lambda: False
+                ) in build_corpus_generator_async(
+                    str(workspace),
+                    item_paths,
+                    db=session.db,
+                    cancel_check=lambda: False,
+                    settings=session.settings,
+                    source_dirs=session.source_dirs,
                 ):
                     if not was_skipped and text:
                         chunk[item] = {"text": text, "hash": fhash or ""}

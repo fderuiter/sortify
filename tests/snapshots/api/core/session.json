@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "a539eb345a5d9c537b01b2f22f96cfb6cae07cb08be8a1029a96bcd33263383b"
+    "checksum": "ed06067368a2ff676cc55d1757d71c6a1e82d912016a4e5772c9c4efbb701155"
   },
   "classes": [
     {
@@ -183,62 +183,6 @@
           "returns": null
         },
         {
-          "async": true,
-          "decorators": [],
-          "name": "process_items_async",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": null,
-              "default": null,
-              "name": "items_to_sort"
-            },
-            {
-              "annotation": null,
-              "default": null,
-              "name": "cancel_check"
-            },
-            {
-              "annotation": null,
-              "default": "None",
-              "name": "progress_callback"
-            }
-          ],
-          "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "retry_failed_moves",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": null,
-              "default": null,
-              "name": "failed_items"
-            },
-            {
-              "annotation": null,
-              "default": "None",
-              "name": "progress_callback"
-            },
-            {
-              "annotation": null,
-              "default": null,
-              "name": "**kwargs"
-            }
-          ],
-          "returns": null
-        },
-        {
           "async": false,
           "decorators": [],
           "name": "rollback",
@@ -287,19 +231,5 @@
       ]
     }
   ],
-  "functions": [
-    {
-      "async": false,
-      "decorators": [],
-      "name": "split_plan_phases",
-      "parameters": [
-        {
-          "annotation": "dict[str, Any]",
-          "default": null,
-          "name": "plan"
-        }
-      ],
-      "returns": "tuple[dict[str, Any], dict[str, Any]]"
-    }
-  ]
+  "functions": []
 }
