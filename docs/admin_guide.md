@@ -445,7 +445,27 @@ System settings modified during runtime are dynamically saved to the local JSON 
 
 ### Policy Evaluation Flowchart
 
-![Policy Evaluation Flowchart](assets/diagrams/policy_evaluation_flow.svg)
+```mermaid
+flowchart TD
+    A("Incoming Document")
+    B["Sort Rules by Priority High to Low"]
+    C{Evaluate Next Rule}
+    D["Route Document via Override Path"]
+    E["Route Document via Keyword Category"]
+    F["Route Document via Pattern Category"]
+    G["Stop Processing & Halt Evaluation"]
+    H{More Rules Remaining?}
+    I["Proceed to General Classification / AI Sorting"]
+    A --> B
+    B --> C
+    C -->|Override Rule Match| D
+    C -->|Keyword Rule Match| E
+    C -->|Pattern Rule Match| F
+    C -->|No Match & Halt on Mismatch Enabled| G
+    C -->|No Match & Halt Disabled| H
+    H -->|Yes| C
+    H -->|No| I
+```
 
 ### Rule Syntax & Types
 

@@ -1,0 +1,30 @@
+{
+  "_metadata": {
+    "checksum": "124583b96fcf3f58acc534e8ca8e5d4a67820d05ea8b85dab52c5ef96e218536"
+  },
+  "protocols": {
+    "DocumentExtractor": {
+      "class_name": "DocumentExtractor",
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    }
+  }
+}

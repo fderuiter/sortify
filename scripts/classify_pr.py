@@ -23,8 +23,9 @@ PROTECTED_PATHS = [
     "PRIVACY.md",
     "app/config.py",
     "app/core/crypto.py",
-    # Modules that can lose or corrupt a user's files (ADR 0005, ADR 0006)
+    # Modules that can lose or corrupt a user's files (ADR 0005, ADR 0006, ADR 0008)
     "app/core/mover.py",
+    "app/core/moves.py",
     "app/core/resilient_file_ops.py",
     "app/core/ledger.py",
     "app/core/history.py",
@@ -32,6 +33,7 @@ PROTECTED_PATHS = [
     "app/core/db.py",
     "app/core/db_conn.py",
     "app/core/db_worker.py",
+    "app/core/store.py",
     "app/core/quarantine_interceptor.py",
     "scripts/",
     "smart-autosorter.spec",

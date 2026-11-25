@@ -9,8 +9,44 @@ The examples below use `smart-autosorter`. When running from a source checkout, 
 
 On first launch the **Privacy & Data Setup Wizard** asks whether you allow the optional AI model download: a one-time, roughly 80 MB embedding model from Hugging Face.
 
-![First-Run Setup Wizard Flowchart](assets/diagrams/user_guide_setup_wizard.svg)
-
+```mermaid
+flowchart TD
+    A["Launch Application"]
+    B{First-Run Setup Wizard}
+    C["Download 80MB Model from Hugging Face"]
+    D["Enable Semantic AI Sorting"]
+    E["Fallback to Offline Non-Semantic Mode"]
+    F["Open User Guide"]
+    G["Enter Workspace Directory Path"]
+    H["Select Quick Preset (Demo / Downloads / Documents)"]
+    I{Validate Directory Path}
+    J["Display Inline Error Banner"]
+    K["Begin Directory Scan"]
+    A --> B
+    B -->|Accept & Download| C
+    C -->|Download Successful| D
+    C -->|Network Error or Offline| E
+    B -->|Decline| E
+    B -->|Help| F
+    B -->|Enter Path| G
+    B -->|Select Preset| H
+    H -->|Populate Path| G
+    G -->|Finish & Save| I
+    I -->|Invalid Path| J
+    J -->|Correct Path| G
+    I -->|Valid Path| K
+    click A "#first-run-steps--setup-wizard" "Launch Application Step"
+    click B "#first-run-steps--setup-wizard" "First-Run Setup Wizard"
+    click C "https://huggingface.co" "Hugging Face Model Download" _blank
+    click D "#privacy-configurations" "Privacy & Semantic AI Settings"
+    click E "#offline-non-semantic-mode" "Offline Mode Information"
+    click F "#first-run-steps--setup-wizard" "User Guide Reference"
+    click G "#first-run-steps--setup-wizard" "Workspace Directory Input Field (#input-dir)"
+    click H "#first-run-steps--setup-wizard" "Quick Preset Buttons"
+    click I "#first-run-steps--setup-wizard" "Directory Path Validation"
+    click J "#first-run-steps--setup-wizard" "Inline Error Banner (#lbl-error)"
+    click K "#first-run-steps--setup-wizard" "Scan and Organize Workspace"
+```
 Declining is fine. Sorting still works offline using TF-IDF keyword clustering (see [Offline Mode](#offline-mode)).
 
 ### From the command line
@@ -315,8 +351,20 @@ smart-autosorter daemon stop
 ```
 `pause`, `resume`, `health` and `metrics` are also available.
 
-![Watchdog Event Aggregation & Debounce State Machine](assets/diagrams/user_guide_watchdog_state.svg)
-
+```mermaid
+stateDiagram-v2
+    [*] --> Idle: Watchdog Active
+    Idle --> EventDetected: Directory Change Event
+    EventDetected --> CheckTransient: Inspect File Extension
+    CheckTransient --> TransientIgnored: Extension in (.crdownload, .tmp, .download)
+    TransientIgnored --> Idle: Drop Transient Event
+    CheckTransient --> StartDebounce: Valid File Extension
+    StartDebounce --> AggregatingEvents: Standard Debounce Timer (0.6s)
+    AggregatingEvents --> AggregatingEvents: New Event Received (Reset 0.6s Timer)
+    AggregatingEvents --> TriggerSorting: Debounce Timer Expires (0.6s)
+    AggregatingEvents --> TriggerSorting: Max Debounce Limit Reached (5.0s)
+    TriggerSorting --> Idle: Execute Sorting Pipeline
+```
 - **Incomplete downloads are ignored.** Files ending in `.crdownload`, `.tmp` or `.download` are skipped until they are finished.
 - **Bursts are batched.** After a file event the daemon waits 0.6 seconds (`DEBOUNCE_DELAY`) for more changes, and never more than 5 seconds (`MAX_DEBOUNCE_DELAY`) during a continuous stream of writes.
 

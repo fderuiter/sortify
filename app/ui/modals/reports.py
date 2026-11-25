@@ -1015,8 +1015,8 @@ class AuditReportModal(ResponsiveModalScreen[None]):
         ):
             try:
                 app_ref._start_scan()
-            except Exception:
-                pass
+            except (AttributeError, RuntimeError, TypeError) as exc:
+                logger.debug("Scan refresh skipped after audit retry: %s", exc)
 
         pass_cnt = self.report_data.get("verified_pass_count", 0)
         fail_cnt = self.report_data.get("mismatch_fail_count", 0)

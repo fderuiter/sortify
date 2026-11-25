@@ -121,3 +121,91 @@ def test_cli_subprocess_help_and_errors(tmp_path):
     )
     assert res_dir.returncode == 1
     assert "not a regular file" in res_dir.stderr
+
+
+def test_only_measured_skips_missing_and_zero_executed_modules():
+    from scripts.check_coverage_floors import check
+
+    partial_report = {
+        "files": {
+            "app/core/history.py": {
+                "executed_lines": [1, 2, 3],
+                "summary": {"percent_covered": 88.0, "num_statements": 10},
+            },
+            "app/core/mover.py": {
+                "executed_lines": [],
+                "summary": {"percent_covered": 0.0, "num_statements": 50},
+            },
+        }
+    }
+    floors = {
+        "app/core/history.py": 84,
+        "app/core/mover.py": 74,
+        "app/core/crypto.py": 86,
+    }
+    assert check(partial_report, floors, only_measured=True) == []
+    assert len(check(partial_report, floors, only_measured=False)) == 2
+
+
+def test_max_floor_lag_flags_stale_floors(tmp_path):
+    from scripts.check_coverage_floors import check, main
+
+    floors = {"app/core/mover.py": 74, "app/core/history.py": 84}
+    report_within = _report(**{"app/core/mover.py": 84.0, "app/core/history.py": 90.0})
+    assert check(report_within, floors, max_floor_lag=10) == []
+
+    report_lagging = _report(**{"app/core/mover.py": 84.1, "app/core/history.py": 90.0})
+    failures = check(report_lagging, floors, max_floor_lag=10)
+    assert len(failures) == 1
+    assert "app/core/mover.py" in failures[0]
+    assert "exceeds its floor of 74% by 10.1 points" in failures[0]
+
+    # CLI check with negative --max-floor-lag fails closed
+    report_file = tmp_path / "cov.json"
+    report_file.write_text(json.dumps(report_within), encoding="utf-8")
+    assert main(["prog", "--max-floor-lag=-1", str(report_file)]) == 1
+
+
+def test_check_protected_sync_and_exemptions(tmp_path):
+    from scripts.check_coverage_floors import (
+        EXEMPT_PROTECTED_MODULES,
+        check_protected_sync,
+        load_floors,
+        main,
+    )
+
+    assert EXEMPT_PROTECTED_MODULES == frozenset(
+        {"app/core/session.py", "app/core/db_worker.py"}
+    )
+
+    # Repository pyproject.toml and PROTECTED_PATHS must stay in sync
+    repo_floors = load_floors(REPO_ROOT / "pyproject.toml")
+    assert "app/core/moves.py" in repo_floors
+    assert "app/core/store.py" in repo_floors
+    assert repo_floors["app/core/history.py"] >= 84
+    assert check_protected_sync(repo_floors) == []
+
+    # Synthetic missing protected core module must fail sync
+    incomplete_floors = {
+        k: v for k, v in repo_floors.items() if k != "app/core/store.py"
+    }
+    sync_errs = check_protected_sync(incomplete_floors)
+    assert len(sync_errs) == 1
+    assert "app/core/store.py" in sync_errs[0]
+
+    # End-to-end CLI check with --only-measured --max-floor-lag=10 --check-protected-sync
+    measured = {mod: min(100.0, float(fl) + 5.0) for mod, fl in repo_floors.items()}
+    cov_json = tmp_path / "measured.json"
+    cov_json.write_text(json.dumps(_report(**measured)), encoding="utf-8")
+    assert (
+        main(
+            [
+                "prog",
+                "--only-measured",
+                "--max-floor-lag=10",
+                "--check-protected-sync",
+                str(cov_json),
+            ]
+        )
+        == 0
+    )

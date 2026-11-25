@@ -10,6 +10,9 @@ markdown_extensions:
           class: mermaid
           format: !!python/name:pymdownx.superfences.fence_code_format
 
+extra_javascript:
+  - assets/js/mermaid.min.js
+
 exclude_docs: |
   *.draft.md
   drafts/

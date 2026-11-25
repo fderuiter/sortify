@@ -41,12 +41,12 @@ Thresholds for low-risk opt-in PRs:
 The controller **fails closed** and blocks auto-merge for PRs touching any of the following sensitive categories:
 - Workflow or action configuration (`.github/**`)
 - Documentation build configuration (`mkdocs.yml`, with `scripts/generate_docs.py` rejecting non-allowlisted YAML tags before `mkdocs build`)
-- Local pre-commit hooks, repository git attributes, and custom merge drivers (`.pre-commit-config.yaml`, `.gitattributes`)
+- Local pre-commit hooks and repository git attributes (`.pre-commit-config.yaml`, `.gitattributes`)
 - Agent instructions, skills, and local hook configurations (`AGENTS.md`, `CLAUDE.md`, `.agents/**`, `.claude/**`)
 - Security & privacy policies (`SECURITY.md`, `PRIVACY.md`, `.gitleaks.toml`)
 - Application configuration & schema (`app/config.py`, `network_rules.json`)
 - Envelope encryption & key management (`app/core/crypto.py`)
-- Safe file movement, ledger, database, & rollback logic (`app/core/mover.py`, `app/core/resilient_file_ops.py`, `app/core/ledger.py`, `app/core/history.py`, `app/core/db.py`, `app/core/db_conn.py`, `app/core/db_worker.py`)
+- Safe file movement, ledger, database, & rollback logic (`app/core/mover.py`, `app/core/moves.py`, `app/core/resilient_file_ops.py`, `app/core/ledger.py`, `app/core/history.py`, `app/core/db.py`, `app/core/db_conn.py`, `app/core/db_worker.py`, `app/core/store.py`)
 - Quarantine & interceptor logic (`app/core/quarantine_interceptor.py`, `app/core/session.py`)
 - Release & compilation toolchains and CI/merge tooling (`scripts/**`, `smart-autosorter.spec`)
 - Dependency manifests and lockfiles (`pyproject.toml`, `uv.lock`, `offline_bundle/requirements.txt`, with `.github/CODEOWNERS` requiring owner review on `offline_bundle/requirements.txt`), unless the PR is an approved native Dependabot update (`dependabot[bot]`) or an automated security patch with a maintainer-applied `automerge` label

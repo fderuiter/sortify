@@ -10,6 +10,7 @@ import ast
 import difflib
 import json
 import os
+import re
 import sys
 from typing import Any
 
@@ -259,19 +260,21 @@ def extract_module_signatures(file_path):
         with open(file_path, encoding="utf-8") as f:
             source = f.read()
         tree = ast.parse(source, filename=file_path)
-    except Exception as e:
+    except (OSError, SyntaxError, UnicodeDecodeError) as e:
         print(f"Warning: Failed to parse AST for {file_path}: {e}", file=sys.stderr)
         return {"classes": [], "functions": []}
 
     return _extract_module_signatures_from_tree(tree)
 
 
-def _extract_protocols_from_tree(tree: ast.Module) -> dict:
+def _extract_protocols_from_tree(tree: ast.Module, *, public_only: bool = True) -> dict:
     """Extract classes inheriting from Protocol from a parsed module AST."""
     protocols = {}
 
     for node in ast.walk(tree):
         if isinstance(node, ast.ClassDef):
+            if public_only and node.name.startswith("_"):
+                continue
             is_protocol = False
             for base in node.bases:
                 if (
@@ -296,7 +299,7 @@ def _extract_protocols_from_tree(tree: ast.Module) -> dict:
     return protocols
 
 
-def extract_protocols(file_path):
+def extract_protocols(file_path, *, public_only: bool = True):
     """Statically parse a Python file and extract classes that inherit from Protocol."""
     if not os.path.exists(file_path):
         print(f"Error: Protocol source file not found: {file_path}", file=sys.stderr)
@@ -306,7 +309,7 @@ def extract_protocols(file_path):
         source = f.read()
 
     tree = ast.parse(source, filename=file_path)
-    return _extract_protocols_from_tree(tree)
+    return _extract_protocols_from_tree(tree, public_only=public_only)
 
 
 def _extract_cli_from_tree(tree: ast.AST) -> list:
@@ -526,6 +529,48 @@ def collect_config_definitions(config_path=None):
     return dict(sorted(config_data.items()))
 
 
+_PUBLIC_PROTOCOL_CLASS_RE = re.compile(
+    r"^[ \t]*class[ \t]+([A-Za-z][A-Za-z0-9_]*)[ \t]*\([^)]*\bProtocol\b",
+    re.MULTILINE,
+)
+
+
+def _file_declares_public_protocol(full_path: str) -> bool:
+    """Fast non-AST check returning True if source declares a public Protocol class."""
+    try:
+        with open(full_path, encoding="utf-8") as f:
+            source = f.read()
+    except OSError:
+        return False
+    if "Protocol" not in source:
+        return False
+    return _PUBLIC_PROTOCOL_CLASS_RE.search(source) is not None
+
+
+def _discover_protocol_files(core_dir=None, plugins_dir=None) -> list[tuple[str, str]]:
+    """Return sorted (source_rel, source_abs) entries for core/plugin modules declaring public Protocols without parsing ASTs."""
+    candidates = _discover_core_files(core_dir=core_dir) + _discover_plugin_files(
+        plugins_dir=plugins_dir
+    )
+    entries: dict[str, str] = {}
+    for rel_path, full_path in candidates:
+        if _file_declares_public_protocol(full_path):
+            entries[rel_path] = full_path
+    return sorted(entries.items())
+
+
+def collect_protocol_definitions(core_dir=None, plugins_dir=None):
+    """Scan core and plugin modules and extract public Protocol contracts via extract_protocols."""
+    protocol_data = {}
+    for rel_path, full_path in _discover_protocol_files(
+        core_dir=core_dir, plugins_dir=plugins_dir
+    ):
+        extracted = extract_protocols(full_path, public_only=True)
+        if extracted:
+            protocol_data[rel_path] = {"protocols": extracted}
+    return dict(sorted(protocol_data.items()))
+
+
 def collect_ui_protocol_definitions(ui_protocols_path=None):
     """Extract UI host protocol contract signatures from app/ui/protocols.py."""
     if ui_protocols_path is None:
@@ -560,20 +605,12 @@ def discover_monitored_modules(
             }
         )
 
-    for rel_path, full_path in _discover_core_files(core_dir=core_dir):
+    for rel_path, full_path in _discover_protocol_files(
+        core_dir=core_dir, plugins_dir=plugins_dir
+    ):
         specs.append(
             {
-                "category": "core",
-                "source_rel": rel_path,
-                "source_abs": full_path,
-                "snapshot_path": source_path_to_snapshot_path(rel_path),
-            }
-        )
-
-    for rel_path, full_path in _discover_plugin_files(plugins_dir=plugins_dir):
-        specs.append(
-            {
-                "category": "plugins",
+                "category": "protocols",
                 "source_rel": rel_path,
                 "source_abs": full_path,
                 "snapshot_path": source_path_to_snapshot_path(rel_path),
@@ -615,6 +652,8 @@ def extract_module_payload(module_spec: dict[str, Any]) -> dict[str, Any]:
         if module_spec.get("is_cli_entry"):
             return {"cli": extract_cli(full_path)}
         return _extract_cli_module_payload(full_path)
+    if category == "protocols":
+        return {"protocols": extract_protocols(full_path, public_only=True)}
     if category == "ui":
         return _extract_ui_protocols_payload(full_path)
     return extract_module_signatures(full_path)
@@ -630,8 +669,9 @@ def collect_current_definitions(
     """Parse codebase files and return the complete current definitions structure."""
     return {
         "cli": collect_cli_definitions(cli_dir=cli_dir),
-        "core": collect_core_definitions(core_dir=core_dir),
-        "plugins": collect_plugins_definitions(plugins_dir=plugins_dir),
+        "protocols": collect_protocol_definitions(
+            core_dir=core_dir, plugins_dir=plugins_dir
+        ),
         "config": collect_config_definitions(config_path=config_path),
         "ui": collect_ui_protocol_definitions(ui_protocols_path=ui_protocols_path),
     }
@@ -644,6 +684,8 @@ def source_path_to_snapshot_path(source_rel_path: str) -> str:
         rel_snap = "cli/main.json"
     elif norm == "sandbox_cli.py":
         rel_snap = "cli/sandbox_cli.json"
+    elif norm.startswith(("app/core/", "app/plugins/")):
+        rel_snap = "protocols/" + norm[len("app/") :].removesuffix(".py") + ".json"
     elif norm.startswith("app/"):
         rel_snap = norm[len("app/") :].removesuffix(".py") + ".json"
     else:
@@ -768,31 +810,16 @@ def collect_modules_and_payloads():
                     }
                 )
 
-        core_dict = defs.get("core", {})
-        if isinstance(core_dict, dict):
-            for source_rel, core_sigs in core_dict.items():
+        protocols_dict = defs.get("protocols", {})
+        if isinstance(protocols_dict, dict):
+            for source_rel, proto_sigs in protocols_dict.items():
                 snap_path = source_path_to_snapshot_path(source_rel)
-                payload = core_sigs
                 modules.append(
                     {
-                        "category": "core",
+                        "category": "protocols",
                         "source_rel": source_rel,
                         "snapshot_path": snap_path,
-                        "payload": payload,
-                    }
-                )
-
-        plugins_dict = defs.get("plugins", {})
-        if isinstance(plugins_dict, dict):
-            for source_rel, plugin_sigs in plugins_dict.items():
-                snap_path = source_path_to_snapshot_path(source_rel)
-                payload = plugin_sigs
-                modules.append(
-                    {
-                        "category": "plugins",
-                        "source_rel": source_rel,
-                        "snapshot_path": snap_path,
-                        "payload": payload,
+                        "payload": proto_sigs,
                     }
                 )
 

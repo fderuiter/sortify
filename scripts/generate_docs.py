@@ -65,6 +65,14 @@ def _module_parts_for_doc_path(file_path: str) -> tuple[str, ...]:
     return path_obj.with_suffix("").parts
 
 
+def _render_fenced_mermaid(spec_id: str) -> str:
+    """Render a registered diagram specification as a fenced Mermaid block."""
+    from scripts.diagram_schema import SYSTEM_DIAGRAM_SPECS
+
+    mmd = SYSTEM_DIAGRAM_SPECS[spec_id].to_mermaid().rstrip("\n")
+    return f"```mermaid\n{mmd}\n```\n\n"
+
+
 def generate_api_docs():
     """Generate API reference markdown from python modules."""
     app_dir = "app"
@@ -75,9 +83,7 @@ def generate_api_docs():
         f.write("This document is automatically generated. Do not edit manually.\n\n")
 
         f.write("## Core Architecture Diagram\n\n")
-        f.write(
-            "![Core Architecture Diagram](assets/diagrams/core_architecture.svg)\n\n"
-        )
+        f.write(_render_fenced_mermaid("core_architecture"))
         f.write('<a id="appcoresanitizer"></a>\n\n')
 
         # Find all python files except ui and binaries; include __init__.py modules defining __all__
@@ -141,14 +147,10 @@ def generate_ui_docs():
         f.write("## Component Architecture & Catalog Diagrams\n\n")
 
         f.write("### Catalog Interactive Workbench Workflow\n\n")
-        f.write(
-            "![Component Catalog Workflow](assets/diagrams/catalog_workflow.svg)\n\n"
-        )
+        f.write(_render_fenced_mermaid("catalog_workflow"))
 
         f.write("### UI Component Hierarchy\n\n")
-        f.write(
-            "![UI Component Hierarchy](assets/diagrams/ui_component_hierarchy.svg)\n\n"
-        )
+        f.write(_render_fenced_mermaid("ui_component_hierarchy"))
 
         py_files = glob.glob(os.path.join(app_dir, "**", "*.py"), recursive=True)
         py_files = [p for p in py_files if not p.endswith("__init__.py")]
@@ -427,9 +429,7 @@ def _generate_admin_guide_impl():
 
         f.write("## Compliance Policies & Routing Rules\n\n")
         f.write("### Policy Evaluation Flowchart\n\n")
-        f.write(
-            "![Policy Evaluation Flowchart](assets/diagrams/policy_evaluation_flow.svg)\n\n"
-        )
+        f.write(_render_fenced_mermaid("policy_evaluation_flow"))
         f.write("### Rule Syntax & Types\n\n")
         f.write(
             "Each entry in `POLICIES` follows the typed `PolicyRule` schema in `app/config_schema.json`:\n\n"
@@ -1586,6 +1586,8 @@ def validate_mermaid_diagrams():
     from scripts.diagram_toolchain import validate_mermaid_syntax
 
     doc_files = []
+    if os.path.exists("README.md"):
+        doc_files.append("README.md")
     if os.path.exists("docs"):
         for root, dirs, files in os.walk("docs"):
             for f in sorted(files):

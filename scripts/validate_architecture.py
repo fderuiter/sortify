@@ -606,10 +606,14 @@ def validate_diagram_schema_and_assets(
     errors: list,
     target_spec_ids: set[str] | None = None,
     check_core_modules: bool = True,
+    explicit_diagram_files: set[str] | None = None,
 ) -> None:
-    """Validate that Pydantic diagram specifications represent all active core modules and match generated assets."""
+    """Validate that Pydantic diagram specifications represent all active core modules and match generated .mmd assets."""
     try:
         from scripts.diagram_schema import SYSTEM_DIAGRAM_SPECS
+        from scripts.diagram_toolchain import validate_mermaid_syntax
+
+        has_live_core = Path("app/core").is_dir()
 
         # 1. Verify all active app/core/*.py submodules are represented in core_architecture diagram spec
         if check_core_modules:
@@ -629,9 +633,10 @@ def validate_diagram_schema_and_assets(
                         f"Diagram validation error: Module '{mod}' is not represented in 'core_architecture' diagram schema specification."
                     )
 
-        # 2. Check that compiled diagram assets exist and match spec Mermaid output
+        # 2. Check that compiled .mmd diagram sources exist, have valid Mermaid syntax, and match spec output
         # Hydrate only targeted keys via LazyDiagramSpecsDict rather than .items()
         diagrams_dir = Path("docs/assets/diagrams")
+        explicit_set = explicit_diagram_files or set()
         spec_keys = (
             list(SYSTEM_DIAGRAM_SPECS.keys())
             if target_spec_ids is None
@@ -644,19 +649,25 @@ def validate_diagram_schema_and_assets(
                 )
                 continue
             spec = SYSTEM_DIAGRAM_SPECS[spec_id]
+            expected_mmd = spec.to_mermaid().replace("\r\n", "\n")
+            for syn_err in validate_mermaid_syntax(expected_mmd):
+                errors.append(f"Diagram syntax error in '{spec_id}': {syn_err}")
+
             mmd_file = diagrams_dir / f"{spec_id}.mmd"
-            svg_file = diagrams_dir / f"{spec_id}.svg"
+            mmd_rel = f"docs/assets/diagrams/{spec_id}.mmd"
+            if (
+                spec_id == "core_architecture"
+                and has_live_core
+                and mmd_rel not in explicit_set
+            ):
+                # core_architecture is derived dynamically from app/ ASTs; skip static .mmd drift when validating app/ edits
+                continue
+
             if not mmd_file.exists():
                 errors.append(
                     f"Diagram asset error: Compiled file '{mmd_file}' does not exist for spec '{spec_id}'."
                 )
-            if not svg_file.exists():
-                errors.append(
-                    f"Diagram asset error: Compiled SVG file '{svg_file}' does not exist for spec '{spec_id}'."
-                )
-
-            if mmd_file.exists():
-                expected_mmd = spec.to_mermaid().replace("\r\n", "\n")
+            else:
                 actual_mmd = mmd_file.read_text(encoding="utf-8").replace("\r\n", "\n")
                 if expected_mmd != actual_mmd:
                     errors.append(
@@ -1661,12 +1672,22 @@ def main():
         _report_duplicate_function_hashes(
             errors, function_hashes, target_files=target_files
         )
+        if run_diagram_checks and check_core_modules:
+            from scripts.diagram_schema import hydrate_core_architecture_spec
+
+            hydrate_core_architecture_spec(parsed_files)
 
     if run_diagram_checks:
+        explicit_diagram_files = {
+            _normalize_cli_path(raw)
+            for raw in args.files
+            if _normalize_cli_path(raw).startswith(DIAGRAM_ASSETS_PREFIX)
+        }
         validate_diagram_schema_and_assets(
             errors,
             target_spec_ids=target_diagram_specs,
             check_core_modules=check_core_modules,
+            explicit_diagram_files=explicit_diagram_files,
         )
 
     if errors:

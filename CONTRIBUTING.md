@@ -50,7 +50,7 @@ Headless runs probe an unavailable OS keyring at most once (within a 2-second ti
 | `gitleaks` / `gitleaks-dir` | `uv run python scripts/run_secret_scan.py --mode staged --config .gitleaks.toml` / `uv run python scripts/run_secret_scan.py --mode working-tree --config .gitleaks.toml` | staged diffs (including force-staged files) or any non-ignored working-tree file match credential rules outside the scoped allowlists in `.gitleaks.toml` |
 | `actionlint` | `uv run python scripts/run_actionlint.py` | a workflow under `.github/workflows/` fails `actionlint` (when installed) or offline safe YAML and workflow-schema validation |
 | `validate-docs` | `uv run python scripts/generate_docs.py --check --no-build --local-only` | generated docs (`docs/api_reference.md`, `docs/ui.md`, `docs/admin_guide.md`, `docs/keyboard_shortcuts.md`, `SECURITY.md`, `app/config_schema.json`) are stale, or a handwritten doc links to a missing path |
-| `validate-diagram-artifacts` | `uv run python scripts/diagram_toolchain.py --verify` | a Mermaid diagram spec or `.mmd`/`.svg` artifact in `docs/assets/diagrams/` is stale or invalid |
+| `validate-diagram-artifacts` | `uv run python scripts/diagram_toolchain.py --verify` | a Mermaid diagram spec, fenced `mermaid` block, click target, or `.mmd` source in `docs/assets/diagrams/` is stale or invalid |
 | `validate-signatures` | `uv run python scripts/validate_signatures.py` | a public API or CLI signature changed without updating its baseline in `tests/snapshots/api/`, or an orphaned snapshot exists under `tests/snapshots/` |
 | `validate-architecture` | `uv run python scripts/validate_architecture.py` | a centralized helper, `Settings` usage, or architecture diagram inventory drifts across `app/`, `scripts/diagram_schema.py`, or `docs/assets/diagrams/` |
 | `deptry` | `uv run deptry .` | a declared dependency is unused, an import comes only in transitively, or runtime code imports a dev-only package (exceptions are in `[tool.deptry]` in `pyproject.toml`) |
@@ -68,7 +68,7 @@ Read-only `--check` and `--verify` commands never overwrite tracked files on dis
 - **API and CLI signatures:** `uv run python scripts/validate_signatures.py --update`.
 - **TUI snapshots:** `UPDATE_SNAPSHOTS=1 uv run pytest tests/test_visual_snapshots.py -n 0` (rewrites baselines and removes any stale `.svg.actual` files; TUI snapshots run in `uv run pytest -m "not slow"`), then commit `tests/snapshots/tui_svg/`.
 - **Test type-check ceilings:** `uv run python scripts/check_ty_warnings.py --sync-baseline` rewrites `tests/ty_baseline.json` with deterministic `(file, rule)` ceilings across `linux`, `darwin`, and `win32`.
-- **Diagrams:** edit the spec in `scripts/diagram_schema.py`, then run `uv run python scripts/diagram_toolchain.py build` and commit the `.mmd` and `.svg` files in `docs/assets/diagrams/`. Rendering needs Node and mermaid-cli (`npm install -g @mermaid-js/mermaid-cli`, which also fetches the headless Chrome it uses). Without it the build keeps the existing SVGs and warns that a changed diagram is stale.
+- **Diagrams:** `core_architecture` derives automatically from `app/` AST imports; for other diagrams, edit the spec in `scripts/diagram_schema.py`, run `uv run python scripts/diagram_toolchain.py build` and `uv run python scripts/generate_docs.py`, and commit the updated `.mmd` sources and fenced `mermaid` blocks. MkDocs renders fenced `mermaid` blocks client-side via the bundled `docs/assets/js/mermaid.min.js`.
 
 ## Code conventions
 

@@ -6,10 +6,50 @@ This document outlines the core internal workflow and architecture of the Smart 
 
 The system uses a two-phase pipeline to convert documents into structured sorting plans:
 
-![Data Flow Architecture](assets/diagrams/architecture_dataflow.svg)
-
-![Multi-Format Text Extraction Flow](assets/diagrams/core_text_extraction.svg)
-
+```mermaid
+graph TD
+    A["Directory Selection"]
+    B(["File Extraction & Generator"])
+    C(["Chunked Yielding"])
+    D(["Incremental Analyzer (partial_fit)"])
+    E(["TF-IDF / Embeddings + K-Means Clustering"])
+    F(["Recursive Topic Grouping"])
+    G[("Generate Sorting Plan")]
+    H["UI Tree Rendering"]
+    A -->|DirectoryPath| B
+    B -->|FileStream| C
+    C -->|ChunkBatch| D
+    D -->|FeatureVectors| E
+    E -->|TopicClusters| F
+    F -->|SortingPlan| G
+    G -->|PlanViewModel| H
+    click A "docs/user_guide.md#first-run-steps--setup-wizard" "Directory Selection Step"
+    click B "docs/user_guide.md#supported-file-formats" "File Extraction Step"
+    click C tooltip "Chunked Yielding Step"
+    click D tooltip "Analyzer Step"
+    click E "docs/user_guide.md#ai-clustering-constraints" "Clustering Step"
+    click F tooltip "Topic Grouping Step"
+    click G tooltip "Sorting Plan Step"
+    click H "docs/ui.md#appuimixinstree_view" "UI Rendering Step"
+```
+```mermaid
+sequenceDiagram
+    autonumber
+    participant FS as FileScanner
+    participant EX as Extractor Engine
+    participant SN as Text Sanitizer
+    participant CG as Corpus Generator
+    FS->>EX: Scan target directory for supported files
+    activate EX
+    EX->>EX: Extract raw text payload per format
+    EX->>SN: Pass raw text payload
+    activate SN
+    SN->>SN: Sanitize text and filter stop words
+    SN-->>EX: Return sanitized text yield
+    deactivate SN
+    EX-->>CG: Yield document text chunk
+    deactivate EX
+```
 1. **Extraction (`app.core.extractor`)**:
     - The extractor reads raw files across supported office, markup, data, email, and media formats (`.txt`, `.md`, `.rst`, `.log`, `.csv`, `.tsv`, `.json`, `.yaml`, `.yml`, `.html`, `.htm`, `.xml`, `.pdf`, `.docx`, `.pptx`, `.odt`, `.rtf`, `.eml`, `.xlsx`, `.xls`, plus images `.png`, `.jpg`, `.jpeg`, `.bmp`, `.tiff`, `.webp` via OCR and audio `.mp3`, `.wav`, `.m4a` via Whisper when the `ml` extra is installed).
     - It maps each file to its raw text payload using robust exception-handling to ensure that a failure in one document does not crash the entire run, while computing unique SHA-256 digests (`resilient_file_hash`) even for unsupported binary files.
@@ -23,16 +63,66 @@ The system uses a two-phase pipeline to convert documents into structured sortin
 
 ## Multi-Study Clinical Ingestion Pipeline
 
-![CRO Multi-Study Pipeline](assets/diagrams/cro_multi_study_pipeline.svg)
-
+```mermaid
+flowchart TD
+    subgraph scan_stage ["Drive Ingestion & Scan"]
+        forensic_scan[["app.core.forensic_scanner"]]
+        study_disambiguation{app.core.study_disambiguator}
+    end
+    subgraph taxonomy_stage ["Taxonomy & Compliance Rules"]
+        clinical_taxonomy["app.core.clinical_taxonomy"]
+        clinical_compliance{app.core.clinical_compliance}
+    end
+    subgraph binding_stage ["TMF Binder Relocation"]
+        clinical_renamer["app.core.clinical_renamer"]
+        cro_pipeline_output(["TMF Clean Binders Output"])
+    end
+    forensic_scan -->|Raw Drives| study_disambiguation
+    study_disambiguation -->|Protocols Disambiguated| clinical_taxonomy
+    clinical_taxonomy -->|Mapped Taxonomy| clinical_compliance
+    clinical_compliance -->|Compliance Validated| clinical_renamer
+    clinical_renamer -->|Compiled Binders| cro_pipeline_output
+```
 ## Centralized In-Memory Caching Architecture
 
-![Memory Cache Layers](assets/diagrams/memory_cache_layers.svg)
-
+```mermaid
+flowchart LR
+    subgraph core_cache_box ["Centralized LRU Cache (app.core.cache)"]
+        bounded_cache[("BoundedMemoryCache[K, V]")]
+    end
+    subgraph cache_clients ["Subsystem Consumers"]
+        db_conn_cache["app.core.db_conn (_connection_cache)"]
+        link_manager_cache["app.core.link_manager (_registry)"]
+        semantic_cache["app.core.semantic_embeddings (_model_properties_cache)"]
+        jev_cache["app.core.jev_classifier (memory_cache)"]
+        db_cache["app.core.db (doc_cache)"]
+    end
+    db_conn_cache -->|Max Size: 50| bounded_cache
+    link_manager_cache -->|Max Size: 10000| bounded_cache
+    semantic_cache -->|Max Size: 500| bounded_cache
+    jev_cache -->|Fast Path Cache| bounded_cache
+    db_cache -->|Max Size: 10000| bounded_cache
+```
 ## Concurrency & Worker Pool Model
 
-![Worker Pool Concurrency](assets/diagrams/worker_pool_concurrency.svg)
-
+```mermaid
+flowchart TD
+    subgraph pool_singleton ["Shared Singleton (app.core.worker_pool)"]
+        shared_worker_pool(["SharedWorkerPool Singleton"])
+    end
+    subgraph pool_tasks ["Concurrent Execution Callers"]
+        session_tasks["app.core.session (Lifecycle Management)"]
+        mover_tasks["app.core.mover (Parallel File Relocation)"]
+        db_worker_tasks["app.core.db_worker (Background Heavy Tasks)"]
+        extractor_tasks["app.core.extractor (Parallel Text Ingestion)"]
+        analyzer_tasks["app.core.analyzer_strategies (Parallel NLP)"]
+    end
+    session_tasks -->|"get_instance() / shutdown()"| shared_worker_pool
+    mover_tasks -->|"submit() relocation tasks"| shared_worker_pool
+    db_worker_tasks -->|offload VLM/OCR/GGUF| shared_worker_pool
+    extractor_tasks -->|parallel document extraction| shared_worker_pool
+    analyzer_tasks -->|offload embedding vector calculations| shared_worker_pool
+```
 ## Verifier Logic
 
 Before any files are moved, `VerificationEngine.verify_integrity` (`app.core.verifier`) checks the sorting plan and reports problems by category:

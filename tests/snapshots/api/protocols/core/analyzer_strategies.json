@@ -1,40 +1,11 @@
 {
   "_metadata": {
-    "checksum": "a7dac9e4b51082ef1a6327a464846cfda5bcfcf8184f47e0e6baf5c4bfa20abd"
+    "checksum": "f5a32fc9a0b03b6c95e2a6fbe2b68f519595e455f3fe6078e9a5e71daea1469b"
   },
-  "classes": [
-    {
-      "class_name": "ClinicalTMFStrategy",
-      "decorators": [],
+  "protocols": {
+    "ClusteringStrategy": {
+      "class_name": "ClusteringStrategy",
       "methods": [
-        {
-          "async": false,
-          "decorators": [],
-          "name": "__init__",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": "'tmf'",
-              "name": "mode"
-            },
-            {
-              "annotation": "bool",
-              "default": "False",
-              "name": "smart_renaming"
-            },
-            {
-              "annotation": "bool",
-              "default": "True",
-              "name": "generate_audit_report"
-            }
-          ],
-          "returns": null
-        },
         {
           "async": false,
           "decorators": [],
@@ -57,12 +28,12 @@
             },
             {
               "annotation": "int",
-              "default": "15",
+              "default": null,
               "name": "max_folders"
             },
             {
-              "annotation": "set | None",
-              "default": "None",
+              "annotation": "set",
+              "default": null,
               "name": "stop_words"
             },
             {
@@ -76,7 +47,7 @@
               "name": "max_features"
             },
             {
-              "annotation": "list[list] | None",
+              "annotation": "list[list[float] | None] | None",
               "default": "None",
               "name": "pre_fetched_vectors"
             },
@@ -86,7 +57,7 @@
               "name": "cancel_check"
             },
             {
-              "annotation": "Any | None",
+              "annotation": "CorpusPreFetchBatchModel | None",
               "default": "None",
               "name": "pre_fetched_corpus"
             }
@@ -95,6 +66,5 @@
         }
       ]
     }
-  ],
-  "functions": []
+  }
 }

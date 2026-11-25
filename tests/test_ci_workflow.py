@@ -715,7 +715,7 @@ def test_precommit_hooks_full_repo_readonly_parity():
         "app/plugins/clinical_compliance/plugin.py",
         "app/ui/protocols.py",
         "sandbox_cli.py",
-        "tests/snapshots/api/core/orphan.json",
+        "tests/snapshots/api/protocols/core/orphan.json",
         "tests/test_visual_snapshots.py",
         "pyproject.toml",
         "uv.lock",
@@ -743,7 +743,7 @@ def test_precommit_hooks_full_repo_readonly_parity():
         "app/config.py",
         "scripts/validate_architecture.py",
         "scripts/diagram_schema.py",
-        "docs/assets/diagrams/core_architecture.svg",
+        "docs/assets/diagrams/core_architecture.mmd",
         "pyproject.toml",
         "uv.lock",
     ):
@@ -1154,9 +1154,15 @@ def test_static_checks_doc_build_flag_gating(tmp_path: Path):
         "--check --local-only --build"
     )
 
-    # 3. PRs touching docs/, mkdocs.yml, root Markdown, or scripts/generate_docs.py pass --build
+    # 3. PRs touching docs/, mkdocs.yml, root Markdown, or scripts/generate_docs.py / diagram_schema.py pass --build
     for idx, rel_path in enumerate(
-        ("docs/guide.md", "mkdocs.yml", "CONTRIBUTING.md", "scripts/generate_docs.py")
+        (
+            "docs/guide.md",
+            "mkdocs.yml",
+            "CONTRIBUTING.md",
+            "scripts/generate_docs.py",
+            "scripts/diagram_schema.py",
+        )
     ):
         _run_git(repo_dir, "checkout", "--quiet", "-b", f"feat/doc-{idx}", base_sha)
         target = repo_dir / rel_path
@@ -1168,3 +1174,25 @@ def test_static_checks_doc_build_flag_gating(tmp_path: Path):
         assert run_doc_step(
             "pull_request", f"refs/pull/{idx + 2}/merge", base_sha, doc_sha
         ).endswith("--check --local-only --build"), f"Expected --build for {rel_path}"
+
+
+def test_ci_has_no_node_mermaid_cli_or_sysctl_and_enforces_coverage_ratchets():
+    """Verify ci.yml omits Node, mermaid-cli, and AppArmor sysctl steps and runs check_coverage_floors.py ratchets."""
+    workflow = _load_ci_workflow()
+    for job_name, job in workflow.get("jobs", {}).items():
+        for step in job.get("steps", []):
+            uses = step.get("uses", "")
+            run_cmd = step.get("run", "")
+            assert "actions/setup-node" not in uses, job_name
+            assert "@mermaid-js/mermaid-cli" not in run_cmd, job_name
+            assert "apparmor_restrict_unprivileged_userns" not in run_cmd, job_name
+            assert "sysctl " not in run_cmd, job_name
+
+    floor_step = next(
+        s
+        for s in workflow["jobs"]["build-and-test"]["steps"]
+        if s.get("name") == "Check Data-Safety Coverage Floors"
+    )
+    floor_cmd = floor_step.get("run", "")
+    assert "--max-floor-lag=10" in floor_cmd
+    assert "--check-protected-sync" in floor_cmd

@@ -642,7 +642,6 @@ def test_validate_architecture_single_app_walk_and_zero_deepcopy(monkeypatch, tm
         (diagrams_dir / f"{spec_id}.mmd").write_text(
             spec.to_mermaid(), encoding="utf-8"
         )
-        (diagrams_dir / f"{spec_id}.svg").write_text("<svg/>\n", encoding="utf-8")
 
     monkeypatch.chdir(tmp_path)
 
@@ -735,7 +734,6 @@ def test_validate_architecture_drifted_diagram_inputs_fail_without_parsing_app(
     (diagrams_dir / "core_architecture.mmd").write_text(
         "flowchart TD\n    DRIFTED[stale]\n", encoding="utf-8"
     )
-    (diagrams_dir / "core_architecture.svg").write_text("<svg/>", encoding="utf-8")
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "diagram_schema.py").write_text(
         "# stub\n", encoding="utf-8"
@@ -861,3 +859,51 @@ def test_writer_construction_catches_alias_imported_after_call():
     validate_service_ownership(errors, "app/ui/example.py", ast.parse(source))
     assert len(errors) == 1
     assert "DBWorker" in errors[0]
+
+
+def test_validate_architecture_new_core_module_auto_updates_diagram(
+    monkeypatch, tmp_path
+):
+    """Adding a new module under app/core/ updates AST-derived core_architecture automatically and passes validate_architecture.py."""
+    from scripts import diagram_schema
+
+    core_dir = tmp_path / "app" / "core"
+    diagrams_dir = tmp_path / "docs" / "assets" / "diagrams"
+    core_dir.mkdir(parents=True)
+    diagrams_dir.mkdir(parents=True)
+
+    (tmp_path / "app" / "config.py").write_text(
+        "class Settings:\n    MAX_DEPTH: int = 3\n", encoding="utf-8"
+    )
+    (core_dir / "path_utils.py").write_text(
+        "def normalize_label(v: str) -> str:\n    return v.strip()\n",
+        encoding="utf-8",
+    )
+    for spec_id, spec in diagram_schema.SYSTEM_DIAGRAM_SPECS.items():
+        (diagrams_dir / f"{spec_id}.mmd").write_text(
+            spec.to_mermaid(), encoding="utf-8"
+        )
+
+    # Add a brand new module under app/core/ without manually editing diagram_schema.py or .mmd files
+    (core_dir / "auto_discovered.py").write_text(
+        "from app.core import path_utils\n\n"
+        "def run_probe(name: str) -> str:\n"
+        "    return path_utils.normalize_label(name)\n",
+        encoding="utf-8",
+    )
+
+    saved_specs = dict(diagram_schema._INSTANTIATED_SPECS)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys, "argv", ["validate_architecture.py", "app/core/auto_discovered.py"]
+    )
+    try:
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 0
+        mmd = diagram_schema.SYSTEM_DIAGRAM_SPECS["core_architecture"].to_mermaid()
+        assert 'core_auto_discovered["app.core.auto_discovered"]' in mmd
+        assert "core_auto_discovered --> core_path_utils" in mmd
+    finally:
+        diagram_schema._INSTANTIATED_SPECS.clear()
+        diagram_schema._INSTANTIATED_SPECS.update(saved_specs)

@@ -161,10 +161,9 @@ convention = "numpy"
 "scripts/build.py" = ["BLE001"]
 "scripts/diagram_toolchain.py" = ["BLE001"]
 "scripts/generate_docs.py" = ["BLE001", "S110"]
-"scripts/install_offline.py" = ["BLE001", "SIM105"]
+"scripts/install_offline.py" = ["BLE001"]
 "scripts/prompt_manifest.py" = ["BLE001"]
 "scripts/remediate_vulnerabilities.py" = ["BLE001", "S110", "SIM105"]
-"scripts/snapshot_merge_driver.py" = ["BLE001", "S110"]
 "scripts/test_cli.py" = ["BLE001"]
 "scripts/validate_architecture.py" = ["BLE001"]
 "scripts/validate_config.py" = ["BLE001"]
@@ -260,6 +259,7 @@ markers = [
 ]
 
 [tool.coverage.run]
+data_file = ".pytest_cache/.coverage"
 source = ["app"]
 omit = [
     "app/demo.py",
@@ -275,12 +275,16 @@ show_missing = true
 # when tests raise its module, never lower it to get a PR green. Target: 90.
 [tool.sortify.coverage-floors]
 "app/core/mover.py" = 74
-"app/core/history.py" = 66
+"app/core/moves.py" = 72
+"app/core/history.py" = 84
 "app/core/resilient_file_ops.py" = 71
 "app/core/ledger.py" = 84
 "app/core/crypto.py" = 86
-"app/core/daemon.py" = 70
-"app/core/db_conn.py" = 71
+"app/core/daemon.py" = 75
+"app/core/db.py" = 74
+"app/core/db_conn.py" = 81
+"app/core/store.py" = 85
+"app/core/quarantine_interceptor.py" = 72
 "app/core/verifier.py" = 82
 "app/core/path_utils.py" = 77
 
@@ -301,9 +305,9 @@ show_missing = true
 "app/core/db_worker.py" = 12
 "app/core/history.py" = 20
 "app/core/ledger.py" = 3
-"app/core/mover.py" = 43
+"app/core/mover.py" = 39
 "app/core/resilient_file_ops.py" = 22
-"app/main.py" = 33
+"app/main.py" = 31
 "app/ui/a11y.py" = 31
 "app/ui/mixins/pipeline.py" = 17
 "app/ui/mixins/selection.py" = 2
@@ -313,7 +317,7 @@ show_missing = true
 "app/ui/modals/models.py" = 5
 "app/ui/modals/quarantine.py" = 13
 "app/ui/modals/reports.py" = 11
-"app/ui/modals/rules.py" = 89
+"app/ui/modals/rules.py" = 88
 "app/ui/modals/sample_playground.py" = 13
 "app/ui/modals/session.py" = 41
 "app/ui/modals/settings.py" = 34
@@ -321,12 +325,11 @@ show_missing = true
 "app/ui/tui.py" = 67
 "scripts/auto_merge_controller.py" = 4
 "scripts/build.py" = 1
-"scripts/diagram_toolchain.py" = 8
+"scripts/diagram_toolchain.py" = 4
 "scripts/generate_docs.py" = 22
-"scripts/install_offline.py" = 2
+"scripts/install_offline.py" = 1
 "scripts/prompt_manifest.py" = 3
 "scripts/remediate_vulnerabilities.py" = 25
-"scripts/snapshot_merge_driver.py" = 12
 "scripts/test_cli.py" = 1
 "scripts/validate_architecture.py" = 2
 "scripts/validate_config.py" = 2

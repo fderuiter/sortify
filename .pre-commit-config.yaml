@@ -5,6 +5,7 @@ repos:
         name: Check for added large files
         entry: uv run check-added-large-files
         language: system
+        exclude: '^docs/assets/js/mermaid\.min\.js$'
       - id: check-case-conflict
         name: Check for case conflicts
         entry: uv run check-case-conflict
@@ -86,7 +87,7 @@ repos:
         name: Block cache files, virtual environments, and bytecode
         entry: Cannot commit cache files, bytecode, or virtual environments. Please clean your workspace.
         language: fail
-        files: '(\.pytest_cache/|\.venv/|\.coverage$|htmlcov/|__pycache__/|.*\.py[co]$)'
+        files: '(\.pytest_cache/|\.venv/|\.coverage(\..*)?$|htmlcov/|__pycache__/|.*\.py[co]$)'
       - id: validate-docs
         name: Validate Documentation
         entry: uv run python scripts/generate_docs.py --check --no-build --local-only

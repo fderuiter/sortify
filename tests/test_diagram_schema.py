@@ -229,3 +229,44 @@ def test_mermaid_compilation():
     download_mermaid = download_state.to_mermaid()
     assert "stateDiagram-v2" in download_mermaid
     assert "DOWNLOADING" in download_mermaid
+
+
+def test_no_eager_spec_constants_in_module_globals():
+    """Verify duplicate eager *_SPEC module-level constants are absent from module globals."""
+    for const_name in ds.CONSTANT_TO_KEY_MAP:
+        assert const_name not in ds.__dict__, (
+            f"Duplicate eager constant {const_name} must not exist in diagram_schema.__dict__"
+        )
+
+
+def test_core_architecture_ast_derives_nodes_and_edges(monkeypatch, tmp_path):
+    """Verify _create_core_architecture_spec derives core nodes and import edges dynamically from app/ ASTs."""
+    app_dir = tmp_path / "app"
+    core_dir = app_dir / "core"
+    ui_dir = app_dir / "ui"
+    core_dir.mkdir(parents=True)
+    ui_dir.mkdir(parents=True)
+
+    (app_dir / "main.py").write_text(
+        "from app.ui import tui\nfrom app.core import custom_feature\n",
+        encoding="utf-8",
+    )
+    (ui_dir / "tui.py").write_text(
+        "from app.core.custom_feature import run\n",
+        encoding="utf-8",
+    )
+    (core_dir / "path_utils.py").write_text("X = 1\n", encoding="utf-8")
+    (core_dir / "custom_feature.py").write_text(
+        "from . import path_utils\n\ndef run():\n    return path_utils.X\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+    spec = ds._create_core_architecture_spec()
+    mmd = spec.to_mermaid()
+    assert 'core_custom_feature["app.core.custom_feature"]' in mmd
+    assert 'core_path_utils["app.core.path_utils"]' in mmd
+    assert "app_main --> app_tui" in mmd
+    assert "app_main --> core_custom_feature" in mmd
+    assert "app_tui --> core_custom_feature" in mmd
+    assert "core_custom_feature --> core_path_utils" in mmd

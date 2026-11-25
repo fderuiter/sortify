@@ -12,6 +12,7 @@ Vulnerability database and package index endpoints used for dependency auditing:
 import argparse
 import ast
 import calendar
+import contextlib
 import os
 import platform
 import re
@@ -604,10 +605,8 @@ def _normalize_archive_timestamps(
             os.utime(zip_path, (NORMALIZED_ARCHIVE_EPOCH, NORMALIZED_ARCHIVE_EPOCH))
         finally:
             if os.path.exists(tmp_zip):
-                try:
+                with contextlib.suppress(OSError):
                     os.unlink(tmp_zip)
-                except OSError:
-                    pass
 
 
 def main():

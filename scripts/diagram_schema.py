@@ -1,7 +1,10 @@
 """Declarative Pydantic schema models for application, sequence, and state diagrams."""
 
+import ast
+import os
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -542,1441 +545,305 @@ BaseDiagramSpec = (
 )
 
 
+_CORE_SUBGRAPH_DEFINITIONS: tuple[tuple[str, str], ...] = (
+    ("ui_layer", "Presentation & User Interfaces (app.tui)"),
+    ("session_orchestration", "Session Orchestration & Lifecycle (app.core)"),
+    ("ingestion_extraction", "Ingestion & Extraction Engine (app.core)"),
+    ("analytics_intelligence", "Analytics & Machine Learning (app.core)"),
+    ("plugin_extensibility", "Plugin Extensibility Architecture (app.core)"),
+    ("memory_cache", "Caching & Memory Layer (app.core)"),
+    ("concurrency_shared", "Concurrency & Shared Registry (app.core)"),
+    ("storage_persistence", "Storage & Database Persistence (app.core)"),
+    ("execution_operations", "Policy, Validation & File Operations (app.core)"),
+    ("utilities_security", "Security & Utilities (app.core)"),
+)
+
+_CORE_SUBGRAPH_ASSIGNMENTS: dict[str, str] = {
+    # Session Orchestration & Lifecycle
+    "pipeline": "session_orchestration",
+    "lifecycle": "session_orchestration",
+    "folder_lock": "session_orchestration",
+    "session": "session_orchestration",
+    "services": "session_orchestration",
+    "daemon": "session_orchestration",
+    "ipc": "session_orchestration",
+    "domain_contracts": "session_orchestration",
+    # Ingestion & Extraction
+    "extractor": "ingestion_extraction",
+    "extractor_strategies": "ingestion_extraction",
+    "forensic_scanner": "ingestion_extraction",
+    "offline_loader": "ingestion_extraction",
+    "downloader": "ingestion_extraction",
+    # Analytics & ML
+    "analyzer": "analytics_intelligence",
+    "analyzer_strategies": "analytics_intelligence",
+    "jev_classifier": "analytics_intelligence",
+    "semantic_embeddings": "analytics_intelligence",
+    # Plugin Extensibility
+    "plugin_registry": "plugin_extensibility",
+    # Caching & Memory
+    "cache": "memory_cache",
+    "db_conn": "memory_cache",
+    "link_manager": "memory_cache",
+    "hashes_registry": "memory_cache",
+    # Concurrency & Shared Registry
+    "shared_registry": "concurrency_shared",
+    "model_registry": "concurrency_shared",
+    "worker_pool": "concurrency_shared",
+    "concurrency": "concurrency_shared",
+    "network_guard": "concurrency_shared",
+    "db_worker": "concurrency_shared",
+    # Storage & Database Persistence
+    "store": "storage_persistence",
+    "db": "storage_persistence",
+    "migrations": "storage_persistence",
+    "moves": "storage_persistence",
+    "ledger": "storage_persistence",
+    "history": "storage_persistence",
+    "session_catalog": "storage_persistence",
+    # Policy, Validation & File Operations
+    "policy_engine": "execution_operations",
+    "rule_scopes": "execution_operations",
+    "rule_templates": "execution_operations",
+    "rule_importers": "execution_operations",
+    "quarantine_interceptor": "execution_operations",
+    "verifier": "execution_operations",
+    "simulation_exporter": "execution_operations",
+    "audit_reporter": "execution_operations",
+    "accessible_html": "execution_operations",
+    "mover": "execution_operations",
+    "move_retry": "execution_operations",
+    "file_renamer": "execution_operations",
+    "pattern_formatter": "execution_operations",
+    "resilient_file_ops": "execution_operations",
+    "scanner": "execution_operations",
+    "progress": "execution_operations",
+    "metadata": "execution_operations",
+}
+
+_CORE_NODE_DISPLAY_OVERRIDES: dict[str, tuple[str, str]] = {
+    "cache": ("app.core.cache (BoundedMemoryCache)", "database"),
+    "shared_registry": ("app.core.shared_registry (re-exports)", "rectangle"),
+    "worker_pool": ("app.core.worker_pool (SharedWorkerPool)", "rectangle"),
+    "store": ("app.core.store", "database"),
+    "db": ("app.core.db", "database"),
+    "moves": ("app.core.moves", "database"),
+    "ledger": ("app.core.ledger", "database"),
+    "history": ("app.core.history", "database"),
+    "policy_engine": ("app.core.policy_engine", "rhombus"),
+    "verifier": ("app.core.verifier", "rhombus"),
+}
+
+
+def _classify_core_stem_subgraph(stem: str) -> str:
+    """Assign an app/core/<stem>.py module to an architectural subgraph deterministically."""
+    if stem in _CORE_SUBGRAPH_ASSIGNMENTS:
+        return _CORE_SUBGRAPH_ASSIGNMENTS[stem]
+    if stem.startswith(("extractor", "ingest", "download", "offline")):
+        return "ingestion_extraction"
+    if stem.startswith(("analyzer", "semantic", "embedding", "classifier", "ml_")):
+        return "analytics_intelligence"
+    if stem.startswith("plugin"):
+        return "plugin_extensibility"
+    if stem.startswith(("cache", "hash")):
+        return "memory_cache"
+    if stem.startswith(("worker", "concurren", "registry")):
+        return "concurrency_shared"
+    if stem.startswith(("db_", "store", "ledger", "history", "migrat")):
+        return "storage_persistence"
+    if stem.startswith(
+        ("policy", "rule_", "quarantine", "move", "verif", "scan", "renam")
+    ):
+        return "execution_operations"
+    if stem.startswith(
+        ("session", "pipeline", "daemon", "ipc", "service", "lifecycle")
+    ):
+        return "session_orchestration"
+    return "utilities_security"
+
+
+def _source_node_id_for_path(norm_path: str, valid_core_stems: set[str]) -> str | None:
+    """Map a normalized repository-relative Python path to its core_architecture node ID."""
+    if norm_path == "app/main.py" or norm_path.startswith("app/cli/"):
+        return "app_main"
+    if norm_path.startswith("app/ui/"):
+        return "app_tui"
+    if norm_path.startswith("app/core/") and "/" not in norm_path[len("app/core/") :]:
+        stem = Path(norm_path).stem
+        if stem in valid_core_stems:
+            return f"core_{stem}"
+    return None
+
+
+def _extract_app_import_edges_iterative(
+    norm_path: str,
+    tree: ast.Module,
+    valid_core_stems: set[str],
+) -> set[tuple[str, str]]:
+    """Extract (source_node_id, target_node_id) dependency edges without calling ast.walk."""
+    source_id = _source_node_id_for_path(norm_path, valid_core_stems)
+    if source_id is None:
+        return set()
+
+    in_core_pkg = norm_path.startswith("app/core/")
+    discovered: set[tuple[str, str]] = set()
+    stack: list[ast.AST] = [tree]
+
+    while stack:
+        node = stack.pop()
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                mod = alias.name
+                if mod == "app.ui" or mod.startswith("app.ui."):
+                    if source_id != "app_tui":
+                        discovered.add((source_id, "app_tui"))
+                elif mod.startswith("app.core."):
+                    stem = mod.split(".")[2]
+                    if stem in valid_core_stems and source_id != f"core_{stem}":
+                        discovered.add((source_id, f"core_{stem}"))
+        elif isinstance(node, ast.ImportFrom):
+            if node.level == 0 and node.module:
+                mod = node.module
+                if mod == "app.ui" or mod.startswith("app.ui."):
+                    if source_id != "app_tui":
+                        discovered.add((source_id, "app_tui"))
+                elif mod == "app.core":
+                    for alias in node.names:
+                        stem = alias.name
+                        if stem in valid_core_stems and source_id != f"core_{stem}":
+                            discovered.add((source_id, f"core_{stem}"))
+                elif mod.startswith("app.core."):
+                    stem = mod.split(".")[2]
+                    if stem in valid_core_stems and source_id != f"core_{stem}":
+                        discovered.add((source_id, f"core_{stem}"))
+            elif node.level == 1 and in_core_pkg:
+                if node.module:
+                    stem = node.module.split(".")[0]
+                    if stem in valid_core_stems and source_id != f"core_{stem}":
+                        discovered.add((source_id, f"core_{stem}"))
+                else:
+                    for alias in node.names:
+                        stem = alias.name
+                        if stem in valid_core_stems and source_id != f"core_{stem}":
+                            discovered.add((source_id, f"core_{stem}"))
+        stack.extend(ast.iter_child_nodes(node))
+
+    return discovered
+
+
+def _collect_default_app_asts() -> list[tuple[str, ast.Module]]:
+    """Collect and parse app/ Python files from CWD when app/core exists."""
+    parsed: list[tuple[str, ast.Module]] = []
+    app_root = Path("app")
+    if not (app_root / "core").is_dir():
+        return parsed
+
+    candidate_paths: list[str] = []
+    for root, dirs, files in os.walk(str(app_root)):
+        dirs[:] = sorted(
+            d for d in dirs if d != "__pycache__" and not d.startswith(".")
+        )
+        for fname in sorted(files):
+            if fname.endswith(".py"):
+                rel = os.path.join(root, fname).replace("\\", "/")
+                if rel == "app/main.py" or rel.startswith(
+                    ("app/cli/", "app/ui/", "app/core/")
+                ):
+                    candidate_paths.append(rel)
+
+    for rel in candidate_paths:
+        try:
+            source = Path(rel).read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=rel)
+        except (OSError, SyntaxError, UnicodeDecodeError, ValueError):
+            continue
+        parsed.append((rel, tree))
+    return parsed
+
+
 # System Default Diagram Specifications
-def _create_core_architecture_spec() -> ComponentDiagramSpec:
-    """Build core_architecture diagram specification."""
+def _create_core_architecture_spec(
+    parsed_app_files: Sequence[tuple[str, ast.Module]] | None = None,
+) -> ComponentDiagramSpec:
+    """Build core_architecture diagram specification dynamically from app/ AST imports."""
+    core_dir = Path("app/core")
+    core_stems_set: set[str] = set()
+
+    if core_dir.is_dir():
+        for py_path in core_dir.glob("*.py"):
+            if py_path.name != "__init__.py" and not py_path.name.startswith("."):
+                core_stems_set.add(py_path.stem)
+
+    if parsed_app_files is not None:
+        for filepath, _tree in parsed_app_files:
+            norm = filepath.replace("\\", "/")
+            while norm.startswith("./"):
+                norm = norm[2:]
+            if norm.startswith("app/core/") and "/" not in norm[len("app/core/") :]:
+                stem = Path(norm).stem
+                if stem != "__init__":
+                    core_stems_set.add(stem)
+
+    sorted_stems = sorted(core_stems_set)
+    ast_entries = (
+        list(parsed_app_files)
+        if parsed_app_files is not None
+        else (_collect_default_app_asts() if sorted_stems else [])
+    )
+
+    subgraph_buckets: dict[str, list[str]] = {
+        sg_id: [] for sg_id, _title in _CORE_SUBGRAPH_DEFINITIONS
+    }
+    subgraph_buckets["ui_layer"].extend(["app_main", "app_tui"])
+
+    nodes: list[DiagramNode] = [
+        DiagramNode(id="app_main", label="app.main (CLI Entry Point)", shape="round"),
+        DiagramNode(id="app_tui", label="app.tui (Textual Terminal Interface)"),
+    ]
+
+    for stem in sorted_stems:
+        node_id = f"core_{stem}"
+        sg_id = _classify_core_stem_subgraph(stem)
+        subgraph_buckets[sg_id].append(node_id)
+        label, shape = _CORE_NODE_DISPLAY_OVERRIDES.get(
+            stem, (f"app.core.{stem}", "rectangle")
+        )
+        nodes.append(DiagramNode(id=node_id, label=label, shape=shape))
+
+    subgraphs = [
+        DiagramSubgraph(id=sg_id, title=title, nodes=subgraph_buckets[sg_id])
+        for sg_id, title in _CORE_SUBGRAPH_DEFINITIONS
+        if subgraph_buckets[sg_id]
+    ]
+
+    raw_edges: set[tuple[str, str]] = set()
+    for filepath, tree in ast_entries:
+        norm = filepath.replace("\\", "/")
+        while norm.startswith("./"):
+            norm = norm[2:]
+        raw_edges.update(
+            _extract_app_import_edges_iterative(norm, tree, core_stems_set)
+        )
+
+    if not raw_edges and not sorted_stems:
+        raw_edges.add(("app_main", "app_tui"))
+
+    node_order = {n.id: idx for idx, n in enumerate(nodes)}
+    ordered_edges = sorted(
+        raw_edges,
+        key=lambda pair: (node_order.get(pair[0], 9999), node_order.get(pair[1], 9999)),
+    )
+    edges = [DiagramEdge(source=src, target=dst) for src, dst in ordered_edges]
+
     return ComponentDiagramSpec(
         id="core_architecture",
         title="Smart AutoSorter AI Pro Full System Architecture",
         diagram_type="flowchart",
         direction="TD",
-        subgraphs=[
-            DiagramSubgraph(
-                id="ui_layer",
-                title="Presentation & User Interfaces (app.tui)",
-                nodes=[
-                    "app_main",
-                    "app_tui",
-                ],
-            ),
-            DiagramSubgraph(
-                id="session_orchestration",
-                title="Session Orchestration & Lifecycle (app.core)",
-                nodes=[
-                    "core_pipeline",
-                    "core_lifecycle",
-                    "core_folder_lock",
-                    "core_session",
-                    "core_services",
-                    "core_daemon",
-                    "core_ipc",
-                    "core_domain_contracts",
-                ],
-            ),
-            DiagramSubgraph(
-                id="ingestion_extraction",
-                title="Ingestion & Extraction Engine (app.core)",
-                nodes=[
-                    "core_extractor",
-                    "core_extractor_strategies",
-                    "core_forensic_scanner",
-                    "core_offline_loader",
-                    "core_downloader",
-                ],
-            ),
-            DiagramSubgraph(
-                id="analytics_intelligence",
-                title="Analytics & Machine Learning (app.core)",
-                nodes=[
-                    "core_analyzer",
-                    "core_analyzer_strategies",
-                    "core_jev_classifier",
-                    "core_semantic_embeddings",
-                ],
-            ),
-            DiagramSubgraph(
-                id="plugin_extensibility",
-                title="Plugin Extensibility Architecture (app.core)",
-                nodes=[
-                    "core_plugin_registry",
-                ],
-            ),
-            DiagramSubgraph(
-                id="memory_cache",
-                title="Caching & Memory Layer (app.core)",
-                nodes=[
-                    "core_cache",
-                    "core_db_conn",
-                    "core_link_manager",
-                    "core_hashes_registry",
-                ],
-            ),
-            DiagramSubgraph(
-                id="concurrency_shared",
-                title="Concurrency & Shared Registry (app.core)",
-                nodes=[
-                    "core_shared_registry",
-                    "core_model_registry",
-                    "core_worker_pool",
-                    "core_concurrency",
-                    "core_network_guard",
-                    "core_db_worker",
-                ],
-            ),
-            DiagramSubgraph(
-                id="storage_persistence",
-                title="Storage & Database Persistence (app.core)",
-                nodes=[
-                    "core_store",
-                    "core_db",
-                    "core_migrations",
-                    "core_moves",
-                    "core_ledger",
-                    "core_history",
-                    "core_session_catalog",
-                ],
-            ),
-            DiagramSubgraph(
-                id="execution_operations",
-                title="Policy, Validation & File Operations (app.core)",
-                nodes=[
-                    "core_policy_engine",
-                    "core_rule_scopes",
-                    "core_rule_templates",
-                    "core_rule_importers",
-                    "core_quarantine_interceptor",
-                    "core_domain_contracts",
-                    "core_verifier",
-                    "core_simulation_exporter",
-                    "core_audit_reporter",
-                    "core_accessible_html",
-                    "core_mover",
-                    "core_move_retry",
-                    "core_file_renamer",
-                    "core_resilient_file_ops",
-                    "core_scanner",
-                    "core_progress",
-                    "core_metadata",
-                ],
-            ),
-            DiagramSubgraph(
-                id="utilities_security",
-                title="Security & Utilities (app.core)",
-                nodes=[
-                    "core_text_utils",
-                    "core_path_utils",
-                    "core_plan_format",
-                    "core_native_dialog",
-                    "core_env_helper",
-                    "core_crypto",
-                    "core_domain_contracts",
-                    "core_exceptions",
-                    "core_sample_corpus",
-                    "core_security_advisory",
-                ],
-            ),
-        ],
-        nodes=[
-            # Presentation
-            DiagramNode(
-                id="app_main", label="app.main (CLI Entry Point)", shape="round"
-            ),
-            DiagramNode(id="app_tui", label="app.tui (Textual Terminal Interface)"),
-            # Orchestration
-            DiagramNode(id="core_pipeline", label="app.core.pipeline"),
-            DiagramNode(id="core_lifecycle", label="app.core.lifecycle"),
-            DiagramNode(id="core_folder_lock", label="app.core.folder_lock"),
-            DiagramNode(id="core_session", label="app.core.session"),
-            DiagramNode(id="core_services", label="app.core.services"),
-            DiagramNode(id="core_daemon", label="app.core.daemon"),
-            DiagramNode(id="core_ipc", label="app.core.ipc"),
-            DiagramNode(id="core_domain_contracts", label="app.core.domain_contracts"),
-            # Ingestion & Extraction
-            DiagramNode(id="core_extractor", label="app.core.extractor"),
-            DiagramNode(
-                id="core_extractor_strategies", label="app.core.extractor_strategies"
-            ),
-            DiagramNode(id="core_forensic_scanner", label="app.core.forensic_scanner"),
-            DiagramNode(id="core_offline_loader", label="app.core.offline_loader"),
-            DiagramNode(id="core_downloader", label="app.core.downloader"),
-            # Analytics & ML
-            DiagramNode(id="core_analyzer", label="app.core.analyzer"),
-            DiagramNode(
-                id="core_analyzer_strategies", label="app.core.analyzer_strategies"
-            ),
-            DiagramNode(id="core_jev_classifier", label="app.core.jev_classifier"),
-            DiagramNode(
-                id="core_semantic_embeddings", label="app.core.semantic_embeddings"
-            ),
-            # Plugin Registry
-            DiagramNode(
-                id="core_plugin_registry",
-                label="app.core.plugin_registry",
-            ),
-            # Memory & Cache
-            DiagramNode(
-                id="core_cache",
-                label="app.core.cache (BoundedMemoryCache)",
-                shape="database",
-            ),
-            DiagramNode(id="core_db_conn", label="app.core.db_conn"),
-            DiagramNode(id="core_link_manager", label="app.core.link_manager"),
-            DiagramNode(id="core_hashes_registry", label="app.core.hashes_registry"),
-            # Concurrency & Shared
-            DiagramNode(
-                id="core_shared_registry",
-                label="app.core.shared_registry (re-exports)",
-            ),
-            DiagramNode(id="core_model_registry", label="app.core.model_registry"),
-            DiagramNode(
-                id="core_worker_pool",
-                label="app.core.worker_pool (SharedWorkerPool)",
-            ),
-            DiagramNode(id="core_concurrency", label="app.core.concurrency"),
-            DiagramNode(id="core_network_guard", label="app.core.network_guard"),
-            DiagramNode(id="core_db_worker", label="app.core.db_worker"),
-            # Storage
-            DiagramNode(id="core_store", label="app.core.store", shape="database"),
-            DiagramNode(id="core_db", label="app.core.db", shape="database"),
-            DiagramNode(id="core_migrations", label="app.core.migrations"),
-            DiagramNode(id="core_moves", label="app.core.moves", shape="database"),
-            DiagramNode(id="core_ledger", label="app.core.ledger", shape="database"),
-            DiagramNode(id="core_history", label="app.core.history", shape="database"),
-            DiagramNode(id="core_session_catalog", label="app.core.session_catalog"),
-            # Policy & Execution
-            DiagramNode(
-                id="core_policy_engine", label="app.core.policy_engine", shape="rhombus"
-            ),
-            DiagramNode(id="core_rule_scopes", label="app.core.rule_scopes"),
-            DiagramNode(id="core_rule_templates", label="app.core.rule_templates"),
-            DiagramNode(id="core_rule_importers", label="app.core.rule_importers"),
-            DiagramNode(
-                id="core_quarantine_interceptor",
-                label="app.core.quarantine_interceptor",
-            ),
-            DiagramNode(id="core_domain_contracts", label="app.core.domain_contracts"),
-            DiagramNode(id="core_verifier", label="app.core.verifier", shape="rhombus"),
-            DiagramNode(
-                id="core_simulation_exporter", label="app.core.simulation_exporter"
-            ),
-            DiagramNode(id="core_audit_reporter", label="app.core.audit_reporter"),
-            DiagramNode(id="core_accessible_html", label="app.core.accessible_html"),
-            DiagramNode(id="core_mover", label="app.core.mover"),
-            DiagramNode(id="core_move_retry", label="app.core.move_retry"),
-            DiagramNode(id="core_file_renamer", label="app.core.file_renamer"),
-            DiagramNode(
-                id="core_pattern_formatter", label="app.core.pattern_formatter"
-            ),
-            DiagramNode(
-                id="core_resilient_file_ops", label="app.core.resilient_file_ops"
-            ),
-            DiagramNode(id="core_scanner", label="app.core.scanner"),
-            DiagramNode(id="core_progress", label="app.core.progress"),
-            DiagramNode(id="core_metadata", label="app.core.metadata"),
-            # Utilities
-            DiagramNode(id="core_text_utils", label="app.core.text_utils"),
-            DiagramNode(id="core_path_utils", label="app.core.path_utils"),
-            DiagramNode(id="core_plan_format", label="app.core.plan_format"),
-            DiagramNode(id="core_native_dialog", label="app.core.native_dialog"),
-            DiagramNode(id="core_env_helper", label="app.core.env_helper"),
-            DiagramNode(id="core_crypto", label="app.core.crypto"),
-            DiagramNode(id="core_domain_contracts", label="app.core.domain_contracts"),
-            DiagramNode(id="core_exceptions", label="app.core.exceptions"),
-            DiagramNode(id="core_sample_corpus", label="app.core.sample_corpus"),
-            DiagramNode(
-                id="core_security_advisory", label="app.core.security_advisory"
-            ),
-        ],
-        edges=[
-            DiagramEdge(source="app_main", target="app_tui"),
-            DiagramEdge(source="app_main", target="core_pipeline"),
-            DiagramEdge(source="core_pipeline", target="core_lifecycle"),
-            DiagramEdge(source="core_pipeline", target="core_rule_scopes"),
-            DiagramEdge(source="core_daemon", target="core_pipeline"),
-            DiagramEdge(source="core_pipeline", target="core_session"),
-            DiagramEdge(source="core_session", target="core_folder_lock"),
-            DiagramEdge(source="core_session", target="core_services"),
-            DiagramEdge(source="core_services", target="core_store"),
-            DiagramEdge(source="core_services", target="core_db_worker"),
-            DiagramEdge(source="core_pipeline", target="core_extractor"),
-            DiagramEdge(source="app_main", target="core_session"),
-            DiagramEdge(source="app_tui", target="core_session"),
-            DiagramEdge(source="core_session", target="core_scanner"),
-            DiagramEdge(source="core_session", target="core_extractor"),
-            DiagramEdge(source="core_session", target="core_analyzer"),
-            DiagramEdge(source="core_session", target="core_policy_engine"),
-            DiagramEdge(source="core_session", target="core_verifier"),
-            DiagramEdge(source="core_session", target="core_mover"),
-            DiagramEdge(source="core_session", target="core_move_retry"),
-            DiagramEdge(source="core_daemon", target="core_session"),
-            DiagramEdge(source="core_daemon", target="core_ipc"),
-            DiagramEdge(source="core_extractor", target="core_extractor_strategies"),
-            DiagramEdge(source="core_extractor", target="core_forensic_scanner"),
-            DiagramEdge(source="core_extractor", target="core_offline_loader"),
-            DiagramEdge(source="core_downloader", target="core_env_helper"),
-            DiagramEdge(source="core_analyzer", target="core_analyzer_strategies"),
-            DiagramEdge(source="core_analyzer", target="core_jev_classifier"),
-            DiagramEdge(source="core_analyzer", target="core_semantic_embeddings"),
-            DiagramEdge(source="core_session", target="core_plugin_registry"),
-            DiagramEdge(
-                source="core_quarantine_interceptor", target="core_plugin_registry"
-            ),
-            DiagramEdge(
-                source="core_analyzer_strategies", target="core_plugin_registry"
-            ),
-            DiagramEdge(source="core_db_conn", target="core_cache"),
-            DiagramEdge(source="core_link_manager", target="core_cache"),
-            DiagramEdge(source="core_semantic_embeddings", target="core_cache"),
-            DiagramEdge(source="core_jev_classifier", target="core_cache"),
-            DiagramEdge(source="core_hashes_registry", target="core_crypto"),
-            DiagramEdge(source="core_worker_pool", target="core_mover"),
-            DiagramEdge(source="core_worker_pool", target="core_extractor"),
-            DiagramEdge(source="core_db_worker", target="core_worker_pool"),
-            DiagramEdge(source="core_shared_registry", target="core_model_registry"),
-            DiagramEdge(source="core_shared_registry", target="core_worker_pool"),
-            DiagramEdge(source="core_worker_pool", target="core_concurrency"),
-            DiagramEdge(source="core_worker_pool", target="core_network_guard"),
-            DiagramEdge(source="core_model_registry", target="core_network_guard"),
-            DiagramEdge(source="core_network_guard", target="core_concurrency"),
-            DiagramEdge(source="core_db", target="core_cache"),
-            DiagramEdge(source="core_db", target="core_migrations"),
-            DiagramEdge(source="core_store", target="core_db"),
-            DiagramEdge(source="core_store", target="core_history"),
-            DiagramEdge(source="core_store", target="core_moves"),
-            DiagramEdge(source="core_history", target="core_moves"),
-            DiagramEdge(source="core_mover", target="core_moves"),
-            DiagramEdge(source="core_crypto", target="core_ledger"),
-            DiagramEdge(source="core_history", target="core_db"),
-            DiagramEdge(source="core_session_catalog", target="core_moves"),
-            DiagramEdge(source="core_session_catalog", target="core_store"),
-            DiagramEdge(
-                source="core_policy_engine", target="core_quarantine_interceptor"
-            ),
-            DiagramEdge(
-                source="core_quarantine_interceptor", target="core_domain_contracts"
-            ),
-            DiagramEdge(source="core_policy_engine", target="core_mover"),
-            DiagramEdge(source="core_verifier", target="core_mover"),
-            DiagramEdge(source="core_mover", target="core_move_retry"),
-            DiagramEdge(source="core_move_retry", target="core_moves"),
-            DiagramEdge(source="core_mover", target="core_file_renamer"),
-            DiagramEdge(source="core_mover", target="core_resilient_file_ops"),
-            DiagramEdge(source="core_mover", target="core_progress"),
-            DiagramEdge(source="core_mover", target="core_metadata"),
-            DiagramEdge(source="core_text_utils", target="core_exceptions"),
-            DiagramEdge(source="core_path_utils", target="core_exceptions"),
-            DiagramEdge(
-                source="core_simulation_exporter", target="core_accessible_html"
-            ),
-        ],
+        subgraphs=subgraphs,
+        nodes=nodes,
+        edges=edges,
     )
-
-
-ARCHITECTURE_DATAFLOW_SPEC = DataFlowDiagramSpec(
-    id="architecture_dataflow",
-    title="Data Flow: Directory Selection to Reorganization Plan",
-    diagram_type="graph",
-    direction="TD",
-    nodes=[
-        ExternalEntityNode(
-            id="A",
-            label="Directory Selection",
-            url="docs/user_guide.md#first-run-steps--setup-wizard",
-            tooltip="Directory Selection Step",
-            step_number=1,
-            step_description="Select target directory to organize",
-        ),
-        ProcessNode(
-            id="B",
-            label="File Extraction & Generator",
-            url="docs/user_guide.md#supported-file-formats",
-            tooltip="File Extraction Step",
-            step_number=2,
-            step_description="Extract files and prepare generator",
-        ),
-        ProcessNode(
-            id="C",
-            label="Chunked Yielding",
-            tooltip="Chunked Yielding Step",
-            step_number=3,
-            step_description="Yield file chunks incrementally",
-        ),
-        ProcessNode(
-            id="D",
-            label="Incremental Analyzer (partial_fit)",
-            tooltip="Analyzer Step",
-            step_number=4,
-            step_description="Run incremental analyzer",
-        ),
-        ProcessNode(
-            id="E",
-            label="TF-IDF / Embeddings + K-Means Clustering",
-            url="docs/user_guide.md#ai-clustering-constraints",
-            tooltip="Clustering Step",
-            step_number=5,
-            step_description="Cluster file features with TF-IDF or embeddings and MiniBatchKMeans",
-        ),
-        ProcessNode(
-            id="F",
-            label="Recursive Topic Grouping",
-            tooltip="Topic Grouping Step",
-            step_number=6,
-            step_description="Recursively group file topics",
-        ),
-        DataStoreNode(
-            id="G",
-            label="Generate Sorting Plan",
-            tooltip="Sorting Plan Step",
-            step_number=7,
-            step_description="Generate final file sorting plan",
-        ),
-        ExternalEntityNode(
-            id="H",
-            label="UI Tree Rendering",
-            url="docs/ui.md#appuimixinstree_view",
-            tooltip="UI Rendering Step",
-            step_number=8,
-            step_description="Render sorting plan in tree view",
-        ),
-    ],
-    edges=[
-        DataStreamEdge(source="A", target="B", contract="DirectoryPath"),
-        DataStreamEdge(source="B", target="C", contract="FileStream"),
-        DataStreamEdge(source="C", target="D", contract="ChunkBatch"),
-        DataStreamEdge(source="D", target="E", contract="FeatureVectors"),
-        DataStreamEdge(source="E", target="F", contract="TopicClusters"),
-        DataStreamEdge(source="F", target="G", contract="SortingPlan"),
-        DataStreamEdge(source="G", target="H", contract="PlanViewModel"),
-    ],
-)
-
-CRO_MULTI_STUDY_PIPELINE_SPEC = ComponentDiagramSpec(
-    id="cro_multi_study_pipeline",
-    title="CRO Forensic Multi-Study Ingestion Pipeline",
-    diagram_type="flowchart",
-    direction="TD",
-    subgraphs=[
-        DiagramSubgraph(
-            id="scan_stage",
-            title="Drive Ingestion & Scan",
-            nodes=["forensic_scan", "study_disambiguation"],
-        ),
-        DiagramSubgraph(
-            id="taxonomy_stage",
-            title="Taxonomy & Compliance Rules",
-            nodes=["clinical_taxonomy", "clinical_compliance"],
-        ),
-        DiagramSubgraph(
-            id="binding_stage",
-            title="TMF Binder Relocation",
-            nodes=["clinical_renamer", "cro_pipeline_output"],
-        ),
-    ],
-    nodes=[
-        DiagramNode(
-            id="forensic_scan", label="app.core.forensic_scanner", shape="subroutine"
-        ),
-        DiagramNode(
-            id="study_disambiguation",
-            label="app.core.study_disambiguator",
-            shape="rhombus",
-        ),
-        DiagramNode(id="clinical_taxonomy", label="app.core.clinical_taxonomy"),
-        DiagramNode(
-            id="clinical_compliance",
-            label="app.core.clinical_compliance",
-            shape="rhombus",
-        ),
-        DiagramNode(id="clinical_renamer", label="app.core.clinical_renamer"),
-        DiagramNode(
-            id="cro_pipeline_output", label="TMF Clean Binders Output", shape="stadium"
-        ),
-    ],
-    edges=[
-        DiagramEdge(
-            source="forensic_scan", target="study_disambiguation", label="Raw Drives"
-        ),
-        DiagramEdge(
-            source="study_disambiguation",
-            target="clinical_taxonomy",
-            label="Protocols Disambiguated",
-        ),
-        DiagramEdge(
-            source="clinical_taxonomy",
-            target="clinical_compliance",
-            label="Mapped Taxonomy",
-        ),
-        DiagramEdge(
-            source="clinical_compliance",
-            target="clinical_renamer",
-            label="Compliance Validated",
-        ),
-        DiagramEdge(
-            source="clinical_renamer",
-            target="cro_pipeline_output",
-            label="Compiled Binders",
-        ),
-    ],
-)
-
-MEMORY_CACHE_LAYERS_SPEC = ComponentDiagramSpec(
-    id="memory_cache_layers",
-    title="BoundedMemoryCache Centralized In-Memory Caching Architecture",
-    diagram_type="flowchart",
-    direction="LR",
-    subgraphs=[
-        DiagramSubgraph(
-            id="core_cache_box",
-            title="Centralized LRU Cache (app.core.cache)",
-            nodes=["bounded_cache"],
-        ),
-        DiagramSubgraph(
-            id="cache_clients",
-            title="Subsystem Consumers",
-            nodes=[
-                "db_conn_cache",
-                "link_manager_cache",
-                "semantic_cache",
-                "jev_cache",
-                "db_cache",
-            ],
-        ),
-    ],
-    nodes=[
-        DiagramNode(
-            id="bounded_cache", label="BoundedMemoryCache[K, V]", shape="database"
-        ),
-        DiagramNode(id="db_conn_cache", label="app.core.db_conn (_connection_cache)"),
-        DiagramNode(id="link_manager_cache", label="app.core.link_manager (_registry)"),
-        DiagramNode(
-            id="semantic_cache",
-            label="app.core.semantic_embeddings (_model_properties_cache)",
-        ),
-        DiagramNode(id="jev_cache", label="app.core.jev_classifier (memory_cache)"),
-        DiagramNode(id="db_cache", label="app.core.db (doc_cache)"),
-    ],
-    edges=[
-        DiagramEdge(
-            source="db_conn_cache", target="bounded_cache", label="Max Size: 50"
-        ),
-        DiagramEdge(
-            source="link_manager_cache", target="bounded_cache", label="Max Size: 10000"
-        ),
-        DiagramEdge(
-            source="semantic_cache", target="bounded_cache", label="Max Size: 500"
-        ),
-        DiagramEdge(
-            source="jev_cache", target="bounded_cache", label="Fast Path Cache"
-        ),
-        DiagramEdge(source="db_cache", target="bounded_cache", label="Max Size: 10000"),
-    ],
-)
-
-WORKER_POOL_CONCURRENCY_SPEC = ComponentDiagramSpec(
-    id="worker_pool_concurrency",
-    title="SharedWorkerPool Multi-Threaded Concurrency Model",
-    diagram_type="flowchart",
-    direction="TD",
-    subgraphs=[
-        DiagramSubgraph(
-            id="pool_singleton",
-            title="Shared Singleton (app.core.worker_pool)",
-            nodes=["shared_worker_pool"],
-        ),
-        DiagramSubgraph(
-            id="pool_tasks",
-            title="Concurrent Execution Callers",
-            nodes=[
-                "session_tasks",
-                "mover_tasks",
-                "db_worker_tasks",
-                "extractor_tasks",
-                "analyzer_tasks",
-            ],
-        ),
-    ],
-    nodes=[
-        DiagramNode(
-            id="shared_worker_pool", label="SharedWorkerPool Singleton", shape="stadium"
-        ),
-        DiagramNode(
-            id="session_tasks", label="app.core.session (Lifecycle Management)"
-        ),
-        DiagramNode(
-            id="mover_tasks", label="app.core.mover (Parallel File Relocation)"
-        ),
-        DiagramNode(
-            id="db_worker_tasks", label="app.core.db_worker (Background Heavy Tasks)"
-        ),
-        DiagramNode(
-            id="extractor_tasks", label="app.core.extractor (Parallel Text Ingestion)"
-        ),
-        DiagramNode(
-            id="analyzer_tasks", label="app.core.analyzer_strategies (Parallel NLP)"
-        ),
-    ],
-    edges=[
-        DiagramEdge(
-            source="session_tasks",
-            target="shared_worker_pool",
-            label="get_instance() / shutdown()",
-        ),
-        DiagramEdge(
-            source="mover_tasks",
-            target="shared_worker_pool",
-            label="submit() relocation tasks",
-        ),
-        DiagramEdge(
-            source="db_worker_tasks",
-            target="shared_worker_pool",
-            label="offload VLM/OCR/GGUF",
-        ),
-        DiagramEdge(
-            source="extractor_tasks",
-            target="shared_worker_pool",
-            label="parallel document extraction",
-        ),
-        DiagramEdge(
-            source="analyzer_tasks",
-            target="shared_worker_pool",
-            label="offload embedding vector calculations",
-        ),
-    ],
-)
-
-POLICY_EVALUATION_FLOW_SPEC = ComponentDiagramSpec(
-    id="policy_evaluation_flow",
-    title="Administrator Policy Evaluation & Compliance Flowchart",
-    diagram_type="flowchart",
-    direction="TD",
-    nodes=[
-        DiagramNode(id="A", label="Incoming Document", shape="round"),
-        DiagramNode(
-            id="B", label="Sort Rules by Priority High to Low", shape="rectangle"
-        ),
-        DiagramNode(id="C", label="Evaluate Next Rule", shape="rhombus"),
-        DiagramNode(
-            id="D", label="Route Document via Override Path", shape="rectangle"
-        ),
-        DiagramNode(
-            id="E", label="Route Document via Keyword Category", shape="rectangle"
-        ),
-        DiagramNode(
-            id="F", label="Route Document via Pattern Category", shape="rectangle"
-        ),
-        DiagramNode(
-            id="G", label="Stop Processing & Halt Evaluation", shape="rectangle"
-        ),
-        DiagramNode(id="H", label="More Rules Remaining?", shape="rhombus"),
-        DiagramNode(
-            id="I",
-            label="Proceed to General Classification / AI Sorting",
-            shape="rectangle",
-        ),
-    ],
-    edges=[
-        DiagramEdge(source="A", target="B"),
-        DiagramEdge(source="B", target="C"),
-        DiagramEdge(source="C", target="D", label="Override Rule Match"),
-        DiagramEdge(source="C", target="E", label="Keyword Rule Match"),
-        DiagramEdge(source="C", target="F", label="Pattern Rule Match"),
-        DiagramEdge(
-            source="C", target="G", label="No Match & Halt on Mismatch Enabled"
-        ),
-        DiagramEdge(source="C", target="H", label="No Match & Halt Disabled"),
-        DiagramEdge(source="H", target="C", label="Yes"),
-        DiagramEdge(source="H", target="I", label="No"),
-    ],
-)
-
-SETUP_WIZARD_FLOW_SPEC = ComponentDiagramSpec(
-    id="setup_wizard_flow",
-    title="Setup Wizard Download & Offline Fallback Decision Flow",
-    diagram_type="flowchart",
-    direction="TD",
-    nodes=[
-        DiagramNode(id="A", label="Setup Wizard Download Triggered", shape="round"),
-        DiagramNode(id="B", label="Network Connection OK?", shape="rhombus"),
-        DiagramNode(
-            id="C", label="Check Firewall & Disconnected Status", shape="rectangle"
-        ),
-        DiagramNode(
-            id="D", label="Fallback to Offline Non-Semantic Mode", shape="rectangle"
-        ),
-        DiagramNode(id="E", label="Sufficient Disk Space >= 200MB?", shape="rhombus"),
-        DiagramNode(id="F", label="Clear Free Disk Space", shape="rectangle"),
-        DiagramNode(
-            id="G", label="Retry Model Download via Settings", shape="rectangle"
-        ),
-        DiagramNode(id="H", label="Download 80MB AI Model", shape="rectangle"),
-        DiagramNode(id="I", label="Enable Semantic AI Sorting", shape="round"),
-    ],
-    edges=[
-        DiagramEdge(source="A", target="B"),
-        DiagramEdge(source="B", target="C", label="No"),
-        DiagramEdge(source="C", target="D"),
-        DiagramEdge(source="B", target="E", label="Yes"),
-        DiagramEdge(source="E", target="F", label="No"),
-        DiagramEdge(source="F", target="G"),
-        DiagramEdge(source="G", target="B"),
-        DiagramEdge(source="E", target="H", label="Yes"),
-        DiagramEdge(source="H", target="I"),
-    ],
-)
-
-ARCHITECTURE_ASYNC_PROCESSING_SPEC = SequenceDiagramSpec(
-    id="architecture_async_processing",
-    title="Asynchronous Scanning and Recalculation Sequence",
-    autonumber=True,
-    participants=[
-        SequenceParticipant(id="User", label="User"),
-        SequenceParticipant(id="UI", label="Application Window / UI Thread"),
-        SequenceParticipant(
-            id="Worker", label="Background Scan Worker (_scan_and_process_worker)"
-        ),
-        SequenceParticipant(
-            id="ThreadPool", label="Thread Pool Worker (asyncio.to_thread)"
-        ),
-        SequenceParticipant(id="Analyzer", label="IncrementalAnalyzer"),
-    ],
-    items=[
-        SequenceMessage(
-            source="User", target="UI", text="Selects Directory / Triggers Analysis"
-        ),
-        SequenceMessage(
-            source="UI",
-            target="Worker",
-            text="asyncio.create_task(_scan_and_process_worker())",
-        ),
-        SequenceActivation(target="Worker", action="activate"),
-        SequenceMessage(
-            source="Worker",
-            target="ThreadPool",
-            text="asyncio.to_thread(get_files_recursively)",
-        ),
-        SequenceMessage(
-            source="ThreadPool", target="Worker", text="File list", arrow_type="-->>"
-        ),
-        SequenceLoop(
-            label="For each item",
-            items=[
-                SequenceMessage(
-                    source="Worker",
-                    target="ThreadPool",
-                    text="asyncio.to_thread(partial_fit, chunk)",
-                ),
-                SequenceMessage(
-                    source="ThreadPool",
-                    target="Worker",
-                    text="Model updated",
-                    arrow_type="-->>",
-                ),
-                SequenceMessage(
-                    source="Worker",
-                    target="UI",
-                    text="loop.call_soon_threadsafe(update_progress)",
-                ),
-            ],
-        ),
-        SequenceMessage(
-            source="Worker",
-            target="ThreadPool",
-            text="asyncio.to_thread(generate_sorting_plan)",
-        ),
-        SequenceMessage(
-            source="ThreadPool",
-            target="Worker",
-            text="Initial Sorting Plan",
-            arrow_type="-->>",
-        ),
-        SequenceMessage(source="Worker", target="UI", text="Render Tree"),
-        SequenceActivation(target="Worker", action="deactivate"),
-        SequenceNote(
-            position="over",
-            targets=["User", "Analyzer"],
-            text="Debounced Plan Recalculation Flow",
-        ),
-        SequenceMessage(
-            source="User",
-            target="UI",
-            text="Keyboard Reassign [R] / Lock Toggle",
-        ),
-        SequenceMessage(source="UI", target="UI", text="_rebuild_plan_async()"),
-        SequenceOpt(
-            label="Active recalc token or debounce task running",
-            items=[
-                SequenceMessage(
-                    source="UI",
-                    target="UI",
-                    text="token.set() & debounce_task.cancel()",
-                ),
-            ],
-        ),
-        SequenceMessage(
-            source="UI",
-            target="UI",
-            text="Create new threading.Event token & asyncio.create_task(delayed_run)",
-        ),
-        SequenceActivation(target="UI", action="activate"),
-        SequenceMessage(
-            source="UI", target="UI", text="asyncio.sleep(0.5) [Debounce Delay]"
-        ),
-        SequenceAlt(
-            branches=[
-                SequenceAltBranch(
-                    label="Task Cancelled During Sleep",
-                    items=[
-                        SequenceMessage(
-                            source="UI",
-                            target="User",
-                            text="Abort Recalculation",
-                            arrow_type="-->>",
-                        ),
-                    ],
-                ),
-                SequenceAltBranch(
-                    label="Timer Expired",
-                    items=[
-                        SequenceMessage(
-                            source="UI",
-                            target="ThreadPool",
-                            text="asyncio.to_thread(generate_sorting_plan, check_cancel)",
-                        ),
-                        SequenceActivation(target="ThreadPool", action="activate"),
-                        SequenceLoop(
-                            label="Periodically",
-                            items=[
-                                SequenceMessage(
-                                    source="ThreadPool",
-                                    target="ThreadPool",
-                                    text="check_cancel() -> token.is_set()",
-                                ),
-                            ],
-                        ),
-                        SequenceMessage(
-                            source="ThreadPool",
-                            target="Analyzer",
-                            text="generate_sorting_plan(...)",
-                            arrow_type="-->>",
-                        ),
-                        SequenceMessage(
-                            source="Analyzer",
-                            target="ThreadPool",
-                            text="Rebuilt Plan",
-                            arrow_type="-->>",
-                        ),
-                        SequenceMessage(
-                            source="ThreadPool",
-                            target="UI",
-                            text="Return Plan",
-                            arrow_type="-->>",
-                        ),
-                        SequenceActivation(target="ThreadPool", action="deactivate"),
-                        SequenceMessage(source="UI", target="UI", text="render_tree()"),
-                    ],
-                ),
-            ]
-        ),
-        SequenceActivation(target="UI", action="deactivate"),
-    ],
-)
-
-ARCHITECTURE_WATCHDOG_STATE_SPEC = StateDiagramSpec(
-    id="architecture_watchdog_state",
-    title="Watchdog File Event State Machine",
-    diagram_type="stateDiagram-v2",
-    transitions=[
-        StateTransition(
-            source="[*]", target="Monitoring", label="Active Watchdog Service"
-        ),
-        StateTransition(
-            source="Monitoring",
-            target="FilterTransient",
-            label="Directory File Modification",
-        ),
-        StateTransition(
-            source="FilterTransient",
-            target="Monitoring",
-            label="Ignore (.crdownload, .tmp, .download)",
-        ),
-        StateTransition(
-            source="FilterTransient",
-            target="DebounceActive",
-            label="Valid File Event Received",
-        ),
-        StateTransition(
-            source="DebounceActive",
-            target="DebounceActive",
-            label="Reset Timer on Rapid Writes (0.6s)",
-        ),
-        StateTransition(
-            source="DebounceActive",
-            target="DispatchPipeline",
-            label="Standard Debounce Timeout (0.6s)",
-        ),
-        StateTransition(
-            source="DebounceActive",
-            target="DispatchPipeline",
-            label="Max Delay Cap Reached (5.0s)",
-        ),
-        StateTransition(
-            source="DispatchPipeline",
-            target="Monitoring",
-            label="Pipeline Executed & UI Refreshed",
-        ),
-    ],
-)
-
-CATALOG_WORKFLOW_SPEC = ComponentDiagramSpec(
-    id="catalog_workflow",
-    title="Component Catalog Interactive Workbench Workflow",
-    diagram_type="graph",
-    direction="TD",
-    nodes=[
-        DiagramNode(
-            id="workbench",
-            label="Catalog Workbench",
-            shape="round",
-            url="docs/ui.md",
-            tooltip="Catalog Workbench",
-        ),
-        DiagramNode(
-            id="selector",
-            label="Component Selector",
-            shape="rectangle",
-            url="docs/ui.md",
-            tooltip="Component Selector",
-        ),
-        DiagramNode(
-            id="viewport",
-            label="Viewport Controller",
-            shape="rectangle",
-            url="docs/ui.md",
-            tooltip="Viewport Controller",
-        ),
-        DiagramNode(
-            id="state_var",
-            label="State Variant Switcher",
-            shape="rectangle",
-            url="docs/ui.md",
-            tooltip="State Variant Switcher",
-        ),
-        DiagramNode(
-            id="renderer",
-            label="Component Renderer",
-            shape="subroutine",
-            url="docs/ui.md",
-            tooltip="Component Renderer",
-        ),
-        DiagramNode(
-            id="a11y_scan",
-            label="Accessibility Auditor",
-            shape="rhombus",
-            url="docs/admin_guide.md",
-            tooltip="Accessibility Auditor",
-        ),
-        DiagramNode(
-            id="preview",
-            label="Interactive Viewport Frame",
-            shape="round",
-            url="docs/ui.md",
-            tooltip="Interactive Viewport Frame",
-        ),
-    ],
-    edges=[
-        DiagramEdge(source="workbench", target="selector"),
-        DiagramEdge(source="workbench", target="viewport"),
-        DiagramEdge(source="workbench", target="state_var"),
-        DiagramEdge(source="selector", target="renderer"),
-        DiagramEdge(source="viewport", target="preview"),
-        DiagramEdge(source="state_var", target="renderer"),
-        DiagramEdge(source="renderer", target="preview"),
-        DiagramEdge(source="renderer", target="a11y_scan"),
-    ],
-)
-
-UI_COMPONENT_HIERARCHY_SPEC = ComponentDiagramSpec(
-    id="ui_component_hierarchy",
-    title="UI Component Catalog Structure",
-    diagram_type="graph",
-    direction="LR",
-    subgraphs=[
-        DiagramSubgraph(
-            id="nav",
-            title="Navigation & Layout",
-            nodes=["tui_app", "heading"],
-        ),
-        DiagramSubgraph(
-            id="inputs",
-            title="Selection & Controls",
-            nodes=["vim_tree", "density_slider", "path_diff"],
-        ),
-        DiagramSubgraph(
-            id="views",
-            title="Display & Modals",
-            nodes=["edit_modal", "settings_modal", "setup_wizard"],
-        ),
-    ],
-    nodes=[
-        DiagramNode(
-            id="tui_app",
-            label="Textual Application Shell",
-            url="docs/ui.md#appuitui",
-            tooltip="Main Terminal UI Container",
-        ),
-        DiagramNode(
-            id="heading",
-            label="Heading Component",
-            url="docs/ui.md#appuiheading",
-            tooltip="Header & Title Bar",
-        ),
-        DiagramNode(
-            id="vim_tree",
-            label="VimTree Plan View",
-            url="docs/ui.md#appuiwidgetsvim_tree",
-            tooltip="Interactive Directory Plan Tree",
-        ),
-        DiagramNode(
-            id="density_slider",
-            label="Density Slider Widget",
-            url="docs/ui.md#appuiwidgetsdensity_slider",
-            tooltip="Layout Density Control",
-        ),
-        DiagramNode(
-            id="path_diff",
-            label="Path Diff Comparison",
-            url="docs/ui.md#appuiwidgetspath_diff",
-            tooltip="Path Diff Preview Component",
-        ),
-        DiagramNode(
-            id="edit_modal",
-            label="Edit & Reassign Modal",
-            url="docs/ui.md#appuimodalsedit",
-            tooltip="File Reassignment and Node Edit Dialog",
-        ),
-        DiagramNode(
-            id="settings_modal",
-            label="Settings Modal",
-            url="docs/ui.md#appuimodalssettings",
-            tooltip="Application Settings Dialog",
-        ),
-        DiagramNode(
-            id="setup_wizard",
-            label="Setup Wizard Modal",
-            url="docs/ui.md#appuimodalswizard",
-            tooltip="First-Run Configuration Wizard",
-        ),
-    ],
-    edges=[
-        DiagramEdge(source="tui_app", target="heading"),
-        DiagramEdge(source="tui_app", target="vim_tree"),
-        DiagramEdge(source="vim_tree", target="edit_modal"),
-        DiagramEdge(source="vim_tree", target="path_diff"),
-        DiagramEdge(source="tui_app", target="settings_modal"),
-        DiagramEdge(source="settings_modal", target="setup_wizard"),
-    ],
-)
-
-
-CORE_TEXT_EXTRACTION_SPEC = SequenceDiagramSpec(
-    id="core_text_extraction",
-    title="Multi-Format Text Extraction Flow",
-    autonumber=True,
-    participants=[
-        SequenceParticipant(id="FS", label="FileScanner"),
-        SequenceParticipant(id="EX", label="Extractor Engine"),
-        SequenceParticipant(id="SN", label="Text Sanitizer"),
-        SequenceParticipant(id="CG", label="Corpus Generator"),
-    ],
-    items=[
-        SequenceMessage(
-            source="FS", target="EX", text="Scan target directory for supported files"
-        ),
-        SequenceActivation(target="EX", action="activate"),
-        SequenceMessage(
-            source="EX", target="EX", text="Extract raw text payload per format"
-        ),
-        SequenceMessage(source="EX", target="SN", text="Pass raw text payload"),
-        SequenceActivation(target="SN", action="activate"),
-        SequenceMessage(
-            source="SN", target="SN", text="Sanitize text and filter stop words"
-        ),
-        SequenceMessage(
-            source="SN",
-            target="EX",
-            text="Return sanitized text yield",
-            arrow_type="-->>",
-        ),
-        SequenceActivation(target="SN", action="deactivate"),
-        SequenceMessage(
-            source="EX",
-            target="CG",
-            text="Yield document text chunk",
-            arrow_type="-->>",
-        ),
-        SequenceActivation(target="EX", action="deactivate"),
-    ],
-)
-
-TROUBLESHOOTING_SETUP_WIZARD_SPEC = ComponentDiagramSpec(
-    id="troubleshooting_setup_wizard",
-    title="Setup Wizard Troubleshooting & Fallback Decision Flow",
-    diagram_type="flowchart",
-    direction="TD",
-    nodes=[
-        DiagramNode(id="A", label="Setup Wizard Download Triggered", shape="rectangle"),
-        DiagramNode(id="B", label="Network Connection OK?", shape="rhombus"),
-        DiagramNode(
-            id="C", label="Check Firewall & Disconnected Status", shape="rectangle"
-        ),
-        DiagramNode(
-            id="D", label="Fallback to Offline Non-Semantic Mode", shape="rectangle"
-        ),
-        DiagramNode(id="E", label="Sufficient Disk Space >= 200MB?", shape="rhombus"),
-        DiagramNode(id="F", label="Clear Free Disk Space", shape="rectangle"),
-        DiagramNode(
-            id="G", label="Retry Model Download via Settings", shape="rectangle"
-        ),
-        DiagramNode(id="H", label="Download 80MB AI Model", shape="rectangle"),
-        DiagramNode(id="I", label="Enable Semantic AI Sorting", shape="rectangle"),
-    ],
-    edges=[
-        DiagramEdge(source="A", target="B"),
-        DiagramEdge(source="B", target="C", label="No"),
-        DiagramEdge(source="C", target="D"),
-        DiagramEdge(source="B", target="E", label="Yes"),
-        DiagramEdge(source="E", target="F", label="No"),
-        DiagramEdge(source="F", target="G"),
-        DiagramEdge(source="E", target="H", label="Yes"),
-        DiagramEdge(source="H", target="I"),
-        DiagramEdge(source="G", target="B"),
-    ],
-)
-
-ML_ANALYZER_CLUSTERING_SPEC = ComponentDiagramSpec(
-    id="ml_analyzer_clustering",
-    title="ML Analyzer & Hierarchical Clustering Pipeline",
-    diagram_type="flowchart",
-    direction="TD",
-    nodes=[
-        DiagramNode(id="A", label="Extracted Corpus"),
-        DiagramNode(id="B", label="TF-IDF Vectorizer"),
-        DiagramNode(id="C", label="Incremental Ingestion: partial_fit"),
-        DiagramNode(id="D", label="Optional ONNX Sentence Embeddings"),
-        DiagramNode(id="E", label="Recursive KMeans Clustering"),
-        DiagramNode(id="F", label="Generate Dynamic Folder Structure & Sorting Plan"),
-    ],
-    edges=[
-        DiagramEdge(source="A", target="B"),
-        DiagramEdge(source="B", target="C"),
-        DiagramEdge(source="C", target="D"),
-        DiagramEdge(source="D", target="E"),
-        DiagramEdge(source="E", target="F"),
-    ],
-)
-
-MULTI_FORMAT_TEXT_EXTRACTION_SEQ_SPEC = SequenceDiagramSpec(
-    id="multi_format_text_extraction_seq",
-    title="Multi-Format Text Extraction Sequence",
-    autonumber=True,
-    participants=[
-        SequenceParticipant(id="FS", label="FileScanner"),
-        SequenceParticipant(id="EX", label="Extractor Engine"),
-        SequenceParticipant(id="SN", label="Text Sanitizer"),
-        SequenceParticipant(id="CG", label="Corpus Generator"),
-    ],
-    items=[
-        SequenceMessage(
-            source="FS", target="EX", text="Scan target directory for supported files"
-        ),
-        SequenceActivation(target="EX", action="activate"),
-        SequenceMessage(
-            source="EX", target="EX", text="Extract raw content per format"
-        ),
-        SequenceMessage(source="EX", target="SN", text="Pass raw text payload"),
-        SequenceActivation(target="SN", action="activate"),
-        SequenceMessage(
-            source="SN",
-            target="SN",
-            text="Sanitize text payload and filter stop words",
-        ),
-        SequenceMessage(
-            source="SN",
-            target="EX",
-            text="Return sanitized text yield",
-            arrow_type="-->>",
-        ),
-        SequenceActivation(target="SN", action="deactivate"),
-        SequenceMessage(
-            source="EX",
-            target="CG",
-            text="Yield processed text chunk to corpus generator",
-            arrow_type="-->>",
-        ),
-        SequenceActivation(target="EX", action="deactivate"),
-    ],
-)
-
-VIRTUAL_SORTING_VERIFICATION_SEQ_SPEC = SequenceDiagramSpec(
-    id="virtual_sorting_verification_seq",
-    title="Virtual Sorting Plan Verification Sequence",
-    autonumber=True,
-    participants=[
-        SequenceParticipant(id="UI", label="User Interface"),
-        SequenceParticipant(id="VE", label="Verification Engine"),
-        SequenceParticipant(id="FS", label="Local Filesystem Check"),
-    ],
-    items=[
-        SequenceMessage(source="UI", target="VE", text="Submit proposed sorting plan"),
-        SequenceActivation(target="VE", action="activate"),
-        SequenceMessage(
-            source="VE", target="VE", text="Verify disk space across target volumes"
-        ),
-        SequenceMessage(
-            source="VE", target="VE", text="Check path length restrictions"
-        ),
-        SequenceMessage(
-            source="VE",
-            target="FS",
-            text="Verify source file accessibility and locks",
-        ),
-        SequenceMessage(
-            source="FS", target="VE", text="Return file status", arrow_type="-->>"
-        ),
-        SequenceAlt(
-            branches=[
-                SequenceAltBranch(
-                    label="Verification Succeeded",
-                    items=[
-                        SequenceMessage(
-                            source="VE",
-                            target="UI",
-                            text="Return verified status (Safe to Execute)",
-                            arrow_type="-->>",
-                        ),
-                    ],
-                ),
-                SequenceAltBranch(
-                    label="Verification Failed",
-                    items=[
-                        SequenceMessage(
-                            source="VE",
-                            target="UI",
-                            text="Return error list and halt execution",
-                            arrow_type="-->>",
-                        ),
-                    ],
-                ),
-            ]
-        ),
-        SequenceActivation(target="VE", action="deactivate"),
-    ],
-)
-
-USER_GUIDE_SETUP_WIZARD_SPEC = ComponentDiagramSpec(
-    id="user_guide_setup_wizard",
-    title="First-Run Setup Wizard Decision Flow",
-    diagram_type="flowchart",
-    direction="TD",
-    nodes=[
-        DiagramNode(
-            id="A",
-            label="Launch Application",
-            url="#first-run-steps--setup-wizard",
-            tooltip="Launch Application Step",
-        ),
-        DiagramNode(
-            id="B",
-            label="First-Run Setup Wizard",
-            shape="rhombus",
-            url="#first-run-steps--setup-wizard",
-            tooltip="First-Run Setup Wizard",
-        ),
-        DiagramNode(
-            id="C",
-            label="Download 80MB Model from Hugging Face",
-            url="https://huggingface.co",
-            tooltip="Hugging Face Model Download",
-            target="_blank",
-        ),
-        DiagramNode(
-            id="D",
-            label="Enable Semantic AI Sorting",
-            url="#privacy-configurations",
-            tooltip="Privacy & Semantic AI Settings",
-        ),
-        DiagramNode(
-            id="E",
-            label="Fallback to Offline Non-Semantic Mode",
-            url="#offline-non-semantic-mode",
-            tooltip="Offline Mode Information",
-        ),
-        DiagramNode(
-            id="F",
-            label="Open User Guide",
-            url="#first-run-steps--setup-wizard",
-            tooltip="User Guide Reference",
-        ),
-        DiagramNode(
-            id="G",
-            label="Enter Workspace Directory Path",
-            url="#first-run-steps--setup-wizard",
-            tooltip="Workspace Directory Input Field (#input-dir)",
-        ),
-        DiagramNode(
-            id="H",
-            label="Select Quick Preset (Demo / Downloads / Documents)",
-            url="#first-run-steps--setup-wizard",
-            tooltip="Quick Preset Buttons",
-        ),
-        DiagramNode(
-            id="I",
-            label="Validate Directory Path",
-            shape="rhombus",
-            url="#first-run-steps--setup-wizard",
-            tooltip="Directory Path Validation",
-        ),
-        DiagramNode(
-            id="J",
-            label="Display Inline Error Banner",
-            url="#first-run-steps--setup-wizard",
-            tooltip="Inline Error Banner (#lbl-error)",
-        ),
-        DiagramNode(
-            id="K",
-            label="Begin Directory Scan",
-            url="#first-run-steps--setup-wizard",
-            tooltip="Scan and Organize Workspace",
-        ),
-    ],
-    edges=[
-        DiagramEdge(source="A", target="B"),
-        DiagramEdge(source="B", target="C", label="Accept & Download"),
-        DiagramEdge(source="C", target="D", label="Download Successful"),
-        DiagramEdge(source="C", target="E", label="Network Error or Offline"),
-        DiagramEdge(source="B", target="E", label="Decline"),
-        DiagramEdge(source="B", target="F", label="Help"),
-        DiagramEdge(source="B", target="G", label="Enter Path"),
-        DiagramEdge(source="B", target="H", label="Select Preset"),
-        DiagramEdge(source="H", target="G", label="Populate Path"),
-        DiagramEdge(source="G", target="I", label="Finish & Save"),
-        DiagramEdge(source="I", target="J", label="Invalid Path"),
-        DiagramEdge(source="J", target="G", label="Correct Path"),
-        DiagramEdge(source="I", target="K", label="Valid Path"),
-    ],
-)
-
-USER_GUIDE_WATCHDOG_STATE_SPEC = StateDiagramSpec(
-    id="user_guide_watchdog_state",
-    title="Watchdog Event Aggregation & Debounce State Machine",
-    diagram_type="stateDiagram-v2",
-    transitions=[
-        StateTransition(source="[*]", target="Idle", label="Watchdog Active"),
-        StateTransition(
-            source="Idle", target="EventDetected", label="Directory Change Event"
-        ),
-        StateTransition(
-            source="EventDetected",
-            target="CheckTransient",
-            label="Inspect File Extension",
-        ),
-        StateTransition(
-            source="CheckTransient",
-            target="TransientIgnored",
-            label="Extension in (.crdownload, .tmp, .download)",
-        ),
-        StateTransition(
-            source="TransientIgnored", target="Idle", label="Drop Transient Event"
-        ),
-        StateTransition(
-            source="CheckTransient",
-            target="StartDebounce",
-            label="Valid File Extension",
-        ),
-        StateTransition(
-            source="StartDebounce",
-            target="AggregatingEvents",
-            label="Standard Debounce Timer (0.6s)",
-        ),
-        StateTransition(
-            source="AggregatingEvents",
-            target="AggregatingEvents",
-            label="New Event Received (Reset 0.6s Timer)",
-        ),
-        StateTransition(
-            source="AggregatingEvents",
-            target="TriggerSorting",
-            label="Debounce Timer Expires (0.6s)",
-        ),
-        StateTransition(
-            source="AggregatingEvents",
-            target="TriggerSorting",
-            label="Max Debounce Limit Reached (5.0s)",
-        ),
-        StateTransition(
-            source="TriggerSorting", target="Idle", label="Execute Sorting Pipeline"
-        ),
-    ],
-)
-
-API_CORE_ARCHITECTURE_SPEC = ComponentDiagramSpec(
-    id="api_core_architecture",
-    title="Core Module Architecture Flow",
-    diagram_type="flowchart",
-    direction="TD",
-    nodes=[
-        DiagramNode(
-            id="A",
-            label="app.main",
-            url="docs/api_reference.md#appmain",
-            tooltip="CLI Entrypoint Module",
-        ),
-        DiagramNode(
-            id="B",
-            label="app.core.session",
-            url="docs/api_reference.md#appcoresession",
-            tooltip="Session Management Module",
-        ),
-        DiagramNode(
-            id="C",
-            label="app.core.extractor",
-            url="docs/api_reference.md#appcoreextractor",
-            tooltip="Multi-format Text Extractor Module",
-        ),
-        DiagramNode(
-            id="D",
-            label="app.core.analyzer",
-            url="docs/api_reference.md#appcoreanalyzer",
-            tooltip="Document Analyzer Module",
-        ),
-        DiagramNode(
-            id="E",
-            label="app.core.verifier",
-            url="docs/api_reference.md#appcoreverifier",
-            tooltip="Virtual Sorting Verifier Module",
-        ),
-        DiagramNode(
-            id="F",
-            label="app.core.sanitizer",
-            url="docs/api_reference.md#appcoresanitizer",
-            tooltip="Path & Input Sanitizer Module",
-        ),
-        DiagramNode(
-            id="G",
-            label="app.core.analyzer_strategies",
-            url="docs/api_reference.md#appcoreanalyzer_strategies",
-            tooltip="Analysis Strategy Implementations",
-        ),
-    ],
-    edges=[
-        DiagramEdge(source="A", target="B"),
-        DiagramEdge(source="B", target="C"),
-        DiagramEdge(source="B", target="D"),
-        DiagramEdge(source="B", target="E"),
-        DiagramEdge(source="C", target="F"),
-        DiagramEdge(source="D", target="G"),
-    ],
-)
 
 
 def _create_architecture_dataflow_spec() -> DataFlowDiagramSpec:
@@ -4944,6 +3811,16 @@ def get_diagram_spec(key: str) -> BaseDiagramSpec:
         spec = factory()
         _INSTANTIATED_SPECS[key] = spec
         return spec
+
+
+def hydrate_core_architecture_spec(
+    parsed_app_files: Sequence[tuple[str, ast.Module]] | None = None,
+) -> ComponentDiagramSpec:
+    """Hydrate and memoize core_architecture using pre-parsed app/ ASTs when available."""
+    spec = _create_core_architecture_spec(parsed_app_files=parsed_app_files)
+    with _SPEC_LOCK:
+        _INSTANTIATED_SPECS["core_architecture"] = spec
+    return spec
 
 
 def reset_diagram_specs_cache() -> None:

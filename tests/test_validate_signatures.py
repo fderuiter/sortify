@@ -14,6 +14,7 @@ from scripts.validate_signatures import (
     collect_current_definitions,
     collect_modules_and_payloads,
     collect_plugins_definitions,
+    collect_protocol_definitions,
     extract_cli,
     extract_module_signatures,
     extract_protocols,
@@ -184,14 +185,26 @@ def test_dynamic_cli_file_discovery(tmp_path):
 
 def test_collect_current_definitions():
     defs = collect_current_definitions()
-    assert "core" in defs
+    assert "protocols" in defs
     assert "cli" in defs
-    assert "plugins" in defs
     assert "config" in defs
+    assert "ui" in defs
+    assert "core" not in defs
+    assert "plugins" not in defs
 
-    # Check core module paths
-    assert "app/core/analyzer.py" in defs["core"]
-    assert "app/core/extractor.py" in defs["core"]
+    # Check Protocol module paths (only modules declaring public Protocol classes)
+    assert "app/core/analyzer_strategies.py" in defs["protocols"]
+    assert "app/core/extractor_strategies.py" in defs["protocols"]
+    assert (
+        "ClusteringStrategy"
+        in defs["protocols"]["app/core/analyzer_strategies.py"]["protocols"]
+    )
+    assert (
+        "DocumentExtractor"
+        in defs["protocols"]["app/core/extractor_strategies.py"]["protocols"]
+    )
+    assert "app/core/moves.py" not in defs["protocols"]
+    assert "app/core/analyzer.py" not in defs["protocols"]
 
     # Check CLI keys
     assert "app/main.py" in defs["cli"]
@@ -199,15 +212,44 @@ def test_collect_current_definitions():
     assert "app/cli/ledger_cli.py" in defs["cli"]
     assert "app/cli/quarantine_cli.py" in defs["cli"]
 
-    # Check config and plugin keys
+    # Check config and UI protocol keys
     assert "app/config.py" in defs["config"]
-    assert "app/plugins/clinical_compliance/plugin.py" in defs["plugins"]
+    assert "app/ui/protocols.py" in defs["ui"]
 
     main_cli = defs["cli"]["app/main.py"]
     assert len(main_cli) > 0
     demo_arg = [arg for arg in main_cli if arg["args"] == ["--demo"]]
     assert len(demo_arg) == 1
     assert demo_arg[0]["keywords"]["action"] == "store_true"
+
+
+def test_zero_core_snapshot_files_and_private_protocols_excluded(tmp_path):
+    core_snap_dir = os.path.join(SNAPSHOT_DIR, "core")
+    assert not os.path.exists(core_snap_dir) or not [
+        f for f in os.listdir(core_snap_dir) if f.endswith(".json")
+    ]
+
+    core_dir = tmp_path / "core"
+    plugins_dir = tmp_path / "plugins" / "sample_plugin"
+    core_dir.mkdir(parents=True)
+    plugins_dir.mkdir(parents=True)
+
+    (core_dir / "internal_mod.py").write_text(
+        "from typing import Protocol\nclass _PrivateProto(Protocol):\n    def f(self) -> None: ...\nclass Helper:\n    pass\n",
+        encoding="utf-8",
+    )
+    (plugins_dir / "contracts.py").write_text(
+        "from typing import Protocol\nclass PluginHook(Protocol):\n    def hook(self, name: str) -> bool: ...\n",
+        encoding="utf-8",
+    )
+
+    proto_defs = collect_protocol_definitions(
+        core_dir=str(core_dir), plugins_dir=str(tmp_path / "plugins")
+    )
+    assert len(proto_defs) == 1
+    only_key = next(iter(proto_defs))
+    assert only_key.endswith("contracts.py")
+    assert list(proto_defs[only_key]["protocols"].keys()) == ["PluginHook"]
 
 
 def test_api_signature_snapshot_matches():
@@ -395,20 +437,18 @@ def test_validation_runner_detects_mismatch(tmp_path, monkeypatch):
     fake_snap_dir = tmp_path / "api"
     fake_snap_dir.mkdir(parents=True)
 
-    module_snap = fake_snap_dir / "core" / "analyzer_strategies.json"
+    module_snap = fake_snap_dir / "protocols" / "core" / "analyzer_strategies.json"
     module_snap.parent.mkdir(parents=True, exist_ok=True)
 
     initial_payload = {
-        "classes": [
-            {
+        "protocols": {
+            "MyProtocol": {
                 "class_name": "MyProtocol",
-                "decorators": [],
                 "methods": [
                     {"name": "run", "async": True, "parameters": [], "returns": "None"}
                 ],
             }
-        ],
-        "functions": [],
+        }
     }
     initial_data = {
         "_metadata": {"checksum": compute_payload_checksum(initial_payload)},
@@ -417,21 +457,19 @@ def test_validation_runner_detects_mismatch(tmp_path, monkeypatch):
     module_snap.write_text(json.dumps(initial_data, indent=2, sort_keys=True))
 
     changed_payload = {
-        "classes": [
-            {
+        "protocols": {
+            "MyProtocol": {
                 "class_name": "MyProtocol",
-                "decorators": [],
                 "methods": [
                     {"name": "run", "async": False, "parameters": [], "returns": "None"}
                 ],
             }
-        ],
-        "functions": [],
+        }
     }
 
     changed_defs = {
         "cli": {},
-        "core": {"app/core/analyzer_strategies.py": changed_payload},
+        "protocols": {"app/core/analyzer_strategies.py": changed_payload},
     }
 
     monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(fake_snap_dir))
@@ -460,20 +498,18 @@ def test_validation_local_fails_by_default_on_mismatch(tmp_path, monkeypatch):
     fake_snap_dir = tmp_path / "api"
     fake_snap_dir.mkdir(parents=True)
 
-    module_snap = fake_snap_dir / "core" / "analyzer_strategies.json"
+    module_snap = fake_snap_dir / "protocols" / "core" / "analyzer_strategies.json"
     module_snap.parent.mkdir(parents=True, exist_ok=True)
 
     initial_payload = {
-        "classes": [
-            {
+        "protocols": {
+            "MyProtocol": {
                 "class_name": "MyProtocol",
-                "decorators": [],
                 "methods": [
                     {"name": "run", "async": True, "parameters": [], "returns": "None"}
                 ],
             }
-        ],
-        "functions": [],
+        }
     }
     initial_data = {
         "_metadata": {"checksum": compute_payload_checksum(initial_payload)},
@@ -482,21 +518,19 @@ def test_validation_local_fails_by_default_on_mismatch(tmp_path, monkeypatch):
     module_snap.write_text(json.dumps(initial_data, indent=2, sort_keys=True))
 
     changed_payload = {
-        "classes": [
-            {
+        "protocols": {
+            "MyProtocol": {
                 "class_name": "MyProtocol",
-                "decorators": [],
                 "methods": [
                     {"name": "run", "async": False, "parameters": [], "returns": "None"}
                 ],
             }
-        ],
-        "functions": [],
+        }
     }
 
     changed_defs = {
         "cli": {},
-        "core": {"app/core/analyzer_strategies.py": changed_payload},
+        "protocols": {"app/core/analyzer_strategies.py": changed_payload},
     }
 
     monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(fake_snap_dir))
@@ -523,27 +557,25 @@ def test_validation_local_fails_by_default_on_mismatch(tmp_path, monkeypatch):
     # Ensure baseline file was NOT modified
     with open(module_snap, encoding="utf-8") as f:
         data = json.load(f)
-    assert data["classes"][0]["methods"][0]["async"] is True
+    assert data["protocols"]["MyProtocol"]["methods"][0]["async"] is True
 
 
 def test_validation_local_success_on_regenerate(tmp_path, monkeypatch):
     fake_snap_dir = tmp_path / "api"
     fake_snap_dir.mkdir(parents=True)
 
-    module_snap = fake_snap_dir / "core" / "analyzer_strategies.json"
+    module_snap = fake_snap_dir / "protocols" / "core" / "analyzer_strategies.json"
     module_snap.parent.mkdir(parents=True, exist_ok=True)
 
     initial_payload = {
-        "classes": [
-            {
+        "protocols": {
+            "MyProtocol": {
                 "class_name": "MyProtocol",
-                "decorators": [],
                 "methods": [
                     {"name": "run", "async": True, "parameters": [], "returns": "None"}
                 ],
             }
-        ],
-        "functions": [],
+        }
     }
     initial_data = {
         "_metadata": {"checksum": compute_payload_checksum(initial_payload)},
@@ -552,21 +584,19 @@ def test_validation_local_success_on_regenerate(tmp_path, monkeypatch):
     module_snap.write_text(json.dumps(initial_data, indent=2, sort_keys=True))
 
     changed_payload = {
-        "classes": [
-            {
+        "protocols": {
+            "MyProtocol": {
                 "class_name": "MyProtocol",
-                "decorators": [],
                 "methods": [
                     {"name": "run", "async": False, "parameters": [], "returns": "None"}
                 ],
             }
-        ],
-        "functions": [],
+        }
     }
 
     changed_defs = {
         "cli": {},
-        "core": {"app/core/analyzer_strategies.py": changed_payload},
+        "protocols": {"app/core/analyzer_strategies.py": changed_payload},
     }
 
     monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(fake_snap_dir))
@@ -592,7 +622,7 @@ def test_validation_local_success_on_regenerate(tmp_path, monkeypatch):
 
     with open(module_snap, encoding="utf-8") as f:
         data = json.load(f)
-    assert data["classes"][0]["methods"][0]["async"] is False
+    assert data["protocols"]["MyProtocol"]["methods"][0]["async"] is False
     assert "_metadata" in data
     assert "checksum" in data["_metadata"]
     expected_hash = compute_payload_checksum(changed_payload)
@@ -603,17 +633,15 @@ def test_validation_partial_update_preserves_other_snapshots(tmp_path, monkeypat
     fake_snap_dir = tmp_path / "api"
     fake_snap_dir.mkdir(parents=True)
 
-    snap1 = fake_snap_dir / "core" / "analyzer_strategies.json"
-    snap2 = fake_snap_dir / "core" / "extractor_strategies.json"
+    snap1 = fake_snap_dir / "protocols" / "core" / "analyzer_strategies.json"
+    snap2 = fake_snap_dir / "protocols" / "core" / "extractor_strategies.json"
     snap1.parent.mkdir(parents=True, exist_ok=True)
 
     payload1_old = {
-        "classes": [{"class_name": "A", "decorators": [], "methods": []}],
-        "functions": [],
+        "protocols": {"A": {"class_name": "A", "methods": []}},
     }
     payload2_old = {
-        "classes": [{"class_name": "B", "decorators": [], "methods": []}],
-        "functions": [],
+        "protocols": {"B": {"class_name": "B", "methods": []}},
     }
 
     snap1.write_text(
@@ -636,17 +664,15 @@ def test_validation_partial_update_preserves_other_snapshots(tmp_path, monkeypat
     )
 
     payload1_new = {
-        "classes": [{"class_name": "A_Modified", "decorators": [], "methods": []}],
-        "functions": [],
+        "protocols": {"A_Modified": {"class_name": "A_Modified", "methods": []}},
     }
     payload2_new = {
-        "classes": [{"class_name": "B_Modified", "decorators": [], "methods": []}],
-        "functions": [],
+        "protocols": {"B_Modified": {"class_name": "B_Modified", "methods": []}},
     }
 
     changed_defs = {
         "cli": {},
-        "core": {
+        "protocols": {
             "app/core/analyzer_strategies.py": payload1_new,
             "app/core/extractor_strategies.py": payload2_new,
         },
@@ -680,19 +706,19 @@ def test_validation_partial_update_preserves_other_snapshots(tmp_path, monkeypat
     # snap1 should be updated to payload1_new
     with open(snap1, encoding="utf-8") as f:
         data1 = json.load(f)
-    assert data1["classes"][0]["class_name"] == "A_Modified"
+    assert "A_Modified" in data1["protocols"]
 
     # snap2 should NOT be updated (should still be payload2_old)
     with open(snap2, encoding="utf-8") as f:
         data2 = json.load(f)
-    assert data2["classes"][0]["class_name"] == "B"
+    assert "B" in data2["protocols"]
 
 
 def test_validation_ci_fails_on_regenerate(tmp_path, monkeypatch):
     fake_snap_dir = tmp_path / "api"
     fake_snap_dir.mkdir(parents=True)
 
-    initial_defs = {"cli": {}, "core": {}}
+    initial_defs = {"cli": {}, "protocols": {}}
 
     monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(fake_snap_dir))
     monkeypatch.setattr(
@@ -722,7 +748,7 @@ def test_validation_fails_on_missing_snapshot(tmp_path, monkeypatch):
 
     current_defs = {
         "cli": {},
-        "core": {"app/core/analyzer_strategies.py": {"classes": [], "functions": []}},
+        "protocols": {"app/core/analyzer_strategies.py": {"protocols": {}}},
     }
 
     monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(fake_snap_dir))
@@ -751,10 +777,10 @@ def test_snapshot_integrity_checksum_mismatch(tmp_path, monkeypatch, capsys):
     fake_snap_dir = tmp_path / "api"
     fake_snap_dir.mkdir(parents=True)
 
-    module_snap = fake_snap_dir / "core" / "analyzer_strategies.json"
+    module_snap = fake_snap_dir / "protocols" / "core" / "analyzer_strategies.json"
     module_snap.parent.mkdir(parents=True, exist_ok=True)
 
-    valid_payload = {"classes": [], "functions": []}
+    valid_payload = {"protocols": {}}
     valid_checksum = compute_payload_checksum(valid_payload)
 
     # Tampered payload in snapshot keeping old checksum
@@ -762,19 +788,17 @@ def test_snapshot_integrity_checksum_mismatch(tmp_path, monkeypatch, capsys):
         "_metadata": {
             "checksum": valid_checksum,
         },
-        "classes": [{"class_name": "TamperedClass", "decorators": [], "methods": []}],
-        "functions": [],
+        "protocols": {"TamperedClass": {"class_name": "TamperedClass", "methods": []}},
     }
     module_snap.write_text(json.dumps(tampered_data, indent=2, sort_keys=True))
 
     codebase_payload = {
-        "classes": [{"class_name": "NewClass", "decorators": [], "methods": []}],
-        "functions": [],
+        "protocols": {"NewClass": {"class_name": "NewClass", "methods": []}},
     }
 
     current_defs = {
         "cli": {},
-        "core": {"app/core/analyzer_strategies.py": codebase_payload},
+        "protocols": {"app/core/analyzer_strategies.py": codebase_payload},
     }
 
     monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(fake_snap_dir))
@@ -812,15 +836,15 @@ def test_snapshot_integrity_missing_metadata(tmp_path, monkeypatch):
     fake_snap_dir = tmp_path / "api"
     fake_snap_dir.mkdir(parents=True)
 
-    module_snap = fake_snap_dir / "core" / "analyzer_strategies.json"
+    module_snap = fake_snap_dir / "protocols" / "core" / "analyzer_strategies.json"
     module_snap.parent.mkdir(parents=True, exist_ok=True)
 
-    data_without_meta = {"classes": [], "functions": []}
+    data_without_meta = {"protocols": {}}
     module_snap.write_text(json.dumps(data_without_meta, indent=2, sort_keys=True))
 
     current_defs = {
         "cli": {},
-        "core": {"app/core/analyzer_strategies.py": data_without_meta},
+        "protocols": {"app/core/analyzer_strategies.py": data_without_meta},
     }
 
     monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(fake_snap_dir))
@@ -849,17 +873,20 @@ def test_validation_runner_detects_orphaned_snapshot(tmp_path, monkeypatch):
     fake_snap_dir = tmp_path / "api"
     fake_snap_dir.mkdir(parents=True)
 
-    valid_snap = fake_snap_dir / "core" / "analyzer_strategies.json"
-    orphaned_snap = fake_snap_dir / "core" / "deleted_module.json"
+    valid_snap = fake_snap_dir / "protocols" / "core" / "analyzer_strategies.json"
+    orphaned_snap = fake_snap_dir / "protocols" / "core" / "deleted_module.json"
     valid_snap.parent.mkdir(parents=True, exist_ok=True)
 
-    payload = {"classes": [], "functions": []}
+    payload = {"protocols": {}}
     data = {"_metadata": {"checksum": compute_payload_checksum(payload)}, **payload}
 
     valid_snap.write_text(json.dumps(data, indent=2))
     orphaned_snap.write_text(json.dumps(data, indent=2))
 
-    current_defs = {"cli": {}, "core": {"app/core/analyzer_strategies.py": payload}}
+    current_defs = {
+        "cli": {},
+        "protocols": {"app/core/analyzer_strategies.py": payload},
+    }
 
     monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(fake_snap_dir))
     monkeypatch.setattr(
@@ -901,9 +928,9 @@ def test_validation_runner_detects_orphaned_snapshot_across_subdirectories(
     tui_dir.mkdir(parents=True)
     other_dir.mkdir(parents=True)
 
-    valid_snap = api_dir / "core" / "analyzer_strategies.json"
+    valid_snap = api_dir / "protocols" / "core" / "analyzer_strategies.json"
     valid_snap.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"classes": [], "functions": []}
+    payload = {"protocols": {}}
     data = {"_metadata": {"checksum": compute_payload_checksum(payload)}, **payload}
     valid_snap.write_text(json.dumps(data, indent=2))
 
@@ -916,7 +943,10 @@ def test_validation_runner_detects_orphaned_snapshot_across_subdirectories(
     actual_diff = tui_dir / "test_view.svg.actual"
     actual_diff.write_text("<svg>diff</svg>")
 
-    current_defs = {"cli": {}, "core": {"app/core/analyzer_strategies.py": payload}}
+    current_defs = {
+        "cli": {},
+        "protocols": {"app/core/analyzer_strategies.py": payload},
+    }
 
     monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(api_dir))
     monkeypatch.setattr(
@@ -1026,7 +1056,7 @@ def test_validate_signatures_detects_structured_conflict_payload(
     api_dir = tmp_path / "snapshots" / "api"
     api_dir.mkdir(parents=True)
 
-    conflicted_snap = api_dir / "core" / "analyzer_strategies.json"
+    conflicted_snap = api_dir / "protocols" / "core" / "analyzer_strategies.json"
     conflicted_snap.parent.mkdir(parents=True, exist_ok=True)
     conflict_payload = {
         "_metadata": {
@@ -1035,14 +1065,14 @@ def test_validate_signatures_detects_structured_conflict_payload(
             "pathname": "app/core/analyzer_strategies.py",
         },
         "conflict": True,
-        "local": {"classes": [], "functions": []},
-        "incoming": {"classes": [{"class_name": "NewStrategy"}], "functions": []},
+        "local": {"protocols": {}},
+        "incoming": {"protocols": {"NewStrategy": {}}},
     }
     conflicted_snap.write_text(json.dumps(conflict_payload, indent=2))
 
     current_defs = {
         "cli": {},
-        "core": {"app/core/analyzer_strategies.py": {"classes": [], "functions": []}},
+        "protocols": {"app/core/analyzer_strategies.py": {"protocols": {}}},
     }
 
     monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(api_dir))
@@ -1127,7 +1157,8 @@ def test_orphan_detection_runs_with_explicit_module_paths(
     snap_copy_root = tmp_path / "snapshots"
     shutil.copytree(validate_signatures.get_snapshot_root_dir(), snap_copy_root)
     fake_api_dir = snap_copy_root / "api"
-    orphan_file = fake_api_dir / "core" / "orphaned_deleted_module.json"
+    orphan_file = fake_api_dir / "protocols" / "core" / "orphaned_deleted_module.json"
+    orphan_file.parent.mkdir(parents=True, exist_ok=True)
     orphan_file.write_text('{"orphaned": true}\n', encoding="utf-8")
 
     orig_tui_svgs = validate_signatures.collect_tui_svg_snapshots()

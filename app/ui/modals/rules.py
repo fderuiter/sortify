@@ -158,10 +158,9 @@ class TemplateGalleryModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
         templates = get_starter_templates()
         if templates:
             first_id = templates[0].id
-            try:
-                self.query_one(f"#chk-gallery-{first_id}", Checkbox).focus()
-            except Exception:
-                pass
+            for chk in self.query(f"#chk-gallery-{first_id}"):
+                chk.focus()
+                break
         self.announce("Opened starter rule template gallery.")
 
     @on(Checkbox.Changed)

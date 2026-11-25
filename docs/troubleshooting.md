@@ -2,8 +2,27 @@
 
 Welcome to the Smart AutoSorter AI Pro troubleshooting guide. This page covers model downloads, settings errors, interrupted sessions, the DropZone and CRO ingestion. The **Help** buttons in the terminal UI open the matching section.
 
-![Setup Wizard Network Flow](assets/diagrams/setup_wizard_flow.svg)
-
+```mermaid
+flowchart TD
+    A("Setup Wizard Download Triggered")
+    B{Network Connection OK?}
+    C["Check Firewall & Disconnected Status"]
+    D["Fallback to Offline Non-Semantic Mode"]
+    E{Sufficient Disk Space >= 200MB?}
+    F["Clear Free Disk Space"]
+    G["Retry Model Download via Settings"]
+    H["Download 80MB AI Model"]
+    I("Enable Semantic AI Sorting")
+    A --> B
+    B -->|No| C
+    C --> D
+    B -->|Yes| E
+    E -->|No| F
+    F --> G
+    G --> B
+    E -->|Yes| H
+    H --> I
+```
 ## Model download failures
 
 The Onboarding Wizard (`[Ctrl+W]`) and Model Manager (`[Ctrl+G]` or Command Palette `[Ctrl+K]`) download the optional local embedding model (`all-MiniLM-L6-v2` in ONNX format) from Hugging Face and verify its SHA-256 digests before activation. While weights are missing, if a download fails, or if the optional `onnxruntime` package (`smart-autosorter[ml]`) is not installed, the status bar shows `[AI: Fallback]` and Sortify continues organizing folders locally with keyword rules and TF-IDF clustering.

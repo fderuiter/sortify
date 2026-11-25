@@ -57,6 +57,8 @@ def test_docs_only_pr_is_eligible():
         "CLAUDE.md",
         ".gitattributes",
         "offline_bundle/requirements.txt",
+        "app/core/moves.py",
+        "app/core/store.py",
     ],
 )
 def test_newly_protected_config_hook_agent_and_manifest_paths_are_sensitive(path):
@@ -294,7 +296,7 @@ def test_snapshot_baseline_change_is_blocked():
         title="test: update snapshots",
         author="stitch",
         labels=["automerge"],
-        changed_files=["tests/snapshots/api/core/analyzer_strategies.json"],
+        changed_files=["tests/snapshots/api/protocols/core/analyzer_strategies.json"],
         additions=10,
         deletions=10,
     )

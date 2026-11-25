@@ -233,7 +233,7 @@ jobs:
           if [ -n "$BASE_SHA" ] && [ -n "$HEAD_SHA" ] \
             && MERGE_BASE="$(git merge-base "$BASE_SHA" "$HEAD_SHA" 2>/dev/null)" \
             && CHANGED_FILES="$(git diff --name-only --no-renames "$MERGE_BASE" "$HEAD_SHA" 2>/dev/null)"; then
-            if ! printf '%s\n' "$CHANGED_FILES" | grep -Eq '^(docs/|mkdocs\.yml$|[^/]+\.[mM][dD]$|scripts/(generate_docs|mkdocs_site_validator)\.py$)'; then
+            if ! printf '%s\n' "$CHANGED_FILES" | grep -Eq '^(docs/|mkdocs\.yml$|[^/]+\.[mM][dD]$|scripts/(generate_docs|mkdocs_site_validator|diagram_schema|diagram_toolchain)\.py$)'; then
               BUILD_FLAG="--no-build"
             fi
           fi
@@ -322,7 +322,7 @@ jobs:
     - name: Check Data-Safety Coverage Floors
       if: matrix.os == 'ubuntu-latest'
       run: |
-        uv run python scripts/check_coverage_floors.py coverage.json
+        uv run python scripts/check_coverage_floors.py --max-floor-lag=10 --check-protected-sync coverage.json
 
     - name: Upload Test Coverage Artifacts
       if: matrix.os == 'ubuntu-latest'

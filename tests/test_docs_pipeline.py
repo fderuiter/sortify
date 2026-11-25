@@ -711,12 +711,13 @@ def test_mkdocs_strict_build_generates_index_logo_links_and_sitemap(tmp_path):
 
     assert validate_mkdocs_site(str(site_dir)) == []
 
-    # Verify root landing page exists and embeds core architecture diagram
+    # Verify root landing page exists and embeds fenced Mermaid + local mermaid.min.js
     root_index = site_dir / "index.html"
     assert root_index.is_file()
     index_html = root_index.read_text(encoding="utf-8")
     assert "Smart AutoSorter AI Pro" in index_html
-    assert "assets/diagrams/core_architecture.svg" in index_html
+    assert '<pre class="mermaid">' in index_html
+    assert 'src="assets/js/mermaid.min.js"' in index_html
 
 
 def test_main_no_build_flag():
@@ -1155,11 +1156,8 @@ def test_component_diagram_spec_click_serialization():
     assert "click d" not in mmd
 
 
-def test_diagram_toolchain_click_directives_and_fallback_svg():
-    from scripts.diagram_toolchain import (
-        generate_fallback_svg,
-        parse_and_validate_click_directives,
-    )
+def test_diagram_toolchain_click_directives():
+    from scripts.diagram_toolchain import parse_and_validate_click_directives
 
     mmd_valid = """graph TD
     A["Node A"]
@@ -1217,76 +1215,38 @@ def test_diagram_toolchain_click_directives_and_fallback_svg():
         in errs_missing_file[0]
     )
 
-    fallback = generate_fallback_svg("Test Title", mmd_valid)
-    assert '<a href="https://example.com" target="_blank"' in fallback
-    assert "🔗 Node A -&gt; Tooltip A" in fallback
-
-
-def _fake_render(cmd, mmd_path, out_path, fmt="svg"):
-    out_path.write_text("<svg>rendered</svg>", encoding="utf-8")
-    return True
-
 
 def test_diagram_toolchain_build_and_verify(tmp_path):
     from scripts.diagram_toolchain import build_diagrams
 
-    with (
-        patch("scripts.diagram_toolchain.find_mmdc_executable", return_value=["mmdc"]),
-        patch("scripts.diagram_toolchain.is_browser_available", return_value=True),
-        patch(
-            "scripts.diagram_toolchain.render_diagram_artifact",
-            side_effect=_fake_render,
-        ),
-    ):
-        # Test build mode
-        success = build_diagrams(output_dir=tmp_path, force=True, verify_only=False)
-        assert success is True
-        assert (tmp_path / "architecture_dataflow.mmd").exists()
-        assert (tmp_path / ".build_cache.json").exists()
+    # Test build mode compiles .mmd sources with zero SVG artifacts
+    success = build_diagrams(output_dir=tmp_path, force=True, verify_only=False)
+    assert success is True
+    assert (tmp_path / "architecture_dataflow.mmd").exists()
+    assert list(tmp_path.glob("*.svg")) == []
 
-        # Test verify mode
-        success_verify = build_diagrams(
-            output_dir=tmp_path, force=False, verify_only=True
-        )
-        assert success_verify is True
+    # Test verify mode
+    success_verify = build_diagrams(output_dir=tmp_path, force=False, verify_only=True)
+    assert success_verify is True
 
 
-def test_diagram_toolchain_verify_flags_svgs_not_rendered_from_current_spec(
-    tmp_path,
-):
-    from scripts.diagram_toolchain import (
-        build_diagrams,
-        collect_all_specs,
-        svg_source_hash,
-    )
+def test_diagram_toolchain_verify_flags_drifted_mmd(tmp_path):
+    from scripts.diagram_toolchain import build_diagrams, collect_all_specs
 
     spec_id, spec = next(iter(collect_all_specs().items()))
-    with (
-        patch(
-            "scripts.diagram_toolchain.collect_all_specs", return_value={spec_id: spec}
-        ),
-        patch("scripts.diagram_toolchain.find_mmdc_executable", return_value=["mmdc"]),
-        patch("scripts.diagram_toolchain.is_browser_available", return_value=True),
-        patch(
-            "scripts.diagram_toolchain.render_diagram_artifact",
-            side_effect=_fake_render,
-        ),
+    with patch(
+        "scripts.diagram_toolchain.collect_all_specs", return_value={spec_id: spec}
     ):
         assert build_diagrams(output_dir=tmp_path, force=True) is True
-        svg_file = tmp_path / f"{spec_id}.svg"
-        assert svg_source_hash(svg_file) is not None
+        mmd_file = tmp_path / f"{spec_id}.mmd"
+        assert mmd_file.exists()
         assert build_diagrams(output_dir=tmp_path, verify_only=True) is True
 
-        # The spec changed but the SVG was not re-rendered.
-        svg_file.write_text(
-            svg_file.read_text(encoding="utf-8").replace(
-                svg_source_hash(svg_file), "0" * 64
-            ),
-            encoding="utf-8",
-        )
+        # Drifting the .mmd source fails verify_only without mutating it
+        mmd_file.write_text("flowchart TD\n  STALE --> NODE\n", encoding="utf-8")
         assert build_diagrams(output_dir=tmp_path, verify_only=True) is False
 
-        # A build re-renders it even though the build cache says it is current.
+        # Rebuilding restores sync
         assert build_diagrams(output_dir=tmp_path) is True
         assert build_diagrams(output_dir=tmp_path, verify_only=True) is True
 
@@ -1303,75 +1263,14 @@ def test_diagram_toolchain_cli_main_verify():
         mock_exit.assert_called_once_with(0)
 
 
-def test_find_mmdc_executable():
-    from scripts.diagram_toolchain import find_mmdc_executable
-
-    cmd = find_mmdc_executable(verify_browser=False)
-    if cmd and any("npx" in arg for arg in cmd):
-        assert "--no-install" in cmd or "--yes" in cmd
-
-
-def test_generate_fallback_svg():
-    from scripts.diagram_toolchain import generate_fallback_svg
-
-    title = "Test & Special <Title>"
-    mmd = "graph TD\n  A[Node & A] --> B<Node B>\n"
-    svg = generate_fallback_svg(title, mmd)
-
-    assert "<svg" in svg
-    assert 'xmlns="http://www.w3.org/2000/svg"' in svg
-    assert "Test &amp; Special &lt;Title&gt;" in svg
-    assert "A[Node &amp; A] --&gt; B&lt;Node B&gt;" in svg
-
-
-def test_is_browser_available_when_missing():
-    from scripts.diagram_toolchain import is_browser_available, reset_browser_cache
-
-    reset_browser_cache()
-    with patch("scripts.diagram_toolchain.find_mmdc_executable", return_value=None):
-        assert is_browser_available(force_check=True) is False
-
-    reset_browser_cache()
-    with patch("subprocess.run", side_effect=Exception("Browser launch error")):
-        assert is_browser_available(mmdc_cmd=["mmdc"], force_check=True) is False
-
-
-def test_is_browser_available_when_present():
-    from scripts.diagram_toolchain import is_browser_available, reset_browser_cache
-
-    reset_browser_cache()
-
-    def fake_run(cmd, *args, **kwargs):
-        if "-o" in cmd:
-            out_idx = cmd.index("-o") + 1
-            out_path = Path(cmd[out_idx])
-            out_path.write_text("<svg>probe</svg>", encoding="utf-8")
-        return MagicMock(returncode=0)
-
-    with patch("subprocess.run", side_effect=fake_run):
-        assert is_browser_available(mmdc_cmd=["mmdc"], force_check=True) is True
-
-
-def test_diagram_toolchain_browserless_verify_and_build(tmp_path):
-    from scripts.diagram_toolchain import build_diagrams, reset_browser_cache
-
-    reset_browser_cache()
-    with patch("scripts.diagram_toolchain.is_browser_available", return_value=False):
-        # Verify never writes assets, so with nothing rendered yet it fails
-        verify_ok = build_diagrams(output_dir=tmp_path, force=True, verify_only=True)
-        assert verify_ok is False
-        assert list(tmp_path.glob("*.svg")) == []
-
-        # Test build mode in browserless environment
-        build_ok = build_diagrams(output_dir=tmp_path, force=True, verify_only=False)
-        assert build_ok is True
-
-        # Verify fallback SVGs were generated
-        svg_files = list(tmp_path.glob("*.svg"))
-        assert len(svg_files) > 0
-        first_svg = svg_files[0].read_text(encoding="utf-8")
-        assert "<svg" in first_svg
-        assert "Fallback View" in first_svg
+def test_local_mermaid_js_bundled_and_no_tracked_diagram_svgs():
+    """Verify MkDocs bundles local Mermaid JS with zero external CDN URLs and zero tracked diagram SVGs."""
+    mkdocs_text = Path("mkdocs.yml").read_text(encoding="utf-8")
+    assert "assets/js/mermaid.min.js" in mkdocs_text
+    assert "unpkg.com" not in mkdocs_text
+    assert "cdn.jsdelivr.net" not in mkdocs_text
+    assert Path("docs/assets/js/mermaid.min.js").is_file()
+    assert list(Path("docs/assets/diagrams").glob("*.svg")) == []
 
 
 def test_diagram_toolchain_cli_verify_failure_on_bad_schema(tmp_path):
@@ -1384,7 +1283,6 @@ def test_diagram_toolchain_cli_verify_failure_on_bad_schema(tmp_path):
         def to_mermaid(self):
             raise ValueError("Invalid Mermaid schema")
 
-    dt.reset_browser_cache()
     with (
         patch(
             "sys.argv",
@@ -1627,18 +1525,20 @@ def test_collect_all_specs_contains_sequence_and_state():
     assert has_dfd is True
 
 
-def test_check_no_raw_mermaid_in_docs_detects_blocks(tmp_path):
-    from scripts.diagram_toolchain import check_no_raw_mermaid_in_docs
+def test_validate_docs_mermaid_blocks_checks_syntax_and_click_targets(tmp_path):
+    from scripts.diagram_toolchain import validate_docs_mermaid_blocks
 
-    # Clean directory
-    clean_doc = tmp_path / "clean.md"
-    clean_doc.write_text("# Clean doc\n![Image](assets/diagrams/spec.svg)\n")
-    assert check_no_raw_mermaid_in_docs(docs_dir=tmp_path) is True
+    valid_doc = tmp_path / "valid.md"
+    valid_doc.write_text("# Valid doc\n```mermaid\ngraph TD\n  A --> B\n```\n")
+    assert validate_docs_mermaid_blocks(docs_dir=tmp_path) == []
 
-    # Bad directory with raw mermaid
     bad_doc = tmp_path / "bad.md"
-    bad_doc.write_text("# Bad doc\n```mermaid\ngraph TD\nA-->B\n```\n")
-    assert check_no_raw_mermaid_in_docs(docs_dir=tmp_path) is False
+    bad_doc.write_text(
+        '# Bad doc\n```mermaid\ngraph TD\n  A[Unclosed --> B\n  click A "docs/missing_target.md#anchor"\n```\n'
+    )
+    errs = validate_docs_mermaid_blocks(docs_dir=tmp_path)
+    assert any("unbalanced brackets" in e for e in errs)
+    assert any("docs/missing_target.md" in e for e in errs)
 
 
 def test_validate_mermaid_syntax_pure_python():
@@ -1686,7 +1586,6 @@ def test_diagram_toolchain_cli_verify_failure_on_bad_syntax(tmp_path):
         def to_mermaid(self):
             return "graph TD\n  A[Node A --> B\n"
 
-    dt.reset_browser_cache()
     with (
         patch(
             "sys.argv",

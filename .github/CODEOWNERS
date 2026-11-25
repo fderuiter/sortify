@@ -6,6 +6,7 @@ PRIVACY.md @fderuiter
 app/config.py @fderuiter
 app/core/crypto.py @fderuiter
 app/core/mover.py @fderuiter
+app/core/moves.py @fderuiter
 app/core/resilient_file_ops.py @fderuiter
 app/core/ledger.py @fderuiter
 app/core/history.py @fderuiter
@@ -13,6 +14,7 @@ app/core/session.py @fderuiter
 app/core/db.py @fderuiter
 app/core/db_conn.py @fderuiter
 app/core/db_worker.py @fderuiter
+app/core/store.py @fderuiter
 app/core/quarantine_interceptor.py @fderuiter
 scripts/ @fderuiter
 smart-autosorter.spec @fderuiter

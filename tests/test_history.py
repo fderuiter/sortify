@@ -597,3 +597,243 @@ def test_history_manager_get_sessions_legacy_database_missing_tables(
     assert sessions[0]["session_id"] == "leg-hist-1"
     assert sessions[0]["step_count"] == 0
     assert sessions[0]["file_count"] == 0
+
+
+def test_session_state_machine_managed_connection_and_audit_queries(tmp_path):
+    """SessionStateMachine handles managed connections, listener errors, and audit queries."""
+    import pytest
+
+    from app.core.history import (
+        COMPLETED,
+        ROLLED_BACK,
+        UNCOMMITTED,
+        SessionStateMachine,
+    )
+
+    no_db_sm = SessionStateMachine(db_path=None)
+    assert no_db_sm.get_audit_events() == []
+    with pytest.raises(ValueError, match="db_path or an active SQLite connection"):
+        no_db_sm.transition("s-none", COMPLETED)
+
+    db_file = tmp_path / "sm_managed.db"
+    conn = get_db_connection(str(db_file))
+    with conn:
+        conn.execute(
+            "CREATE TABLE sessions (session_id TEXT PRIMARY KEY, timestamp REAL, base_dir TEXT, status TEXT)"
+        )
+
+    seen_events = []
+
+    def bad_listener(_ev):
+        raise RuntimeError("listener boom")
+
+    def good_listener(ev):
+        seen_events.append(ev["new_status"])
+
+    sm = SessionStateMachine(db_path=str(db_file))
+    sm.add_transition_listener(bad_listener)
+    sm.add_transition_listener(good_listener)
+
+    prev, nxt = sm.transition("s-managed", COMPLETED, metadata={"source": "unit"})
+    assert (prev, nxt) == (UNCOMMITTED, COMPLETED)
+    sm.remove_transition_listener(bad_listener)
+    prev2, nxt2 = sm.transition("s-managed", ROLLED_BACK)
+    assert (prev2, nxt2) == (COMPLETED, ROLLED_BACK)
+    assert seen_events == [COMPLETED, ROLLED_BACK]
+
+    with conn:
+        conn.execute(
+            "INSERT INTO session_lifecycle_audit (session_id, previous_status, new_status, timestamp, metadata) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("s-corrupt", UNCOMMITTED, COMPLETED, 123.0, "{not-valid-json"),
+        )
+
+    all_events = sm.get_audit_events(session_id=None)
+    assert len(all_events) == 3
+    assert all_events[-1]["session_id"] == "s-corrupt"
+    assert all_events[-1]["metadata"] == {}
+
+
+def test_history_helpers_duplicate_staging_blocking_parents_and_find_moved(tmp_path):
+    """Helper utilities safely purge staging, move blocking parents, and locate intent moves."""
+    import hashlib
+
+    from app.core.history import (
+        EXPORTED_TO_TRASH,
+        FAILED,
+        INTENT,
+        _find_moved_file,
+        _holds_bytes,
+        _move_aside_blocking_parents,
+        _purge_duplicate_staging,
+        _purge_overwrite_backups,
+    )
+    from app.core.mover import duplicate_staging_dir
+    from app.core.moves import Move
+
+    _purge_duplicate_staging("", "sid-empty")
+    _purge_overwrite_backups("", "sid-empty")
+    _move_aside_blocking_parents("", str(tmp_path))
+
+    base_dir = tmp_path / "workspace"
+    base_dir.mkdir()
+    stage_dir = duplicate_staging_dir(str(base_dir), "sid-dup")
+    os.makedirs(stage_dir, exist_ok=True)
+    with open(os.path.join(stage_dir, "dup.txt"), "w", encoding="utf-8") as f:
+        f.write("staged")
+
+    _purge_duplicate_staging(str(base_dir), "sid-dup")
+    assert not os.path.exists(stage_dir)
+
+    # Blocking parent file where a directory needs to be recreated, updating DB via db_conn
+    blocking = base_dir / "Archive"
+    blocking.write_text("blocking file", encoding="utf-8")
+    db_file = tmp_path / "docs_parent.db"
+    dconn = get_db_connection(str(db_file))
+    with dconn:
+        dconn.execute("CREATE TABLE documents (base_dir TEXT, filepath TEXT)")
+        dconn.execute(
+            "INSERT INTO documents (base_dir, filepath) VALUES (?, ?)",
+            (str(base_dir), "Archive"),
+        )
+
+    _move_aside_blocking_parents(
+        str(base_dir / "Archive" / "report.pdf"),
+        str(base_dir),
+        db_conn=dconn,
+    )
+    assert not blocking.is_file()
+    updated = dconn.execute("SELECT filepath FROM documents").fetchone()[0]
+    assert updated != "Archive"
+    dconn.close()
+
+    # _holds_bytes and _find_moved_file branches
+    assert _holds_bytes(str(base_dir / "missing.bin"), "deadbeef") is False
+    payload = b"intent-payload"
+    digest = hashlib.sha256(payload).hexdigest()
+    dst_dir = base_dir / "Sorted"
+    dst_dir.mkdir()
+    suffixed = dst_dir / "doc_1.txt"
+    suffixed.write_bytes(payload)
+
+    failed_move = Move(
+        seq=1,
+        session_id="s1",
+        src=str(base_dir / "doc.txt"),
+        dst=str(dst_dir / "doc.txt"),
+        src_sha256=digest,
+        size=len(payload),
+        displaced=None,
+        state=FAILED,
+        error="io",
+        created_at=1.0,
+        updated_at=1.0,
+    )
+    assert _find_moved_file(failed_move, set()) is None
+
+    trashed_move = Move(
+        seq=2,
+        session_id="s1",
+        src=str(base_dir / "doc.txt"),
+        dst=str(dst_dir / "doc.txt"),
+        src_sha256=digest,
+        size=len(payload),
+        displaced=None,
+        state=EXPORTED_TO_TRASH,
+        error=None,
+        created_at=1.0,
+        updated_at=1.0,
+    )
+    assert _find_moved_file(trashed_move, set()) is None
+
+    no_hash_intent = Move(
+        seq=3,
+        session_id="s1",
+        src=str(base_dir / "doc.txt"),
+        dst=str(dst_dir / "doc.txt"),
+        src_sha256=None,
+        size=None,
+        displaced=None,
+        state=INTENT,
+        error=None,
+        created_at=1.0,
+        updated_at=1.0,
+    )
+    assert _find_moved_file(no_hash_intent, set()) is None
+
+    suffixed_intent = Move(
+        seq=4,
+        session_id="s1",
+        src=str(base_dir / "doc.txt"),
+        dst=str(dst_dir / "doc.txt"),
+        src_sha256=digest,
+        size=len(payload),
+        displaced=None,
+        state=INTENT,
+        error=None,
+        created_at=1.0,
+        updated_at=1.0,
+    )
+    assert _find_moved_file(suffixed_intent, set()) == str(suffixed)
+
+
+def test_export_audit_log_formats_and_move_states(test_history_env, tmp_path):
+    """export_audit_log maps move states accurately across JSON and CSV outputs."""
+    import pytest
+
+    base_dir, _db, _cache, history_manager, _db_worker = test_history_env
+    conn = get_db_connection(history_manager.db_path)
+    with conn:
+        conn.execute(
+            "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, ?)",
+            ("exp-sess", 1700000000.0, base_dir, "completed"),
+        )
+        for seq, state, dst_name in [
+            (1, "verified", "a.txt"),
+            (2, "exported_to_trash", "b.txt"),
+            (3, "intent", "c_1.txt"),
+            (4, "failed", "d.txt"),
+        ]:
+            conn.execute(
+                "INSERT INTO moves (session_id, seq, src, dst, src_sha256, state, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    "exp-sess",
+                    seq,
+                    f"{base_dir}/orig_{seq}.txt",
+                    f"{base_dir}/{dst_name}",
+                    "abc123",
+                    state,
+                    1700000000.0 + seq,
+                    1700000000.0 + seq,
+                ),
+            )
+
+    csv_out = tmp_path / "audit.csv"
+    res_csv = history_manager.export_audit_log(
+        str(csv_out), session_id="exp-sess", base_dir=base_dir
+    )
+    assert res_csv["format"] == "csv"
+    assert res_csv["count"] == 4
+    assert csv_out.exists()
+
+    json_out = tmp_path / "audit_all.json"
+    res_json = history_manager.export_audit_log(
+        str(json_out), session_id=None, base_dir=base_dir
+    )
+    assert res_json["format"] == "json"
+    assert res_json["count"] >= 4
+
+    with pytest.raises(ValueError, match="not found in history database"):
+        history_manager.export_audit_log(
+            str(tmp_path / "missing.json"),
+            session_id="nonexistent-session",
+            base_dir=base_dir,
+        )
+    with pytest.raises(ValueError, match="Unsupported export format"):
+        history_manager.export_audit_log(
+            str(tmp_path / "bad.xml"),
+            session_id="exp-sess",
+            format="xml",
+            base_dir=base_dir,
+        )

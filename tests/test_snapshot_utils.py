@@ -150,21 +150,8 @@ def test_is_conflicted_json_payload():
 
 
 def test_backwards_compatible_reexports():
-    """Verify that snapshot_merge_driver and validate_signatures re-export shared helpers."""
-    from scripts import snapshot_merge_driver, snapshot_utils, validate_signatures
-
-    assert (
-        snapshot_merge_driver.compute_payload_checksum
-        is snapshot_utils.compute_payload_checksum
-    )
-    assert (
-        snapshot_merge_driver.extract_metadata_and_payload
-        is snapshot_utils.extract_metadata_and_payload
-    )
-    assert (
-        snapshot_merge_driver.is_conflicted_json_payload
-        is snapshot_utils.is_conflicted_json_payload
-    )
+    """Verify that validate_signatures re-exports shared snapshot helpers."""
+    from scripts import snapshot_utils, validate_signatures
 
     assert (
         validate_signatures.compute_payload_checksum
