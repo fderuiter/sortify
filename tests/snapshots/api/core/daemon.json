@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "f4dafe75518f1ad658412eb5154a2641a6098bbc0f2b3011266c2884f32b2767"
+    "checksum": "967b668d47001064ac9c35a1232978ff222e0bcbc91b930bc952cc4e32f4c51e"
   },
   "classes": [
     {
@@ -256,21 +256,6 @@
             }
           ],
           "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [
-            "@property"
-          ],
-          "name": "scoped_run_token",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            }
-          ],
-          "returns": "threading.Event | None"
         },
         {
           "async": false,

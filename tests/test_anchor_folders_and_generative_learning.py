@@ -657,7 +657,9 @@ async def test_ac5_negative_rating_stops_analyzer_from_repeating_rejected_folder
             await pilot.pause()
 
         # Confirm DB persisted rating="negative" and "!Invoices" rejection target on relative path
-        rating_val = session.db.get_document_rating(str(ws), "ambiguous_statement.txt")
+        rating_val = session.db.get_all_document_ratings(str(ws)).get(
+            "ambiguous_statement.txt"
+        )
         assert rating_val == "negative"
         verified_docs = {
             str(d[0]).replace("\\", "/"): d[3]

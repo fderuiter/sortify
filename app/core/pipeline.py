@@ -1354,7 +1354,7 @@ class SortPipeline(LifecycleTelemetryMixin):
             reason = "Not moved back"
             rollback_succeeded = False
             try:
-                kwargs = {"ignore_missing": ignore_missing}
+                kwargs: dict[str, Any] = {}
                 if selected_step_ids is not None:
                     kwargs["selected_step_ids"] = selected_step_ids
                 result.summary["restored"] = history.rollback(session_id, **kwargs)

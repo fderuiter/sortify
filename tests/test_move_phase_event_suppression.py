@@ -185,7 +185,7 @@ def test_end_to_end_move_execution_suppresses_cancellation(tmp_path):
             mock.patch(
                 "app.core.daemon.get_files_recursively", return_value=["doc.pdf"]
             ),
-            mock.patch("app.core.daemon.MetadataPass.run", return_value=[]),
+            mock.patch("app.core.metadata.MetadataPass.run", return_value=[]),
         ):
             cancel_event = threading.Event()
             daemon._run_sorting_sync(cancel_event)

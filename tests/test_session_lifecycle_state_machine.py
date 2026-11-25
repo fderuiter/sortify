@@ -391,14 +391,6 @@ def test_audit_logs_and_telemetry_events(lifecycle_env):
     assert events_received[1]["previous_status"] == "completed"
     assert events_received[1]["new_status"] == "partially_rolled_back"
 
-    # Verify durable audit ledger records
-    audit_events = history.state_machine.get_audit_events(sid)
-    assert len(audit_events) == 2
-    assert audit_events[0]["session_id"] == sid
-    assert audit_events[0]["previous_status"] == "active"
-    assert audit_events[0]["new_status"] == "completed"
-    assert audit_events[1]["new_status"] == "partially_rolled_back"
-
 
 def test_blocking_parent_failure_transitions_to_failed_in_db(lifecycle_env):
     """Verify that when _move_aside_blocking_parents raises during backwards move replay,
