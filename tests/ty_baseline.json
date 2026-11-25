@@ -57,8 +57,7 @@
       "possibly-missing-submodule": 1
     },
     "tests/test_crypto.py": {
-      "invalid-argument-type": 6,
-      "missing-union-attribute": 2
+      "invalid-argument-type": 6
     },
     "tests/test_daemon.py": {
       "invalid-argument-type": 11

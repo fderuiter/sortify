@@ -615,6 +615,25 @@ def test_legacy_ledger_readonly_fallback_across_catalog_cli_and_audit_export(
         with sidecar_conn:
             sidecar_conn.execute(
                 """
+                CREATE TABLE transaction_ledger (
+                    entry_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    base_dir TEXT NOT NULL,
+                    source_path TEXT NOT NULL,
+                    dest_path TEXT NOT NULL,
+                    source_rel_path TEXT NOT NULL,
+                    dest_rel_path TEXT NOT NULL,
+                    file_hash TEXT,
+                    file_size INTEGER,
+                    status TEXT NOT NULL,
+                    error_message TEXT,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                )
+                """
+            )
+            sidecar_conn.execute(
+                """
                 INSERT INTO transaction_ledger (
                     entry_id, session_id, base_dir, source_path, dest_path,
                     source_rel_path, dest_rel_path, status, created_at, updated_at
