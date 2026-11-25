@@ -28,6 +28,7 @@ _keyring_write_available: bool | None = None
 
 _session_crypto_cache_lock = threading.RLock()
 _session_crypto_cache: dict[tuple[str, str], "SessionCrypto"] = {}
+_session_crypto_cache_token: tuple[int, int, int, int, str] | None = None
 
 try:
     import numpy as np
@@ -287,13 +288,18 @@ def _keyring_delete_password(service: str, account: str) -> bool:
 
 def _resolve_cached_session_crypto(key_path: Path, db_path: Path) -> "SessionCrypto":
     """Return a cached SessionCrypto instance for ``(db_path, fallback_keys_dir)``."""
+    global _session_crypto_cache_token
     resolved_db = Path(db_path).resolve()
     resolved_key = Path(key_path).resolve()
+    token = _current_keyring_token()
     cache_key = (
         _norm_cache_path(resolved_db),
         _norm_cache_path(get_fallback_keys_dir()),
     )
     with _session_crypto_cache_lock:
+        if _session_crypto_cache_token != token:
+            _session_crypto_cache.clear()
+            _session_crypto_cache_token = token
         cached = _session_crypto_cache.get(cache_key)
         if cached is not None:
             return cached
@@ -324,9 +330,14 @@ def _invalidate_session_crypto(
 
 def _clear_session_crypto_cache(keep_db_paths: set[str] | None = None) -> None:
     """Clear cached SessionCrypto instances, optionally preserving active DB paths."""
+    global _session_crypto_cache_token
     with _session_crypto_cache_lock:
         if keep_db_paths is None:
             _session_crypto_cache.clear()
+            _session_crypto_cache_token = None
+            from app.core.ledger import _clear_buffered_key_audits
+
+            _clear_buffered_key_audits()
             return
         normalized_keep = {_norm_cache_path(p) for p in keep_db_paths}
         stale_keys = [k for k in _session_crypto_cache if k[0] not in normalized_keep]
@@ -800,7 +811,7 @@ class SessionCrypto:
                 if not already_audited:
                     try:
                         _audit_thread_local.in_key_audit_logging = True
-                        from app.core.ledger import KeyAuditLedger
+                        from app.core.ledger import _emit_key_lifecycle_audit
 
                         db_hash = CryptoManager.derive_db_hash(self.db_path)
                         meta: dict[str, Any] = {
@@ -811,7 +822,8 @@ class SessionCrypto:
                             meta.update(caller_context)
 
                         status = "SUCCESS" if key_val is not None else "NOT_FOUND"
-                        KeyAuditLedger().log_key_audit(
+                        _emit_key_lifecycle_audit(
+                            self.db_path,
                             event_type="KEY_EXPORT",
                             db_path_hash=db_hash,
                             session_id=session_id,
@@ -889,19 +901,9 @@ class SessionCrypto:
         Opens with an explicit key: get_db_connection() would look the key up
         in the key stores, which may hold neither key mid-rotation.
         """
-        from contextlib import closing
-
         from app.core import db_conn
 
-        if not db_conn.HAS_SQLCIPHER:
-            return
-        db_conn.clear_connection_cache(only_current_and_inactive=False)
-        with closing(db_conn.sqlite3.connect(str(self.db_path), timeout=30.0)) as conn:
-            conn.execute(f"PRAGMA key = '{db_conn.escape_pragma_key(current_raw)}'")
-            # Fails here if current_raw is the wrong key.
-            conn.execute("SELECT count(*) FROM sqlite_master").fetchone()
-            conn.execute(f"PRAGMA rekey = '{db_conn.escape_pragma_key(new_raw)}'")
-        db_conn.clear_connection_cache(only_current_and_inactive=False)
+        db_conn._rekey_sqlcipher_database(self.db_path, current_raw, new_raw)
 
     def _write_isolated_key(self, key: bytes) -> None:
         """Replace the key file atomically, so a failed write keeps the old key."""
@@ -1062,9 +1064,10 @@ class SessionCrypto:
                 if not getattr(_audit_thread_local, "in_key_audit_logging", False):
                     try:
                         _audit_thread_local.in_key_audit_logging = True
-                        from app.core.ledger import KeyAuditLedger
+                        from app.core.ledger import _emit_key_lifecycle_audit
 
-                        KeyAuditLedger().log_key_audit(
+                        _emit_key_lifecycle_audit(
+                            self.db_path,
                             event_type="KEY_ROTATION",
                             db_path_hash=db_hash,
                             session_id=session_id,
@@ -1087,11 +1090,12 @@ class SessionCrypto:
                 if not getattr(_audit_thread_local, "in_key_audit_logging", False):
                     try:
                         _audit_thread_local.in_key_audit_logging = True
-                        from app.core.ledger import KeyAuditLedger
+                        from app.core.ledger import _emit_key_lifecycle_audit
 
                         fail_meta = dict(meta)
                         fail_meta["error"] = str(rotation_err)
-                        KeyAuditLedger().log_key_audit(
+                        _emit_key_lifecycle_audit(
+                            self.db_path,
                             event_type="KEY_ROTATION",
                             db_path_hash=db_hash,
                             session_id=session_id,

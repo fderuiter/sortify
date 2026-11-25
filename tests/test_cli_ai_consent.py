@@ -369,7 +369,10 @@ def test_subcommand_accept_ai_consent_provisions_unless_deferred_or_tui(
         ["scan", str(workspace), "--accept-ai-consent", "--interactive"],
         ["config", "--show", "--accept-ai-consent"],
         ["daemon", "status", "--accept-ai-consent"],
+        ["daemon", "status", str(workspace), "--accept-ai-consent"],
         ["daemon", "stop", "--accept-ai-consent"],
+        ["model", "--defer-model-download", "status", "--accept-ai-consent"],
+        ["model", "status", "--accept-ai-consent", "--defer-model-download"],
     ):
         skip_args = parser.parse_args(skip_argv)
         settings = AppSettings(filepath=settings_file)

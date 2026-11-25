@@ -22,6 +22,7 @@ from app.core.db import (
 from app.core.db_conn import DB_ERRORS, get_db_connection
 from app.core.exceptions import CryptoError
 from app.core.history import HistoryManager, _history_db_baseline
+from app.core.ledger import _create_key_audit_ledger_schema, _flush_buffered_key_audits
 from app.core.migrations import Migration, migrate
 from app.core.moves import (
     import_sidecar_ledger,
@@ -54,6 +55,28 @@ def _store_initial(conn) -> None:
     """)
 
 
+def _migrate_key_audit_ledger(conn) -> None:
+    """Create key_audit_ledger in sortify.db and import sidecar key_audit_ledger rows."""
+    _create_key_audit_ledger_schema(conn)
+    db_rows = conn.execute("PRAGMA database_list").fetchall()
+    main_file = next((row[2] for row in db_rows if row[1] == "main" and row[2]), "")
+    if not main_file:
+        return
+    main_path = Path(main_file)
+    sidecar = main_path.parent / LEGACY_SIDECAR_LEDGER_DB
+    if not sidecar.is_file():
+        return
+    try:
+        if sidecar.resolve() == main_path.resolve():
+            return
+        src = get_db_connection(str(sidecar))
+        _copy_table(src, conn, "key_audit_ledger")
+    except (*DB_ERRORS, OSError, CryptoError, ValueError) as exc:
+        logging.warning(
+            f"Could not import key_audit_ledger from {sidecar} into {main_path}: {exc}"
+        )
+
+
 # Ordered schema migrations for the app store. Never edit one after release.
 STORE_MIGRATIONS = (
     Migration(1, "initial", _store_initial),
@@ -61,6 +84,7 @@ STORE_MIGRATIONS = (
     Migration(3, "legacy_moves", migrate_import_legacy_moves),
     Migration(4, "moves_exported_to_trash", migrate_moves_exported_to_trash),
     Migration(5, "user_verified_target_name", migrate_add_user_verified_target_name),
+    Migration(6, "key_audit_ledger", _migrate_key_audit_ledger),
 )
 
 
@@ -104,6 +128,7 @@ def open_store(
 
     conn = get_db_connection(str(store.path))
     migrate(conn, STORE_MIGRATIONS, label=f"Store {store.path}")
+    _flush_buffered_key_audits(store.path, conn=conn)
 
     if legacy_session_root is None:
         from app.core.path_utils import get_session_base_dir
@@ -135,10 +160,32 @@ def import_legacy_sessions(store: Store, session_root: Path) -> int:
         )
         if (folder / name).is_file()
     ]
-    for folder in folders:
-        sidecar = folder / LEGACY_SIDECAR_LEDGER_DB
-        if sidecar.is_file() and _has_sidecar_moves(sidecar):
-            sources.append((sidecar, _copy_sidecar_ledger))
+    sidecars = [
+        folder / LEGACY_SIDECAR_LEDGER_DB
+        for folder in folders
+        if (folder / LEGACY_SIDECAR_LEDGER_DB).is_file()
+    ]
+    if sidecars:
+        already_imported: set[str] = set()
+        try:
+            store_conn = get_db_connection(str(store.path))
+            already_imported = {
+                row[0]
+                for row in store_conn.execute(
+                    "SELECT source_path FROM legacy_imports"
+                ).fetchall()
+            }
+        except DB_ERRORS:
+            already_imported = set()
+
+        for sidecar in sidecars:
+            try:
+                if str(sidecar.resolve()) in already_imported:
+                    continue
+            except OSError:
+                pass
+            if _has_sidecar_moves(sidecar):
+                sources.append((sidecar, _copy_sidecar_ledger))
     sources.sort(key=lambda source: _mtime(source[0]), reverse=True)
     return sum(_import_one(store, source, copy) for source, copy in sources)
 
@@ -389,19 +436,24 @@ def _copy_main(src, dst, old_crypto, new_crypto) -> int:
 def _has_sidecar_moves(path: Path) -> bool:
     try:
         conn = get_db_connection(str(path))
-        has_table = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='transaction_ledger'"
-        ).fetchone()
-        if not has_table:
-            return False
-        return (
-            conn.execute("SELECT 1 FROM transaction_ledger LIMIT 1").fetchone()
-            is not None
-        )
+        for table in ("transaction_ledger", "key_audit_ledger"):
+            has_table = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                (table,),
+            ).fetchone()
+            if (
+                has_table
+                and conn.execute(f'SELECT 1 FROM "{table}" LIMIT 1').fetchone()
+                is not None
+            ):
+                return True
+        return False
     except (*DB_ERRORS, OSError, CryptoError, ValueError):
         return False
 
 
 def _copy_sidecar_ledger(src, dst, old_crypto, new_crypto) -> int:
     del old_crypto, new_crypto
-    return import_sidecar_ledger(src, dst)
+    count = import_sidecar_ledger(src, dst)
+    count += _copy_table(src, dst, "key_audit_ledger")
+    return count

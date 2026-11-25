@@ -1363,6 +1363,8 @@ class AutoSorterTUI(
         def on_saved(res: dict[str, Any] | None) -> None:
             if not res:
                 return
+            import copy
+
             from pydantic import ValidationError
 
             settings_keys = (
@@ -1388,11 +1390,73 @@ class AutoSorterTUI(
                 "RENAME_PATTERN",
                 "AI_CONSENT_GRANTED",
             )
+            settings_obj: Any = self.settings
+            prior_values: dict[str, Any] = {
+                key: copy.deepcopy(getattr(settings_obj, key))
+                for key in settings_keys
+                if key in res and hasattr(settings_obj, key)
+            }
+            had_save_timer = getattr(settings_obj, "_save_timer", None) is not None
+            prior_transient = copy.deepcopy(
+                getattr(settings_obj, "_transient_values", None)
+            )
+            prior_env_keys = (
+                set(getattr(settings_obj, "_env_sourced_keys", ()))
+                if hasattr(settings_obj, "_env_sourced_keys")
+                else None
+            )
+            prior_has_val_errors = getattr(
+                settings_obj, "_has_validation_errors", False
+            )
+            prior_val_errors = copy.deepcopy(
+                getattr(settings_obj, "_validation_errors", None)
+            )
+
             validation_errors: list[str] = []
-            for key in settings_keys:
-                if key in res:
+            model_obj = getattr(settings_obj, "_settings_model", None)
+            if model_obj is not None and hasattr(model_obj, "model_copy"):
+                candidate_model = model_obj.model_copy(deep=True)
+                for key in settings_keys:
+                    if key not in res or not hasattr(candidate_model, key):
+                        continue
+                    try:
+                        setattr(candidate_model, key, res[key])
+                    except ValidationError as exc:
+                        logger.warning(
+                            "Settings validation failed for %s: %s",
+                            key,
+                            exc,
+                            exc_info=True,
+                        )
+                        first_err = (
+                            exc.errors()[0].get("msg", str(exc))
+                            if exc.errors()
+                            else str(exc)
+                        )
+                        validation_errors.append(f"{key}: {first_err}")
+                    except ValueError as exc:
+                        logger.warning(
+                            "Settings validation failed for %s: %s",
+                            key,
+                            exc,
+                            exc_info=True,
+                        )
+                        validation_errors.append(f"{key}: {exc}")
+
+            applied_keys: list[str] = []
+            if not validation_errors:
+                for key in settings_keys:
+                    if key not in res:
+                        continue
+                    if (
+                        key == "AI_CONSENT_GRANTED"
+                        and validation_errors
+                        and isinstance(res[key], bool)
+                    ):
+                        continue
                     try:
                         setattr(self.settings, key, res[key])
+                        applied_keys.append(key)
                     except ValidationError as exc:
                         logger.warning(
                             "Settings validation failed for %s: %s",
@@ -1416,7 +1480,43 @@ class AutoSorterTUI(
                         validation_errors.append(f"{key}: {exc}")
 
             if validation_errors:
-                err_msg = f"Failed to save settings ({'; '.join(validation_errors)})."
+                notify_fn = getattr(settings_obj, "_notify_observers", None)
+                for key in reversed(applied_keys):
+                    if key not in prior_values:
+                        continue
+                    if model_obj is not None and hasattr(model_obj, key):
+                        cur_val = getattr(model_obj, key, None)
+                        setattr(model_obj, key, prior_values[key])
+                        if cur_val != prior_values[key] and callable(notify_fn):
+                            notify_fn(key, prior_values[key])
+                    else:
+                        setattr(self.settings, key, prior_values[key])
+
+                if prior_transient is not None and hasattr(
+                    settings_obj, "_transient_values"
+                ):
+                    settings_obj._transient_values = prior_transient
+                if prior_env_keys is not None and hasattr(
+                    settings_obj, "_env_sourced_keys"
+                ):
+                    settings_obj._env_sourced_keys = prior_env_keys
+                if hasattr(settings_obj, "_has_validation_errors"):
+                    settings_obj._has_validation_errors = prior_has_val_errors
+                if prior_val_errors is not None and hasattr(
+                    settings_obj, "_validation_errors"
+                ):
+                    settings_obj._validation_errors = prior_val_errors
+                if not had_save_timer:
+                    pending_timer = getattr(settings_obj, "_save_timer", None)
+                    if pending_timer is not None:
+                        pending_timer.cancel()
+                        settings_obj._save_timer = None
+                    cancel_fn = getattr(settings_obj, "_cancel_file_timer", None)
+                    filepath_val = getattr(settings_obj, "_filepath", None)
+                    if callable(cancel_fn) and isinstance(filepath_val, str):
+                        cancel_fn(filepath_val)
+
+                err_msg = f"Settings error: Failed to save settings ({'; '.join(validation_errors)})."
                 self.update_status()
                 self.announce(err_msg, priority="assertive")
                 if hasattr(self, "notify"):

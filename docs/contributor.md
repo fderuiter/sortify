@@ -29,17 +29,18 @@ To help new developers see the end-to-end data flow without reading the source, 
 
 ### Running the Demo
 
-The demo automatically generates a sample corpus of documents that meet the pipeline requirements (minimum of 3 documents) inside an isolated temporary workspace. It simulates background extraction and clustering without writing state or key files to `$HOME`, then prints the resulting sorting plan with `stderr` left intact for diagnostics.
+The demo seeds sample documents into `sandbox/demo_workspace` whenever that folder is missing or empty (leaving any existing user files untouched), executes real file moves into topic subfolders, prints the resulting folder tree to `stdout` (or structured JSON when `--json` is passed), and records an undoable session in the app store so `uv run smart-autosorter undo --latest` restores the files.
 
-To run the interactive demo, use the following command:
+To run the demo and undo it, use:
 
 ```bash
 uv run smart-autosorter --demo
+uv run smart-autosorter undo --latest
 ```
 
 ### Automated Sample Corpus Utility
 
-The demo builds its data with `generate_sample_corpus(base_dir, overwrite=False)` from `app/core/sample_corpus.py`, which `app/demo.py` and the TUI's sample-dataset key both use. It writes four sample files (finance, technology and health texts plus an empty file), enough for the clustering engine's three-document minimum. Read it to see how test data is assembled.
+The demo builds its data with `generate_sample_corpus(base_dir, overwrite=False)` from `app/core/sample_corpus.py`, which `app/demo.py`, `--preset demo`, and the TUI's sample-dataset key all use. It writes categorized sample documents (finance, technology, health, legal, personal, and HR texts plus an empty file), exceeding the clustering engine's three-document minimum. Read it to see how test data is assembled.
 
 ## Centralized Backend System Utilities
 

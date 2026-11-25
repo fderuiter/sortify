@@ -41,7 +41,7 @@ from app.core.plan_format import (
 from app.core.resilient_file_ops import DETECT_ORIGINAL_BY_MODES
 from app.core.session import AppSession
 from app.core.session_catalog import list_sessions
-from app.core.store import open_store
+from app.core.store import STORE_MIGRATIONS, open_store
 from app.main import (
     _validate_headless_duplicate_mode,
     apply_config_overrides,
@@ -186,7 +186,10 @@ def test_migration_4_upgrades_v3_moves_check_constraint_without_data_loss(
         db = store.database(worker)
         history = store.history(db, store.cache(worker))
         conn = get_db_connection(str(store.path))
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert (
+            conn.execute("PRAGMA user_version").fetchone()[0]
+            == STORE_MIGRATIONS[-1].version
+        )
 
         rows_before = history.moves.list_moves("sess_v3")
         assert len(rows_before) == 1
@@ -1352,12 +1355,12 @@ def test_unencrypted_legacy_store_upgrade_to_v4_and_worker_rollback_preserves_wa
     raw.close()
 
     with mock.patch.dict(os.environ, {"AUTOSORTER_APP_DIR": str(app_dir)}):
-        # Opens & migrates sortify.db to v4 on MainThread while keeping WAL connection cached
+        # Opens & migrates sortify.db to head version on MainThread while keeping WAL connection cached
         store = open_store(app_dir)
         user_ver = (
             get_db_connection(str(store.path)).execute("PRAGMA user_version").fetchone()
         )
-        assert user_ver is not None and user_ver[0] == 5
+        assert user_ver is not None and user_ver[0] == STORE_MIGRATIONS[-1].version
 
         # Opens HistoryManager on DBWorker thread (triggers SessionCrypto.get_cipher probe)
         with open_session_history(store) as history:

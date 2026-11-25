@@ -99,6 +99,7 @@ def test_new_store_has_every_table_at_the_head_version(tmp_path):
         "directory_cache",
         "quarantine_records",
         "legacy_imports",
+        "key_audit_ledger",
     } <= tables
 
 

@@ -1761,6 +1761,171 @@ def test_tui_settings_modal_help_button_on_validation_error(temp_workspace):
     asyncio.run(_test())
 
 
+def test_tui_settings_modal_protected_paths_tilde_expansion_and_validation(
+    temp_workspace, monkeypatch, tmp_path
+):
+    """Verify SettingsModal expands leading '~' in PROTECTED_PATHS and rejects relative, wildcard, and unexpanded '~unknownuser' paths."""
+    fake_home = tmp_path / "fake_home"
+    fake_home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
+
+    settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
+
+    async def _test():
+        app = AutoSorterTUI(
+            settings=settings, base_dir=temp_workspace, skip_wizard=True
+        )
+        async with app.run_test(size=(100, 50)) as pilot:
+            app.action_open_settings()
+            await pilot.pause(0.05)
+            modal = app.screen
+            assert isinstance(modal, SettingsModal)
+            btn_help = modal.query_one("#btn-help", Button)
+            assert btn_help.has_class("hidden")
+
+            for bad_path in (
+                "relative/protected",
+                f"{fake_home}/secret*",
+                "~nonexistent_sortify_user_99999/docs",
+            ):
+                modal.query_one("#input-protected", Input).value = bad_path
+                modal.action_save()
+                await pilot.pause(0.05)
+                assert isinstance(app.screen, SettingsModal)
+                assert not btn_help.has_class("hidden")
+                assert modal.get_last_announcement().startswith("Settings error:")
+                assert app.settings.PROTECTED_PATHS == []
+
+            modal.query_one(
+                "#input-protected", Input
+            ).value = f"~/SafeVault, {temp_workspace}"
+            modal.action_save()
+            await pilot.pause(0.1)
+
+            assert not isinstance(app.screen, SettingsModal)
+            assert app.settings.PROTECTED_PATHS == [
+                os.path.expanduser("~/SafeVault"),
+                temp_workspace,
+            ]
+
+    asyncio.run(_test())
+
+
+def test_tui_settings_modal_ignored_extensions_and_upper_bounds_validation(
+    temp_workspace,
+):
+    """Verify SettingsModal rejects bare '.' in IGNORED_EXTENSIONS and enforces MAX_WORKERS <= 64 and MAX_FOLDERS <= 50."""
+    settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
+    orig_ignored = list(settings.IGNORED_EXTENSIONS)
+    orig_workers = settings.MAX_WORKERS
+    orig_folders = settings.MAX_FOLDERS
+
+    async def _test():
+        app = AutoSorterTUI(
+            settings=settings, base_dir=temp_workspace, skip_wizard=True
+        )
+        async with app.run_test(size=(100, 50)) as pilot:
+            app.action_open_settings()
+            await pilot.pause(0.05)
+            modal = app.screen
+            assert isinstance(modal, SettingsModal)
+            btn_help = modal.query_one("#btn-help", Button)
+
+            # Bare "." in IGNORED_EXTENSIONS must show inline error instead of crashing
+            modal.query_one("#input-ignored", Input).value = ".tmp, ."
+            modal.action_save()
+            await pilot.pause(0.05)
+            assert isinstance(app.screen, SettingsModal)
+            assert not btn_help.has_class("hidden")
+            assert modal.get_last_announcement().startswith("Settings error:")
+            assert app.settings.IGNORED_EXTENSIONS == orig_ignored
+
+            # Restore valid ignored extensions and test MAX_WORKERS > 64
+            modal.query_one("#input-ignored", Input).value = "tmp, .bak"
+            modal.query_one("#input-concurrency", Input).value = "65"
+            modal.action_save()
+            await pilot.pause(0.05)
+            assert isinstance(app.screen, SettingsModal)
+            assert "1 and 64" in modal.get_last_announcement()
+            assert app.settings.MAX_WORKERS == orig_workers
+
+            # Fix concurrency to upper bound 64 and test MAX_FOLDERS > 50
+            modal.query_one("#input-concurrency", Input).value = "64"
+            modal.query_one("#input-max-folders", Input).value = "51"
+            modal.action_save()
+            await pilot.pause(0.05)
+            assert isinstance(app.screen, SettingsModal)
+            assert "1 and 50" in modal.get_last_announcement()
+            assert app.settings.MAX_FOLDERS == orig_folders
+
+            # Upper boundary values 64 and 50 save cleanly
+            modal.query_one("#input-max-folders", Input).value = "50"
+            modal.action_save()
+            await pilot.pause(0.1)
+            assert not isinstance(app.screen, SettingsModal)
+            assert app.settings.IGNORED_EXTENSIONS == [".tmp", ".bak"]
+            assert app.settings.MAX_WORKERS == 64
+            assert app.settings.MAX_FOLDERS == 50
+
+    asyncio.run(_test())
+
+
+def test_tui_on_saved_restores_prior_values_on_validation_error(
+    temp_workspace, monkeypatch
+):
+    """Verify AutoSorterTUI on_saved snapshots and restores prior values, skips save, and announces 'Settings error: ...' on invalid payloads."""
+    settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
+    orig_workers = settings.MAX_WORKERS
+    orig_ignored = list(settings.IGNORED_EXTENSIONS)
+
+    async def _test():
+        app = AutoSorterTUI(
+            settings=settings, base_dir=temp_workspace, skip_wizard=True
+        )
+        announcements: list[str] = []
+        orig_announce = app.announce
+
+        def record_announce(msg: str, **kwargs):
+            announcements.append(msg)
+            return orig_announce(msg, **kwargs)
+
+        monkeypatch.setattr(app, "announce", record_announce)
+
+        with patch.object(AppSettings, "_save") as mock_save:
+            async with app.run_test(size=(100, 50)) as pilot:
+                app.action_open_settings()
+                await pilot.pause(0.05)
+                modal = app.screen
+                assert isinstance(modal, SettingsModal)
+
+                announcements.clear()
+                mock_save.reset_mock()
+                modal.dismiss(
+                    {
+                        "MAX_WORKERS": 16,
+                        "IGNORED_EXTENSIONS": ["."],
+                        "AI_CONSENT_GRANTED": False,
+                    }
+                )
+                await pilot.pause(0.1)
+
+                mock_save.assert_not_called()
+                assert app.settings.MAX_WORKERS == orig_workers
+                assert app.settings.IGNORED_EXTENSIONS == orig_ignored
+                assert app.settings.AI_CONSENT_GRANTED is True
+                assert "Settings updated and saved." not in announcements
+                assert any(
+                    msg.startswith("Settings error:") and "IGNORED_EXTENSIONS" in msg
+                    for msg in announcements
+                )
+
+    asyncio.run(_test())
+
+
 def test_tui_bindings_no_global_enter_and_ctrl_e_executes():
     """Verify global BINDINGS does not bind enter to execute_sort and ctrl+e binds to execute_sort."""
     bindings_by_key = {

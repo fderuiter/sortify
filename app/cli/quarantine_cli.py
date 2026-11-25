@@ -6,7 +6,7 @@ import logging
 import sys
 
 from app.cli.error_emitter import emit_cli_error
-from app.cli.settings_args import add_settings_source_args
+from app.cli.settings_args import build_global_subparser_parent
 from app.config import AppSettings
 from app.core.domain_contracts import VALID_QUARANTINE_STATES
 from app.core.quarantine_interceptor import QuarantineInterceptorService
@@ -19,50 +19,26 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
     """Register quarantine subcommand group."""
     parser_quarantine = subparsers.add_parser(
         "quarantine",
+        parents=[build_global_subparser_parent()],
         help="Manage compliance quarantine staging, inspection, and release",
     )
-    parser_quarantine.add_argument(
-        "--json",
-        action="store_true",
-        help="Output response in structured JSON format",
-    )
-    add_settings_source_args(parser_quarantine, suppress_default=True)
     quarantine_subparsers = parser_quarantine.add_subparsers(
         dest="quarantine_command", help="Quarantine subcommands"
     )
 
     def add_quarantine_common(p: argparse.ArgumentParser) -> None:
-        add_settings_source_args(p, suppress_default=True)
         p.add_argument(
             "--db-path",
             type=str,
             default=None,
             help="Path to database file",
         )
-        p.add_argument(
-            "-q",
-            "--quiet",
-            action="store_true",
-            dest="quiet",
-            default=argparse.SUPPRESS,
-            help="Suppress informational prints",
-        )
-        p.add_argument(
-            "--no-color",
-            action="store_true",
-            dest="no_color",
-            default=argparse.SUPPRESS,
-            help="Disable ANSI color formatting",
-        )
-        p.add_argument(
-            "--json",
-            action="store_true",
-            help="Output response in structured JSON format",
-        )
 
     # list
     p_list = quarantine_subparsers.add_parser(
-        "list", help="List staged and quarantined compliance items"
+        "list",
+        parents=[build_global_subparser_parent()],
+        help="List staged and quarantined compliance items",
     )
     add_quarantine_common(p_list)
     p_list.add_argument(
@@ -80,7 +56,9 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
 
     # inspect
     p_inspect = quarantine_subparsers.add_parser(
-        "inspect", help="Inspect a specific quarantine job record and audit trail"
+        "inspect",
+        parents=[build_global_subparser_parent()],
+        help="Inspect a specific quarantine job record and audit trail",
     )
     add_quarantine_common(p_inspect)
     p_inspect.add_argument(
@@ -100,6 +78,7 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
     # process
     p_process = quarantine_subparsers.add_parser(
         "process",
+        parents=[build_global_subparser_parent()],
         help="Trigger forensic scanning and policy evaluation for quarantine jobs",
     )
     add_quarantine_common(p_process)
@@ -131,7 +110,9 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
 
     # release
     p_release = quarantine_subparsers.add_parser(
-        "release", help="Release quarantined items to destination directory"
+        "release",
+        parents=[build_global_subparser_parent()],
+        help="Release quarantined items to destination directory",
     )
     add_quarantine_common(p_release)
     p_release.add_argument(
@@ -175,7 +156,9 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
 
     # dismiss
     p_dismiss = quarantine_subparsers.add_parser(
-        "dismiss", help="Dismiss quarantine items without restoring files"
+        "dismiss",
+        parents=[build_global_subparser_parent()],
+        help="Dismiss quarantine items without restoring files",
     )
     add_quarantine_common(p_dismiss)
     p_dismiss.add_argument(

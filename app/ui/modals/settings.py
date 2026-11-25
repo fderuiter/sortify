@@ -255,6 +255,7 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
         self.settings = settings
         self.help_url = f"{TROUBLESHOOTING_URL}#settings-configuration"
         self._announced_switch_values: dict[str, bool] = {}
+        self._staged_consent_revocation: bool = False
 
     def query_one(self, selector: Any, expect_type: Any = None) -> Any:
         """Query one widget, aliasing alternative switch IDs."""
@@ -802,36 +803,31 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
     @on(Switch.Changed, "#switch-ai-consent")
     def on_ai_consent_changed(self, event: Switch.Changed) -> None:
         """Prompt user confirmation when AI consent switch is toggled off."""
-        if not event.value:
-            db_inst = getattr(self.app, "db", None) if hasattr(self, "app") else None
-            v_count = _get_vector_count(db_inst)
-            footprint_mb = _get_model_cache_footprint_mb()
+        if event.value:
+            self._staged_consent_revocation = False
+            return
 
-            def _on_revoke_modal_result(confirmed: bool | None) -> None:
-                if confirmed:
-                    if self.settings:
-                        self.settings.AI_CONSENT_GRANTED = False
-                    app_settings = (
-                        getattr(self.app, "settings", None)
-                        if hasattr(self, "app")
-                        else None
+        db_inst = getattr(self.app, "db", None) if hasattr(self, "app") else None
+        v_count = _get_vector_count(db_inst)
+        footprint_mb = _get_model_cache_footprint_mb()
+
+        def _on_revoke_modal_result(confirmed: bool | None) -> None:
+            if confirmed:
+                self._staged_consent_revocation = True
+                if hasattr(self, "announce"):
+                    self.announce(
+                        "AI consent revocation staged; save settings to apply.",
+                        priority="polite",
                     )
-                    if app_settings is not None:
-                        app_settings.AI_CONSENT_GRANTED = False
-                    self._execute_scrub_and_purge()
-                    if hasattr(self, "announce"):
-                        self.announce(
-                            "AI consent revoked and artifacts scrubbed.",
-                            priority="polite",
-                        )
-                else:
-                    event.switch.value = True
+            else:
+                self._staged_consent_revocation = False
+                event.switch.value = True
 
-            if hasattr(self, "app") and self.app:
-                self.app.push_screen(
-                    ConsentRevocationModal(v_count, footprint_mb),
-                    _on_revoke_modal_result,
-                )
+        if hasattr(self, "app") and self.app and self.is_current:
+            self.app.push_screen(
+                ConsentRevocationModal(v_count, footprint_mb),
+                _on_revoke_modal_result,
+            )
 
     @on(Switch.Changed, "#switch-character-key-shortcuts")
     def on_character_shortcuts_changed(self, event: Switch.Changed) -> None:
@@ -908,44 +904,56 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
         if hasattr(self, "announce"):
             self.announce("AI artifacts scrubbed and model cache purging started.")
 
+    def _report_settings_error(self, message: str) -> None:
+        """Show contextual Help button and emit a settings validation error."""
+        help_url = f"{TROUBLESHOOTING_URL}#settings-configuration"
+        self._show_help_button(help_url)
+        from app.ui.notifications import notify
+
+        err_msg = f"Settings error: {message}"
+        notify(err_msg, type="error", help_url=help_url)
+        self.announce(err_msg, help_url=help_url)
+
     @on(Button.Pressed, "#btn-save")
     def action_save(self) -> None:
         """Save settings and dismiss modal."""
+        from app.config import Settings
+
         p_str = self.query_one("#input-protected", Input).value
-        p_list = [p.strip() for p in p_str.split(",") if p.strip()]
+        raw_p_list = [p.strip() for p in p_str.split(",") if p.strip()]
+        expanded_p_list = [
+            os.path.expanduser(p) if p.startswith("~") else p for p in raw_p_list
+        ]
+        try:
+            p_list = Settings.validate_protected_paths(expanded_p_list)
+        except ValueError as e:
+            self._report_settings_error(str(e))
+            return
 
         i_str = self.query_one("#input-ignored", Input).value
-        i_list = [
-            i.strip() if i.strip().startswith(".") else f".{i.strip()}"
-            for i in i_str.split(",")
-            if i.strip()
-        ]
+        raw_i_list = [i.strip() for i in i_str.split(",") if i.strip()]
+        try:
+            i_list = Settings.validate_ignored_extensions(raw_i_list)
+        except ValueError as e:
+            self._report_settings_error(str(e))
+            return
 
-        help_url = f"{TROUBLESHOOTING_URL}#settings-configuration"
         try:
             conc_val = self.query_one("#input-concurrency", Input).value.strip()
             conc = int(conc_val)
-            if conc <= 0:
-                raise ValueError("Worker concurrency must be greater than 0.")
+            if not (1 <= conc <= 64):
+                raise ValueError("Worker concurrency must be between 1 and 64.")
         except ValueError as e:
-            self._show_help_button(help_url)
-            from app.ui.notifications import notify
-
-            notify(f"Settings error: {e}", type="error", help_url=help_url)
-            self.announce(f"Settings error: {e}", help_url=help_url)
+            self._report_settings_error(str(e))
             return
 
         try:
             max_f_val = self.query_one("#input-max-folders", Input).value.strip()
             max_f = int(max_f_val)
-            if max_f <= 0:
-                raise ValueError("Max folders must be greater than 0.")
+            if not (1 <= max_f <= 50):
+                raise ValueError("Max folders must be between 1 and 50.")
         except ValueError as e:
-            self._show_help_button(help_url)
-            from app.ui.notifications import notify
-
-            notify(f"Settings error: {e}", type="error", help_url=help_url)
-            self.announce(f"Settings error: {e}", help_url=help_url)
+            self._report_settings_error(str(e))
             return
 
         try:
@@ -956,11 +964,7 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
             if pdf_density < 0:
                 raise ValueError("PDF text density threshold must be non-negative.")
         except ValueError as e:
-            self._show_help_button(help_url)
-            from app.ui.notifications import notify
-
-            notify(f"Settings error: {e}", type="error", help_url=help_url)
-            self.announce(f"Settings error: {e}", help_url=help_url)
+            self._report_settings_error(str(e))
             return
 
         strat = self.query_one("#select-strategy", Select).value
@@ -993,12 +997,6 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
             ai_consent = self.query_one("#switch-ai-consent", Switch).value
         except Exception:
             ai_consent = bool(getattr(self.settings, "AI_CONSENT_GRANTED", False))
-
-        if (
-            ai_consent is False
-            and getattr(self.settings, "AI_CONSENT_GRANTED", None) is True
-        ):
-            self._execute_scrub_and_purge()
 
         try:
             conflict_pol = self.query_one("#select-conflict-policy", Select).value
@@ -1051,12 +1049,7 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
                 )
             validate_target_path(q_dir_str, keyword="QUARANTINE_DIR_NAME")
         except ValueError as e:
-            self._show_help_button(help_url)
-            from app.ui.notifications import notify
-
-            err_text = f"Invalid quarantine folder name: {e}"
-            notify(f"Settings error: {err_text}", type="error", help_url=help_url)
-            self.announce(f"Settings error: {err_text}", help_url=help_url)
+            self._report_settings_error(f"Invalid quarantine folder name: {e}")
             return
 
         existing_ratings = [
@@ -1109,15 +1102,10 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
             if not (0 <= scan_max_depth <= 20):
                 raise ValueError("Max Scan Depth must be between 0 and 20.")
         except ValueError:
-            self._show_help_button(help_url)
-            from app.ui.notifications import notify
-
-            err_text = (
+            self._report_settings_error(
                 f"Invalid Max Scan Depth '{scan_depth_str}'. "
                 "Expected an integer from 0 to 20."
             )
-            notify(f"Settings error: {err_text}", type="error", help_url=help_url)
-            self.announce(f"Settings error: {err_text}", help_url=help_url)
             return
 
         try:
@@ -1136,16 +1124,18 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
                 or "\x00" in rename_pat_raw
                 or any(ch in ILLEGAL_PATH_CHARS_SET for ch in rename_pat_raw)
             ):
-                self._show_help_button(help_url)
-                from app.ui.notifications import notify
-
-                err_text = (
+                self._report_settings_error(
                     "Default rename template cannot contain path separators, '..', "
                     "null bytes, or illegal filename characters."
                 )
-                notify(f"Settings error: {err_text}", type="error", help_url=help_url)
-                self.announce(f"Settings error: {err_text}", help_url=help_url)
                 return
+
+        if not ai_consent and (
+            self._staged_consent_revocation
+            or getattr(self.settings, "AI_CONSENT_GRANTED", None) is True
+        ):
+            self._staged_consent_revocation = False
+            self._execute_scrub_and_purge()
 
         initial_strat = str(
             getattr(self.settings, "SORTING_STRATEGY", "default") or "default"
@@ -1189,6 +1179,7 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:
         """Cancel settings modification."""
+        self._staged_consent_revocation = False
         self.announce("Cancelled settings modification.")
         self.dismiss(None)
 

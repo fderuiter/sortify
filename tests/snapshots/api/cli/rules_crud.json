@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "e090051431cb7c6c8b468e167a2247a5d5d4eef7765174b8c45c18538e96a9cf"
+    "checksum": "b725155472496afce7c29c5a5fb7acdd41f284fafb90f9c0f2f3d358874580a0"
   },
   "classes": [],
   "cli": [
@@ -10,7 +10,8 @@
       ],
       "caller": "rules_subparsers",
       "keywords": {
-        "help": "List active and disabled rules in global or folder-scoped settings"
+        "help": "List active and disabled rules in global or folder-scoped settings",
+        "parents": "[build_global_subparser_parent(settings_help=_RULES_CRUD_SETTINGS_HELP)]"
       },
       "method": "add_parser"
     },
@@ -50,7 +51,8 @@
       ],
       "caller": "rules_subparsers",
       "keywords": {
-        "help": "Add or update a keyword, learned, extension, or policy rule"
+        "help": "Add or update a keyword, learned, extension, or policy rule",
+        "parents": "[build_global_subparser_parent(settings_help=_RULES_CRUD_SETTINGS_HELP)]"
       },
       "method": "add_parser"
     },
@@ -202,7 +204,8 @@
       ],
       "caller": "rules_subparsers",
       "keywords": {
-        "help": "Remove a rule by pattern or expression"
+        "help": "Remove a rule by pattern or expression",
+        "parents": "[build_global_subparser_parent(settings_help=_RULES_CRUD_SETTINGS_HELP)]"
       },
       "method": "add_parser"
     },
@@ -251,7 +254,8 @@
       ],
       "caller": "rules_subparsers",
       "keywords": {
-        "help": "Enable a disabled keyword, learned, or policy rule"
+        "help": "Enable a disabled keyword, learned, or policy rule",
+        "parents": "[build_global_subparser_parent(settings_help=_RULES_CRUD_SETTINGS_HELP)]"
       },
       "method": "add_parser"
     },
@@ -305,7 +309,8 @@
       ],
       "caller": "rules_subparsers",
       "keywords": {
-        "help": "Disable an active keyword, learned, or policy rule"
+        "help": "Disable an active keyword, learned, or policy rule",
+        "parents": "[build_global_subparser_parent(settings_help=_RULES_CRUD_SETTINGS_HELP)]"
       },
       "method": "add_parser"
     },

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "9c78f7ff1f03527299d5feded6624017d3656345e694fa3da2d4d14cf67330f9"
+    "checksum": "3d58457da34da76af9644ece3ac3213ec45348a6eda87966cefdda005cadcb59"
   },
   "classes": [],
   "cli": [
@@ -10,20 +10,10 @@
       ],
       "caller": "subparsers",
       "keywords": {
-        "help": "Manage transaction ledger entries and automated reconciliation"
+        "help": "Manage transaction ledger entries and automated reconciliation",
+        "parents": "[build_global_subparser_parent()]"
       },
       "method": "add_parser"
-    },
-    {
-      "args": [
-        "--json"
-      ],
-      "caller": "parser_ledger",
-      "keywords": {
-        "action": "store_true",
-        "help": "Output response in structured JSON format"
-      },
-      "method": "add_argument"
     },
     {
       "args": [
@@ -31,7 +21,8 @@
       ],
       "caller": "ledger_subparsers",
       "keywords": {
-        "help": "Display incomplete or pending transaction ledger entries"
+        "help": "Display incomplete or pending transaction ledger entries",
+        "parents": "[build_global_subparser_parent()]"
       },
       "method": "add_parser"
     },
@@ -75,7 +66,8 @@
       ],
       "caller": "ledger_subparsers",
       "keywords": {
-        "help": "Execute automated headless reconciliation for interrupted file moves"
+        "help": "Execute automated headless reconciliation for interrupted file moves",
+        "parents": "[build_global_subparser_parent()]"
       },
       "method": "add_parser"
     },
@@ -85,7 +77,8 @@
       ],
       "caller": "ledger_subparsers",
       "keywords": {
-        "help": "Purge completed or session transaction ledger records"
+        "help": "Purge completed or session transaction ledger records",
+        "parents": "[build_global_subparser_parent()]"
       },
       "method": "add_parser"
     },
@@ -151,7 +144,8 @@
       ],
       "caller": "ledger_subparsers",
       "keywords": {
-        "help": "Export session history transaction records as CSV or JSON audit log"
+        "help": "Export session history transaction records as CSV or JSON audit log",
+        "parents": "[build_global_subparser_parent()]"
       },
       "method": "add_parser"
     },
@@ -217,44 +211,6 @@
         "default": null,
         "help": "Path to sidecar transaction ledger database file",
         "type": "str"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "-q",
-        "--quiet"
-      ],
-      "caller": "p",
-      "keywords": {
-        "action": "store_true",
-        "default": "argparse.SUPPRESS",
-        "dest": "quiet",
-        "help": "Suppress informational prints"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--no-color"
-      ],
-      "caller": "p",
-      "keywords": {
-        "action": "store_true",
-        "default": "argparse.SUPPRESS",
-        "dest": "no_color",
-        "help": "Disable ANSI color formatting"
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "--json"
-      ],
-      "caller": "p",
-      "keywords": {
-        "action": "store_true",
-        "help": "Output response in structured JSON format"
       },
       "method": "add_argument"
     }

@@ -253,11 +253,21 @@ async def test_tui_toggling_consent_off_presents_revocation_prompt(
             assert isinstance(revoke_modal, ConsentRevocationModal)
             assert revoke_modal.vector_count == 1
 
-            # Confirm consent revocation
+            # Confirm consent revocation (stages revocation until Save Settings)
             confirm_btn = await _wait_for_widget(
                 revoke_modal, "#btn-confirm-revoke", Button, pilot=pilot
             )
             confirm_btn.press()
+            modal = await _wait_for_screen(app, SettingsModal, pilot=pilot)
+            assert isinstance(modal, SettingsModal)
+
+            # Before pressing Save Settings, consent and artifacts remain intact
+            assert app.settings.AI_CONSENT_GRANTED is True
+            assert db.get_document_vectors_count() == 1
+            assert (model_dir / "cached_model.bin").exists()
+
+            save_btn = await _wait_for_widget(modal, "#btn-save", Button, pilot=pilot)
+            save_btn.press()
             for _ in range(30):
                 if not (model_dir / "cached_model.bin").exists():
                     break
@@ -266,6 +276,153 @@ async def test_tui_toggling_consent_off_presents_revocation_prompt(
             assert app.settings.AI_CONSENT_GRANTED is False
             assert db.get_document_vectors_count() == 0
             assert not (model_dir / "cached_model.bin").exists()
+    finally:
+        worker.stop()
+
+
+@pytest.mark.anyio
+async def test_tui_confirming_revocation_then_cancelling_settings_preserves_consent(
+    tmp_path, monkeypatch
+):
+    """Verify pressing Cancel on SettingsModal after confirming ConsentRevocationModal keeps consent, vectors, and cached models intact."""
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path))
+
+    settings_file = str(tmp_path / "settings.json")
+    settings = AppSettings(filepath=settings_file)
+    settings.AI_CONSENT_GRANTED = True
+
+    db_path = tmp_path / "autosorter.db"
+    worker = DBWorker()
+    try:
+        db = Database(db_path, worker)
+        db.upsert_document_vectors(str(tmp_path), [("doc_cancel.txt", [0.3] * 64)])
+
+        model_dir = tmp_path / "model"
+        model_dir.mkdir(parents=True, exist_ok=True)
+        (model_dir / "cached_model.bin").write_bytes(b"cached bytes")
+
+        app = AutoSorterTUI(
+            settings=settings, base_dir=str(tmp_path), skip_wizard=True, db=db
+        )
+        async with app.run_test() as pilot:
+            app.action_open_settings()
+            await pilot.pause(0.2)
+
+            modal = app.screen
+            assert isinstance(modal, SettingsModal)
+
+            from textual.widgets import TabbedContent
+
+            modal.query_one(
+                "#settings-tabbed-content", TabbedContent
+            ).active = "tab-ai-privacy"
+            await pilot.pause(0.2)
+
+            sw = modal.query_one("#switch-ai-consent", Switch)
+            sw.value = False
+
+            revoke_modal = await _wait_for_screen(
+                app, ConsentRevocationModal, pilot=pilot
+            )
+            assert isinstance(revoke_modal, ConsentRevocationModal)
+
+            confirm_btn = await _wait_for_widget(
+                revoke_modal, "#btn-confirm-revoke", Button, pilot=pilot
+            )
+            confirm_btn.press()
+            modal = await _wait_for_screen(app, SettingsModal, pilot=pilot)
+            assert isinstance(modal, SettingsModal)
+
+            cancel_btn = await _wait_for_widget(
+                modal, "#btn-cancel", Button, pilot=pilot
+            )
+            cancel_btn.press()
+            await pilot.pause(0.2)
+
+            assert not isinstance(app.screen, SettingsModal)
+            assert app.settings.AI_CONSENT_GRANTED is True
+            assert db.get_document_vectors_count() == 1
+            assert (model_dir / "cached_model.bin").exists()
+    finally:
+        worker.stop()
+
+
+@pytest.mark.anyio
+async def test_tui_staged_revocation_skips_purge_on_save_validation_error_and_reenable(
+    tmp_path, monkeypatch
+):
+    """Verify staged consent revocation skips purging when a later save check fails and clears if consent is re-enabled before save."""
+    from textual.widgets import Input, TabbedContent
+
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path))
+
+    settings_file = str(tmp_path / "settings.json")
+    settings = AppSettings(filepath=settings_file)
+    settings.AI_CONSENT_GRANTED = True
+
+    db_path = tmp_path / "autosorter.db"
+    worker = DBWorker()
+    try:
+        db = Database(db_path, worker)
+        db.upsert_document_vectors(str(tmp_path), [("doc_edge.txt", [0.4] * 64)])
+
+        model_dir = tmp_path / "model"
+        model_dir.mkdir(parents=True, exist_ok=True)
+        (model_dir / "cached_model.bin").write_bytes(b"cached bytes")
+
+        app = AutoSorterTUI(
+            settings=settings, base_dir=str(tmp_path), skip_wizard=True, db=db
+        )
+        async with app.run_test() as pilot:
+            app.action_open_settings()
+            await pilot.pause(0.2)
+
+            modal = app.screen
+            assert isinstance(modal, SettingsModal)
+
+            modal.query_one(
+                "#settings-tabbed-content", TabbedContent
+            ).active = "tab-ai-privacy"
+            await pilot.pause(0.2)
+
+            sw = modal.query_one("#switch-ai-consent", Switch)
+            sw.value = False
+
+            revoke_modal = await _wait_for_screen(
+                app, ConsentRevocationModal, pilot=pilot
+            )
+            assert isinstance(revoke_modal, ConsentRevocationModal)
+            confirm_btn = await _wait_for_widget(
+                revoke_modal, "#btn-confirm-revoke", Button, pilot=pilot
+            )
+            confirm_btn.press()
+            modal = await _wait_for_screen(app, SettingsModal, pilot=pilot)
+            assert isinstance(modal, SettingsModal)
+
+            # Trigger a later check failure in action_save (invalid SCAN_MAX_DEPTH)
+            modal.query_one("#input-scan-max-depth", Input).value = "99"
+            save_btn = await _wait_for_widget(modal, "#btn-save", Button, pilot=pilot)
+            save_btn.press()
+            await pilot.pause(0.2)
+
+            assert isinstance(app.screen, SettingsModal)
+            assert "Settings error:" in modal.get_last_announcement()
+            assert app.settings.AI_CONSENT_GRANTED is True
+            assert db.get_document_vectors_count() == 1
+            assert (model_dir / "cached_model.bin").exists()
+
+            # Re-enable consent switch and fix SCAN_MAX_DEPTH, then save
+            sw.value = True
+            modal.query_one("#input-scan-max-depth", Input).value = "2"
+            await pilot.pause(0.1)
+            save_btn.press()
+            await pilot.pause(0.2)
+
+            assert not isinstance(app.screen, SettingsModal)
+            assert app.settings.AI_CONSENT_GRANTED is True
+            assert app.settings.SCAN_MAX_DEPTH == 2
+            assert db.get_document_vectors_count() == 1
+            assert (model_dir / "cached_model.bin").exists()
     finally:
         worker.stop()
 

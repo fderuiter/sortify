@@ -14,7 +14,7 @@ from app.core.db_conn import get_db_connection
 from app.core.db_worker import DBWorker
 from app.core.moves import INTENT
 from app.core.session_catalog import list_sessions
-from app.core.store import open_store
+from app.core.store import STORE_MIGRATIONS, open_store
 from app.ui.tui import AutoSorterTUI, RollbackConfirmModal
 from tests.test_cli_subcommands import run_cli
 
@@ -404,7 +404,7 @@ def test_preexisting_blank_targets_zero_step_sessions_and_reconciliation_safety(
         conn = get_db_connection(str(store.path))
         with conn:
             baseline_user_version = conn.execute("PRAGMA user_version").fetchone()[0]
-        assert baseline_user_version == 5
+        assert baseline_user_version == STORE_MIGRATIONS[-1].version
 
         ws = tmp_path / "ws_legacy"
         ws.mkdir()
