@@ -36,7 +36,16 @@ elif is_cpu:
     excludes.extend(['nvidia', 'triton'])
 
 if is_lite:
-    lite_marker_path = os.path.join(os.path.dirname(os.path.abspath(SPEC)), "LITE_BUILD") if 'SPEC' in locals() else os.path.join(os.getcwd(), "LITE_BUILD")
+    lite_stage_dir = (
+        os.path.abspath(workpath)
+        if 'workpath' in locals() and workpath
+        else os.path.join(
+            os.path.dirname(os.path.abspath(SPEC)) if 'SPEC' in locals() else os.getcwd(),
+            "build",
+        )
+    )
+    os.makedirs(lite_stage_dir, exist_ok=True)
+    lite_marker_path = os.path.join(lite_stage_dir, "LITE_BUILD")
     with open(lite_marker_path, "w", encoding="utf-8") as f:
         f.write("1\n")
     datas.append((os.path.abspath(lite_marker_path), "."))

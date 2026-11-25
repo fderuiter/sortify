@@ -514,7 +514,7 @@ def test_package_sidecar_models(tmp_path):
         zip_path = tmp_path / "dist" / "smart-autosorter-models.zip"
         root_zip = tmp_path / "smart-autosorter-models.zip"
         assert zip_path.exists()
-        assert root_zip.exists()
+        assert not root_zip.exists()
 
         with zipfile.ZipFile(zip_path, "r") as zf:
             names = zf.namelist()
@@ -886,15 +886,15 @@ def test_download_and_prepare_weights_pinned_hashes_success(tmp_path, monkeypatc
 
             def fake_hash(path):
                 name = path.name
-                if name in PINNED_HASHES["generative_naming"]:
-                    return PINNED_HASHES["generative_naming"][name]
+                if name in PINNED_HASHES["model_download"]:
+                    return PINNED_HASHES["model_download"][name]
                 if name in PINNED_HASHES["easyocr"]:
                     return PINNED_HASHES["easyocr"][name]
                 return "unknown"
 
             mock_hash.side_effect = fake_hash
 
-            for fname in PINNED_HASHES["generative_naming"]:
+            for fname in PINNED_HASHES["model_download"]:
                 (model_dir / fname).write_text("data")
             for fname in PINNED_HASHES["easyocr"]:
                 (easyocr_dir / fname).write_text("data")
@@ -920,7 +920,7 @@ def test_download_and_prepare_weights_aborts_on_tampered_model(tmp_path, monkeyp
     model_dir.mkdir(parents=True)
     easyocr_dir.mkdir(parents=True)
 
-    for fname in PINNED_HASHES["generative_naming"]:
+    for fname in PINNED_HASHES["model_download"]:
         (model_dir / fname).write_text("data")
     for fname in PINNED_HASHES["easyocr"]:
         (easyocr_dir / fname).write_text("data")
@@ -932,8 +932,8 @@ def test_download_and_prepare_weights_aborts_on_tampered_model(tmp_path, monkeyp
                 if path.name == "model.onnx":
                     return "corrupted_onnx_hash"
                 name = path.name
-                if name in PINNED_HASHES["generative_naming"]:
-                    return PINNED_HASHES["generative_naming"][name]
+                if name in PINNED_HASHES["model_download"]:
+                    return PINNED_HASHES["model_download"][name]
                 if name in PINNED_HASHES["easyocr"]:
                     return PINNED_HASHES["easyocr"][name]
                 return "unknown"
@@ -960,7 +960,7 @@ def test_download_and_prepare_weights_rejects_tampered_cached_easyocr(
 
     model_dir = tmp_path / "offline_bundle" / "model"
     model_dir.mkdir(parents=True)
-    for fname in PINNED_HASHES["generative_naming"]:
+    for fname in PINNED_HASHES["model_download"]:
         (model_dir / fname).write_text("data")
 
     with patch("pathlib.Path.home", return_value=tmp_path):
@@ -970,8 +970,8 @@ def test_download_and_prepare_weights_rejects_tampered_cached_easyocr(
                 if path == corrupted_cached:
                     return "bad_cache_hash"
                 name = path.name
-                if name in PINNED_HASHES["generative_naming"]:
-                    return PINNED_HASHES["generative_naming"][name]
+                if name in PINNED_HASHES["model_download"]:
+                    return PINNED_HASHES["model_download"][name]
                 if name in PINNED_HASHES["easyocr"]:
                     return PINNED_HASHES["easyocr"][name]
                 return "unknown"
@@ -995,7 +995,7 @@ def test_download_and_prepare_weights_cleans_up_on_corrupted_extracted_archive(
     model_dir.mkdir(parents=True)
     easyocr_dir.mkdir(parents=True)
 
-    for fname in PINNED_HASHES["generative_naming"]:
+    for fname in PINNED_HASHES["model_download"]:
         (model_dir / fname).write_text("data")
 
     def fake_download_file(url, dest_path, **kwargs):
@@ -1009,8 +1009,8 @@ def test_download_and_prepare_weights_cleans_up_on_corrupted_extracted_archive(
                 if path.name == "craft_mlt_25k.pth":
                     return "bad_extracted_hash"
                 name = path.name
-                if name in PINNED_HASHES["generative_naming"]:
-                    return PINNED_HASHES["generative_naming"][name]
+                if name in PINNED_HASHES["model_download"]:
+                    return PINNED_HASHES["model_download"][name]
                 if name in PINNED_HASHES["easyocr"]:
                     return PINNED_HASHES["easyocr"][name]
                 return "unknown"

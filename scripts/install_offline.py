@@ -11,6 +11,17 @@ import sys
 import zipfile
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.offline_bundle_utils import (  # noqa: E402
+    APP_WHEEL_MANIFEST_REL_PATH,
+    OFFLINE_REQUIREMENTS_REL_PATH,
+    resolve_target_venv,
+    venv_python_path,
+)
+
 
 def safe_extract_zip(zip_path, extract_to):
     """Safely extract a ZIP archive while enforcing restricted permissions and validating member paths."""
@@ -93,7 +104,9 @@ def get_uv_cmd():
     return uv_cmd
 
 
-def _extract_and_install_offline(uv_cmd):
+def _extract_and_install_offline(
+    uv_cmd: str, venv_dir: str | os.PathLike[str] | None = None
+) -> Path:
     if os.path.exists("offline_bundle.zip"):
         print("Detected offline_bundle.zip. Extracting...")
         try:
@@ -105,22 +118,38 @@ def _extract_and_install_offline(uv_cmd):
         print("Error: offline_bundle.zip not found.")
         sys.exit(1)
 
-    print("Using offline wheels from bundle...")
+    for manifest_path in (
+        OFFLINE_REQUIREMENTS_REL_PATH,
+        APP_WHEEL_MANIFEST_REL_PATH,
+    ):
+        if not os.path.exists(manifest_path):
+            print(f"Error: {manifest_path} not found.")
+            sys.exit(1)
+
+    target_venv = resolve_target_venv(venv_dir, path_exists=os.path.exists)
+    venv_python = venv_python_path(target_venv)
+
+    print(f"Using offline wheels from bundle into {target_venv}...")
     try:
-        if not os.path.isdir(".venv"):
-            subprocess.run([uv_cmd, "venv"], check=True)
+        if not os.path.isdir(target_venv):
+            subprocess.run([uv_cmd, "venv", str(target_venv)], check=True)
         subprocess.run(
             [
                 uv_cmd,
                 "pip",
                 "install",
+                "--python",
+                str(venv_python),
                 "--offline",
                 "--no-index",
                 "--find-links",
                 "offline_bundle/wheels",
                 "--require-hashes",
+                "--no-deps",
                 "-r",
-                "offline_bundle/requirements.txt",
+                OFFLINE_REQUIREMENTS_REL_PATH,
+                "-r",
+                APP_WHEEL_MANIFEST_REL_PATH,
             ],
             check=True,
         )
@@ -128,30 +157,46 @@ def _extract_and_install_offline(uv_cmd):
         print(f"Package synchronization failed: {e}")
         sys.exit(1)
 
+    return target_venv
+
 
 def offline_install(args):
     """Air-gapped installation mode."""
     print("Starting offline installation...")
     uv_cmd = get_uv_cmd()
 
-    _extract_and_install_offline(uv_cmd)
+    venv_arg = getattr(args, "venv", None)
+    if isinstance(venv_arg, (str, Path)):
+        _extract_and_install_offline(uv_cmd, venv_dir=venv_arg)
+    else:
+        _extract_and_install_offline(uv_cmd)
 
     print("Offline installation complete.")
 
 
-def main():
+def main(argv: list[str] | None = None):
     """Execute the offline installation runner."""
     parser = argparse.ArgumentParser(
         description="Offline install runner for Smart AutoSorter AI Pro."
+    )
+    parser.add_argument(
+        "--venv",
+        default=None,
+        help="Target virtual environment directory for offline installation.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     offline_parser = subparsers.add_parser(
         "offline-install", help="Perform offline installation"
     )
+    offline_parser.add_argument(
+        "--venv",
+        default=argparse.SUPPRESS,
+        help="Target virtual environment directory for offline installation.",
+    )
     offline_parser.set_defaults(func=offline_install)
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     args.func(args)
 
 

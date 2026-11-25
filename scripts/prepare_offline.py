@@ -27,6 +27,16 @@ PYTORCH_CPU_INDEX_URL = "https://download.pytorch.org/whl/cpu"
 NORMALIZED_ARCHIVE_DATE_TIME = (2020, 1, 1, 0, 0, 0)
 NORMALIZED_ARCHIVE_EPOCH = calendar.timegm(NORMALIZED_ARCHIVE_DATE_TIME)
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.offline_bundle_utils import (  # noqa: E402
+    APP_WHEEL_MANIFEST_FILENAME,
+    build_and_pin_app_wheel,
+    cleanup_stale_file,
+)
+
 
 def _normalize_pkg_name(name: str) -> str:
     """Normalize a Python package name per PEP 503."""
@@ -643,13 +653,12 @@ def main():
         print(f"Verified {reqs_file} is synchronized with uv.lock.")
         return
 
-    # Clean up previous ZIP output if any
+    # Clean up previous ZIP output and app wheel manifest if any
     zip_output = Path("offline_bundle.zip")
-    if zip_output.exists():
-        try:
-            zip_output.unlink()
-        except OSError as e:
-            print(f"Warning: could not delete {zip_output}: {e}")
+    cleanup_stale_file(zip_output)
+
+    app_wheel_manifest = bundle_dir / APP_WHEEL_MANIFEST_FILENAME
+    cleanup_stale_file(app_wheel_manifest)
 
     # Clean up wheels directory specifically
     wheels_dir = bundle_dir / "wheels"
@@ -740,6 +749,9 @@ def main():
         print(
             "Validation complete: Only CPU-specific PyTorch wheels are present in the offline bundle."
         )
+
+    # 4. Build and hash-pin the smart-autosorter wheel
+    build_and_pin_app_wheel(wheels_dir, app_wheel_manifest, run_cmd=subprocess.run)
 
     # 5. Normalize archive timestamps and package bundle
     _normalize_archive_timestamps(wheels_dir)

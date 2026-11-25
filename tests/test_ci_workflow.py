@@ -451,7 +451,10 @@ def test_verify_offline_bundle_frozen_and_ml_verification():
 
     assert "scripts/prepare_offline.py --cpu --frozen" in run_scripts
     assert "git diff --exit-code" in run_scripts
+    assert "RUNNER_TEMP" in run_scripts
     assert "scripts/install_offline.py offline-install" in run_scripts
+    assert ".venv/bin/smart-autosorter" in run_scripts
+    assert "is_relative_to(" in run_scripts
     for mod in ("torch", "easyocr", "onnxruntime", "transformers", "llama_cpp"):
         assert mod in run_scripts, f"Missing '{mod}' import in verify-offline-bundle"
     assert "is_ml_available()" in run_scripts
