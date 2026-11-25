@@ -737,53 +737,6 @@ class WizardModal(ResponsiveModalScreen[None]):
         except Exception:
             defer_download = False
 
-        from app.core.rule_templates import apply_starter_templates
-
-        selected_packs = self._get_selected_pack_ids()
-        if selected_packs:
-            try:
-                apply_starter_templates(self.settings, selected_packs)
-            except Exception as exc:
-                logger.error(f"Failed to apply starter templates: {exc}")
-                err_msg = f"Failed to apply starter rule template pack(s): {exc}"
-                self.announce(err_msg)
-                if hasattr(self.app, "notify"):
-                    self.app.notify(err_msg, severity="error")
-
-        if hasattr(self.settings, "_save"):
-            try:
-                self.settings._save()
-            except Exception as e:
-                logger.error(f"Error saving consent setting: {e}")
-
-        if consent and not defer_download:
-            try:
-                from app.core.downloader import (
-                    DEFAULT_MODEL_URL,
-                    DownloadManager,
-                    resolve_default_model_dir,
-                    verify_downloaded_model,
-                )
-
-                model_dir = resolve_default_model_dir()
-                dm = DownloadManager.get_instance()
-                if proxy_val:
-                    dm.update_proxy(proxy_val)
-                if not dm.state.get(
-                    "is_downloading", False
-                ) and not verify_downloaded_model(model_dir):
-                    dm.start_download(DEFAULT_MODEL_URL, model_dir, proxy=proxy_val)
-                    self.announce(
-                        "Started background AI model download. Using local keyword clustering until verification completes."
-                    )
-            except Exception as dl_exc:
-                logger.warning(
-                    f"Background model provisioning could not start during onboarding: {dl_exc}"
-                )
-                self.announce(
-                    f"Model download unavailable ({dl_exc}). Continuing with local keyword clustering."
-                )
-
         gen_sample = False
         try:
             gen_sample = self.query_one("#chk-sample-corpus", Checkbox).value
@@ -831,6 +784,57 @@ class WizardModal(ResponsiveModalScreen[None]):
                 self.announce(f"Using the existing sample dataset in '{target_dir}'.")
             except Exception as exc:
                 logger.error(f"Failed to generate sample corpus: {exc}")
+
+        from app.config import resolve_scoped_settings
+        from app.core.rule_templates import apply_starter_templates
+
+        selected_packs = self._get_selected_pack_ids()
+        if selected_packs:
+            try:
+                scoped_settings = resolve_scoped_settings(
+                    self.settings, target_dir, fallback_to_global=True
+                )
+                apply_starter_templates(scoped_settings, selected_packs)
+            except Exception as exc:
+                logger.error(f"Failed to apply starter templates: {exc}")
+                err_msg = f"Failed to apply starter rule template pack(s): {exc}"
+                self.announce(err_msg)
+                if hasattr(self.app, "notify"):
+                    self.app.notify(err_msg, severity="error")
+
+        if hasattr(self.settings, "_save"):
+            try:
+                self.settings._save()
+            except Exception as e:
+                logger.error(f"Error saving consent setting: {e}")
+
+        if consent and not defer_download:
+            try:
+                from app.core.downloader import (
+                    DEFAULT_MODEL_URL,
+                    DownloadManager,
+                    resolve_default_model_dir,
+                    verify_downloaded_model,
+                )
+
+                model_dir = resolve_default_model_dir()
+                dm = DownloadManager.get_instance()
+                if proxy_val:
+                    dm.update_proxy(proxy_val)
+                if not dm.state.get(
+                    "is_downloading", False
+                ) and not verify_downloaded_model(model_dir):
+                    dm.start_download(DEFAULT_MODEL_URL, model_dir, proxy=proxy_val)
+                    self.announce(
+                        "Started background AI model download. Using local keyword clustering until verification completes."
+                    )
+            except Exception as dl_exc:
+                logger.warning(
+                    f"Background model provisioning could not start during onboarding: {dl_exc}"
+                )
+                self.announce(
+                    f"Model download unavailable ({dl_exc}). Continuing with local keyword clustering."
+                )
 
         if hasattr(self.app, "base_dir"):
             setattr(self.app, "base_dir", target_dir)

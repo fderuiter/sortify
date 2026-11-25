@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "7ee6dac14c3212618ff3349426e263222cca79270f26bbe74bf9c18a00e22ea4"
+    "checksum": "6d9bf5acc716699b3a57c569486209ef17f7826bc763b3e1656f0f5c6ccdb45f"
   },
   "classes": [],
   "cli": [
@@ -22,6 +22,30 @@
       "keywords": {
         "action": "store_true",
         "help": "Output response in structured JSON format"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--settings-file"
+      ],
+      "caller": "quarantine_settings_group",
+      "keywords": {
+        "default": "argparse.SUPPRESS",
+        "help": "Path to an explicit Sortify settings.json file",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--profile"
+      ],
+      "caller": "quarantine_settings_group",
+      "keywords": {
+        "default": "argparse.SUPPRESS",
+        "help": "Named configuration profile under ~/.autosorter/profiles/<name>.json",
+        "type": "str"
       },
       "method": "add_argument"
     },
@@ -296,6 +320,30 @@
       "keywords": {
         "default": null,
         "help": "Path to database file",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--settings-file"
+      ],
+      "caller": "p_settings_group",
+      "keywords": {
+        "default": "argparse.SUPPRESS",
+        "help": "Path to an explicit Sortify settings.json file",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--profile"
+      ],
+      "caller": "p_settings_group",
+      "keywords": {
+        "default": "argparse.SUPPRESS",
+        "help": "Named configuration profile under ~/.autosorter/profiles/<name>.json",
         "type": "str"
       },
       "method": "add_argument"

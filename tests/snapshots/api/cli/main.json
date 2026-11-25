@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "3540b0697fa724874f1476ddf29c651537aaa53b26960fe1b77b613d52b919b5"
+    "checksum": "8d7efcd98eedc076fb9e4090b6b113a4890e9b38c6be2ff77119c06a7b544f07"
   },
   "cli": [
     {
@@ -150,6 +150,30 @@
         "action": "store_true",
         "default": false,
         "help": "Run in non-interactive mode and bypass interactive modal dialogs"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--settings-file"
+      ],
+      "caller": "settings_source_group",
+      "keywords": {
+        "default": null,
+        "help": "Path to an explicit Sortify settings.json file",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--profile"
+      ],
+      "caller": "settings_source_group",
+      "keywords": {
+        "default": null,
+        "help": "Named configuration profile under ~/.autosorter/profiles/<name>.json",
+        "type": "str"
       },
       "method": "add_argument"
     },
@@ -756,6 +780,30 @@
         ],
         "default": null,
         "help": "Format for exported simulation report (html or json)",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--settings-file"
+      ],
+      "caller": "sub_settings_group",
+      "keywords": {
+        "default": "argparse.SUPPRESS",
+        "help": "Path to an explicit Sortify settings.json file",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--profile"
+      ],
+      "caller": "sub_settings_group",
+      "keywords": {
+        "default": "argparse.SUPPRESS",
+        "help": "Named configuration profile under ~/.autosorter/profiles/<name>.json",
         "type": "str"
       },
       "method": "add_argument"

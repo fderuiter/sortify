@@ -190,7 +190,7 @@ You can open the active rule manager using either of the following methods:
 The active rule manager displays all configured rules in the interactive **Rules Table** (`#rules-table`) with columns for `Status` (Active, Disabled, or `⚠ Masked by '<pattern>'` when a higher-priority policy shadows a lower-priority policy), `Type` (e.g. `keyword`, `compliance`, `pattern`), `Pattern`, `Target Folder`, and `Priority`.
 
 Use the following shortcuts and button controls:
-- **Toggle Rule Status** (`[Space]` or `#btn-toggle-rule`): Toggles the selected rule between *Active* and *Disabled*. Toggling a keyword rule moves it between `KEYWORD_RULES` and `DISABLED_KEYWORD_RULES` without deleting its destination path, preserving row cursor focus on the table.
+- **Toggle Rule Status** (`[Space]` or `#btn-toggle-rule`): Toggles the selected rule between *Active* and *Disabled*. Toggling a keyword rule moves it between `KEYWORD_RULES` and `DISABLED_KEYWORD_RULES`, and toggling a learned rule moves it between `LEARNED_RULES` and `DISABLED_LEARNED_RULES` while preserving separator-normalized stem matching (`_` and `-`) and row cursor focus on the table.
 - **Add Rule** (`#btn-add-rule`): Opens the rule editor modal (`RuleEditModal`) to define either a keyword rule or a prioritized policy (`type`, `expression`, `target_path`, `priority`, `halting`, and optional `action`). Pick a workspace file in `#select-sample-file` to live-test your draft rule locally without outbound network calls or moving files, and view total matching file counts across the workspace. Target paths and policy actions are validated before saving.
 - **Edit Rule** (`[Enter]` or `#btn-edit-rule`): Opens the rule editor modal for the highlighted keyword rule or policy, allowing you to update all rule and policy attributes and live-preview sample matches.
 - **Delete Rule** (`[Delete]` or `#btn-delete-rule`): Prompts a confirmation dialog (`DeleteRuleConfirmModal`) before permanently deleting the selected rule or policy from settings.
@@ -216,7 +216,7 @@ The **Import External Rules** modal lets you import rules from third-party tools
 #### Import Workflow
 1. Select **Browse...** (`#btn-browse-rule-file`) to choose a rule file via your OS file dialog, or type the path in `#input-rule-file-path` (supports `.hazelrules`, `.plist`, `.ini`, `.xml`, `.json`, and `.dropit`).
 2. Select **Parse File** (`#btn-parse-rule-file`) or press `[Enter]` (selecting a file via **Browse...** parses it automatically).
-3. Keep **Import new rules disabled for review** (`#chk-import-disabled`) checked (the default) to stage newly imported keyword rules in `DISABLED_KEYWORD_RULES` and new policies with `enabled: false` until you inspect and enable them, or uncheck it to activate new rules immediately.
+3. Keep **Import new rules disabled for review** (`#chk-import-disabled`) checked (the default for external Hazel, DropIt, and TagSpaces packages) to stage newly imported rules as disabled until you inspect and enable them. Native **Sortify JSON** backups automatically preserve each rule's original active and disabled states unless you explicitly check `#chk-import-disabled` or pass `--disabled` / `--enable`.
 4. Inspect the parsed preview:
    - **Imported Keywords**: Displays extracted keyword mappings and normalized relative destination folders.
    - **Imported Policies**: Displays rule types (including `[unarchive]` extraction badges), wildcard/extension expressions, target paths, and rule priorities.
@@ -231,21 +231,31 @@ The **Import External Rules** modal lets you import rules from third-party tools
 - **Syntax Errors and Malformed Files**: If a file cannot be parsed or contains syntax errors, the importer surfaces non-blocking warnings without corrupting existing settings.
 - **TagSpaces Asymmetry**: TagSpaces taxonomy imports generate keyword rules, while exporting back to native TagSpaces taxonomy files is not supported (see [Exporting Active Rules](#exporting-active-rules)).
 
-#### Headless CLI Rule Import and Export
-You can also preview, import, and export rule packages from scripts or CI without opening the TUI:
+#### Headless CLI Rule Management, Folder Scopes, and Profiles
+You can inspect, add, remove, enable, disable, import, and export rules from scripts or CI—globally, scoped to a folder (`--folder`), or inside a named profile (`--profile` / `--settings-file` across all CLI commands, sharing `store.db` undo history and ONNX models in `~/.autosorter/`):
 ```bash
+# List, add, disable, re-enable, or remove rules (supports --folder, --profile, --settings-file, and --json)
+smart-autosorter rules list --folder ~/Downloads --json
+smart-autosorter rules add invoice Finances/Invoices --folder ~/Downloads
+smart-autosorter rules disable "q1 tax report" --kind learned --folder ~/Downloads
+smart-autosorter rules enable "q1 tax report" --kind learned --folder ~/Downloads
+smart-autosorter rules remove invoice --folder ~/Downloads
+
+# Run sorting or scanning with a named profile (~/.autosorter/profiles/work.json)
+smart-autosorter sort ~/Downloads --profile work --dry-run
+
 # Preview converted paths, skipped clauses, and conflicts without modifying settings
 smart-autosorter rules import ~/Exports/profile.ini --dry-run
 
-# Import new rules disabled for review (default) with conflict resolution overrides
+# Import external rules disabled for review (default) with conflict resolution overrides
 smart-autosorter rules import ~/Exports/rules.hazelrules --conflict-strategy keep_existing --resolve invoice=overwrite
 
-# Import new rules enabled immediately and emit structured JSON output
-smart-autosorter rules import ~/Exports/rules.hazelrules --enable --json
+# Restore a lossless Sortify JSON v2 backup (preserves active, disabled, learned, extension, and folder-scoped rules)
+smart-autosorter rules import ./backup_rules.json
 
-# Export active rules to Sortify JSON, Hazel (.hazelrules), or DropIt (.ini)
+# Export rules to Sortify JSON v2, Hazel (.hazelrules), or DropIt (.ini)
 smart-autosorter rules export ./backup_rules.json
-smart-autosorter rules export ./dropit_rules.ini --format dropit_ini
+smart-autosorter rules export ./dropit_rules.ini --format dropit_ini --folder ~/Downloads
 ```
 
 ### Conflict Resolution
@@ -265,9 +275,9 @@ When an imported rule targets a keyword or pattern that already exists in your s
 The **Export Active Rules** modal serializes your active keyword rules and compliance policies to disk for backups or migration into other workflow tools.
 
 #### Supported Export Formats
-- **Sortify JSON (`*.json`)**: Native Sortify JSON format (`format: "sortify"`, version 1) preserving full rule structure, keyword mappings, and policy configurations.
-- **Hazel Rules (`*.hazelrules`)**: Apple property list format mapping keyword rules and policies to Hazel-compatible move rules (`NSRuleActionMove`).
-- **DropIt Configuration (`*.ini`)**: Standard DropIt configuration file with `[DropIt]` header and `[Association_N]` sections.
+- **Sortify JSON (`*.json`)**: Native Sortify JSON format (`format: "sortify"`, version 2) preserving full rule structure across `KEYWORD_RULES`, `DISABLED_KEYWORD_RULES`, `LEARNED_RULES`, `DISABLED_LEARNED_RULES`, `EXTENSION_CATEGORIES`, `POLICIES` (active and disabled), and per-folder `FOLDER_RULE_SCOPES`.
+- **Hazel Rules (`*.hazelrules`)**: Apple property list format mapping active keyword rules and policies to Hazel-compatible move (`NSRuleActionMove`) and trash (`NSRuleActionTrash`) rules.
+- **DropIt Configuration (`*.ini`)**: Standard DropIt configuration file with `[DropIt]` header and `[Association_N]` sections (mapping trash/duplicate disposal policies to `Delete` and omitting disabled policies).
 
 *Note: While TagSpaces tag groups can be imported into keyword rules, exporting back to native TagSpaces taxonomy files is not supported.*
 

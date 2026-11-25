@@ -489,13 +489,10 @@ class SelectionActionsMixin:
             except ValueError:
                 can_learn_rule = False
 
+            from app.config import resolve_scoped_settings
+
             settings_obj = getattr(host, "settings", None)
-            learned_rules = (
-                dict(getattr(settings_obj, "LEARNED_RULES", {}) or {})
-                if settings_obj is not None
-                else {}
-            )
-            learned_updated = False
+            scoped_learned_updates: dict[str, dict[str, str]] = {}
 
             reassigned_count = 0
             for fi in target_files:
@@ -578,13 +575,37 @@ class SelectionActionsMixin:
                             str(doc_relpath or fi.get("source_path") or file_key)
                         )
                         if pattern:
-                            learned_rules[pattern] = target_folder
-                            learned_updated = True
+                            scope_dir = str(
+                                db_base or getattr(host, "base_dir", "") or ""
+                            )
+                            scoped_learned_updates.setdefault(scope_dir, {})[
+                                pattern
+                            ] = target_folder
 
                     reassigned_count += 1
 
-            if learned_updated and settings_obj is not None:
-                settings_obj.LEARNED_RULES = learned_rules
+            if scoped_learned_updates and settings_obj is not None:
+                for scope_dir, updates in scoped_learned_updates.items():
+                    scoped_view = resolve_scoped_settings(
+                        settings_obj,
+                        scope_dir if scope_dir else None,
+                        fallback_to_global=True,
+                    )
+                    learned_rules = dict(
+                        getattr(scoped_view, "LEARNED_RULES", {}) or {}
+                    )
+                    dis_learned = dict(
+                        getattr(scoped_view, "DISABLED_LEARNED_RULES", {}) or {}
+                    )
+                    dis_changed = False
+                    for pat, dest in updates.items():
+                        learned_rules[pat] = dest
+                        if pat in dis_learned:
+                            dis_learned.pop(pat, None)
+                            dis_changed = True
+                    scoped_view.LEARNED_RULES = learned_rules
+                    if dis_changed:
+                        scoped_view.DISABLED_LEARNED_RULES = dis_learned
                 if hasattr(settings_obj, "flush"):
                     settings_obj.flush()
 

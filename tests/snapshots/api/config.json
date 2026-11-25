@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "6bcacd4329b91048ae1f3fbbc0ac30cf62ef6f295eded28baa7feaddfe5b9379"
+    "checksum": "6086205f1f77aaca5d41644068d7e8f581997b0e8a3f581bf58d2f2a44ae3e70"
   },
   "classes": [
     {
@@ -72,6 +72,21 @@
         },
         {
           "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "filepath",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
           "decorators": [],
           "name": "flush",
           "parameters": [
@@ -82,6 +97,29 @@
             }
           ],
           "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "for_folder",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str | os.PathLike[str] | None",
+              "default": null,
+              "name": "folder_path"
+            },
+            {
+              "annotation": "bool",
+              "default": "True",
+              "name": "fallback_to_global"
+            }
+          ],
+          "returns": "Any"
         },
         {
           "async": false,
@@ -165,6 +203,138 @@
         "@with_config(ConfigDict(extra='allow'))"
       ],
       "methods": []
+    },
+    {
+      "class_name": "ScopedSettingsView",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "root_settings"
+            },
+            {
+              "annotation": "str | os.PathLike[str]",
+              "default": null,
+              "name": "folder_path"
+            },
+            {
+              "annotation": "bool",
+              "default": "True",
+              "name": "fallback_to_global"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "fallback_to_global",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "filepath",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "str | None"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "folder_path",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "for_folder",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str | os.PathLike[str] | None",
+              "default": null,
+              "name": "folder_path"
+            },
+            {
+              "annotation": "bool",
+              "default": "True",
+              "name": "fallback_to_global"
+            }
+          ],
+          "returns": "Any"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "root_settings",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "Any"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "scope_key",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
     },
     {
       "class_name": "Settings",
@@ -352,6 +522,48 @@
         {
           "async": false,
           "decorators": [
+            "@field_validator('EXTENSION_CATEGORIES')",
+            "@classmethod"
+          ],
+          "name": "validate_extension_categories",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "dict",
+              "default": null,
+              "name": "v"
+            }
+          ],
+          "returns": "dict"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@field_validator('FOLDER_RULE_SCOPES', mode='before')",
+            "@classmethod"
+          ],
+          "name": "validate_folder_rule_scopes",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "v"
+            }
+          ],
+          "returns": "dict[str, dict[str, Any]]"
+        },
+        {
+          "async": false,
+          "decorators": [
             "@field_validator('IGNORED_EXTENSIONS', mode='before')",
             "@classmethod"
           ],
@@ -373,7 +585,7 @@
         {
           "async": false,
           "decorators": [
-            "@field_validator('KEYWORD_RULES', 'LEARNED_RULES', 'DISABLED_KEYWORD_RULES')",
+            "@field_validator('KEYWORD_RULES', 'LEARNED_RULES', 'DISABLED_KEYWORD_RULES', 'DISABLED_LEARNED_RULES')",
             "@classmethod"
           ],
           "name": "validate_keyword_rules",
@@ -541,6 +753,83 @@
       "name": "get_debug_log_dir",
       "parameters": [],
       "returns": "Path"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "normalize_folder_scope_key",
+      "parameters": [
+        {
+          "annotation": "str | os.PathLike[str]",
+          "default": null,
+          "name": "folder_path"
+        }
+      ],
+      "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "resolve_cli_settings_filepath",
+      "parameters": [
+        {
+          "annotation": "str | None",
+          "default": "None",
+          "name": "settings_file"
+        },
+        {
+          "annotation": "str | None",
+          "default": "None",
+          "name": "profile"
+        },
+        {
+          "annotation": "Path | None",
+          "default": "None",
+          "name": "app_dir"
+        }
+      ],
+      "returns": "str | None"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "resolve_profile_settings_path",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "profile_name"
+        },
+        {
+          "annotation": "Path | None",
+          "default": "None",
+          "name": "app_dir"
+        }
+      ],
+      "returns": "Path"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "resolve_scoped_settings",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "settings"
+        },
+        {
+          "annotation": "str | os.PathLike[str] | None",
+          "default": null,
+          "name": "folder_path"
+        },
+        {
+          "annotation": "bool",
+          "default": "True",
+          "name": "fallback_to_global"
+        }
+      ],
+      "returns": "Any"
     }
   ]
 }

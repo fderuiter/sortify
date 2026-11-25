@@ -1277,15 +1277,10 @@ class IncrementalAnalyzer:
                 | JevClassifierEngine.get_supported_extensions()
             )
 
-            keyword_rules = (
-                getattr(runtime_settings, "KEYWORD_RULES", {})
-                if runtime_settings
-                else {}
-            )
-            learned_rules = (
-                getattr(runtime_settings, "LEARNED_RULES", {})
-                if runtime_settings
-                else {}
+            from app.config import resolve_scoped_settings
+            from app.core.metadata import (
+                get_extension_category_target,
+                matches_learned_rule_pattern,
             )
             from app.core.pattern_formatter import (
                 PatternTokenFormatter,
@@ -1293,10 +1288,39 @@ class IncrementalAnalyzer:
             )
             from app.core.policy_engine import PolicyEngine, PolicyEvaluationResult
 
-            policies = (
-                getattr(runtime_settings, "POLICIES", []) if runtime_settings else []
-            )
-            sorted_policies = PolicyEngine.sort_policies(policies)
+            scope_rule_cache: dict[
+                str, tuple[Any, list[Any], dict[Any, Any], dict[Any, Any]]
+            ] = {}
+
+            def _get_root_scope_rules(
+                root_dir: str,
+            ) -> tuple[Any, list[Any], dict[Any, Any], dict[Any, Any]]:
+                cache_key = root_dir or ""
+                cached_rules = scope_rule_cache.get(cache_key)
+                if cached_rules is not None:
+                    return cached_rules
+                scoped_cfg = (
+                    resolve_scoped_settings(
+                        runtime_settings, cache_key, fallback_to_global=True
+                    )
+                    if (runtime_settings is not None and cache_key)
+                    else runtime_settings
+                )
+                raw_kw = getattr(scoped_cfg, "KEYWORD_RULES", {}) if scoped_cfg else {}
+                raw_learned = (
+                    getattr(scoped_cfg, "LEARNED_RULES", {}) if scoped_cfg else {}
+                )
+                raw_pols = getattr(scoped_cfg, "POLICIES", []) if scoped_cfg else []
+                bundle = (
+                    scoped_cfg,
+                    PolicyEngine.sort_policies(raw_pols),
+                    raw_kw if isinstance(raw_kw, dict) else {},
+                    raw_learned if isinstance(raw_learned, dict) else {},
+                )
+                scope_rule_cache[cache_key] = bundle
+                return bundle
+
+            _, sorted_policies, _, _ = _get_root_scope_rules(base_dir or "")
 
             from app.core.resilient_file_ops import (
                 DETECT_ORIGINAL_BY_MODES,
@@ -1308,24 +1332,39 @@ class IncrementalAnalyzer:
                 if runtime_settings
                 else "first_seen"
             )
-            if detect_original_by == "first_seen" and sorted_policies:
-                for pol in sorted_policies:
-                    p_type = (
-                        pol.type
-                        if hasattr(pol, "type")
-                        else pol.get("type")
-                        if isinstance(pol, dict)
-                        else None
-                    )
-                    p_sel = (
-                        getattr(pol, "detect_original_by", None)
-                        if hasattr(pol, "type")
-                        else pol.get("detect_original_by")
-                        if isinstance(pol, dict)
-                        else None
-                    )
-                    if p_type == "duplicate" and p_sel in DETECT_ORIGINAL_BY_MODES:
-                        detect_original_by = str(p_sel)
+            if detect_original_by == "first_seen":
+                candidate_policy_lists: list[list[Any]] = [sorted_policies]
+                seen_roots: set[str] = {base_dir or ""}
+                for d_item in docs:
+                    item_root, _ = parse_item_identifier(str(d_item[0]), base_dir)
+                    eff_root = item_root or base_dir or ""
+                    if eff_root not in seen_roots:
+                        seen_roots.add(eff_root)
+                        candidate_policy_lists.append(
+                            _get_root_scope_rules(eff_root)[1]
+                        )
+                for pol_list in candidate_policy_lists:
+                    found_mode = False
+                    for pol in pol_list:
+                        p_type = (
+                            pol.type
+                            if hasattr(pol, "type")
+                            else pol.get("type")
+                            if isinstance(pol, dict)
+                            else None
+                        )
+                        p_sel = (
+                            getattr(pol, "detect_original_by", None)
+                            if hasattr(pol, "type")
+                            else pol.get("detect_original_by")
+                            if isinstance(pol, dict)
+                            else None
+                        )
+                        if p_type == "duplicate" and p_sel in DETECT_ORIGINAL_BY_MODES:
+                            detect_original_by = str(p_sel)
+                            found_mode = True
+                            break
+                    if found_mode:
                         break
 
             doc_abs_map: dict[str, str] = {}
@@ -1549,6 +1588,13 @@ class IncrementalAnalyzer:
                     target = locked_target
 
                 src_root, rel_f = parse_item_identifier(f, base_dir)
+                owning_root = src_root or base_dir or ""
+                (
+                    scoped_file_settings,
+                    file_sorted_policies,
+                    keyword_rules,
+                    learned_rules,
+                ) = _get_root_scope_rules(owning_root)
                 abs_f = (
                     os.path.join(src_root, rel_f)
                     if src_root and not os.path.isabs(rel_f)
@@ -1565,7 +1611,7 @@ class IncrementalAnalyzer:
                         f,
                         doc,
                         status_match,
-                        sorted_policies,
+                        file_sorted_policies,
                         return_halting=True,
                         is_sorted=True,
                         abs_file_path=abs_f,
@@ -1850,12 +1896,12 @@ class IncrementalAnalyzer:
                     )
                     norm_search = re.sub(r"[_\-\s]+", " ", text_to_search)
                     for keyword, target_folder in learned_rules.items():
-                        if not keyword.strip() or _is_target_rejected(f, target_folder):
+                        if not str(keyword).strip() or _is_target_rejected(
+                            f, target_folder
+                        ):
                             continue
-                        kw_low = keyword.lower().strip()
-                        norm_kw = re.sub(r"[_\-\s]+", " ", kw_low)
-                        if kw_low in text_to_search or (
-                            len(norm_kw) >= 3 and norm_kw in norm_search
+                        if matches_learned_rule_pattern(
+                            str(keyword), text_to_search, norm_search=norm_search
                         ):
                             f_date = _get_or_resolve_file_date(f, abs_f)
                             exp_folder = _expand_folder_template(
@@ -1868,9 +1914,7 @@ class IncrementalAnalyzer:
                             break
 
                 if not matched and (status_match or ext not in supported_exts):
-                    from app.core.metadata import get_extension_category_target
-
-                    cat_target = get_extension_category_target(f, runtime_settings)
+                    cat_target = get_extension_category_target(f, scoped_file_settings)
                     if cat_target:
                         keyword_plan_files.append(
                             (f, cat_target, ext, "extension_category", status_match)

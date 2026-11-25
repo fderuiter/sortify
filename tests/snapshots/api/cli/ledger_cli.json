@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "9c78f7ff1f03527299d5feded6624017d3656345e694fa3da2d4d14cf67330f9"
+    "checksum": "6f5680bd0aba05adcb3b5632efaf3e51960d69be92d376a203e221bd979d9da9"
   },
   "classes": [],
   "cli": [
@@ -22,6 +22,30 @@
       "keywords": {
         "action": "store_true",
         "help": "Output response in structured JSON format"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--settings-file"
+      ],
+      "caller": "ledger_settings_group",
+      "keywords": {
+        "default": "argparse.SUPPRESS",
+        "help": "Path to an explicit Sortify settings.json file",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--profile"
+      ],
+      "caller": "ledger_settings_group",
+      "keywords": {
+        "default": "argparse.SUPPRESS",
+        "help": "Named configuration profile under ~/.autosorter/profiles/<name>.json",
+        "type": "str"
       },
       "method": "add_argument"
     },
@@ -216,6 +240,30 @@
       "keywords": {
         "default": null,
         "help": "Path to sidecar transaction ledger database file",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--settings-file"
+      ],
+      "caller": "p_settings_group",
+      "keywords": {
+        "default": "argparse.SUPPRESS",
+        "help": "Path to an explicit Sortify settings.json file",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--profile"
+      ],
+      "caller": "p_settings_group",
+      "keywords": {
+        "default": "argparse.SUPPRESS",
+        "help": "Named configuration profile under ~/.autosorter/profiles/<name>.json",
         "type": "str"
       },
       "method": "add_argument"

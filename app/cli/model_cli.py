@@ -46,6 +46,19 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
         default=argparse.SUPPRESS,
         help="Disable ANSI color formatting",
     )
+    model_settings_group = parser_model.add_mutually_exclusive_group()
+    model_settings_group.add_argument(
+        "--settings-file",
+        type=str,
+        default=argparse.SUPPRESS,
+        help="Path to an explicit Sortify settings.json file",
+    )
+    model_settings_group.add_argument(
+        "--profile",
+        type=str,
+        default=argparse.SUPPRESS,
+        help="Named configuration profile under ~/.autosorter/profiles/<name>.json",
+    )
     model_subparsers = parser_model.add_subparsers(
         dest="model_command", help="Model management subcommands"
     )
@@ -56,6 +69,19 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
             type=str,
             default=None,
             help="Explicit local model directory path override",
+        )
+        p_settings_group = p.add_mutually_exclusive_group()
+        p_settings_group.add_argument(
+            "--settings-file",
+            type=str,
+            default=argparse.SUPPRESS,
+            help="Path to an explicit Sortify settings.json file",
+        )
+        p_settings_group.add_argument(
+            "--profile",
+            type=str,
+            default=argparse.SUPPRESS,
+            help="Named configuration profile under ~/.autosorter/profiles/<name>.json",
         )
         p.add_argument(
             "-q",

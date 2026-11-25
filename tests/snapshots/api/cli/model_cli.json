@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "47a38ee9098f44268d7c4bee9b859bb9fcf9e1d33097cacbe778c23ba137451b"
+    "checksum": "88280434df76655dc16676e1b413dd2fcbd8e3a5413034cc26c46ed3315f7095"
   },
   "classes": [],
   "cli": [
@@ -49,6 +49,30 @@
         "default": "argparse.SUPPRESS",
         "dest": "no_color",
         "help": "Disable ANSI color formatting"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--settings-file"
+      ],
+      "caller": "model_settings_group",
+      "keywords": {
+        "default": "argparse.SUPPRESS",
+        "help": "Path to an explicit Sortify settings.json file",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--profile"
+      ],
+      "caller": "model_settings_group",
+      "keywords": {
+        "default": "argparse.SUPPRESS",
+        "help": "Named configuration profile under ~/.autosorter/profiles/<name>.json",
+        "type": "str"
       },
       "method": "add_argument"
     },
@@ -138,6 +162,30 @@
       "keywords": {
         "default": null,
         "help": "Explicit local model directory path override",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--settings-file"
+      ],
+      "caller": "p_settings_group",
+      "keywords": {
+        "default": "argparse.SUPPRESS",
+        "help": "Path to an explicit Sortify settings.json file",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--profile"
+      ],
+      "caller": "p_settings_group",
+      "keywords": {
+        "default": "argparse.SUPPRESS",
+        "help": "Named configuration profile under ~/.autosorter/profiles/<name>.json",
         "type": "str"
       },
       "method": "add_argument"

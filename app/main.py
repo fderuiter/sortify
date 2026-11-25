@@ -1531,6 +1531,19 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         default=False,
         help="Run in non-interactive mode and bypass interactive modal dialogs",
     )
+    settings_source_group = parser.add_mutually_exclusive_group()
+    settings_source_group.add_argument(
+        "--settings-file",
+        type=str,
+        default=None,
+        help="Path to an explicit Sortify settings.json file",
+    )
+    settings_source_group.add_argument(
+        "--profile",
+        type=str,
+        default=None,
+        help="Named configuration profile under ~/.autosorter/profiles/<name>.json",
+    )
 
     subparsers = parser.add_subparsers(dest="subcommand", help="Available subcommands")
 
@@ -1654,6 +1667,19 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
             choices=["html", "json"],
             default=None,
             help="Format for exported simulation report (html or json)",
+        )
+        sub_settings_group = subparser.add_mutually_exclusive_group()
+        sub_settings_group.add_argument(
+            "--settings-file",
+            type=str,
+            default=argparse.SUPPRESS,
+            help="Path to an explicit Sortify settings.json file",
+        )
+        sub_settings_group.add_argument(
+            "--profile",
+            type=str,
+            default=argparse.SUPPRESS,
+            help="Named configuration profile under ~/.autosorter/profiles/<name>.json",
         )
 
     # Subcommand: sort
@@ -1860,13 +1886,25 @@ def _main_impl():
         "undo",
         "drop",
     )
-    # `smart-autosorter [flags] DIR`: a directory with no subcommand. Every
-    # top-level option is a flag, so the first non-flag argument is either a
-    # subcommand or that directory, wherever it appears among the flags.
+    # `smart-autosorter [flags] DIR`: a directory with no subcommand. Skip
+    # values belonging to top-level options so flag arguments are not mistaken
+    # for the legacy positional directory.
+    top_level_value_flags = {
+        "--settings-file",
+        "--profile",
+        "--detect-original-by",
+    }
     legacy_directory = None
+    skip_next = False
     for index, arg in enumerate(sys.argv[1:], start=1):
+        if skip_next:
+            skip_next = False
+            continue
         if arg == "--":
             break
+        if arg in top_level_value_flags:
+            skip_next = True
+            continue
         if arg.startswith("-"):
             continue
         if arg not in known_subcommands:
@@ -2124,6 +2162,21 @@ def _configure_settings_and_logging(
         def emit(self, record: logging.LogRecord) -> None:
             self.records.append(record)
 
+    raw_sf = getattr(args, "settings_file", None)
+    raw_prof = getattr(args, "profile", None)
+    settings_filepath: str | None = None
+    if raw_sf is not None or raw_prof is not None:
+        from app.config import resolve_cli_settings_filepath
+
+        try:
+            settings_filepath = resolve_cli_settings_filepath(
+                settings_file=raw_sf,
+                profile=raw_prof,
+            )
+        except ValueError as err:
+            is_json = bool(getattr(args, "json", False) or "--json" in sys.argv)
+            emit_cli_error(f"Error: {err}", json_mode=is_json, exit_code=2)
+
     root_logger = logging.getLogger()
     pre_existing_handlers = set(root_logger.handlers)
     prev_root_level = root_logger.level
@@ -2134,7 +2187,11 @@ def _configure_settings_and_logging(
     ):
         root_logger.setLevel(logging.INFO)
     try:
-        settings = AppSettings()
+        settings = (
+            AppSettings(filepath=settings_filepath)
+            if settings_filepath
+            else AppSettings()
+        )
         apply_config_overrides(settings, args)
     finally:
         root_logger.removeHandler(startup_buffer)

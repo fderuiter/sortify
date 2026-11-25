@@ -1087,21 +1087,28 @@ class DirectorySelectModal(
     }
     """
 
-    def __init__(self, current_dir: str = "", source_dirs: Optional[list[str]] = None):
+    def __init__(
+        self,
+        current_dir: str = "",
+        source_dirs: Optional[list[str]] = None,
+        settings: Any = None,
+    ):
         super().__init__()
         self.current_dir = current_dir
+        self.settings = settings
+        self._configured_scopes: list[str] = (
+            sorted((getattr(settings, "FOLDER_RULE_SCOPES", {}) or {}).keys())
+            if settings is not None
+            else []
+        )
         self.added_via_btn = False
         if source_dirs:
             self.selected_sources = [
-                d if str(d).startswith("/") else os.path.abspath(d)
-                for d in source_dirs
-                if d
+                os.path.abspath(os.path.expanduser(str(d))) for d in source_dirs if d
             ]
         elif current_dir:
             self.selected_sources = [
-                current_dir
-                if str(current_dir).startswith("/")
-                else os.path.abspath(current_dir)
+                os.path.abspath(os.path.expanduser(str(current_dir)))
             ]
         else:
             self.selected_sources = []

@@ -256,10 +256,15 @@ class SamplePlaygroundModal(ResponsiveModalScreen[None]):
 
     def _refresh_simulation(self) -> None:
         """Re-evaluate rule simulation and update prediction matrix table."""
+        from app.config import resolve_scoped_settings
+
         selected_packs = self._get_selected_pack_ids()
+        scoped_settings = resolve_scoped_settings(
+            self.settings, self.target_dir, fallback_to_global=True
+        )
         self._predictions = simulate_corpus_classification(
             selected_packs=selected_packs,
-            settings=self.settings,
+            settings=scoped_settings,
         )
 
         matrix = self.query_one("#playground-prediction-matrix", DataTable)
@@ -327,10 +332,15 @@ class SamplePlaygroundModal(ResponsiveModalScreen[None]):
     @on(Button.Pressed, "#btn-commit-playground")
     def action_commit(self) -> None:
         """Apply chosen starter template packs and commit sample documents to workspace disk."""
+        from app.config import resolve_scoped_settings
+
         selected_packs = self._get_selected_pack_ids()
         if selected_packs:
             try:
-                apply_starter_templates(self.settings, selected_packs)
+                scoped_settings = resolve_scoped_settings(
+                    self.settings, self.target_dir, fallback_to_global=True
+                )
+                apply_starter_templates(scoped_settings, selected_packs)
                 if hasattr(self.settings, "_save"):
                     self.settings._save()
             except Exception as exc:

@@ -25,6 +25,19 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help="Output response in structured JSON format",
     )
+    quarantine_settings_group = parser_quarantine.add_mutually_exclusive_group()
+    quarantine_settings_group.add_argument(
+        "--settings-file",
+        type=str,
+        default=argparse.SUPPRESS,
+        help="Path to an explicit Sortify settings.json file",
+    )
+    quarantine_settings_group.add_argument(
+        "--profile",
+        type=str,
+        default=argparse.SUPPRESS,
+        help="Named configuration profile under ~/.autosorter/profiles/<name>.json",
+    )
     quarantine_subparsers = parser_quarantine.add_subparsers(
         dest="quarantine_command", help="Quarantine subcommands"
     )
@@ -35,6 +48,19 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
             type=str,
             default=None,
             help="Path to database file",
+        )
+        p_settings_group = p.add_mutually_exclusive_group()
+        p_settings_group.add_argument(
+            "--settings-file",
+            type=str,
+            default=argparse.SUPPRESS,
+            help="Path to an explicit Sortify settings.json file",
+        )
+        p_settings_group.add_argument(
+            "--profile",
+            type=str,
+            default=argparse.SUPPRESS,
+            help="Named configuration profile under ~/.autosorter/profiles/<name>.json",
         )
         p.add_argument(
             "-q",

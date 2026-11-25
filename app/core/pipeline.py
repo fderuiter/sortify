@@ -840,6 +840,21 @@ class SortPipeline(LifecycleTelemetryMixin):
 
             self._planned_items = list(items)
 
+            from app.config import resolve_scoped_settings
+
+            effective_plan_root = (
+                resolved_source_dirs[0]
+                if len(resolved_source_dirs) == 1
+                else self.base_dir
+            )
+            plan_settings = (
+                resolve_scoped_settings(
+                    self.settings, effective_plan_root, fallback_to_global=True
+                )
+                if effective_plan_root
+                else self.settings
+            )
+
             metadata_bypassed: list[Any] = []
             if (
                 run_metadata_pass
@@ -852,7 +867,7 @@ class SortPipeline(LifecycleTelemetryMixin):
                     MetadataPass.run(
                         self.base_dir,
                         items,
-                        self.settings,
+                        plan_settings,
                         self.session.db,
                         progress_callback=progress_callback,
                         cancel_check=cancel_check,

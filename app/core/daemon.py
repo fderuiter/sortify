@@ -17,7 +17,7 @@ from typing import Any, Optional
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
-from app.config import AppSettings
+from app.config import AppSettings, resolve_scoped_settings
 from app.core.domain_contracts import (
     _make_json_serializable,
     validate_quarantine_record,
@@ -1049,13 +1049,14 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             return
 
         # Phase 0: Quarantine Interceptor Staging & Compliance Policy Evaluation
-        policies = getattr(self.settings, "POLICIES", [])
+        scoped_settings = resolve_scoped_settings(self.settings, self.base_dir)
+        policies = getattr(scoped_settings, "POLICIES", [])
         worker_timeout = getattr(self.settings, "WORKER_TIMEOUT", 300.0)
         interceptor = QuarantineInterceptorService(
             db=app_session.db,
             policies=policies,
             worker_timeout=worker_timeout,
-            runtime_settings=self.settings,
+            runtime_settings=scoped_settings,
         )
 
         try:

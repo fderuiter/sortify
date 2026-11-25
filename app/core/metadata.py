@@ -4,11 +4,38 @@ import contextlib
 import logging
 import mimetypes
 import os
+import re
+from typing import Any
 
+from app.config import resolve_scoped_settings
 from app.core.extractor import get_file_hash
 from app.core.extractor_strategies import registry
 from app.core.policy_engine import PolicyEngine
 from app.core.progress import emit_progress
+
+_LEARNED_SEP_RE = re.compile(r"[_\-\s]+")
+
+
+def matches_learned_rule_pattern(
+    pattern: str,
+    text_to_search: str,
+    norm_search: str | None = None,
+) -> bool:
+    """Return True if ``pattern`` matches ``text_to_search`` literally or with separator normalization."""
+    kw_low = str(pattern).lower().strip()
+    if not kw_low:
+        return False
+    search_low = text_to_search.lower()
+    if kw_low in search_low:
+        return True
+    norm_kw = _LEARNED_SEP_RE.sub(" ", kw_low)
+    if len(norm_kw) < 3:
+        return False
+    effective_norm = (
+        norm_search if norm_search is not None else _LEARNED_SEP_RE.sub(" ", search_low)
+    )
+    return norm_kw in effective_norm
+
 
 DEFAULT_EXTENSION_CATEGORIES = {
     # Archives / Compressed
@@ -56,11 +83,17 @@ def get_extension_category_target(item: str, settings) -> str | None:
     # 1. User-configured EXTENSION_CATEGORIES setting
     ext_categories = getattr(settings, "EXTENSION_CATEGORIES", {})
     if isinstance(ext_categories, dict):
-        if ext in ext_categories:
+        if ext in ext_categories and isinstance(ext_categories[ext], str):
             return ext_categories[ext]
         ext_no_dot = ext.lstrip(".")
-        if ext_no_dot in ext_categories:
+        if ext_no_dot in ext_categories and isinstance(ext_categories[ext_no_dot], str):
             return ext_categories[ext_no_dot]
+        for cat_folder, ext_list in ext_categories.items():
+            if isinstance(cat_folder, str) and isinstance(ext_list, (list, tuple, set)):
+                for raw_ext in ext_list:
+                    clean_ext = str(raw_ext).strip().lower()
+                    if clean_ext in (ext, ext_no_dot):
+                        return cat_folder
 
     # 2. Built-in default extension mapping
     if ext in DEFAULT_EXTENSION_CATEGORIES:
@@ -176,16 +209,26 @@ def evaluate_static_file_routing(
             matched_action = PolicyEngine.validate_policy_action(str(raw_action))
 
     if not halt_evaluation and not matched_target and not matched_action:
-        for attr_name in ("KEYWORD_RULES", "LEARNED_RULES"):
-            rules = getattr(settings, attr_name, {}) if settings else {}
-            if isinstance(rules, dict):
-                for keyword, target_folder in rules.items():
-                    kw_str = str(keyword)
-                    if kw_str.strip() and kw_str.lower() in fn_lower and target_folder:
+        kw_rules = getattr(settings, "KEYWORD_RULES", {}) if settings else {}
+        if isinstance(kw_rules, dict):
+            for keyword, target_folder in kw_rules.items():
+                kw_str = str(keyword)
+                if kw_str.strip() and kw_str.lower() in fn_lower and target_folder:
+                    matched_target = str(target_folder)
+                    break
+
+        if not matched_target:
+            learned_rules = getattr(settings, "LEARNED_RULES", {}) if settings else {}
+            if isinstance(learned_rules, dict) and learned_rules:
+                norm_fn = _LEARNED_SEP_RE.sub(" ", fn_lower)
+                for keyword, target_folder in learned_rules.items():
+                    if not target_folder:
+                        continue
+                    if matches_learned_rule_pattern(
+                        str(keyword), fn_lower, norm_search=norm_fn
+                    ):
                         matched_target = str(target_folder)
                         break
-            if matched_target:
-                break
 
     if (
         not halt_evaluation
@@ -220,7 +263,6 @@ class MetadataPass:
 
         effective_callback = progress_callback or callback
 
-        policies = getattr(settings, "POLICIES", [])
         auto_quarantine_ratings = [
             r for r in (getattr(settings, "AUTO_QUARANTINE_RATINGS", []) or []) if r
         ]
@@ -232,30 +274,44 @@ class MetadataPass:
                 else getattr(pol, key, default)
             )
 
-        # Sort policies in descending order of priority (higher priority number first)
-        valid_policies = (
-            [
-                p
-                for p in (policies or [])
-                if isinstance(p, dict) or hasattr(p, "model_dump")
-            ]
-            if isinstance(policies, (list, tuple))
-            else []
-        )
-        sorted_policies = PolicyEngine.sort_policies(valid_policies)
+        scope_bundle_cache: dict[str, tuple[Any, list[Any], bool]] = {}
 
-        has_content_compliance_policy = bool(auto_quarantine_ratings) or any(
-            bool(_policy_field(p, "enabled", True))
-            and (
-                str(_policy_field(p, "type", "") or "").lower()
-                in ("compliance", "action")
-                or str(_policy_field(p, "action", "") or "").lower()
-                in ("quarantine", "redact", "archive", "retain")
-                or str(_policy_field(p, "expression", "") or "").strip().lower()
-                in ("secret", "credential")
+        def _get_scope_bundle(root_dir: str) -> tuple[Any, list[Any], bool]:
+            cache_key = root_dir or ""
+            cached = scope_bundle_cache.get(cache_key)
+            if cached is not None:
+                return cached
+            scoped_cfg = (
+                resolve_scoped_settings(settings, cache_key, fallback_to_global=True)
+                if cache_key
+                else settings
             )
-            for p in sorted_policies
-        )
+            raw_policies = getattr(scoped_cfg, "POLICIES", []) if scoped_cfg else []
+            valid_pols = (
+                [
+                    p
+                    for p in (raw_policies or [])
+                    if isinstance(p, dict) or hasattr(p, "model_dump")
+                ]
+                if isinstance(raw_policies, (list, tuple))
+                else []
+            )
+            sorted_pols = PolicyEngine.sort_policies(valid_pols)
+            has_compliance = bool(auto_quarantine_ratings) or any(
+                bool(_policy_field(p, "enabled", True))
+                and (
+                    str(_policy_field(p, "type", "") or "").lower()
+                    in ("compliance", "action")
+                    or str(_policy_field(p, "action", "") or "").lower()
+                    in ("quarantine", "redact", "archive", "retain")
+                    or str(_policy_field(p, "expression", "") or "").strip().lower()
+                    in ("secret", "credential")
+                )
+                for p in sorted_pols
+            )
+            bundle = (scoped_cfg, sorted_pols, has_compliance)
+            scope_bundle_cache[cache_key] = bundle
+            return bundle
 
         if db and hasattr(db, "worker"):
             from app.core.db import DBWorker
@@ -308,6 +364,10 @@ class MetadataPass:
             progress_ratio = (idx + 1) / total_items if total_items > 0 else 1.0
 
             src_root, rel_p = parse_item_identifier(item, default_base_dir=base_dir)
+            owning_root = src_root or base_dir or ""
+            scoped_settings, sorted_policies, has_content_compliance_policy = (
+                _get_scope_bundle(owning_root)
+            )
             item_path = os.path.join(src_root, rel_p) if src_root else item
             try:
                 if not os.path.isfile(item_path):
@@ -364,7 +424,7 @@ class MetadataPass:
                 matched_target, _matched_action, _halt_eval = (
                     evaluate_static_file_routing(
                         item_path,
-                        settings,
+                        scoped_settings,
                         filename_only=os.path.basename(rel_p).lower(),
                         check_extension_categories=not is_supported,
                         sorted_policies=sorted_policies,
