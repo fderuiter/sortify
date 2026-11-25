@@ -249,6 +249,12 @@ Maximum number of concurrent worker processes dedicated to audio transcription t
 
 List of enabled plugin Python module identifiers. Entries must be valid dotted Python identifiers without path or shell characters; explicit dotted module paths must start with 'app.plugins.' or 'sortify_plugin_', and Python standard library or system modules are forbidden.
 
+### `PLUGIN_SETTINGS`
+- **Type**: `dict[str, Any]`
+- **Default**: `{}`
+
+Dictionary mapping plugin-owned configuration keys to their persisted user values for optional domain plugins enabled in PLUGINS.
+
 ### `OCR_LANGUAGES`
 - **Type**: `str`
 - **Default**: `'en'`
@@ -294,25 +300,7 @@ Selector used to choose the surviving original file in each byte-identical dupli
 - **Type**: `str`
 - **Default**: `'default'`
 
-Document clustering and taxonomy strategy identifier (for example 'default' TF-IDF/embedding clustering, 'generative', 'clinical_tmf', or 'clinical_isf').
-
-### `CLINICAL_SMART_RENAMING`
-- **Type**: `bool`
-- **Default**: `False`
-
-Whether clinical sorting strategies standardize filenames using Trial Master File (TMF/ISF) study, artifact, and date metadata.
-
-### `CLINICAL_GENERATE_AUDIT_REPORT`
-- **Type**: `bool`
-- **Default**: `True`
-
-Whether clinical compliance runs automatically generate a regulatory audit trail report upon completion.
-
-### `CLINICAL_SUPPRESS_DUPLICATES`
-- **Type**: `bool`
-- **Default**: `False`
-
-Whether clinical multi-study ingestion skips copying byte-verified duplicate artifacts instead of creating numbered _1 copies while preserving manifest lineage.
+Document clustering and taxonomy strategy identifier (for example 'default' TF-IDF/embedding clustering, 'generative', or a strategy identifier registered by an enabled plugin).
 
 ### `COHERENCE_THRESHOLD`
 - **Type**: `float`
@@ -627,7 +615,7 @@ usage: smart-autosorter sort [-h] [--preset {demo,downloads,documents}]
                              [--flush-trash]
                              [--settings-file SETTINGS_FILE | --profile PROFILE]
                              [-q] [--no-color] [--max-folders MAX_FOLDERS]
-                             [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                             [--strategy {default,generative}]
                              [--conflict-policy {skip,rename,overwrite}]
                              [--duplicates {off,review,skip,stage,trash}]
                              [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
@@ -663,7 +651,7 @@ options:
   --no-color            Disable ANSI color and style formatting
   --max-folders MAX_FOLDERS
                         Maximum number of generated subfolders
-  --strategy {default,generative,clinical_tmf,clinical_isf}
+  --strategy {default,generative}
                         Sorting strategy
   --conflict-policy {skip,rename,overwrite}
                         Conflict resolution policy
@@ -699,7 +687,7 @@ usage: smart-autosorter scan [-h] [--preset {demo,downloads,documents}]
                              [--json]
                              [--settings-file SETTINGS_FILE | --profile PROFILE]
                              [-q] [--no-color] [--max-folders MAX_FOLDERS]
-                             [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                             [--strategy {default,generative}]
                              [--conflict-policy {skip,rename,overwrite}]
                              [--duplicates {off,review,skip,stage,trash}]
                              [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
@@ -730,7 +718,7 @@ options:
   --no-color            Disable ANSI color and style formatting
   --max-folders MAX_FOLDERS
                         Maximum number of generated subfolders
-  --strategy {default,generative,clinical_tmf,clinical_isf}
+  --strategy {default,generative}
                         Sorting strategy
   --conflict-policy {skip,rename,overwrite}
                         Conflict resolution policy
@@ -765,7 +753,7 @@ options:
 usage: smart-autosorter config [-h] [--show] [--json] [--set KEY VALUE]
                                [--settings-file SETTINGS_FILE | --profile PROFILE]
                                [-q] [--no-color] [--max-folders MAX_FOLDERS]
-                               [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                               [--strategy {default,generative}]
                                [--conflict-policy {skip,rename,overwrite}]
                                [--duplicates {off,review,skip,stage,trash}]
                                [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
@@ -791,7 +779,7 @@ options:
   --no-color            Disable ANSI color and style formatting
   --max-folders MAX_FOLDERS
                         Maximum number of generated subfolders
-  --strategy {default,generative,clinical_tmf,clinical_isf}
+  --strategy {default,generative}
                         Sorting strategy
   --conflict-policy {skip,rename,overwrite}
                         Conflict resolution policy
@@ -826,7 +814,7 @@ options:
 usage: smart-autosorter daemon [-h] [--watch]
                                [--settings-file SETTINGS_FILE | --profile PROFILE]
                                [-q] [--no-color] [--max-folders MAX_FOLDERS]
-                               [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                               [--strategy {default,generative}]
                                [--conflict-policy {skip,rename,overwrite}]
                                [--duplicates {off,review,skip,stage,trash}]
                                [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
@@ -856,7 +844,7 @@ options:
   --no-color            Disable ANSI color and style formatting
   --max-folders MAX_FOLDERS
                         Maximum number of generated subfolders
-  --strategy {default,generative,clinical_tmf,clinical_isf}
+  --strategy {default,generative}
                         Sorting strategy
   --conflict-policy {skip,rename,overwrite}
                         Conflict resolution policy
@@ -893,7 +881,7 @@ usage: smart-autosorter undo [-h] [--session-id SESSION_ID] [--list]
                              [--dry-run] [--step-id STEP_IDS] [--file FILES]
                              [--settings-file SETTINGS_FILE | --profile PROFILE]
                              [-q] [--no-color] [--max-folders MAX_FOLDERS]
-                             [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                             [--strategy {default,generative}]
                              [--conflict-policy {skip,rename,overwrite}]
                              [--duplicates {off,review,skip,stage,trash}]
                              [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
@@ -931,7 +919,7 @@ options:
   --no-color            Disable ANSI color and style formatting
   --max-folders MAX_FOLDERS
                         Maximum number of generated subfolders
-  --strategy {default,generative,clinical_tmf,clinical_isf}
+  --strategy {default,generative}
                         Sorting strategy
   --conflict-policy {skip,rename,overwrite}
                         Conflict resolution policy
@@ -967,7 +955,7 @@ usage: smart-autosorter drop [-h] [--dest-dir DEST_DIR] [--dry-run]
                              [--flush-trash] [--json]
                              [--settings-file SETTINGS_FILE | --profile PROFILE]
                              [-q] [--no-color] [--max-folders MAX_FOLDERS]
-                             [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                             [--strategy {default,generative}]
                              [--conflict-policy {skip,rename,overwrite}]
                              [--duplicates {off,review,skip,stage,trash}]
                              [--detect-original-by {first_seen,-first_seen,name,-name,created,-created,lastmodified,-lastmodified}]
@@ -1000,7 +988,7 @@ options:
   --no-color            Disable ANSI color and style formatting
   --max-folders MAX_FOLDERS
                         Maximum number of generated subfolders
-  --strategy {default,generative,clinical_tmf,clinical_isf}
+  --strategy {default,generative}
                         Sorting strategy
   --conflict-policy {skip,rename,overwrite}
                         Conflict resolution policy

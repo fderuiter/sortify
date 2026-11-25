@@ -12,7 +12,7 @@ import sys
 from typing import Any
 
 from app.config import AppSettings
-from app.plugins.clinical_compliance.tui_views import CROForensicModal
+from app.core.plugin_registry import PluginRegistry
 from app.ui.a11y import A11yViolation, inspect_tui_component
 from app.ui.modals.command_palette import CommandPaletteModal
 from app.ui.modals.drop_zone import DropPlanConfirmModal, DropZoneModal
@@ -398,21 +398,19 @@ CATALOG_REGISTRY: list[dict[str, Any]] = [
             settings=settings or _build_default_settings()
         ),
     },
-    {
-        "id": "cro_forensic_modal",
-        "name": "CRO Forensic Modal",
-        "category": "modal",
-        "description": "Modal dialog for running CRO multi-study forensic ingestion worker.",
-        "factory": lambda settings=None: CROForensicModal(
-            settings=settings or _build_default_settings()
-        ),
-    },
 ]
 
 
 def get_catalog_registry() -> list[dict[str, Any]]:
-    """Return list of registered catalog component definitions."""
-    return CATALOG_REGISTRY
+    """Return list of registered catalog component definitions including isolated plugin entries."""
+    entries = list(CATALOG_REGISTRY)
+    seen_ids = {str(entry.get("id", "")) for entry in entries}
+    for plugin_entry in PluginRegistry.discover_catalog_entries_isolated():
+        entry_id = str(plugin_entry.get("id", ""))
+        if entry_id and entry_id not in seen_ids:
+            entries.append(plugin_entry)
+            seen_ids.add(entry_id)
+    return entries
 
 
 async def _audit_components_async(

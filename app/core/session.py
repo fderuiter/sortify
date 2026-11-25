@@ -107,36 +107,34 @@ class AppSession:
                     active_model_path = user_model_path
 
             model_path = active_model_path if self.settings.AI_CONSENT_GRANTED else None
-            configured_strat = getattr(self.settings, "SORTING_STRATEGY", "default")
-            if configured_strat in ("clinical_tmf", "clinical_isf"):
-                strategy_name = configured_strat
-                from app.core.analyzer_strategies import clustering_registry
+            from app.core.analyzer_strategies import clustering_registry
+            from app.core.plugin_registry import PluginRegistry
 
-                strat = clustering_registry.get_strategy(strategy_name)
-                if strat and hasattr(strat, "smart_renaming"):
-                    setattr(
-                        strat,
-                        "smart_renaming",
-                        bool(getattr(self.settings, "CLINICAL_SMART_RENAMING", False)),
-                    )
-                    setattr(
-                        strat,
-                        "generate_audit_report",
-                        bool(
-                            getattr(
-                                self.settings, "CLINICAL_GENERATE_AUDIT_REPORT", True
-                            )
-                        ),
-                    )
-                    setattr(strat, "base_dir", self.base_dir)
+            plugin_reg = PluginRegistry.get_instance()
+            plugin_reg.load_plugins_from_settings(self.settings)
+
+            configured_strat = (
+                getattr(self.settings, "SORTING_STRATEGY", "default") or "default"
+            )
+            plugin_strat = (
+                clustering_registry.get_strategy(configured_strat)
+                if configured_strat not in ("default", "generative")
+                else None
+            )
+            if plugin_strat is not None:
+                strategy_name = configured_strat
+                plugin_reg.configure_strategy(
+                    strategy_name,
+                    plugin_strat,
+                    self.settings,
+                    base_dir=self.base_dir,
+                )
             else:
                 is_generative = configured_strat == "generative" or bool(
                     getattr(self.settings, "AI_ASSISTED_NAMING", False)
                 )
                 strategy_name = "generative" if is_generative else "default"
                 if is_generative:
-                    from app.core.analyzer_strategies import clustering_registry
-
                     gen_strat = clustering_registry.get_strategy("generative")
                     gen_model_path = None
                     if self.settings.AI_CONSENT_GRANTED:

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "321e47dc3491ea0eba9eba07e22b0b865284f48d8374be266fcd960ed80873e4"
+    "checksum": "985a80dc43a3002465267b00012aab2ccd18b0bf1b3f0af9d23b14550210a1ab"
   },
   "classes": [
     {
@@ -60,6 +60,24 @@
             }
           ],
           "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "unregister",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "name"
+            }
+          ],
+          "returns": "None"
         }
       ]
     },

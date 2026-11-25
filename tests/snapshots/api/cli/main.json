@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "f8ec3d2475efd2ab542db80b0a9bdbb3fa96d63ca70b9f541634cc83a3ae2923"
+    "checksum": "00d0a5f07dde06ee66ae0081995a3886592ef424d4dffbe54d8735da103701db"
   },
   "cli": [
     {
@@ -620,12 +620,7 @@
       ],
       "caller": "subparser",
       "keywords": {
-        "choices": [
-          "default",
-          "generative",
-          "clinical_tmf",
-          "clinical_isf"
-        ],
+        "choices": "strategy_choices",
         "default": null,
         "help": "Sorting strategy",
         "type": "str"

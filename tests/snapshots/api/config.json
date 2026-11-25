@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "5c7c3327abcf81b0e2535b7721a67e022bd1faa5879cae340343b67eddbc314b"
+    "checksum": "30317d376dff10f65a76b05d1e8eec906892608cb019bb9e416b20e15b2a166e"
   },
   "classes": [
     {
@@ -124,6 +124,29 @@
         {
           "async": false,
           "decorators": [],
+          "name": "get_plugin_setting",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "key"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "default"
+            }
+          ],
+          "returns": "Any"
+        },
+        {
+          "async": false,
+          "decorators": [],
           "name": "load",
           "parameters": [
             {
@@ -194,6 +217,29 @@
             }
           ],
           "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "set_plugin_setting",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "key"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "value"
+            }
+          ],
+          "returns": "None"
         }
       ]
     },
@@ -301,6 +347,29 @@
             }
           ],
           "returns": "int"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_plugin_setting",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "key"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "default"
+            }
+          ],
+          "returns": "Any"
         },
         {
           "async": false,

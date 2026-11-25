@@ -8,16 +8,26 @@ from app.plugins.clinical_compliance.clinical_strategy import ClinicalTMFStrateg
 
 
 def test_clinical_strategies_registered():
-    """Verify clinical_tmf and clinical_isf are registered and retrievable."""
+    """Verify clinical_tmf and clinical_isf require explicit plugin activation."""
+    from app.core.plugin_registry import PluginRegistry
+
+    PluginRegistry.reset_instance()
+    assert clustering_registry.get_strategy("clinical_tmf") is None
+    assert clustering_registry.get_strategy("clinical_isf") is None
+
+    assert PluginRegistry.get_instance().load_plugin("clinical_compliance") is True
+
     strat_tmf = clustering_registry.get_strategy("clinical_tmf")
     assert strat_tmf is not None
     assert isinstance(strat_tmf, ClinicalTMFStrategy)
     assert strat_tmf.mode == "tmf"
+    assert strat_tmf.requires_embeddings is False
 
     strat_isf = clustering_registry.get_strategy("clinical_isf")
     assert strat_isf is not None
     assert isinstance(strat_isf, ClinicalTMFStrategy)
     assert strat_isf.mode == "isf"
+    assert strat_isf.requires_embeddings is False
 
 
 def test_tmf_mode_plan_generation():

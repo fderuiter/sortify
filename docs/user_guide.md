@@ -76,7 +76,7 @@ smart-autosorter sort ~/Downloads --dest-dir ~/Sorted
 
 Useful options for `sort` and `scan`:
 - `--max-folders N`: maximum folders per level (default 12, up to 50).
-- `--strategy`: `default` (keyword clustering), `generative` (local LLM folder names, needs the `ml` extra), or the clinical `clinical_tmf` / `clinical_isf` strategies.
+- `--strategy`: `default` (keyword clustering), `generative` (local LLM folder names, needs the `ml` extra), or plugin strategies such as `clinical_tmf` / `clinical_isf` when `clinical_compliance` is enabled in `PLUGINS`.
 - `--conflict-policy skip|rename|overwrite`: what to do when a destination file already exists (`overwrite` moves the existing file to `.sortify_overwritten/<session_id>/` so `undo` restores it).
 - `--export-report FILE --report-format html|json`: save an audit report of the run.
 - `--preset demo|downloads|documents`: use a standard folder instead of naming one.
@@ -100,7 +100,7 @@ When the palette opens, focus is placed in the command search input field (`#pal
 While primary actions (such as scanning or executing plans) have direct keybindings, several workflows do not have dedicated shortcuts and are executed directly through the command palette:
 
 - **Model Manager** (`Open Model Manager`): Manage ONNX embedding model downloads (`all-MiniLM-L6-v2`) and local embeddings. Download the sentence transformer model, retry failed downloads, or configure corporate proxy endpoints.
-- **CRO Forensic Ingestion** (`Open CRO Forensic Ingestion`): Multi-study clinical compliance ingestion workflow to scan clinical study folders and organize documents into Trial Master File (TMF/ISF) folder structures.
+- **CRO Forensic Ingestion** (`Open CRO Forensic Ingestion`, available when `clinical_compliance` is enabled in `PLUGINS`): Multi-study clinical compliance ingestion workflow to scan clinical study folders and organize documents into Trial Master File (TMF/ISF) folder structures.
 - **Export Active Rules** (`Export Active Rules`): Open the rule export dialog to serialize active keyword rules and compliance policies to disk in Sortify JSON (`*.json`), Hazel (`*.hazelrules`), or DropIt (`*.ini`) formats.
 - **Import External Rules** (`Import External Rules`): Open the rule migration dialog to import external rule sets and taxonomy definitions from Hazel, DropIt, or TagSpaces configurations.
 - **Export Simulation Report** (`Export Simulation Report`): Export dry-run simulation audit reports to HTML or JSON formats for verification before executing file moves.

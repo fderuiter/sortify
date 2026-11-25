@@ -71,9 +71,8 @@ async def test_command_palette_ctrl_k_binding(tmp_path):
     ]
     assert len(ctrl_c_bindings) == 0
 
-    # Verify open_cro_forensic shortcut is cleared in catalog
-    cro_cmd = next(c for c in DEFAULT_COMMAND_CATALOG if c.id == "open_cro_forensic")
-    assert cro_cmd.shortcut == ""
+    # Verify open_cro_forensic is absent from default catalog unless clinical plugin is enabled
+    assert not any(c.id == "open_cro_forensic" for c in DEFAULT_COMMAND_CATALOG)
 
     async with app.run_test() as pilot:
         await pilot.pause()
@@ -85,11 +84,22 @@ async def test_command_palette_ctrl_k_binding(tmp_path):
 
 @pytest.mark.anyio
 async def test_command_palette_cro_forensic_routing(tmp_path):
-    """Verify CRO forensic ingest modal launches from command palette and not ctrl+c."""
+    """Verify CRO forensic ingest modal is hidden by default and launches when clinical_compliance is enabled."""
     from app.plugins.clinical_compliance.tui_views import CROForensicModal
+    from app.ui.modals.command_palette import build_command_catalog
+
+    default_settings = AppSettings()
+    assert not any(
+        c.id == "open_cro_forensic" for c in build_command_catalog(default_settings)
+    )
 
     settings = AppSettings()
     settings._settings_model.AI_CONSENT_GRANTED = True
+    settings._settings_model.PLUGINS = ["clinical_compliance"]
+    enabled_catalog = build_command_catalog(settings)
+    cro_cmd = next(c for c in enabled_catalog if c.id == "open_cro_forensic")
+    assert cro_cmd.shortcut == ""
+
     app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
 
     async with app.run_test() as pilot:
@@ -323,7 +333,10 @@ async def test_command_palette_launch_template_gallery(tmp_path):
         await pilot.pause()
 
         assert isinstance(app.screen, TemplateGalleryModal)
-        assert app.screen.settings is app.settings
+        assert (
+            getattr(app.screen.settings, "root_settings", app.screen.settings)
+            is app.settings
+        )
 
         # Closing modal returns focus to #plan-tree
         await pilot.press("escape")
@@ -352,7 +365,10 @@ async def test_command_palette_launch_export_rules(tmp_path):
         await pilot.pause()
 
         assert isinstance(app.screen, ExportRulesModal)
-        assert app.screen.settings is app.settings
+        assert (
+            getattr(app.screen.settings, "root_settings", app.screen.settings)
+            is app.settings
+        )
 
         # Closing modal returns focus to #plan-tree
         await pilot.press("escape")
@@ -381,7 +397,10 @@ async def test_command_palette_launch_import_rules(tmp_path):
         await pilot.pause()
 
         assert isinstance(app.screen, RuleImportModal)
-        assert app.screen.settings is app.settings
+        assert (
+            getattr(app.screen.settings, "root_settings", app.screen.settings)
+            is app.settings
+        )
 
         # Closing modal returns focus to #plan-tree
         await pilot.press("escape")
@@ -464,7 +483,10 @@ async def test_tui_direct_rule_actions(tmp_path):
         app.action_open_template_gallery()
         await pilot.pause()
         assert isinstance(app.screen, TemplateGalleryModal)
-        assert app.screen.settings is app.settings
+        assert (
+            getattr(app.screen.settings, "root_settings", app.screen.settings)
+            is app.settings
+        )
         await pilot.press("escape")
         await pilot.pause()
 
@@ -472,7 +494,10 @@ async def test_tui_direct_rule_actions(tmp_path):
         app.action_export_rules()
         await pilot.pause()
         assert isinstance(app.screen, ExportRulesModal)
-        assert app.screen.settings is app.settings
+        assert (
+            getattr(app.screen.settings, "root_settings", app.screen.settings)
+            is app.settings
+        )
         await pilot.press("escape")
         await pilot.pause()
 
@@ -480,7 +505,10 @@ async def test_tui_direct_rule_actions(tmp_path):
         app.action_import_rules()
         await pilot.pause()
         assert isinstance(app.screen, RuleImportModal)
-        assert app.screen.settings is app.settings
+        assert (
+            getattr(app.screen.settings, "root_settings", app.screen.settings)
+            is app.settings
+        )
         await pilot.press("escape")
         await pilot.pause()
 

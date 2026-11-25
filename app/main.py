@@ -1043,6 +1043,10 @@ def handle_config_command(args: argparse.Namespace, settings: AppSettings):
     apply_config_overrides(settings, args)
 
     if getattr(args, "set", None):
+        from app.core.plugin_registry import PluginRegistry
+
+        PluginRegistry.get_instance().load_plugins_from_settings(settings)
+        plugin_defaults = PluginRegistry.get_instance().get_config_defaults()
         for key, value in args.set:
             key_upper = key.upper()
             if hasattr(settings._settings_model, key_upper):
@@ -1052,6 +1056,23 @@ def handle_config_command(args: argparse.Namespace, settings: AppSettings):
                     setattr(settings, key_upper, new_val)
                     settings.flush()
                 except Exception as ex:
+                    emit_cli_error(
+                        f"Error: Failed to set configuration key '{key_upper}' to '{value}': {ex}",
+                        json_mode=getattr(args, "json", False),
+                        exit_code=1,
+                    )
+            elif (
+                key_upper in settings._settings_model.PLUGIN_SETTINGS
+                or key_upper in plugin_defaults
+            ):
+                curr_val = settings.get_plugin_setting(
+                    key_upper, plugin_defaults.get(key_upper)
+                )
+                try:
+                    new_val = _parse_config_cli_value(key_upper, value, curr_val)
+                    settings.set_plugin_setting(key_upper, new_val)
+                    settings.flush()
+                except (ValueError, TypeError, OSError) as ex:
                     emit_cli_error(
                         f"Error: Failed to set configuration key '{key_upper}' to '{value}': {ex}",
                         json_mode=getattr(args, "json", False),
@@ -1446,6 +1467,116 @@ class SortifyArgumentParser(argparse.ArgumentParser):
         super().error(message)
 
 
+def _extract_cli_settings_source_flags(
+    raw_argv: list[str],
+) -> tuple[str | None, str | None]:
+    """Peek ``--settings-file`` and ``--profile`` values from raw argv without side effects."""
+    settings_file: str | None = None
+    profile: str | None = None
+    idx = 0
+    total = len(raw_argv)
+    while idx < total:
+        token = raw_argv[idx]
+        if token == "--":
+            break
+        if token == "--settings-file" and idx + 1 < total:
+            settings_file = raw_argv[idx + 1]
+            idx += 2
+            continue
+        if token.startswith("--settings-file="):
+            settings_file = token.split("=", 1)[1]
+        elif token == "--profile" and idx + 1 < total:
+            profile = raw_argv[idx + 1]
+            idx += 2
+            continue
+        elif token.startswith("--profile="):
+            profile = token.split("=", 1)[1]
+        idx += 1
+    return settings_file, profile
+
+
+def _load_cli_plugins_readonly(
+    raw_argv: list[str] | None = None,
+    *,
+    reset_if_source_explicit: bool = False,
+) -> None:
+    """Inspect configured ``PLUGINS`` read-only so CLI strategy choices reflect active plugins."""
+    import json
+
+    from app.config import get_app_dir, resolve_cli_settings_filepath
+    from app.core.plugin_registry import PluginRegistry
+
+    raw_sf: str | None = None
+    raw_prof: str | None = None
+    if raw_argv is not None:
+        raw_sf, raw_prof = _extract_cli_settings_source_flags(raw_argv)
+
+    has_explicit_source = raw_sf is not None or raw_prof is not None
+    if reset_if_source_explicit and has_explicit_source:
+        PluginRegistry.reset_instance()
+
+    target_filepath: str | None = None
+    if has_explicit_source:
+        try:
+            target_filepath = resolve_cli_settings_filepath(
+                settings_file=raw_sf,
+                profile=raw_prof,
+            )
+        except ValueError:
+            return
+    else:
+        target_filepath = str(get_app_dir() / "settings.json")
+
+    configured_plugins: list[str] = []
+    env_plugins = os.environ.get("SORTIFY_PLUGINS", "").strip()
+    if env_plugins:
+        if env_plugins.startswith("["):
+            try:
+                parsed_env = json.loads(env_plugins)
+                if isinstance(parsed_env, list):
+                    configured_plugins.extend(str(p) for p in parsed_env if p)
+            except ValueError:
+                pass
+        else:
+            configured_plugins.extend(
+                item.strip() for item in env_plugins.split(",") if item.strip()
+            )
+
+    if target_filepath and os.path.isfile(target_filepath):
+        try:
+            with open(target_filepath, encoding="utf-8") as fh:
+                raw_data = json.load(fh)
+            if isinstance(raw_data, dict):
+                PluginRegistry.migrate_legacy_settings_data(raw_data)
+                file_plugins = raw_data.get("PLUGINS")
+                if isinstance(file_plugins, (list, tuple, set)):
+                    configured_plugins = [str(p) for p in file_plugins if p]
+        except (OSError, ValueError, TypeError):
+            pass
+
+    if configured_plugins:
+        reg = PluginRegistry.get_instance()
+        for plugin_name in configured_plugins:
+            reg.load_plugin(plugin_name)
+
+
+def get_available_cli_strategies(settings: Any = None) -> list[str]:
+    """Return core CLI sorting strategies plus strategies registered by active plugins."""
+    from app.core.plugin_registry import PluginRegistry
+
+    reg = PluginRegistry.get_instance()
+    if settings is not None:
+        reg.load_plugins_from_settings(settings)
+    else:
+        _load_cli_plugins_readonly()
+
+    choices = ["default", "generative"]
+    for strat_name in reg.get_cli_strategies():
+        if strat_name not in choices:
+            choices.append(strat_name)
+    return choices
+
+
 def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentParser:
     """Build and return the main command-line argument parser for Smart AutoSorter AI Pro."""
     parser = SortifyArgumentParser(
@@ -1555,6 +1686,8 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
 
     subparsers = parser.add_subparsers(dest="subcommand", help="Available subcommands")
 
+    strategy_choices = get_available_cli_strategies()
+
     def add_common_override_args(subparser):
         add_settings_source_args(subparser, suppress_default=True)
         subparser.add_argument(
@@ -1581,7 +1714,7 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         subparser.add_argument(
             "--strategy",
             type=str,
-            choices=["default", "generative", "clinical_tmf", "clinical_isf"],
+            choices=strategy_choices,
             default=None,
             help="Sorting strategy",
         )
@@ -1877,6 +2010,7 @@ def _main_impl():
     prepare_frozen_windows_runtime()
     multiprocessing.freeze_support()
 
+    _load_cli_plugins_readonly(sys.argv[1:], reset_if_source_explicit=True)
     parser = build_parser()
 
     known_subcommands = (

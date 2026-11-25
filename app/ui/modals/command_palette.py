@@ -1,6 +1,7 @@
 """Command palette overlay modal screen."""
 
 from dataclasses import dataclass
+from typing import Any
 
 from textual import on
 from textual.app import ComposeResult
@@ -123,14 +124,6 @@ DEFAULT_COMMAND_CATALOG: list[PaletteCommand] = [
         action_name="action_open_wizard",
     ),
     PaletteCommand(
-        id="open_cro_forensic",
-        title="Open CRO Forensic Ingestion",
-        category="Compliance",
-        shortcut="",
-        description="Multi-study clinical compliance ingestion workflow",
-        action_name="action_open_cro_forensic",
-    ),
-    PaletteCommand(
         id="open_quarantine_vault",
         title="Open Quarantine Vault",
         category="Compliance",
@@ -213,6 +206,34 @@ DEFAULT_COMMAND_CATALOG: list[PaletteCommand] = [
 ]
 
 
+def build_command_catalog(settings: Any = None) -> list[PaletteCommand]:
+    """Build the command palette catalog combining core actions and active plugin commands."""
+    from app.core.plugin_registry import PluginRegistry
+
+    reg = PluginRegistry.get_instance()
+    if settings is not None:
+        reg.load_plugins_from_settings(settings)
+
+    commands = list(DEFAULT_COMMAND_CATALOG)
+    existing_ids = {cmd.id for cmd in commands}
+    for raw_cmd in reg.get_tui_commands():
+        cmd_id = str(raw_cmd.get("id", "")).strip()
+        if not cmd_id or cmd_id in existing_ids:
+            continue
+        commands.append(
+            PaletteCommand(
+                id=cmd_id,
+                title=str(raw_cmd.get("title", cmd_id)),
+                category=str(raw_cmd.get("category", "Extensions")),
+                shortcut=str(raw_cmd.get("shortcut", "")),
+                description=str(raw_cmd.get("description", "")),
+                action_name=str(raw_cmd.get("action_name", "")),
+            )
+        )
+        existing_ids.add(cmd_id)
+    return commands
+
+
 class CommandPaletteModal(ResponsiveModalScreen[PaletteCommand | None]):
     """Modal screen presenting a searchable command palette overlay."""
 
@@ -267,9 +288,15 @@ class CommandPaletteModal(ResponsiveModalScreen[PaletteCommand | None]):
         name: str | None = None,
         id: str | None = None,
         classes: str | None = None,
+        *,
+        settings: Any = None,
     ) -> None:
         super().__init__(name=name, id=id, classes=classes)
-        self.commands: list[PaletteCommand] = catalog or list(DEFAULT_COMMAND_CATALOG)
+        self.commands: list[PaletteCommand] = (
+            list(catalog)
+            if catalog is not None
+            else build_command_catalog(settings=settings)
+        )
         self._filtered_commands: list[PaletteCommand] = list(self.commands)
 
     def compose(self) -> ComposeResult:

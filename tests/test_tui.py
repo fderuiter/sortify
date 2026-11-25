@@ -485,6 +485,7 @@ def test_tui_cro_forensic_modal(temp_workspace):
     async def _test():
         settings = AppSettings()
         settings._settings_model.AI_CONSENT_GRANTED = True
+        settings._settings_model.PLUGINS = ["clinical_compliance"]
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
         assert not any(
@@ -492,7 +493,7 @@ def test_tui_cro_forensic_modal(temp_workspace):
         )
 
         async with app.run_test() as pilot:
-            app.action_open_cro_forensic()
+            assert app.run_plugin_action("action_open_cro_forensic") is True
             await pilot.pause(0.1)
 
             modal = app.screen
@@ -871,8 +872,19 @@ def test_tui_expanded_settings_fields(temp_workspace):
     """Verify SettingsModal MAX_FOLDERS, CLINICAL_SMART_RENAMING, CONTEXTUAL_RENAMING, and AI_CONSENT_GRANTED controls."""
 
     async def _test():
+        default_settings = AppSettings()
+        default_settings._settings_model.AI_CONSENT_GRANTED = True
+        default_app = AutoSorterTUI(settings=default_settings, base_dir=temp_workspace)
+        async with default_app.run_test() as pilot:
+            default_app.action_open_settings()
+            await pilot.pause(0.1)
+            default_modal = default_app.screen
+            assert isinstance(default_modal, SettingsModal)
+            assert len(default_modal.query("#switch-clinical-renaming")) == 0
+
         settings = AppSettings()
         settings._settings_model.AI_CONSENT_GRANTED = True
+        settings._settings_model.PLUGINS = ["clinical_compliance"]
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
         with patch.object(AppSettings, "_save", return_value=None):
