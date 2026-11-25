@@ -28,6 +28,11 @@ _keyring_write_available: bool | None = None
 
 _session_crypto_cache_lock = threading.RLock()
 _session_crypto_cache: dict[tuple[str, str], "SessionCrypto"] = {}
+_session_crypto_cache_token: tuple[int, int, int, int, str] | None = None
+_buffered_key_audits_lock = threading.RLock()
+_buffered_key_audits: dict[
+    str, list[tuple[str, str, str, str, str, float, dict[str, Any]]]
+] = {}
 
 try:
     import numpy as np
@@ -35,10 +40,10 @@ except ImportError:
     np = None  # type: ignore[assignment]
 
 try:
-    import sqlite3
+    from sqlcipher3 import dbapi2 as sqlite3
 except ImportError:
     try:
-        from sqlcipher3 import dbapi2 as sqlite3  # type: ignore[no-redef]
+        import sqlite3  # type: ignore[no-redef]
     except ImportError:
         sqlite3 = None  # type: ignore[assignment]
 
@@ -281,13 +286,18 @@ def _keyring_delete_password(service: str, account: str) -> bool:
 
 def _resolve_cached_session_crypto(key_path: Path, db_path: Path) -> "SessionCrypto":
     """Return a cached SessionCrypto instance for ``(db_path, fallback_keys_dir)``."""
+    global _session_crypto_cache_token
     resolved_db = Path(db_path).resolve()
     resolved_key = Path(key_path).resolve()
+    token = _current_keyring_token()
     cache_key = (
         _norm_cache_path(resolved_db),
         _norm_cache_path(get_fallback_keys_dir()),
     )
     with _session_crypto_cache_lock:
+        if _session_crypto_cache_token != token:
+            _session_crypto_cache.clear()
+            _session_crypto_cache_token = token
         cached = _session_crypto_cache.get(cache_key)
         if cached is not None:
             return cached
@@ -318,14 +328,132 @@ def _invalidate_session_crypto(
 
 def _clear_session_crypto_cache(keep_db_paths: set[str] | None = None) -> None:
     """Clear cached SessionCrypto instances, optionally preserving active DB paths."""
+    global _session_crypto_cache_token
     with _session_crypto_cache_lock:
         if keep_db_paths is None:
             _session_crypto_cache.clear()
+            _session_crypto_cache_token = None
+            with _buffered_key_audits_lock:
+                _buffered_key_audits.clear()
             return
         normalized_keep = {_norm_cache_path(p) for p in keep_db_paths}
         stale_keys = [k for k in _session_crypto_cache if k[0] not in normalized_keep]
         for key in stale_keys:
             _session_crypto_cache.pop(key, None)
+
+
+def _resolve_audit_ledger_path(db_path: Path) -> str:
+    """Return the audit ledger database path for ``db_path``."""
+    from app.config import get_app_dir
+    from app.core.ledger import get_default_ledger_path
+
+    default_ledger = get_default_ledger_path()
+    canonical_default = str(get_app_dir() / "sortify.db")
+    if db_path.name == "sortify.db" and _norm_cache_path(
+        default_ledger
+    ) == _norm_cache_path(canonical_default):
+        return str(db_path)
+    return default_ledger
+
+
+def _should_buffer_self_audit(db_path: Path, ledger_path: str) -> bool:
+    """Return True when ``db_path`` is its own audit ledger and is still opening or migrating."""
+    if _norm_cache_path(db_path) != _norm_cache_path(ledger_path):
+        return False
+    from app.core import db_conn
+
+    if db_conn._is_db_opening(db_path):
+        return True
+    abs_str = str(db_path.resolve())
+    with db_conn._cache_lock:
+        cached_conn = db_conn._connection_cache.get((abs_str, threading.get_ident()))
+    if cached_conn is None:
+        return True
+    try:
+        row = cached_conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='key_audit_ledger'"
+        ).fetchone()
+        return row is None
+    except db_conn.DB_ERRORS:
+        return True
+
+
+def _buffer_self_key_audit(
+    ledger_path: str,
+    *,
+    event_type: str,
+    db_path_hash: str,
+    session_id: str,
+    status: str,
+    metadata: dict[str, Any],
+) -> None:
+    """Queue a self-referential key audit record to flush once ``ledger_path`` migrates."""
+    import time
+    import uuid
+
+    norm = _norm_cache_path(ledger_path)
+    entry = (
+        f"audit:{uuid.uuid4().hex}",
+        event_type,
+        db_path_hash,
+        session_id,
+        status,
+        time.time(),
+        dict(metadata),
+    )
+    with _buffered_key_audits_lock:
+        _buffered_key_audits.setdefault(norm, []).append(entry)
+
+
+def _flush_buffered_key_audits(db_path: Path | str, conn: Any = None) -> int:
+    """Flush buffered self-referential key audit entries into ``key_audit_ledger``."""
+    norm = _norm_cache_path(db_path)
+    with _buffered_key_audits_lock:
+        pending = _buffered_key_audits.pop(norm, None)
+    if not pending:
+        return 0
+
+    from app.core.db_conn import DB_ERRORS, get_db_connection
+    from app.core.ledger import sanitize_audit_metadata
+
+    target_conn = conn if conn is not None else get_db_connection(str(db_path))
+    rows = [
+        (
+            event_id,
+            event_type,
+            db_path_hash,
+            session_id,
+            status,
+            created_at,
+            json.dumps(sanitize_audit_metadata(meta), default=str),
+        )
+        for (
+            event_id,
+            event_type,
+            db_path_hash,
+            session_id,
+            status,
+            created_at,
+            meta,
+        ) in pending
+    ]
+    try:
+        if target_conn.in_transaction:
+            target_conn.commit()
+        with target_conn:
+            target_conn.executemany(
+                """
+                INSERT OR IGNORE INTO key_audit_ledger (
+                    event_id, event_type, db_path_hash, session_id,
+                    status, created_at, metadata_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                rows,
+            )
+        return len(rows)
+    except (*DB_ERRORS, OSError, RuntimeError, ValueError, TypeError) as flush_err:
+        logger.debug(f"Deferred key audit flush skipped for '{db_path}': {flush_err}")
+        return 0
 
 
 class CryptoManager:
@@ -805,13 +933,24 @@ class SessionCrypto:
                             meta.update(caller_context)
 
                         status = "SUCCESS" if key_val is not None else "NOT_FOUND"
-                        KeyAuditLedger().log_key_audit(
-                            event_type="KEY_EXPORT",
-                            db_path_hash=db_hash,
-                            session_id=session_id,
-                            status=status,
-                            metadata=meta,
-                        )
+                        ledger_path = _resolve_audit_ledger_path(self.db_path)
+                        if _should_buffer_self_audit(self.db_path, ledger_path):
+                            _buffer_self_key_audit(
+                                ledger_path,
+                                event_type="KEY_EXPORT",
+                                db_path_hash=db_hash,
+                                session_id=session_id,
+                                status=status,
+                                metadata=meta,
+                            )
+                        else:
+                            KeyAuditLedger(ledger_path).log_key_audit(
+                                event_type="KEY_EXPORT",
+                                db_path_hash=db_hash,
+                                session_id=session_id,
+                                status=status,
+                                metadata=meta,
+                            )
                         with _key_mgmt_lock:
                             self._audited_exports.add(audit_key)
                     except Exception as audit_err:
@@ -889,13 +1028,43 @@ class SessionCrypto:
 
         if not db_conn.HAS_SQLCIPHER:
             return
-        db_conn.clear_connection_cache(only_current_and_inactive=False)
-        with closing(db_conn.sqlite3.connect(str(self.db_path), timeout=30.0)) as conn:
-            conn.execute(f"PRAGMA key = '{db_conn.escape_pragma_key(current_raw)}'")
-            # Fails here if current_raw is the wrong key.
-            conn.execute("SELECT count(*) FROM sqlite_master").fetchone()
-            conn.execute(f"PRAGMA rekey = '{db_conn.escape_pragma_key(new_raw)}'")
-        db_conn.clear_connection_cache(only_current_and_inactive=False)
+        abs_db = str(self.db_path.resolve())
+        current_pragma = db_conn._format_pragma_key(current_raw)
+        new_pragma = db_conn._format_pragma_key(new_raw)
+        current_hex = db_conn._fernet_key_to_raw_hex(current_raw)
+
+        with db_conn._get_path_init_lock(abs_db):
+            db_conn.clear_connection_cache(only_current_and_inactive=False)
+            conn = db_conn.sqlite3.connect(abs_db, timeout=30.0)
+            try:
+                with contextlib.suppress(Exception):
+                    conn.execute("PRAGMA cipher_log_level = NONE")
+                conn.execute(f"PRAGMA key = {current_pragma}")
+                try:
+                    # Fails here if current_raw is the wrong key or legacy passphrase format.
+                    conn.execute("SELECT count(*) FROM sqlite_master").fetchone()
+                except Exception as open_err:
+                    if not (
+                        current_hex is not None
+                        and db_conn._is_decryption_exception(open_err)
+                    ):
+                        raise
+                    with contextlib.suppress(Exception):
+                        conn.close()
+                    conn = db_conn.sqlite3.connect(abs_db, timeout=30.0)
+                    with contextlib.suppress(Exception):
+                        conn.execute("PRAGMA cipher_log_level = NONE")
+                    escaped_cur = db_conn.escape_pragma_key(current_raw)
+                    conn.execute(f"PRAGMA key = '{escaped_cur}'")
+                    conn.execute("PRAGMA kdf_iter = 256000")
+                    conn.execute("SELECT count(*) FROM sqlite_master").fetchone()
+                conn.execute("PRAGMA journal_mode = DELETE")
+                conn.execute(f"PRAGMA rekey = {new_pragma}")
+                conn.execute("PRAGMA journal_mode = WAL")
+            finally:
+                with closing(conn):
+                    pass
+            db_conn.clear_connection_cache(only_current_and_inactive=False)
 
     def _write_isolated_key(self, key: bytes) -> None:
         """Replace the key file atomically, so a failed write keeps the old key."""
@@ -1058,7 +1227,8 @@ class SessionCrypto:
                         _audit_thread_local.in_key_audit_logging = True
                         from app.core.ledger import KeyAuditLedger
 
-                        KeyAuditLedger().log_key_audit(
+                        ledger_path = _resolve_audit_ledger_path(self.db_path)
+                        KeyAuditLedger(ledger_path).log_key_audit(
                             event_type="KEY_ROTATION",
                             db_path_hash=db_hash,
                             session_id=session_id,
@@ -1085,7 +1255,8 @@ class SessionCrypto:
 
                         fail_meta = dict(meta)
                         fail_meta["error"] = str(rotation_err)
-                        KeyAuditLedger().log_key_audit(
+                        ledger_path = _resolve_audit_ledger_path(self.db_path)
+                        KeyAuditLedger(ledger_path).log_key_audit(
                             event_type="KEY_ROTATION",
                             db_path_hash=db_hash,
                             session_id=session_id,

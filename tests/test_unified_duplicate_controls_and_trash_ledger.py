@@ -41,7 +41,7 @@ from app.core.plan_format import (
 from app.core.resilient_file_ops import DETECT_ORIGINAL_BY_MODES
 from app.core.session import AppSession
 from app.core.session_catalog import list_sessions
-from app.core.store import open_store
+from app.core.store import STORE_MIGRATIONS, open_store
 from app.main import (
     _validate_headless_duplicate_mode,
     apply_config_overrides,
@@ -186,7 +186,10 @@ def test_migration_4_upgrades_v3_moves_check_constraint_without_data_loss(
         db = store.database(worker)
         history = store.history(db, store.cache(worker))
         conn = get_db_connection(str(store.path))
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert (
+            conn.execute("PRAGMA user_version").fetchone()[0]
+            == STORE_MIGRATIONS[-1].version
+        )
 
         rows_before = history.moves.list_moves("sess_v3")
         assert len(rows_before) == 1

@@ -273,3 +273,196 @@ def test_audit_logging_failure_graceful_handling(tmp_path):
 
         new_key = crypto.rotate_key()
         assert new_key is not None
+
+
+def test_default_ledger_unifies_into_sortify_db_without_sidecar_or_retired_table(
+    tmp_path, monkeypatch
+):
+    """open_store() creates only sortify.db, buffers self KEY_EXPORT without recursion, and omits sidecar probes."""
+    from pathlib import Path
+
+    from app.core import db_conn
+    from app.core import store as store_mod
+    from app.core.db_conn import clear_connection_cache
+    from app.core.ledger import get_default_ledger_path
+    from app.core.store import open_store
+
+    app_dir = tmp_path / "app_unified"
+    keys_dir = tmp_path / "keys_unified"
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(app_dir))
+    monkeypatch.setenv("SORTIFY_KEYS_DIR", str(keys_dir))
+    clear_connection_cache(only_current_and_inactive=False)
+
+    assert Path(get_default_ledger_path()) == app_dir / "sortify.db"
+
+    opened_paths: list[str] = []
+    real_open_conn = db_conn._open_connection
+
+    def _spy_open(db_path_arg: str, abs_path_arg: str, cache_key_arg):
+        opened_paths.append(Path(abs_path_arg).name)
+        return real_open_conn(db_path_arg, abs_path_arg, cache_key_arg)
+
+    sidecar_probes: list[Path] = []
+    real_has_sidecar = store_mod._has_sidecar_moves
+
+    def _spy_sidecar(p: Path) -> bool:
+        sidecar_probes.append(p)
+        return real_has_sidecar(p)
+
+    monkeypatch.setattr(db_conn, "_open_connection", _spy_open)
+    monkeypatch.setattr(store_mod, "_has_sidecar_moves", _spy_sidecar)
+
+    store = open_store(app_dir, legacy_session_root=tmp_path / "none")
+    assert store.path.exists()
+    assert not (app_dir / "transaction_ledger.db").exists()
+    db_files = [p.name for p in app_dir.glob("*.db")]
+    assert db_files == ["sortify.db"]
+    assert opened_paths == ["sortify.db"]
+    assert sidecar_probes == []
+
+    conn = get_db_connection(str(store.path))
+    tables = {
+        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    }
+    assert "key_audit_ledger" in tables
+
+    # Standalone KeyAuditLedger also never creates retired transaction_ledger
+    standalone_path = tmp_path / "standalone_audit.db"
+    standalone = KeyAuditLedger(str(standalone_path))
+    standalone_tables = {
+        r[0]
+        for r in get_db_connection(str(standalone_path)).execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )
+    }
+    assert "key_audit_ledger" in standalone_tables
+    assert "transaction_ledger" not in standalone_tables
+    assert standalone.get_key_audit_events() == []
+
+    # Self-referential KEY_EXPORT buffered while sortify.db opened is persisted once
+    ledger = KeyAuditLedger()
+    events = ledger.get_key_audit_events(event_type="KEY_EXPORT", db_path=store.path)
+    assert len(events) == 1
+    assert events[0]["status"] == "SUCCESS"
+
+
+def test_migration_5_imports_sidecar_key_audit_rows(tmp_path, monkeypatch):
+    """Migration 5 creates key_audit_ledger in sortify.db and imports sidecar transaction_ledger.db audit rows."""
+    import contextlib
+
+    from app.core import db_conn
+    from app.core.db_conn import clear_connection_cache, escape_pragma_key
+    from app.core.path_utils import resolve_db_crypto
+    from app.core.store import STORE_MIGRATIONS, open_store
+
+    app_dir = tmp_path / "app_mig5"
+    app_dir.mkdir()
+    keys_dir = tmp_path / "keys_mig5"
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(app_dir))
+    monkeypatch.setenv("SORTIFY_KEYS_DIR", str(keys_dir))
+    clear_connection_cache(only_current_and_inactive=False)
+
+    # Build a v4 legacy passphrase-encrypted sortify.db (without key_audit_ledger)
+    store_path = app_dir / "sortify.db"
+    store_crypto = resolve_db_crypto(store_path)
+    store_crypto.get_cipher()
+    store_key = store_crypto.get_raw_key()
+    assert store_key is not None
+
+    with contextlib.closing(
+        db_conn.sqlite3.connect(str(store_path), check_same_thread=False)
+    ) as raw_store:
+        if db_conn.HAS_SQLCIPHER:
+            raw_store.execute(f"PRAGMA key = '{escape_pragma_key(store_key)}'")
+            raw_store.execute("PRAGMA kdf_iter = 256000")
+        for mig in STORE_MIGRATIONS[:4]:
+            mig.apply(raw_store)
+        raw_store.execute("PRAGMA user_version = 4")
+        raw_store.commit()
+
+    # Build a legacy passphrase-encrypted sidecar transaction_ledger.db with audit events
+    sidecar_path = app_dir / "transaction_ledger.db"
+    sidecar_crypto = resolve_db_crypto(sidecar_path)
+    sidecar_crypto.get_cipher()
+    sidecar_key = sidecar_crypto.get_raw_key()
+    assert sidecar_key is not None
+
+    with contextlib.closing(
+        db_conn.sqlite3.connect(str(sidecar_path), check_same_thread=False)
+    ) as raw_sidecar:
+        if db_conn.HAS_SQLCIPHER:
+            raw_sidecar.execute(f"PRAGMA key = '{escape_pragma_key(sidecar_key)}'")
+            raw_sidecar.execute("PRAGMA kdf_iter = 256000")
+        raw_sidecar.execute(
+            """
+            CREATE TABLE key_audit_ledger (
+                event_id TEXT PRIMARY KEY,
+                event_type TEXT NOT NULL,
+                db_path_hash TEXT NOT NULL,
+                session_id TEXT,
+                status TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                metadata_json TEXT
+            )
+            """
+        )
+        raw_sidecar.execute(
+            """
+            INSERT INTO key_audit_ledger
+                (event_id, event_type, db_path_hash, session_id, status, created_at, metadata_json)
+            VALUES
+                ('legacy-evt-1', 'KEY_EXPORT', 'deadbeef01', 'legacy_s1', 'SUCCESS', 1700000001.0, '{"actor":"cli"}'),
+                ('legacy-evt-2', 'KEY_ROTATION', 'deadbeef01', 'legacy_s1', 'SUCCESS', 1700000002.0, '{"actor":"admin"}')
+            """
+        )
+        raw_sidecar.commit()
+
+    clear_connection_cache(only_current_and_inactive=False)
+    store = open_store(app_dir, legacy_session_root=tmp_path / "none")
+    conn = get_db_connection(str(store.path))
+    assert (
+        conn.execute("PRAGMA user_version").fetchone()[0]
+        == STORE_MIGRATIONS[-1].version
+    )
+
+    ledger = KeyAuditLedger(str(store.path))
+    imported = ledger.get_key_audit_events(session_id="legacy_s1")
+    assert {e["event_id"] for e in imported} == {"legacy-evt-1", "legacy-evt-2"}
+
+    # Re-opening store is idempotent and does not duplicate imported audit events
+    open_store(app_dir, legacy_session_root=tmp_path / "none")
+    assert len(ledger.get_key_audit_events(session_id="legacy_s1")) == 2
+
+
+def test_sequential_acquire_services_reuses_session_crypto_without_duplicate_key_export(
+    tmp_path, monkeypatch
+):
+    """Sequential acquire_services() leases retain cached SessionCrypto after DBWorker.stop()."""
+    from app.core.db_conn import clear_connection_cache
+    from app.core.path_utils import resolve_db_crypto
+    from app.core.services import acquire_services
+    from app.core.store import open_store
+
+    app_dir = tmp_path / "app_leases"
+    keys_dir = tmp_path / "keys_leases"
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(app_dir))
+    monkeypatch.setenv("SORTIFY_KEYS_DIR", str(keys_dir))
+    clear_connection_cache(only_current_and_inactive=False)
+
+    store = open_store(app_dir, legacy_session_root=tmp_path / "none")
+    crypto_initial = resolve_db_crypto(store.path)
+
+    with acquire_services(store) as lease1:
+        assert lease1.db is not None
+        assert resolve_db_crypto(store.path) is crypto_initial
+
+    # Lease 1 closed and stopped DBWorker (which ran clear_connection_cache(only_current_and_inactive=True))
+    assert resolve_db_crypto(store.path) is crypto_initial
+
+    with acquire_services(store) as lease2:
+        assert lease2.history is not None
+        assert resolve_db_crypto(store.path) is crypto_initial
+
+    ledger = KeyAuditLedger(str(store.path))
+    exports = ledger.get_key_audit_events(event_type="KEY_EXPORT", db_path=store.path)
+    assert len(exports) == 1

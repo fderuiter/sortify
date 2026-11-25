@@ -73,35 +73,12 @@ def sanitize_audit_metadata(metadata: Any) -> dict[str, Any]:
 
 
 def get_default_ledger_path() -> str:
-    """Return the default sidecar key-audit database path."""
-    return str(get_app_dir() / "transaction_ledger.db")
+    """Return the default key-audit database path inside the unified app store."""
+    return str(get_app_dir() / "sortify.db")
 
 
-def _ledger_db_baseline(conn) -> None:
-    """Create the transaction and key-audit ledger schema."""
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS transaction_ledger (
-            entry_id TEXT PRIMARY KEY,
-            session_id TEXT NOT NULL,
-            base_dir TEXT NOT NULL,
-            source_path TEXT NOT NULL,
-            dest_path TEXT NOT NULL,
-            source_rel_path TEXT NOT NULL,
-            dest_rel_path TEXT NOT NULL,
-            current_dest TEXT,
-            file_hash TEXT,
-            status TEXT NOT NULL,
-            created_at REAL NOT NULL,
-            updated_at REAL NOT NULL
-        )
-    """)
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_ledger_session ON transaction_ledger (session_id)"
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_ledger_status ON transaction_ledger (status)"
-    )
-
+def _create_key_audit_ledger_schema(conn) -> None:
+    """Create the key_audit_ledger table and its lookup indices."""
     conn.execute("""
         CREATE TABLE IF NOT EXISTS key_audit_ledger (
             event_id TEXT PRIMARY KEY,
@@ -127,7 +104,12 @@ def _ledger_db_baseline(conn) -> None:
     )
 
 
-# Ordered schema migrations for the sidecar ledger. Never edit one after release.
+def _ledger_db_baseline(conn) -> None:
+    """Create the key-audit ledger schema."""
+    _create_key_audit_ledger_schema(conn)
+
+
+# Ordered schema migrations for standalone key-audit ledgers. Never edit one after release.
 LEDGER_DB_MIGRATIONS = (Migration(1, "baseline", _ledger_db_baseline),)
 
 
@@ -139,11 +121,31 @@ class KeyAuditLedger:
         self._init_db()
 
     def _init_db(self) -> None:
+        from pathlib import Path
+
+        from app.core.crypto import _flush_buffered_key_audits
+        from app.core.migrations import schema_version, table_columns
+
         conn = get_db_connection(self.db_path)
-        with conn:
-            conn.execute("PRAGMA temp_store = MEMORY")
-            conn.execute("PRAGMA wal_autocheckpoint = 5000")
-            migrate(conn, LEDGER_DB_MIGRATIONS, label=f"Ledger {self.db_path}")
+        if Path(self.db_path).name == "sortify.db":
+            from app.core.store import STORE_MIGRATIONS
+
+            if schema_version(conn) < STORE_MIGRATIONS[-1].version:
+                with conn:
+                    conn.execute("PRAGMA temp_store = MEMORY")
+                    conn.execute("PRAGMA wal_autocheckpoint = 5000")
+                    migrate(conn, STORE_MIGRATIONS, label=f"Store {self.db_path}")
+        else:
+            current_ver = schema_version(conn)
+            if current_ver < LEDGER_DB_MIGRATIONS[-1].version:
+                with conn:
+                    conn.execute("PRAGMA temp_store = MEMORY")
+                    conn.execute("PRAGMA wal_autocheckpoint = 5000")
+                    migrate(conn, LEDGER_DB_MIGRATIONS, label=f"Ledger {self.db_path}")
+            elif not table_columns(conn, "key_audit_ledger"):
+                with conn:
+                    _create_key_audit_ledger_schema(conn)
+        _flush_buffered_key_audits(self.db_path, conn=conn)
 
     def log_key_audit(
         self,
@@ -280,6 +282,9 @@ class KeyAuditLedger:
 
         sql = " ".join(query)
         conn = get_db_connection(self.db_path)
+        from app.core.crypto import _flush_buffered_key_audits
+
+        _flush_buffered_key_audits(self.db_path, conn=conn)
         with conn:
             cur = conn.execute(sql, params)
             rows = cur.fetchall()
