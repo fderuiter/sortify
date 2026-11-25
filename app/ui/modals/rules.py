@@ -694,6 +694,31 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Optional[Any]])
             return "Skip Conflicting"
         return "Keep Existing"
 
+    def _rebuild_conflict_table(self, *, bulk_strategy: str | None = None) -> None:
+        """Optionally apply a bulk strategy and rebuild the conflict resolution table."""
+        if bulk_strategy is not None:
+            for conflict in self.conflicts:
+                conflict.resolution = bulk_strategy
+                self.conflict_resolutions[conflict.identifier] = bulk_strategy
+
+        try:
+            dt_conf = self.query_one("#dt-rule-conflicts", DataTable)
+            dt_conf.clear()
+            for conflict in self.conflicts:
+                res_strategy = self.conflict_resolutions.get(
+                    conflict.identifier, conflict.resolution
+                )
+                dt_conf.add_row(
+                    conflict.rule_type.capitalize(),
+                    conflict.identifier,
+                    conflict.existing_target,
+                    conflict.imported_target,
+                    self._format_resolution_label(res_strategy),
+                    key=conflict.identifier,
+                )
+        except Exception:
+            pass
+
     @on(Checkbox.Changed, "#chk-import-disabled")
     def _on_import_disabled_changed(self, event: Checkbox.Changed) -> None:
         """Toggle whether newly imported rules are staged disabled for review."""
@@ -809,12 +834,10 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Optional[Any]])
         res = self.current_result
         dt_kw = self.query_one("#dt-imported-keywords", DataTable)
         dt_pol = self.query_one("#dt-imported-policies", DataTable)
-        dt_conf = self.query_one("#dt-rule-conflicts", DataTable)
         btn_merge = self.query_one("#btn-merge-imported-rules", Button)
 
         dt_kw.clear()
         dt_pol.clear()
-        dt_conf.clear()
 
         for kw, target_dir in res.keyword_rules.items():
             dt_kw.add_row(kw, target_dir)
@@ -836,17 +859,7 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Optional[Any]])
         except Exception:
             pass
 
-        for conflict in self.conflicts:
-            conflict.resolution = bulk_strategy
-            self.conflict_resolutions[conflict.identifier] = bulk_strategy
-            dt_conf.add_row(
-                conflict.rule_type.capitalize(),
-                conflict.identifier,
-                conflict.existing_target,
-                conflict.imported_target,
-                self._format_resolution_label(bulk_strategy),
-                key=conflict.identifier,
-            )
+        self._rebuild_conflict_table(bulk_strategy=bulk_strategy)
 
         warn_container = self.query_one("#container-import-warnings", Vertical)
         warn_container.remove_children()
@@ -876,24 +889,7 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Optional[Any]])
         if not event.value or event.value == Select.BLANK:
             return
         new_strategy = str(event.value)
-        for conflict in self.conflicts:
-            conflict.resolution = new_strategy
-            self.conflict_resolutions[conflict.identifier] = new_strategy
-
-        try:
-            dt_conf = self.query_one("#dt-rule-conflicts", DataTable)
-            dt_conf.clear()
-            for conflict in self.conflicts:
-                dt_conf.add_row(
-                    conflict.rule_type.capitalize(),
-                    conflict.identifier,
-                    conflict.existing_target,
-                    conflict.imported_target,
-                    self._format_resolution_label(new_strategy),
-                    key=conflict.identifier,
-                )
-        except Exception:
-            pass
+        self._rebuild_conflict_table(bulk_strategy=new_strategy)
         self.announce(
             f"Updated bulk resolution strategy to: {self._format_resolution_label(new_strategy)}"
         )
@@ -937,22 +933,7 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Optional[Any]])
         conflict.resolution = new_res
         self.conflict_resolutions[conflict.identifier] = new_res
 
-        try:
-            dt_conf = self.query_one("#dt-rule-conflicts", DataTable)
-            dt_conf.clear()
-            for c in self.conflicts:
-                dt_conf.add_row(
-                    c.rule_type.capitalize(),
-                    c.identifier,
-                    c.existing_target,
-                    c.imported_target,
-                    self._format_resolution_label(
-                        self.conflict_resolutions.get(c.identifier, c.resolution)
-                    ),
-                    key=c.identifier,
-                )
-        except Exception:
-            pass
+        self._rebuild_conflict_table()
 
         self.announce(
             f"Set resolution for '{conflict.identifier}' to {self._format_resolution_label(new_res)}."
