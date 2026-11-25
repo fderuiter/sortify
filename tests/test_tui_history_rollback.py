@@ -749,13 +749,13 @@ async def test_pipeline_execution_announces_undo_available(tmp_path):
 def test_legacy_import_skips_undo_snapshot_rows_without_bumping_schema_version(
     tmp_path,
 ):
-    """Legacy import excludes undo_snapshot rows and child records while keeping STORE_MIGRATIONS at v4."""
+    """Legacy import excludes undo_snapshot rows and child records while keeping STORE_MIGRATIONS at head version."""
     import sqlite3
 
     from app.core.session_catalog import can_undo_session, list_sessions
     from app.core.store import STORE_MIGRATIONS, open_store
 
-    assert max(m.version for m in STORE_MIGRATIONS) == 4
+    expected_head = STORE_MIGRATIONS[-1].version
 
     legacy_root = tmp_path / "legacy_sessions"
     legacy_dir = legacy_root / "sess_dir"
@@ -796,6 +796,7 @@ def test_legacy_import_skips_undo_snapshot_rows_without_bumping_schema_version(
 
     store_conn = get_db_connection(str(store.path))
     with store_conn:
+        assert store_conn.execute("PRAGMA user_version").fetchone()[0] == expected_head
         sids = {
             r[0]
             for r in store_conn.execute("SELECT session_id FROM sessions").fetchall()

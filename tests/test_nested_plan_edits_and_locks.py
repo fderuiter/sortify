@@ -158,13 +158,17 @@ def test_migrations_add_user_verified_target_name_and_preserve_folder_only_seman
     assert "user_verified_target_name" in table_columns(raw_main, "documents")
     raw_main.close()
 
-    # 2. Verify legacy v4 store upgrades cleanly to v5
+    # 2. Verify legacy v4 store upgrades cleanly to v5 and head version
     raw_store = sqlite3.connect(":memory:")
     migrate(raw_store, STORE_MIGRATIONS[:4], label="store-v4")
     assert raw_store.execute("PRAGMA user_version").fetchone()[0] == 4
     assert "user_verified_target_name" not in table_columns(raw_store, "documents")
-    assert migrate(raw_store, STORE_MIGRATIONS, label="store-v5") == 5
+    assert migrate(raw_store, STORE_MIGRATIONS[:5], label="store-v5") == 5
     assert "user_verified_target_name" in table_columns(raw_store, "documents")
+    assert (
+        migrate(raw_store, STORE_MIGRATIONS, label="store-head")
+        == STORE_MIGRATIONS[-1].version
+    )
     raw_store.close()
 
     # 3. Verify Database methods keep user_verified_target_path strictly folder-only

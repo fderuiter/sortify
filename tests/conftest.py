@@ -8,7 +8,7 @@ import keyring
 import pytest
 from keyring.backend import KeyringBackend
 
-from app.core.db_conn import clear_connection_cache
+from app.core.db_conn import _connection_cache, clear_connection_cache
 
 os.environ.setdefault("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
 
@@ -114,7 +114,7 @@ def embedding_test_defaults(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def cleanup_db_connections():
-    """Ensure database connections are closed after each test to prevent Windows file locking issues."""
+    """Ensure embedding workers are stopped after each test before registry teardown closes connections."""
     yield
     try:
         from app.core.semantic_embeddings import SemanticEmbeddingManager
@@ -122,7 +122,6 @@ def cleanup_db_connections():
         SemanticEmbeddingManager.stop_all()
     except Exception:
         pass
-    clear_connection_cache(only_current_and_inactive=False)
 
 
 @pytest.fixture(autouse=True)
@@ -131,12 +130,11 @@ def reset_shared_registry():
     import shutil
 
     from app.config import AppSettings, get_app_dir
-    from app.core.db_conn import clear_connection_cache
     from app.core.downloader import _VERIFICATION_CACHE, DownloadManager
     from app.core.network_guard import _thread_local
     from app.core.shared_registry import SharedModelRegistry, SharedWorkerPool
 
-    def _cleanup_test_app_dir():
+    def _cleanup_test_app_dir(*, clear_cache: bool = True):
         if DownloadManager._instance is not None:
             try:
                 DownloadManager._instance.cancel_download()
@@ -146,21 +144,33 @@ def reset_shared_registry():
             except Exception:
                 pass
         _VERIFICATION_CACHE.clear()
+        try:
+            from app.core.semantic_embeddings import SemanticEmbeddingManager
+
+            SemanticEmbeddingManager.stop_all()
+        except Exception:
+            pass
         # Some older UI tests do not close their AppSession. Drain managed
         # services before deleting their stores, just as other singletons reset.
         from app.core import services
 
+        had_services = bool(services._services)
         for graph in list(services._services.values()):
             graph.worker.stop(stop_embeddings=False)
         services._services.clear()
-        clear_connection_cache(only_current_and_inactive=False)
+        if clear_cache or had_services or _connection_cache:
+            clear_connection_cache(only_current_and_inactive=False)
         try:
             app_dir = get_app_dir()
             for filename in (
                 "settings.json",
                 "sortify.db",
+                "sortify.db-wal",
+                "sortify.db-shm",
                 "rollback_journal.json",
                 "transaction_ledger.db",
+                "transaction_ledger.db-wal",
+                "transaction_ledger.db-shm",
             ):
                 target = app_dir / filename
                 if target.exists():
@@ -172,7 +182,7 @@ def reset_shared_registry():
         except Exception:
             pass
 
-    _cleanup_test_app_dir()
+    _cleanup_test_app_dir(clear_cache=False)
     AppSettings.clear_observers()
     DownloadManager.reset_instance()
     SharedModelRegistry._instance = None
@@ -185,7 +195,7 @@ def reset_shared_registry():
             pass
         SharedWorkerPool._instance = None
     yield
-    _cleanup_test_app_dir()
+    _cleanup_test_app_dir(clear_cache=True)
     AppSettings.clear_observers()
     DownloadManager.reset_instance()
     SharedModelRegistry._instance = None
@@ -261,28 +271,29 @@ def monkeypatch_session():
 
 @pytest.fixture
 def test_history_env(tmp_path):
-    """Consolidated test environment helper for history, database, and cache."""
+    """Consolidated test environment helper for history, database, and cache sharing one Store."""
     import os
 
-    from app.core.cache import CacheManager
-    from app.core.db import Database
     from app.core.db_worker import DBWorker
-    from app.core.history import HistoryManager
+    from app.core.store import open_store
 
     base_dir = str(tmp_path / "test_base")
     os.makedirs(base_dir, exist_ok=True)
 
     db_worker = DBWorker()
-    db_path = tmp_path / "test_docs.db"
-    db = Database(db_path, worker=db_worker)
 
-    cache_path = tmp_path / "test_cache.db"
-    cache = CacheManager(str(cache_path), worker=db_worker)
+    def _build():
+        store = open_store(tmp_path / "store", legacy_session_root=tmp_path / "none")
+        database = store.database(db_worker)
+        cache_mgr = store.cache(db_worker)
+        history_mgr = store.history(database, cache_mgr)
+        return database, cache_mgr, history_mgr
 
-    history_manager = HistoryManager(db, cache, str(tmp_path / "test_history.db"))
-
-    yield base_dir, db, cache, history_manager, db_worker
-    db_worker.stop()
+    try:
+        db, cache, history_manager = db_worker.execute_write(_build)
+        yield base_dir, db, cache, history_manager, db_worker
+    finally:
+        db_worker.stop(stop_embeddings=False)
 
 
 @pytest.fixture
