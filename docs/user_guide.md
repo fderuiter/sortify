@@ -60,7 +60,7 @@ The TUI status bar distinguishes four runtime AI states:
 ### In the terminal interface
 1. Start the app with `smart-autosorter` (or `smart-autosorter --tui`).
 2. Press `[Ctrl+B]` to choose a folder, then `[Ctrl+S]` to scan it. The proposed folder tree appears; nothing has moved yet.
-3. Review the plan. `[Ctrl+F]` searches the tree, `[Space]` checks items, `[Ctrl+L]` locks a file in place, `[F2]` renames a file or folder category node, `[Ctrl+N]` creates a folder, and `[Ctrl+R]` opens the active rule manager modal. Press `[R]` to reassign checked files or the active item to a target folder (if a text input field such as the search box is focused, defocus it first before pressing `[F2]`, `[Ctrl+R]`, or `[R]`; see [Keyboard Shortcuts](keyboard_shortcuts.md)). You can also press `[Ctrl+K]` to open the [Command Palette](#command-palette) for command discovery and to trigger all system actions without memorizing keybindings.
+3. Review the plan. `[Ctrl+F]` searches the tree (press `[Enter]`, `[Down]`, or `[Esc]` inside the search box to return focus to the tree while keeping the filter active, and press `[Esc]` again on the tree to clear the filter), `[Space]` checks items, `[Ctrl+L]` locks a file in place, `[F2]` renames a file or folder category node, `[Ctrl+N]` creates a folder, and `[Ctrl+R]` opens the active rule manager modal. Press `[R]` to reassign checked files or the active item to a target folder (if a text input field such as the search box is focused, defocus it first before pressing `[F2]`, `[Ctrl+R]`, or `[R]`; see [Keyboard Shortcuts](keyboard_shortcuts.md)). You can also press `[Ctrl+K]` to open the [Command Palette](#command-palette) for command discovery and to trigger all system actions without memorizing keybindings.
 4. Press `[Ctrl+E]` to execute. You can review duplicates first, and an audit report is shown when the moves finish.
 
 Press `[Ctrl+K]` for the command palette, `[Ctrl+G]` for the Model Manager, `[?]` or `[F1]` for the full list of shortcuts, and `[Ctrl+Q]` to quit. Every shortcut is also listed in [Keyboard Shortcuts](keyboard_shortcuts.md).
@@ -97,9 +97,8 @@ When the palette opens, focus is placed in the command search input field (`#pal
 
 ### Workflows Without Dedicated Shortcuts
 
-While primary actions (such as scanning or executing plans) have direct keybindings, several workflows do not have dedicated shortcuts and are executed directly through the command palette:
+While primary actions (such as scanning, executing plans, or opening the **Model Manager** via `Open Model Manager` / `[Ctrl+G]`) have direct keybindings, five workflows do not have dedicated shortcuts and are executed directly through the command palette:
 
-- **Model Manager** (`Open Model Manager`): Manage ONNX embedding model downloads (`all-MiniLM-L6-v2`) and local embeddings. Download the sentence transformer model, retry failed downloads, or configure corporate proxy endpoints.
 - **CRO Forensic Ingestion** (`Open CRO Forensic Ingestion`): Multi-study clinical compliance ingestion workflow to scan clinical study folders and organize documents into Trial Master File (TMF/ISF) folder structures.
 - **Export Active Rules** (`Export Active Rules`): Open the rule export dialog to serialize active keyword rules and compliance policies to disk in Sortify JSON (`*.json`), Hazel (`*.hazelrules`), or DropIt (`*.ini`) formats.
 - **Import External Rules** (`Import External Rules`): Open the rule migration dialog to import external rule sets and taxonomy definitions from Hazel, DropIt, or TagSpaces configurations.

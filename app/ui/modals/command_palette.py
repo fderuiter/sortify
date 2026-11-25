@@ -6,6 +6,7 @@ from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
+from textual.content import Content
 from textual.widgets import Input, Label, OptionList
 from textual.widgets.option_list import Option
 
@@ -310,7 +311,7 @@ class CommandPaletteModal(ResponsiveModalScreen[PaletteCommand | None]):
             label = f"[{cmd.category}] {cmd.title}"
             if cmd.shortcut:
                 label += f" ({cmd.shortcut})"
-            option_list.add_option(Option(label, id=cmd.id))
+            option_list.add_option(Option(Content(label), id=cmd.id))
 
         status_lbl = self.query_one("#palette-status", Label)
         if self._filtered_commands:

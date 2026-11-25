@@ -21,6 +21,11 @@ from app.ui.widgets.path_diff import (
 logger = logging.getLogger(__name__)
 
 
+def _escape_textual_markup(value: object) -> str:
+    """Escape square brackets so Textual markup renders badges and dynamic text literally."""
+    return str(value).replace("[", "\\[")
+
+
 class PathLookupIndex(NamedTuple):
     """Pre-indexed lookup sets for exact O(1) file path and basename matching."""
 
@@ -306,6 +311,8 @@ class TreeViewMixin:
                 curr = curr.parent
             tree.select_node(target_cursor_node)
             self.active_tree_node = target_cursor_node
+        elif search_query:
+            self.active_tree_node = None
 
     def _apply_tree_node_styles(self: TUIHostProtocol) -> None:
         """Apply red/yellow styling to existing tree nodes and refresh collision labels."""
@@ -506,6 +513,7 @@ class TreeViewMixin:
                 search_query = self._get_current_search_query()
 
             query = search_query.strip().lower() if search_query else ""
+            setattr(self, "_last_rendered_search_query", query)
 
             self._capture_tree_state(tree, query)
 
@@ -996,7 +1004,7 @@ class TreeViewMixin:
             )
             try:
                 meta_widget = self.query_one("#meta-details", Static)
-                meta_widget.update(msg)
+                meta_widget.update(_escape_textual_markup(msg))
             except Exception:
                 pass
             if path_comp_widget:
@@ -1028,7 +1036,7 @@ class TreeViewMixin:
                 self.announce(msg)
             try:
                 meta_widget = self.query_one("#meta-details", Static)
-                meta_widget.update(msg)
+                meta_widget.update(_escape_textual_markup(msg))
             except Exception:
                 pass
             if path_comp_widget:
@@ -1065,49 +1073,71 @@ class TreeViewMixin:
                 )
                 path_comp_widget.update(table)
 
-            lines.append(f"[bold accent]File:[/bold accent] {key}")
-            lines.append(f"[bold]Path:[/bold] {data.get('filepath')}")
-            lines.append(f"[bold]Target Folder:[/bold] {folder}")
+            lines.append(
+                f"[bold accent]File:[/bold accent] {_escape_textual_markup(key)}"
+            )
+            lines.append(
+                f"[bold]Path:[/bold] {_escape_textual_markup(data.get('filepath'))}"
+            )
+            lines.append(
+                f"[bold]Target Folder:[/bold] {_escape_textual_markup(folder)}"
+            )
 
             target_fn = info.get("target_filename")
             if target_fn:
-                lines.append(f"[bold]Target Filename:[/bold] {target_fn}")
+                lines.append(
+                    f"[bold]Target Filename:[/bold] {_escape_textual_markup(target_fn)}"
+                )
 
-            lines.append(f"[bold]Locked:[/bold] {locked}")
-            lines.append(f"[bold]ML Rating:[/bold] {rating}")
+            lines.append(f"[bold]Locked:[/bold] {_escape_textual_markup(locked)}")
+            lines.append(f"[bold]ML Rating:[/bold] {_escape_textual_markup(rating)}")
 
             lock_err = TreeViewMixin._get_invalid_lock_error(
                 self, data.get("filepath"), data.get("key")
             )
             if lock_err:
-                lines.append(f"[bold error]Lock Warning:[/bold error] {lock_err}")
+                lines.append(
+                    f"[bold error]Lock Warning:[/bold error] {_escape_textual_markup(lock_err)}"
+                )
 
             routing_src = info.get("routed_by")
             if routing_src:
-                lines.append(f"[bold]Routing Source:[/bold] {routing_src}")
+                lines.append(
+                    f"[bold]Routing Source:[/bold] {_escape_textual_markup(routing_src)}"
+                )
 
             pol_prio = info.get("policy_priority")
             if pol_prio is not None:
-                lines.append(f"[bold]Policy Priority:[/bold] {pol_prio}")
+                lines.append(
+                    f"[bold]Policy Priority:[/bold] {_escape_textual_markup(pol_prio)}"
+                )
 
             pol_action = info.get("policy_action")
             if pol_action:
-                lines.append(f"[bold]Policy Action:[/bold] {pol_action}")
+                lines.append(
+                    f"[bold]Policy Action:[/bold] {_escape_textual_markup(pol_action)}"
+                )
 
             match_val = info.get("match") or info.get("keyword")
             if match_val and str(match_val).strip().lower() != "none":
                 if str(routing_src or "").strip().lower() == "clustering":
-                    lines.append(f"[bold]Cluster Keywords:[/bold] {match_val}")
+                    lines.append(
+                        f"[bold]Cluster Keywords:[/bold] {_escape_textual_markup(match_val)}"
+                    )
                 else:
-                    lines.append(f"[bold]Matched Rule:[/bold] {match_val}")
+                    lines.append(
+                        f"[bold]Matched Rule:[/bold] {_escape_textual_markup(match_val)}"
+                    )
 
             cat = info.get("category") or info.get("jev_category")
             if cat:
-                lines.append(f"[bold]Category:[/bold] {cat}")
+                lines.append(f"[bold]Category:[/bold] {_escape_textual_markup(cat)}")
 
             sens_rating = info.get("sensitivity_rating")
             if sens_rating is not None:
-                lines.append(f"[bold]Sensitivity Rating:[/bold] {sens_rating}")
+                lines.append(
+                    f"[bold]Sensitivity Rating:[/bold] {_escape_textual_markup(sens_rating)}"
+                )
 
             sens_score = info.get("sensitivity_score")
             if sens_score is not None:
@@ -1116,7 +1146,9 @@ class TreeViewMixin:
                         f"[bold]Sensitivity Score:[/bold] {float(sens_score):.2f}"
                     )
                 except (ValueError, TypeError):
-                    lines.append(f"[bold]Sensitivity Score:[/bold] {sens_score}")
+                    lines.append(
+                        f"[bold]Sensitivity Score:[/bold] {_escape_textual_markup(sens_score)}"
+                    )
 
             arch_prio = info.get("archival_priority")
             if arch_prio is not None:
@@ -1129,7 +1161,9 @@ class TreeViewMixin:
                     )
                     else str(arch_prio).upper()
                 )
-                lines.append(f"[bold]Archival Priority:[/bold] {arch_str}")
+                lines.append(
+                    f"[bold]Archival Priority:[/bold] {_escape_textual_markup(arch_str)}"
+                )
 
             arch_score = info.get("archival_priority_score")
             if arch_score is not None:
@@ -1138,22 +1172,27 @@ class TreeViewMixin:
                         f"[bold]Archival Priority Score:[/bold] {float(arch_score):.2f}"
                     )
                 except (ValueError, TypeError):
-                    lines.append(f"[bold]Archival Priority Score:[/bold] {arch_score}")
+                    lines.append(
+                        f"[bold]Archival Priority Score:[/bold] {_escape_textual_markup(arch_score)}"
+                    )
 
             conf = info.get("confidence")
             if conf is not None:
                 try:
                     lines.append(f"[bold]Confidence:[/bold] {float(conf):.2%}")
                 except (ValueError, TypeError):
-                    lines.append(f"[bold]Confidence:[/bold] {conf}")
+                    lines.append(
+                        f"[bold]Confidence:[/bold] {_escape_textual_markup(conf)}"
+                    )
 
             if data.get("is_collision"):
                 pol_str = str(
                     data.get("conflict_policy")
                     or getattr(self.settings, "CONFLICT_POLICY", "rename")
                 ).upper()
+                collision_badge = _escape_textual_markup(f"[COLLISION: {pol_str}]")
                 lines.append(
-                    f"[bold warning]Collision Indicator:[/bold warning] [COLLISION: {pol_str}]"
+                    f"[bold warning]Collision Indicator:[/bold warning] {collision_badge}"
                 )
 
             if announce:
@@ -1192,11 +1231,17 @@ class TreeViewMixin:
                     path_comp_widget.update(table)
                 else:
                     path_comp_widget.update(
-                        f"Folder category '{key}' contains no document items."
+                        _escape_textual_markup(
+                            f"Folder category '{key}' contains no document items."
+                        )
                     )
 
-            lines.append(f"[bold accent]Folder Category:[/bold accent] {key}")
-            lines.append(f"[bold]Relative Path:[/bold] {folder}")
+            lines.append(
+                f"[bold accent]Folder Category:[/bold accent] {_escape_textual_markup(key)}"
+            )
+            lines.append(
+                f"[bold]Relative Path:[/bold] {_escape_textual_markup(folder)}"
+            )
             if announce:
                 self.announce(f"Selected folder category '{key}' at path '{folder}'.")
 

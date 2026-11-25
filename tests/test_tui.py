@@ -2370,10 +2370,41 @@ def test_cheat_sheet_lists_every_main_screen_shortcut(temp_workspace):
 
 
 def test_footer_shows_core_workflow_shortcuts_only():
-    """The footer stays short enough that Scan and Quit are always visible."""
+    """The footer stays short enough that Command Palette, Scan, and Quit are always visible."""
+    assert AutoSorterTUI.ENABLE_COMMAND_PALETTE is False
     shown = {b.action for b in AutoSorterTUI.BINDINGS if b.show}
-    assert {"scan_directory", "execute_sort", "select_dir", "quit"} <= shown
-    assert len(shown) <= 8
+    assert {
+        "open_command_palette",
+        "scan_directory",
+        "execute_sort",
+        "select_dir",
+        "quit",
+    } <= shown
+    assert len(shown) <= 9
+
+
+def test_footer_renders_ctrl_k_palette_and_ignores_ctrl_p(temp_workspace):
+    """Footer advertises ^k Command Palette, omits ^p palette, and ignores Ctrl+P."""
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            svg_text = re.sub(r"<[^>]+>", "", app.export_screenshot()).replace(
+                "&#160;", " "
+            )
+            assert "^k" in svg_text
+            assert "Command Palette" in svg_text
+            assert "^p" not in svg_text
+
+            await pilot.press("ctrl+p")
+            await pilot.pause()
+            assert len(app.screen_stack) == 1
+
+    asyncio.run(_test())
 
 
 def test_empty_state_tells_user_how_to_start(temp_workspace):

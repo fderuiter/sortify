@@ -322,6 +322,7 @@ class SelectionActionsMixin:
             self.announce("Select a tree node to toggle checkbox [Space].")
             return
 
+        query = self._get_current_search_query()
         file_infos_to_toggle: list[dict[str, Any]] = []
         for n in nodes_to_toggle:
             data = getattr(n, "data", None)
@@ -331,9 +332,18 @@ class SelectionActionsMixin:
                 file_infos_to_toggle.append(data["info"])
             else:
                 info_dict = data.get("info", {})
-                file_infos_to_toggle.extend(
-                    self._collect_file_nodes_from_dict(info_dict)
-                )
+                if query:
+                    file_infos_to_toggle.extend(
+                        self._collect_visible_file_nodes_from_dict(
+                            info_dict,
+                            current_folder=str(data.get("folder") or ""),
+                            query=query,
+                        )
+                    )
+                else:
+                    file_infos_to_toggle.extend(
+                        self._collect_file_nodes_from_dict(info_dict)
+                    )
 
         if not file_infos_to_toggle:
             self.announce("No file nodes found to toggle.")
@@ -370,7 +380,12 @@ class SelectionActionsMixin:
 
     def _get_target_file_infos(self: TUIHostProtocol) -> list[dict[str, Any]]:
         """Return checked file info dicts, or active/focused node file infos if none checked."""
-        all_files = self._collect_file_nodes_from_dict(self.plan)
+        query = self._get_current_search_query()
+        all_files = (
+            self._collect_visible_file_nodes_from_dict(self.plan, query=query)
+            if query
+            else self._collect_file_nodes_from_dict(self.plan)
+        )
         checked_files = [
             f
             for f in all_files
@@ -388,9 +403,21 @@ class SelectionActionsMixin:
             return all_files
 
         if data.get("is_file"):
-            return [data["info"]]
+            info = data["info"]
+            if query and all_files and all(info is not f for f in all_files):
+                return all_files
+            return [info]
         else:
-            folder_files = self._collect_file_nodes_from_dict(data.get("info", {}))
+            folder_info = data.get("info", {})
+            folder_files = (
+                self._collect_visible_file_nodes_from_dict(
+                    folder_info,
+                    current_folder=str(data.get("folder") or ""),
+                    query=query,
+                )
+                if query
+                else self._collect_file_nodes_from_dict(folder_info)
+            )
             return folder_files if folder_files else all_files
 
     def action_exclude_selected(self: TUIHostProtocol) -> None:

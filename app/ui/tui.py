@@ -112,6 +112,7 @@ class AutoSorterTUI(
 
     TITLE = "Sortify AI Pro - Terminal UI"
     SUB_TITLE = "Interactive Tree & Modal Controls"
+    ENABLE_COMMAND_PALETTE = False
 
     BINDINGS = [
         Binding("space", "toggle_selection", "Toggle Checkbox", show=True),
@@ -132,7 +133,7 @@ class AutoSorterTUI(
             "ctrl+k",
             "open_command_palette",
             "Command Palette",
-            show=False,
+            show=True,
             priority=True,
         ),
         Binding("ctrl+w", "open_wizard", "Wizard", show=False),
@@ -415,6 +416,9 @@ class AutoSorterTUI(
         self._pending_flush_trash: bool = False
         self._manual_plan_edits: dict[str, dict[str, Any]] = {}
         self._manual_empty_folders: set[str] = set()
+        self._tree_filter_timer: Any = None
+        self._tree_filter_pending: bool = False
+        self._flushed_search_value: str | None = None
 
     def compose(self) -> ComposeResult:
         """Compose main dual-pane TUI layout."""
@@ -527,6 +531,7 @@ class AutoSorterTUI(
         sb = Static(
             initial_status,
             id="status-bar",
+            markup=False,
         )
         sb.tooltip = "Application status and screen reader announcement bar"
         yield sb
@@ -2063,30 +2068,127 @@ class AutoSorterTUI(
     def on_tree_search_changed(self, event: Input.Changed) -> None:
         """Handle real-time search input field change to dynamically filter preview tree nodes."""
         val = event.value
+        if getattr(self, "_flushed_search_value", None) == val:
+            self._flushed_search_value = None
+            return
+        self._flushed_search_value = None
         timer = getattr(self, "_tree_filter_timer", None)
         if timer is not None:
             timer.stop()
-        self._tree_filter_timer = self.set_timer(
-            0.15, lambda: self.render_tree(search_query=val)
+        self._tree_filter_pending = True
+
+        def _apply_filter() -> None:
+            self._tree_filter_pending = False
+            self._tree_filter_timer = None
+            self.render_tree(search_query=val)
+
+        self._tree_filter_timer = self.set_timer(0.15, _apply_filter)
+
+    def _flush_tree_search_filter(self) -> None:
+        """Flush any pending debounced tree filter timer and render current search query immediately."""
+        inp_matches = self.query("#tree-search-input")
+        if not inp_matches:
+            return
+        inp = inp_matches.first(Input)
+        timer = getattr(self, "_tree_filter_timer", None)
+        pending = bool(getattr(self, "_tree_filter_pending", False))
+        if timer is not None:
+            timer.stop()
+            self._tree_filter_timer = None
+        self._tree_filter_pending = False
+        current_val = inp.value
+        normalized_val = current_val.strip().lower()
+        last_rendered = getattr(self, "_last_rendered_search_query", None)
+        if pending or last_rendered != normalized_val:
+            self._flushed_search_value = current_val
+            self.render_tree(search_query=current_val)
+
+    @staticmethod
+    def _find_first_selectable_tree_node(
+        root: TreeNode[Any],
+    ) -> TreeNode[Any] | None:
+        """Return the first visible file node (or non-empty-state folder node) under ``root``."""
+        first_folder: TreeNode[Any] | None = None
+
+        def _walk(node: TreeNode[Any]) -> TreeNode[Any] | None:
+            nonlocal first_folder
+            for child in node.children:
+                cdata = getattr(child, "data", None)
+                if isinstance(cdata, dict) and not cdata.get("is_empty_state"):
+                    if cdata.get("is_file"):
+                        return child
+                    if first_folder is None:
+                        first_folder = child
+                found = _walk(child)
+                if found is not None:
+                    return found
+            return None
+
+        return _walk(root) or first_folder
+
+    def _handoff_search_to_tree(self) -> None:
+        """Flush pending filter updates and move focus from #tree-search-input to #plan-tree."""
+        self._flush_tree_search_filter()
+        tree_matches = self.query("#plan-tree")
+        if not tree_matches:
+            return
+        tree = tree_matches.first(Tree)
+        cursor_data = (
+            getattr(tree.cursor_node, "data", None) if tree.cursor_node else None
         )
+        if not (
+            isinstance(cursor_data, dict) and not cursor_data.get("is_empty_state")
+        ):
+            first_node = self._find_first_selectable_tree_node(tree.root)
+            if first_node is not None:
+                tree.select_node(first_node)
+                self.active_tree_node = first_node
+        tree.focus()
+
+    @on(Input.Submitted, "#tree-search-input")
+    def on_tree_search_submitted(self, event: Input.Submitted) -> None:
+        """Move focus from #tree-search-input to #plan-tree on Enter while preserving filter."""
+        event.stop()
+        self._handoff_search_to_tree()
 
     def on_key(self, event: events.Key) -> None:
         """Handle global application key events."""
-        if event.key in ("escape", "esc"):
-            try:
-                inp = self.query_one("#tree-search-input", Input)
-                if inp.has_focus:
-                    inp.value = ""
+        if isinstance(self.screen, ModalScreen):
+            return
+        try:
+            inp = self.query_one("#tree-search-input", Input)
+            if inp.has_focus and event.key in (
+                "enter",
+                "return",
+                "down",
+                "escape",
+                "esc",
+            ):
+                self._handoff_search_to_tree()
+                event.stop()
+                event.prevent_default()
+                return
+
+            if event.key in ("escape", "esc"):
+                tree = self.query_one("#plan-tree", Tree)
+                has_pending = bool(getattr(self, "_tree_filter_pending", False))
+                if (
+                    tree.has_focus
+                    and not getattr(self, "visual_select_active", False)
+                    and (bool(inp.value) or has_pending)
+                ):
                     timer = getattr(self, "_tree_filter_timer", None)
                     if timer is not None:
                         timer.stop()
+                        self._tree_filter_timer = None
+                    self._tree_filter_pending = False
+                    self._flushed_search_value = ""
+                    inp.value = ""
                     self.render_tree(search_query="")
-                    tree = self.query_one("#plan-tree", Tree)
-                    tree.focus()
                     event.stop()
                     event.prevent_default()
-            except Exception:
-                pass
+        except Exception:
+            pass
 
     def action_focus_search(self) -> None:
         """Focus the real-time tree filter search input bar."""
