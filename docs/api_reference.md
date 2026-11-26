@@ -185,12 +185,10 @@ flowchart TD
     core_crypto --> core_exceptions
     core_crypto --> core_ledger
     core_crypto --> core_path_utils
-    core_crypto --> core_resilient_file_ops
     core_daemon --> core_db
     core_daemon --> core_domain_contracts
     core_daemon --> core_ipc
     core_daemon --> core_lifecycle
-    core_daemon --> core_metadata
     core_daemon --> core_mover
     core_daemon --> core_path_utils
     core_daemon --> core_pipeline
@@ -368,7 +366,6 @@ flowchart TD
     core_quarantine_interceptor --> core_resilient_file_ops
     core_quarantine_interceptor --> core_text_utils
     core_resilient_file_ops --> core_exceptions
-    core_resilient_file_ops --> core_extractor
     core_resilient_file_ops --> core_mover
     core_resilient_file_ops --> core_path_utils
     core_rule_importers --> core_path_utils

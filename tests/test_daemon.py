@@ -87,14 +87,14 @@ def test_daemon_interruption_mid_execution(tmp_path):
     assert daemon.is_paused is False
     assert daemon.get_status_telemetry()["status"] == "recalculating"
 
-    scoped_token_1 = daemon.scoped_run_token
+    scoped_token_1 = daemon._scoped_run_token
     assert scoped_token_1 is not None
     assert scoped_token_1.is_set() is False
 
     # Rapid recalculation events cooperatively signal the active scoped run token without replacing lifecycle token
     daemon.trigger_recalculation()
     assert scoped_token_1.is_set() is True
-    scoped_token_2 = daemon.scoped_run_token
+    scoped_token_2 = daemon._scoped_run_token
     assert scoped_token_2 is not None
     assert scoped_token_2 is not scoped_token_1
     assert scoped_token_2.is_set() is False
@@ -175,7 +175,7 @@ def test_daemon_execution_flow(tmp_path):
         mock.patch(
             "app.core.daemon.get_files_recursively", return_value=["invoice.txt"]
         ),
-        mock.patch("app.core.daemon.MetadataPass.run", return_value=[]),
+        mock.patch("app.core.metadata.MetadataPass.run", return_value=[]),
     ):
         mock_app_session_inst.generate_sorting_plan.side_effect = [
             {"invoice.txt": "dest/invoice.txt"},  # Phase 1: Fast-Path
@@ -375,7 +375,7 @@ def test_daemon_sorting_sync_logging_no_stderr(tmp_path, caplog, capsys):
         mock.patch(
             "app.core.daemon.get_files_recursively", return_value=["invoice.txt"]
         ),
-        mock.patch("app.core.daemon.MetadataPass.run", return_value=[]),
+        mock.patch("app.core.metadata.MetadataPass.run", return_value=[]),
         caplog.at_level(logging.INFO, logger="app.daemon"),
     ):
         mock_app_session_inst.generate_sorting_plan.side_effect = [

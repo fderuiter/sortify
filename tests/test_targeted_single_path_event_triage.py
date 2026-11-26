@@ -402,7 +402,7 @@ async def test_triage_file_path_passes_target_paths_and_no_get_files_recursively
                 daemon, "_get_or_create_session", return_value=mock_app_session
             ),
             mock.patch("app.core.daemon.get_files_recursively") as mock_get_files,
-            mock.patch("app.core.daemon.MetadataPass.run"),
+            mock.patch("app.core.metadata.MetadataPass.run"),
         ):
             await daemon._triage_file_path(str(test_file))
 
@@ -504,7 +504,7 @@ async def test_triage_moves_files_off_the_event_loop(tmp_path, session_db):
             mock.patch.object(
                 daemon, "_get_or_create_session", return_value=mock_app_session
             ),
-            mock.patch("app.core.daemon.MetadataPass.run"),
+            mock.patch("app.core.metadata.MetadataPass.run"),
         ):
             triage = asyncio.create_task(daemon._triage_file_path(str(test_file)))
             for _ in range(200):

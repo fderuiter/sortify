@@ -836,7 +836,7 @@ async def test_dropzone_modal_accepts_newly_supported_formats(tmp_path):
     unknown = tmp_path / "mystery.unknown"
     unknown.write_bytes(b"\x00\x01\x02")
     ignored = tmp_path / "scratch.tmp"
-    ignored.write_bytes(b"temporary")
+    ignored.write_bytes(b"\x00\x01\x02")
 
     settings = DummySettings(tmp_path)
     app = ModalTestApp(settings=settings, base_dir=str(tmp_path))

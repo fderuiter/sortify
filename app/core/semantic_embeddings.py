@@ -9,7 +9,7 @@ import sys
 import threading
 import time
 import weakref
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -671,8 +671,11 @@ class SemanticEmbeddingManager:
                         with block_external_network(reason="tokenizer initialization"):
                             from transformers import AutoTokenizer
 
-                            tokenizer = AutoTokenizer.from_pretrained(
-                                tokenizer_path, local_files_only=True
+                            tokenizer = cast(
+                                Any,
+                                AutoTokenizer.from_pretrained(
+                                    tokenizer_path, local_files_only=True
+                                ),
                             )
                         registry._models[tokenizer_key] = tokenizer
 

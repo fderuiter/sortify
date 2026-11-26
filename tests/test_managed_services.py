@@ -155,11 +155,14 @@ def test_custom_db_path_opens_standalone_main_db_and_rejects_future_schema(tmp_p
         init_worker.stop(stop_embeddings=False)
 
     # Multiple sequential leases on the standalone v8 database succeed without StoreTooNewError
-    for _ in range(2):
+    for idx in range(2):
         with acquire_services(db_path=standalone_path) as lease:
             assert lease.db is not None
             assert lease.cache is not None
             assert lease.history is not None
+            if idx == 0:
+                sid = lease.history.start_session(str(tmp_path))
+                assert sid
             assert schema_version(get_db_connection(str(standalone_path))) == 8
 
     # Genuinely future schema version still raises StoreTooNewError cleanly

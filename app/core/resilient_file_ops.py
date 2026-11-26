@@ -33,57 +33,6 @@ MAX_ATTEMPTS = 15 if IS_WINDOWS else 1
 RETRY_DELAY = 0.05 if IS_WINDOWS else 0.0
 
 
-def verify_file_hash(
-    file_path: str | os.PathLike,
-    expected_hash: str | None,
-    expected_size: int = 0,
-    *,
-    recovery: bool = True,
-    windows: bool | None = None,
-    hash_file: Callable | None = None,
-) -> bool:
-    """Verify legacy history hashes using the caller's existing retry policy.
-
-    Discovery uses the standard file-operation retry schedule and retries only
-    on Windows. Recovery additionally retries transient empty reads of a known
-    nonempty file and reader failures on other platforms. Missing expected
-    hashes retain legacy compatibility; a failed read never verifies a hash.
-    """
-    if not expected_hash:
-        return True
-    if hash_file is None:
-        from app.core.extractor import get_file_hash
-
-        hash_file = get_file_hash
-    windows = sys.platform == "win32" if windows is None else windows
-    attempts = (30 if windows else 10) if recovery else MAX_ATTEMPTS
-    delay = (0.1 if windows else 0.05) if recovery else RETRY_DELAY
-    empty_hash = hashlib.sha256(b"").hexdigest()
-    for attempt in range(attempts):
-        try:
-            actual = hash_file(os.fspath(file_path))
-            if actual == expected_hash:
-                return True
-            retry_empty = (
-                recovery
-                and actual == empty_hash
-                and expected_hash != empty_hash
-                and expected_size > 0
-            )
-            if not windows and not retry_empty:
-                return False
-        except Exception as error:
-            logging.debug("Hash verification read failed (%s)", type(error).__name__)
-            if not recovery and not windows:
-                return False
-        if not recovery and attempt == attempts - 1:
-            break
-        gc.collect()
-        if delay > 0:
-            time.sleep(delay)
-    return False
-
-
 def _is_same_path(p1: str, p2: str) -> bool:
     if p1 is None or p2 is None:
         return p1 == p2

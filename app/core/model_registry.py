@@ -463,15 +463,15 @@ class SharedModelRegistry:
                         )
                         task = "text-generation"
 
-                    quantize_dynamic_fn: Any = getattr(
+                    quantize_dynamic: Any = getattr(
                         torch.quantization, "quantize_dynamic"
                     )
-                    quantized_model = quantize_dynamic_fn(
+                    quantized_model = quantize_dynamic(
                         model, {torch.nn.Linear}, dtype=torch.qint8
                     )
 
-                    pipeline_fn: Any = pipeline
-                    generator = pipeline_fn(
+                    hf_pipeline: Any = pipeline
+                    generator = hf_pipeline(
                         task, model=quantized_model, tokenizer=tokenizer, device=-1
                     )
 

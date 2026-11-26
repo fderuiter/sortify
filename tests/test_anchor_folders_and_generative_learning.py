@@ -533,12 +533,12 @@ async def test_ac4_tui_reassignment_persists_learned_rule_and_pipeline_applies_t
         modal.action_confirm()
         await pilot.pause()
 
-        # Verify a pattern was persisted to the workspace folder scope's LEARNED_RULES -> "Expense_Claims"
-        ws_settings = app.get_active_settings()
-        assert ws_settings.LEARNED_RULES
+        # Verify a pattern was persisted to folder-scoped LEARNED_RULES -> "Expense_Claims"
+        scoped_settings = app.get_active_settings()
+        assert scoped_settings.LEARNED_RULES
         learned_patterns = [
             pat
-            for pat, target in ws_settings.LEARNED_RULES.items()
+            for pat, target in scoped_settings.LEARNED_RULES.items()
             if target == "Expense_Claims"
         ]
         assert len(learned_patterns) == 1
@@ -546,7 +546,7 @@ async def test_ac4_tui_reassignment_persists_learned_rule_and_pipeline_applies_t
         assert "reimbursement" in learned_pat
 
         # Verify ActiveRuleManagerModal lists the learned rule and supports editing/toggling
-        rule_modal = ActiveRuleManagerModal(ws_settings)
+        rule_modal = ActiveRuleManagerModal(scoped_settings)
         app.push_screen(rule_modal)
         await pilot.pause()
         table = rule_modal.query_one("#rules-table", DataTable)
@@ -558,12 +558,13 @@ async def test_ac4_tui_reassignment_persists_learned_rule_and_pipeline_applies_t
         # Toggle learned rule off -> moves to DISABLED_LEARNED_RULES, then toggle back on
         rule_modal.action_toggle_rule()
         await pilot.pause()
-        assert learned_pat in ws_settings.DISABLED_LEARNED_RULES
-        assert learned_pat not in ws_settings.LEARNED_RULES
+        assert learned_pat in scoped_settings.DISABLED_LEARNED_RULES
+        assert learned_pat not in scoped_settings.LEARNED_RULES
         rule_modal.action_toggle_rule()
         await pilot.pause()
-        assert ws_settings.LEARNED_RULES.get(learned_pat) == "Expense_Claims"
-        # Ensure global learned_rules also carries Expense_Claims for the next_batch pipeline test below
+        assert scoped_settings.LEARNED_RULES.get(learned_pat) == "Expense_Claims"
+        assert learned_pat not in scoped_settings.DISABLED_LEARNED_RULES
+        # Propagate learned rule to global settings for the separate next_batch workspace below
         settings.LEARNED_RULES = {learned_pat: "Expense_Claims"}
         settings.KEYWORD_RULES = {}
         app.pop_screen()
@@ -656,7 +657,9 @@ async def test_ac5_negative_rating_stops_analyzer_from_repeating_rejected_folder
             await pilot.pause()
 
         # Confirm DB persisted rating="negative" and "!Invoices" rejection target on relative path
-        rating_val = session.db.get_document_rating(str(ws), "ambiguous_statement.txt")
+        rating_val = session.db.get_all_document_ratings(str(ws)).get(
+            "ambiguous_statement.txt"
+        )
         assert rating_val == "negative"
         verified_docs = {
             str(d[0]).replace("\\", "/"): d[3]

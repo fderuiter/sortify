@@ -7,9 +7,10 @@ from typing import Any
 
 from rich.text import Text
 from textual import on
-from textual.app import ComposeResult
+from textual.app import AppError, ComposeResult, ScreenError
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.css.query import QueryError
 from textual.widgets import (
     Button,
     DataTable,
@@ -20,6 +21,7 @@ from textual.widgets import (
     TabbedContent,
     TabPane,
 )
+from textual.worker import WorkerError
 
 from app.ui.heading import Heading
 from app.ui.layout import ModalBox, ResponsiveModalScreen
@@ -1015,8 +1017,19 @@ class AuditReportModal(ResponsiveModalScreen[None]):
         ):
             try:
                 app_ref._start_scan()
-            except (AttributeError, RuntimeError, TypeError) as exc:
-                logger.debug("Scan refresh skipped after audit retry: %s", exc)
+            except (
+                AppError,
+                ScreenError,
+                QueryError,
+                WorkerError,
+                OSError,
+                RuntimeError,
+                LookupError,
+                TypeError,
+                ValueError,
+                AttributeError,
+            ) as exc:
+                logger.debug("Skipping post-retry scan refresh: %s", exc)
 
         pass_cnt = self.report_data.get("verified_pass_count", 0)
         fail_cnt = self.report_data.get("mismatch_fail_count", 0)

@@ -1523,8 +1523,7 @@ def gguf_worker_main(
                     output_queue.put(err_obj)
                 continue
 
-            res_dict = cast(dict[str, Any], res)
-            generated_text = res_dict["choices"][0]["text"].strip()
+            generated_text = cast(dict[str, Any], res)["choices"][0]["text"].strip()
             res_obj = {"text": generated_text}
             if session_key is not None and isinstance(raw_task, bytes):
                 output_queue.put(encrypt_ipc_payload(res_obj, session_key))

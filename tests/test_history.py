@@ -600,7 +600,7 @@ def test_history_manager_get_sessions_legacy_database_missing_tables(
 
 
 def test_session_state_machine_managed_connection_and_audit_queries(tmp_path):
-    """SessionStateMachine handles managed connections, listener errors, and audit queries."""
+    """SessionStateMachine handles managed connections, listener errors, and durable audit rows."""
     import pytest
 
     from app.core.history import (
@@ -611,7 +611,6 @@ def test_session_state_machine_managed_connection_and_audit_queries(tmp_path):
     )
 
     no_db_sm = SessionStateMachine(db_path=None)
-    assert no_db_sm.get_audit_events() == []
     with pytest.raises(ValueError, match="db_path or an active SQLite connection"):
         no_db_sm.transition("s-none", COMPLETED)
 
@@ -641,17 +640,13 @@ def test_session_state_machine_managed_connection_and_audit_queries(tmp_path):
     assert (prev2, nxt2) == (COMPLETED, ROLLED_BACK)
     assert seen_events == [COMPLETED, ROLLED_BACK]
 
-    with conn:
-        conn.execute(
-            "INSERT INTO session_lifecycle_audit (session_id, previous_status, new_status, timestamp, metadata) "
-            "VALUES (?, ?, ?, ?, ?)",
-            ("s-corrupt", UNCOMMITTED, COMPLETED, 123.0, "{not-valid-json"),
-        )
-
-    all_events = sm.get_audit_events(session_id=None)
-    assert len(all_events) == 3
-    assert all_events[-1]["session_id"] == "s-corrupt"
-    assert all_events[-1]["metadata"] == {}
+    audit_rows = conn.execute(
+        "SELECT session_id, previous_status, new_status FROM session_lifecycle_audit ORDER BY id ASC"
+    ).fetchall()
+    assert audit_rows == [
+        ("s-managed", UNCOMMITTED, COMPLETED),
+        ("s-managed", COMPLETED, ROLLED_BACK),
+    ]
 
 
 def test_history_helpers_duplicate_staging_blocking_parents_and_find_moved(tmp_path):

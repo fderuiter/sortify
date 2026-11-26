@@ -508,7 +508,7 @@ def _extract_ui_protocols_payload(ui_protocols_path: str) -> dict:
             **_extract_module_signatures_from_tree(tree),
             "protocols": _extract_protocols_from_tree(tree),
         }
-    except Exception as e:
+    except (OSError, SyntaxError, ValueError, TypeError) as e:
         print(
             f"Warning: Failed to parse AST for {ui_protocols_path}: {e}",
             file=sys.stderr,
