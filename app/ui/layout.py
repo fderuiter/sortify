@@ -132,10 +132,17 @@ class ModalBox(Vertical):
         bool
             True if scrolling was scheduled or performed.
         """
+        immediate_sync = kwargs.get("animate") is False and "immediate" not in kwargs
+        if immediate_sync:
+            kwargs["immediate"] = True
         target = self._body_scroll_target(widget)
         if target is not None:
-            return target.scroll_to_widget(widget, *args, **kwargs)
-        return super().scroll_to_widget(widget, *args, **kwargs)
+            scrolled = target.scroll_to_widget(widget, *args, **kwargs)
+        else:
+            scrolled = super().scroll_to_widget(widget, *args, **kwargs)
+        if immediate_sync and self.is_mounted:
+            self.screen._refresh_layout(scroll=True)
+        return scrolled
 
     def scroll_home(self, *args: Any, **kwargs: Any) -> None:
         """Scroll inner ``.modal-body`` to top when separated from pinned footer.
@@ -147,12 +154,17 @@ class ModalBox(Vertical):
         **kwargs : Any
             Keyword arguments forwarded to ``Widget.scroll_home``.
         """
+        immediate_sync = kwargs.get("animate") is False and "immediate" not in kwargs
+        if immediate_sync:
+            kwargs["immediate"] = True
         bodies = list(self.query(".modal-body"))
         if self.max_scroll_y <= 0 and bodies:
             for body in bodies:
                 body.scroll_home(*args, **kwargs)
-            return
-        super().scroll_home(*args, **kwargs)
+        else:
+            super().scroll_home(*args, **kwargs)
+        if immediate_sync and self.is_mounted:
+            self.screen._refresh_layout(scroll=True)
 
 
 class ResponsiveLayoutMixin:

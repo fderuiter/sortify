@@ -1433,13 +1433,18 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             self._proc_cancel_event = None
 
         if proc is not None:
-            if proc.is_alive():
+            if self._is_sorting_process_alive(proc):
                 try:
                     proc.terminate()
                     proc.join(timeout=3.0)
-                    if proc.is_alive():
+                    if self._is_sorting_process_alive(proc):
                         proc.kill()
                         proc.join(timeout=1.0)
+                except ValueError:
+                    logger.debug(
+                        "Worker process already closed during termination",
+                        exc_info=True,
+                    )
                 except Exception as e:
                     logger.error(
                         f"Error terminating background worker process: {e}",
@@ -1548,6 +1553,16 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             self._debounce_timer.daemon = True
             self._debounce_timer.start()
 
+    @staticmethod
+    def _is_sorting_process_alive(proc: Any) -> bool:
+        """Return True when worker subprocess is alive and False if None or closed."""
+        if proc is None:
+            return False
+        try:
+            return bool(proc.is_alive())
+        except ValueError:
+            return False
+
     def _schedule_run(self, cancel_event):
         """Timer callback that executes or queues the worker subprocess execution."""
         with self._lock:
@@ -1562,7 +1577,7 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
                 return
             self._first_event_time = None
 
-            if self._sorting_process is not None and self._sorting_process.is_alive():
+            if self._is_sorting_process_alive(self._sorting_process):
                 self._rerun_pending = True
                 logger.info(
                     "Background sorting worker process active; queueing subsequent run."
@@ -1604,11 +1619,6 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         except Exception:
             logger.debug("Failed to join worker process", exc_info=True)
 
-        try:
-            proc.close()
-        except Exception:
-            logger.debug("Failed to close worker process", exc_info=True)
-
         should_rerun = False
         with self._lock:
             if self._sorting_process is proc:
@@ -1620,6 +1630,11 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
                 should_rerun = True
             elif self._state == DaemonState.RECALCULATING:
                 self._transition_to(DaemonState.RUNNING)
+
+        try:
+            proc.close()
+        except Exception:
+            logger.debug("Failed to close worker process", exc_info=True)
 
         if should_rerun:
             logger.info(

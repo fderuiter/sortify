@@ -125,7 +125,7 @@ class SamplePlaygroundModal(ResponsiveModalScreen[None]):
         }
         &.narrow .button-row Button {
             min-width: 0;
-            padding: 0 1;
+            padding: 0;
         }
     }
     """

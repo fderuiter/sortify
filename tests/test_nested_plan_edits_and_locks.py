@@ -797,3 +797,57 @@ def test_async_move_engine_blocks_escaping_empty_folder(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         engine.execute(str(ws), {"../escaped_dir": {}}, None, None)
     assert not (tmp_path / "escaped_dir").exists()
+
+
+def test_execute_worker_rescan_does_not_self_cancel_under_slow_io(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify run_execute_worker starting post-execute run_scan_worker never cancels itself via shared worker group."""
+    import time
+
+    from app.core.pipeline import SortPipeline
+
+    app_dir = tmp_path / "app_slow_exec"
+    ws = tmp_path / "ws_slow_exec"
+    ws.mkdir()
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(app_dir))
+    settings = _make_settings(tmp_path)
+
+    orig_execute = SortPipeline.execute
+
+    def _slow_execute(self: SortPipeline, *args: Any, **kwargs: Any) -> Any:
+        time.sleep(0.15)
+        return orig_execute(self, *args, **kwargs)
+
+    monkeypatch.setattr(SortPipeline, "execute", _slow_execute)
+
+    async def _run() -> None:
+        app = AutoSorterTUI(
+            base_dir=str(ws),
+            settings=settings,
+            skip_wizard=True,
+        )
+        try:
+            async with app.run_test(size=(120, 40)) as pilot:
+                app.action_scan_directory()
+                await _wait_for_pipeline(app, pilot)
+
+                app.action_new_folder()
+                await pilot.pause()
+                assert isinstance(app.screen, NewFolderModal)
+                modal = app.screen
+                modal.query_one(
+                    "#input-folder-name", Input
+                ).value = "Financial/Audits/2025"
+                await pilot.pause()
+                modal.action_confirm()
+                await pilot.pause()
+
+                app.action_execute_sort()
+                await _wait_for_pipeline(app, pilot)
+                assert (ws / "Financial" / "Audits" / "2025").is_dir()
+        finally:
+            if app.app_session:
+                app.app_session.close()
+
+    asyncio.run(_run())

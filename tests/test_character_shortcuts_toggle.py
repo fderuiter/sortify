@@ -566,3 +566,46 @@ def test_tree_search_input_isolates_global_shortcuts_keeping_whitelisted_keys(
             assert app._tree_has_focus() is True
 
     asyncio.run(_test())
+
+
+def test_settings_modal_switch_watcher_announces_synchronously(temp_workspace):
+    """Verify SettingsModal 1-arg reactive switch watchers emit announcements synchronously without pilot.pause."""
+    settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
+    settings._settings_model.ENABLE_CHARACTER_KEY_SHORTCUTS = True
+
+    async def _test():
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        async with app.run_test(size=(120, 60)) as pilot:
+            modal = SettingsModal(settings)
+            await app.push_screen(modal)
+            await pilot.pause()
+
+            sw_char = modal.query_one("#switch-character-key-shortcuts", Switch)
+            sw_high = modal.query_one("#switch-quarantine-high", Switch)
+            assert sw_char.value is True
+            assert sw_high.value is False
+
+            # Programmatic assignment must announce synchronously before any event loop pause
+            sw_char.value = False
+            assert any(
+                "Character key shortcuts disabled." in str(a)
+                for a in modal.announcements
+            )
+
+            sw_high.value = True
+            assert any(
+                "Automatic HIGH sensitivity quarantine enabled." in str(a)
+                for a in modal.announcements
+            )
+
+            # Subsequent Switch.Changed message bubbling must remain deduplicated
+            await pilot.pause(0.05)
+            disabled_msgs = [
+                a
+                for a in modal.announcements
+                if "Character key shortcuts disabled." in str(a)
+            ]
+            assert len(disabled_msgs) == 1
+
+    asyncio.run(_test())

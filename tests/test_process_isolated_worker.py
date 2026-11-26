@@ -87,6 +87,10 @@ def test_daemon_prevents_concurrent_worker_processes(tmp_path):
     daemon.stop()
 
 
+def _noop_closed_worker() -> None:
+    return None
+
+
 def test_daemon_stop_cleanly_terminates_worker_process(tmp_path):
     """Verify that stopping the daemon immediately terminates any active worker subprocess."""
     src_dir = tmp_path / "src"
@@ -105,3 +109,33 @@ def test_daemon_stop_cleanly_terminates_worker_process(tmp_path):
     mock_proc.terminate.assert_called_once()
     mock_proc.join.assert_called()
     assert daemon._sorting_process is None
+
+
+def test_daemon_handles_closed_worker_process_without_value_error(tmp_path, caplog):
+    """Verify stop() and _schedule_run() tolerate an already-closed Process without raising ValueError or logging ERROR."""
+    import logging
+
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+
+    ctx = multiprocessing.get_context("spawn")
+    closed_proc = ctx.Process(target=_noop_closed_worker)
+    closed_proc.start()
+    closed_proc.join(timeout=5.0)
+    closed_proc.close()
+
+    settings = AppSettings()
+    daemon = ContinuousWatchdogDaemon(settings, str(src_dir))
+    daemon._is_running = True
+    daemon._sorting_process = closed_proc
+
+    with caplog.at_level(logging.ERROR):
+        with mock.patch.object(daemon, "_spawn_sorting_process") as spawn_mock:
+            daemon._schedule_run(cancel_event=None)
+            spawn_mock.assert_called_once()
+
+        daemon._sorting_process = closed_proc
+        daemon.stop()
+
+    assert daemon._sorting_process is None
+    assert [rec for rec in caplog.records if rec.levelno >= logging.ERROR] == []

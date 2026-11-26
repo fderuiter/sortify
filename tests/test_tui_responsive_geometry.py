@@ -474,7 +474,7 @@ def test_rollback_and_audit_report_modals_geometry(
         async with host.run_test(size=viewport) as pilot:
             # 1. RollbackConfirmModal Stage 1 & Stage 2
             rb_modal = RollbackConfirmModal(session_info)
-            host.push_screen(rb_modal)
+            await host.push_screen(rb_modal)
             await pilot.pause()
 
             rb_box = _find_modal_box(rb_modal)
@@ -552,7 +552,7 @@ def test_rollback_and_audit_report_modals_geometry(
                 ],
             }
             audit_modal = AuditReportModal(report_data=report_data)
-            host.push_screen(audit_modal)
+            await host.push_screen(audit_modal)
             await pilot.pause()
 
             audit_box = _find_modal_box(audit_modal)
@@ -719,7 +719,7 @@ def test_all_modals_button_labels_tables_and_sticky_footers(
             async with host.run_test(size=viewport) as pilot:
                 modal = factory()
                 name = type(modal).__name__
-                host.push_screen(modal)
+                await host.push_screen(modal)
                 await pilot.pause()
 
                 if name in ("DropZoneModal", "CROForensicModal"):
@@ -853,7 +853,7 @@ def test_settings_modal_tab_scroll_home_forwarding(tmp_path: Path) -> None:
             host = _ModalHostApp(settings=settings, base_dir=str(tmp_path))
             async with host.run_test(size=viewport) as pilot:
                 modal = SettingsModal(settings=settings)
-                host.push_screen(modal)
+                await host.push_screen(modal)
                 await pilot.pause()
 
                 box = modal.query_one(".modal-box", ModalBox)
@@ -884,7 +884,7 @@ def test_cro_forensic_and_migrated_modals_resize_breakpoints(tmp_path: Path) -> 
         host = _ModalHostApp(settings=settings, base_dir=str(tmp_path))
         async with host.run_test(size=(120, 40)) as pilot:
             cro_modal = CROForensicModal(settings=settings, base_dir=str(tmp_path))
-            host.push_screen(cro_modal)
+            await host.push_screen(cro_modal)
             await pilot.pause()
             assert "compact" not in cro_modal.classes
             assert "narrow" not in cro_modal.classes
@@ -907,7 +907,7 @@ def test_cro_forensic_and_migrated_modals_resize_breakpoints(tmp_path: Path) -> 
                 DropPlanConfirmModal("Move 2 files", ["a.pdf -> Finance/"]),
                 RollbackErrorModal("Rollback Failed", "Details"),
             ):
-                host.push_screen(modal)
+                await host.push_screen(modal)
                 await pilot.pause()
                 assert "compact" in modal.classes
                 assert "narrow" in modal.classes
@@ -918,7 +918,7 @@ def test_cro_forensic_and_migrated_modals_resize_breakpoints(tmp_path: Path) -> 
             await pilot.resize_terminal(70, 40)
             await pilot.pause()
             collision_modal = InteractiveCollisionResolverModal(duplicate_groups=[])
-            host.push_screen(collision_modal)
+            await host.push_screen(collision_modal)
             await pilot.pause()
             assert "narrow" not in collision_modal.classes
             assert "compact" in collision_modal.classes
@@ -926,5 +926,55 @@ def test_cro_forensic_and_migrated_modals_resize_breakpoints(tmp_path: Path) -> 
             await pilot.resize_terminal(58, 40)
             await pilot.pause()
             assert "narrow" in collision_modal.classes
+
+    asyncio.run(_run())
+
+
+def test_modal_box_scroll_helpers_update_regions_immediately_when_screen_dirty(
+    tmp_path: Path,
+) -> None:
+    """Verify ModalBox.scroll_to_widget(..., animate=False) and scroll_home(animate=False) update regions synchronously even when Screen has dirty widgets."""
+
+    async def _run() -> None:
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        for modal_factory, target_btn_id, switch_tab in (
+            (
+                lambda: WizardModal(settings=settings, current_dir=str(tmp_path)),
+                "#preset-demo",
+                None,
+            ),
+            (
+                lambda: SettingsModal(settings=settings),
+                "#btn-open-rules",
+                "tab-ai-privacy",
+            ),
+        ):
+            host = _ModalHostApp(settings=settings, base_dir=str(tmp_path))
+            async with host.run_test(size=(58, 24)) as pilot:
+                modal = modal_factory()
+                await host.push_screen(modal)
+                await pilot.pause()
+
+                if switch_tab is not None:
+                    modal.query_one("Tabs").focus()
+                    await pilot.press("right")
+                    await pilot.pause(0.2)
+
+                box = _find_modal_box(modal)
+                assert isinstance(box, ModalBox)
+                btn = modal.query_one(target_btn_id, Button)
+                modal._dirty_widgets.add(modal)
+                modal._repaint_required = True
+
+                # Must update compositor regions synchronously with zero pilot.pause()
+                box.scroll_to_widget(btn, animate=False)
+                _assert_button_visible_and_hittestable(modal, btn, box.region)
+
+                modal._dirty_widgets.add(modal)
+                modal._repaint_required = True
+                box.scroll_home(animate=False)
+                body_target = box._body_scroll_target()
+                assert body_target is not None and body_target.scroll_y == 0
 
     asyncio.run(_run())

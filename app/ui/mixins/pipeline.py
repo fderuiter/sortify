@@ -162,7 +162,7 @@ class SortPipelineMixin:
         """Handle telemetry events broadcast by the pipeline."""
         logger.debug(f"UI observed pipeline telemetry: {event} {payload}")
 
-    @work(exclusive=True, thread=True)
+    @work(group="scan", exclusive=True, thread=True)
     def run_scan_worker(self: TUIHostProtocol) -> None:
         """Execute scan and plan generation in worker thread."""
         try:
@@ -877,9 +877,10 @@ class SortPipelineMixin:
         # Update node styling in tree view
         self._apply_tree_node_styles()
 
-    @work(exclusive=True, thread=True)
+    @work(group="execute", exclusive=True, thread=True)
     def run_execute_worker(self: TUIHostProtocol) -> None:
         """Execute moves in worker thread."""
+        progress_reset = False
         try:
 
             def move_progress_cb(
@@ -986,10 +987,13 @@ class SortPipelineMixin:
 
             if audit_report:
                 self.call_from_thread(self.action_open_audit_report, audit_report)
+            self.call_from_thread(self.reset_progress_bar)
+            progress_reset = True
             # Rescan last: the scan worker replaces the AppSession this worker uses.
             self.call_from_thread(self._start_scan)
         except Exception as e:
             logger.error(f"Error executing moves: {e}")
             self.call_from_thread(self.announce, f"Execution error: {e}")
         finally:
-            self.call_from_thread(self.reset_progress_bar)
+            if not progress_reset:
+                self.call_from_thread(self.reset_progress_bar)

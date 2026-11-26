@@ -254,7 +254,18 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
         super().__init__()
         self.settings = settings
         self.help_url = f"{TROUBLESHOOTING_URL}#settings-configuration"
-        self._announced_switch_values: dict[str, bool] = {}
+        auto_ratings = {
+            str(r).upper()
+            for r in (getattr(settings, "AUTO_QUARANTINE_RATINGS", []) or [])
+            if r
+        }
+        self._announced_switch_values: dict[str, bool] = {
+            "#switch-character-key-shortcuts": bool(
+                getattr(settings, "ENABLE_CHARACTER_KEY_SHORTCUTS", True)
+            ),
+            "#switch-quarantine-critical": "CRITICAL" in auto_ratings,
+            "#switch-quarantine-high": "HIGH" in auto_ratings,
+        }
         self._staged_consent_revocation: bool = False
 
     def query_one(self, selector: Any, expect_type: Any = None) -> Any:
@@ -684,6 +695,10 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
         self.query_one(".modal-box", ModalBox).scroll_home(
             animate=False, immediate=True
         )
+
+        def _make_switch_watcher(sid: str) -> Any:
+            return lambda val: self._announce_switch_toggle(sid, bool(val))
+
         for sw_id in (
             "#switch-character-key-shortcuts",
             "#switch-quarantine-critical",
@@ -691,11 +706,11 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
         ):
             try:
                 sw = self.query_one(sw_id, Switch)
-                self._announced_switch_values[sw_id] = bool(sw.value)
+                self._announced_switch_values.setdefault(sw_id, bool(sw.value))
                 self.watch(
                     sw,
                     "value",
-                    lambda val, sid=sw_id: self._announce_switch_toggle(sid, bool(val)),
+                    _make_switch_watcher(sw_id),
                     init=False,
                 )
             except Exception:
