@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "773a360f53e6ae712d7fc39daef76da086fb95a2b7f5c75cbd169fc16d5a4931"
+    "checksum": "eb7183797ee5d097677990090ac51010282d4139bd60513312c41f56b4291c19"
   },
   "classes": [],
   "functions": [
@@ -231,44 +231,6 @@
         }
       ],
       "returns": "tuple[bool, str | None]"
-    },
-    {
-      "async": false,
-      "decorators": [],
-      "name": "verify_file_hash",
-      "parameters": [
-        {
-          "annotation": "str | os.PathLike",
-          "default": null,
-          "name": "file_path"
-        },
-        {
-          "annotation": "str | None",
-          "default": null,
-          "name": "expected_hash"
-        },
-        {
-          "annotation": "int",
-          "default": "0",
-          "name": "expected_size"
-        },
-        {
-          "annotation": "bool",
-          "default": "True",
-          "name": "recovery"
-        },
-        {
-          "annotation": "bool | None",
-          "default": "None",
-          "name": "windows"
-        },
-        {
-          "annotation": "Callable | None",
-          "default": "None",
-          "name": "hash_file"
-        }
-      ],
-      "returns": "bool"
     }
   ]
 }

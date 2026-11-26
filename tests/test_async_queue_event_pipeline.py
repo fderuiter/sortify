@@ -167,7 +167,7 @@ async def test_targeted_triage_without_whole_directory_scans(tmp_path, session_d
 
     with (
         mock.patch("app.core.daemon.get_files_recursively") as mock_scan,
-        mock.patch("app.core.daemon.MetadataPass.run", return_value=[]) as mock_meta,
+        mock.patch("app.core.metadata.MetadataPass.run", return_value=[]) as mock_meta,
     ):
         event = FileChangeEvent(event_type="created", file_path=str(file_a))
         await daemon._process_single_event(event)

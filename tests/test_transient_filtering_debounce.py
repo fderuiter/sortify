@@ -163,7 +163,7 @@ def test_scanning_stage_filters_out_transient_files(tmp_path):
             "app.core.daemon.get_files_recursively", return_value=scanned_files
         ) as mock_scan,
         mock.patch(
-            "app.core.daemon.MetadataPass.run", return_value=[]
+            "app.core.metadata.MetadataPass.run", return_value=[]
         ) as mock_meta_run,
     ):
         mock_app_session_inst.generate_sorting_plan.return_value = {}

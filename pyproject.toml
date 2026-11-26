@@ -299,13 +299,13 @@ show_missing = true
 [tool.sortify.ruff-exception-ceilings]
 ".agents/skills/run-sortify/driver.py" = 1
 "app/core/analyzer_strategies.py" = 113
-"app/core/db.py" = 56
+"app/core/db.py" = 55
 "app/core/db_conn.py" = 32
 "app/core/db_worker.py" = 12
 "app/core/history.py" = 20
 "app/core/ledger.py" = 3
 "app/core/mover.py" = 39
-"app/core/resilient_file_ops.py" = 22
+"app/core/resilient_file_ops.py" = 21
 "app/main.py" = 31
 "app/ui/a11y.py" = 31
 "app/ui/mixins/pipeline.py" = 17

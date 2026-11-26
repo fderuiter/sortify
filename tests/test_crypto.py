@@ -24,7 +24,6 @@ from app.core.crypto import (
     decrypt_ipc_payload,
     encrypt_ipc_payload,
     get_fallback_keys_dir,
-    secure_delete_dir,
     secure_delete_file,
     zero_vector_buffer,
 )
@@ -673,17 +672,6 @@ def test_crypto_manager_hash_and_keyring_derivation(tmp_path):
     assert path_md5.name == f"test_db.sqlite_{md5_hash}.key"
 
 
-def test_crypto_manager_bootstrap_key():
-    from app.core.crypto import CryptoManager
-
-    key1 = CryptoManager.generate_bootstrap_key()
-    key2 = CryptoManager.generate_bootstrap_key()
-
-    assert isinstance(key1, str)
-    assert len(key1) > 20
-    assert key1 != key2
-
-
 def test_crypto_manager_proxy_setting_envelope(tmp_path):
     from app.core.crypto import CryptoManager, SessionCrypto
 
@@ -823,36 +811,6 @@ def test_secure_delete_file_edge_cases(tmp_path, monkeypatch, caplog):
     secure_delete_file(fail_file2)
 
 
-def test_secure_delete_dir_edge_cases(tmp_path, monkeypatch):
-    """Verify recursive directory deletion and resilient_rmtree fallback."""
-    # 1. Non-existent directory
-    secure_delete_dir(tmp_path / "missing_dir")
-
-    # 2. Recursive directory tree deletion
-    dir_path = tmp_path / "tree_dir"
-    dir_path.mkdir()
-    sub_dir = dir_path / "subdir"
-    sub_dir.mkdir()
-    (dir_path / "f1.txt").write_bytes(b"data1")
-    (sub_dir / "f2.txt").write_bytes(b"data2")
-
-    secure_delete_dir(dir_path)
-    assert not dir_path.exists()
-
-    # 3. Deletion failure fallback to resilient_rmtree
-    fail_dir = tmp_path / "fail_dir"
-    fail_dir.mkdir()
-
-    mock_rmtree = MagicMock()
-    monkeypatch.setattr("app.core.resilient_file_ops.resilient_rmtree", mock_rmtree)
-    monkeypatch.setattr(
-        Path, "rmdir", MagicMock(side_effect=PermissionError("Permission denied"))
-    )
-
-    secure_delete_dir(fail_dir)
-    mock_rmtree.assert_called_once_with(fail_dir, ignore_errors=True)
-
-
 def test_session_crypto_get_raw_key_resolution(tmp_path, monkeypatch):
     """Verify SessionCrypto.get_raw_key fallbacks and key resolution behavior."""
     key_path = tmp_path / "secret.key"
@@ -983,10 +941,6 @@ def test_session_crypto_get_cipher_os_error_branches(tmp_path, monkeypatch):
         keyring,
         "set_password",
         MagicMock(side_effect=Exception("set_password error")),
-    )
-    monkeypatch.setattr(
-        "app.core.crypto.secure_delete_dir",
-        MagicMock(side_effect=Exception("delete error")),
     )
 
     cipher2 = crypto2.get_cipher()

@@ -281,67 +281,6 @@ class SessionStateMachine(LifecycleTelemetryMixin):
 
         return previous_status, new_status
 
-    def get_audit_events(
-        self, session_id: str | None = None, conn=None
-    ) -> list[dict[str, Any]]:
-        """Retrieve historical lifecycle audit events for a session."""
-        close_conn = False
-        if conn is None:
-            if not self.db_path:
-                return []
-            conn = get_db_connection(self.db_path)
-            close_conn = True
-
-        try:
-            has_audit = conn.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_lifecycle_audit'"
-            ).fetchone()
-            if not has_audit:
-                return []
-            if session_id:
-                cur = conn.execute(
-                    """
-                    SELECT session_id, previous_status, new_status, timestamp, error_details, metadata
-                    FROM session_lifecycle_audit WHERE session_id = ?
-                    ORDER BY id ASC
-                    """,
-                    (session_id,),
-                )
-            else:
-                cur = conn.execute(
-                    """
-                    SELECT session_id, previous_status, new_status, timestamp, error_details, metadata
-                    FROM session_lifecycle_audit
-                    ORDER BY id ASC
-                    """
-                )
-
-            events = []
-            for row in cur.fetchall():
-                meta = {}
-                if row[5]:
-                    try:
-                        meta = json.loads(row[5])
-                    except (json.JSONDecodeError, TypeError):
-                        meta = {}
-                events.append(
-                    {
-                        "session_id": row[0],
-                        "previous_status": row[1],
-                        "new_status": row[2],
-                        "timestamp": row[3],
-                        "error_details": row[4],
-                        "metadata": meta,
-                    }
-                )
-            return events
-        except DB_ERRORS as e:
-            logging.warning("Failed to query session lifecycle audit events: %s", e)
-            return []
-        finally:
-            if close_conn:
-                conn.close()
-
 
 def _robust_move(src, dst):
     """Safely move a file, retrying on temporary Windows sharing violations and file locks."""
@@ -768,7 +707,7 @@ class HistoryManager:
 
         self.db.worker.execute_write(_write)
 
-    def _prune_snapshots(self, conn, retention_days=None, limit=None, policies=None):
+    def _prune_snapshots(self, conn, retention_days=None, policies=None):
         if retention_days is None:
             try:
                 from app.config import AppSettings
@@ -1269,12 +1208,14 @@ class HistoryManager:
 
         _add_candidate_root(base_dir)
         try:
-            for ev in self.state_machine.get_audit_events(
-                session_id=session_id, conn=conn
-            ):
-                meta = ev.get("metadata") or {}
-                for br in meta.get("batch_roots") or []:
-                    _add_candidate_root(br)
+            for (raw_meta,) in conn.execute(
+                "SELECT metadata FROM session_lifecycle_audit WHERE session_id = ? AND metadata IS NOT NULL ORDER BY id ASC",
+                (session_id,),
+            ).fetchall():
+                meta = json.loads(raw_meta) if isinstance(raw_meta, str) else {}
+                if isinstance(meta, dict):
+                    for br in meta.get("batch_roots") or []:
+                        _add_candidate_root(br)
         except Exception:
             pass
         if docs_conn is not None:
@@ -1610,7 +1551,6 @@ class HistoryManager:
     def rollback(
         self,
         session_id: str,
-        ignore_missing: bool = False,
         selected_step_ids: Collection[int | str] | None = None,
     ):
         """Undo a session solely by replaying its recorded moves backwards (ADR 0006)."""

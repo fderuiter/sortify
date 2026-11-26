@@ -654,9 +654,16 @@ def test_manual_edits_persist_sqlite_doc_relpath_nested_ops_and_rescan(
                 await pilot.pause(0.05)
                 session.db.worker.flush()
 
+                def _verified_target_path(relpath: str) -> str | None:
+                    norm_rel = relpath.replace("\\", "/")
+                    return {
+                        str(doc[0]).replace("\\", "/"): doc[3]
+                        for doc in session.db.get_all_documents(str(ws))
+                        if len(doc) > 3
+                    }.get(norm_rel)
+
                 assert (
-                    session.db.get_user_verified_target_path(str(ws), "inbox/inv_1.pdf")
-                    == "Finance/2024/Invoices"
+                    _verified_target_path("inbox/inv_1.pdf") == "Finance/2024/Invoices"
                 )
 
                 # 2. Nested on_reassigned moves tax_2024.pdf from Finance/2024/Invoices -> Legal/Tax/2024
@@ -678,10 +685,7 @@ def test_manual_edits_persist_sqlite_doc_relpath_nested_ops_and_rescan(
                 session.db.worker.flush()
 
                 assert "tax_2024.pdf" in app.plan["Legal"]["Tax"]["2024"]
-                assert (
-                    session.db.get_user_verified_target_path(str(ws), "tax_2024.pdf")
-                    == "Legal/Tax/2024"
-                )
+                assert _verified_target_path("tax_2024.pdf") == "Legal/Tax/2024"
 
                 # 3. Nested on_folder_renamed renames Finance/2024/Invoices -> Finance/2024/PaidInvoices
                 invoices_folder_node = _find_tree_node(
@@ -710,7 +714,7 @@ def test_manual_edits_persist_sqlite_doc_relpath_nested_ops_and_rescan(
                     in app.plan["Finance"]["2024"]["PaidInvoices"]
                 )
                 assert (
-                    session.db.get_user_verified_target_path(str(ws), "inbox/inv_1.pdf")
+                    _verified_target_path("inbox/inv_1.pdf")
                     == "Finance/2024/PaidInvoices"
                 )
 
@@ -728,15 +732,12 @@ def test_manual_edits_persist_sqlite_doc_relpath_nested_ops_and_rescan(
                 app.action_toggle_lock()
                 await pilot.pause(0.02)
                 session.db.worker.flush()
-                assert (
-                    session.db.get_user_verified_target_path(str(ws), "inbox/inv_1.pdf")
-                    is None
-                )
+                assert _verified_target_path("inbox/inv_1.pdf") is None
                 app.action_toggle_lock()
                 await pilot.pause(0.02)
                 session.db.worker.flush()
                 assert (
-                    session.db.get_user_verified_target_path(str(ws), "inbox/inv_1.pdf")
+                    _verified_target_path("inbox/inv_1.pdf")
                     == "Finance/2024/PaidInvoices"
                 )
 

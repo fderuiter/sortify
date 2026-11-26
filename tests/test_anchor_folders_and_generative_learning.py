@@ -563,7 +563,8 @@ async def test_ac4_tui_reassignment_persists_learned_rule_and_pipeline_applies_t
         rule_modal.action_toggle_rule()
         await pilot.pause()
         assert scoped_settings.LEARNED_RULES.get(learned_pat) == "Expense_Claims"
-        # Ensure global LEARNED_RULES also carries Expense_Claims for the next_batch workspace test below
+        assert learned_pat not in scoped_settings.DISABLED_LEARNED_RULES
+        # Propagate learned rule to global settings for the separate next_batch workspace below
         settings.LEARNED_RULES = {learned_pat: "Expense_Claims"}
         settings.KEYWORD_RULES = {}
         app.pop_screen()
@@ -656,7 +657,9 @@ async def test_ac5_negative_rating_stops_analyzer_from_repeating_rejected_folder
             await pilot.pause()
 
         # Confirm DB persisted rating="negative" and "!Invoices" rejection target on relative path
-        rating_val = session.db.get_document_rating(str(ws), "ambiguous_statement.txt")
+        rating_val = session.db.get_all_document_ratings(str(ws)).get(
+            "ambiguous_statement.txt"
+        )
         assert rating_val == "negative"
         verified_docs = {
             str(d[0]).replace("\\", "/"): d[3]

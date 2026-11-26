@@ -232,10 +232,12 @@ def test_modal_box_scroll_delegation() -> None:
             target = app.query_one("#lbl-14", Label)
 
             box.scroll_to_widget(target, animate=False)
+            assert body.scroll_y > 0
             await pilot.pause()
             assert body.scroll_y > 0
 
             box.scroll_home(animate=False)
+            assert body.scroll_y == 0
             await pilot.pause()
             assert body.scroll_y == 0
 

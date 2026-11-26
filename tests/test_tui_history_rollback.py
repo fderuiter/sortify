@@ -321,7 +321,7 @@ async def test_rollback_execution_error_modal_on_failure(tui_rollback_env, monke
     session_id = tui_rollback_env["session_id"]
     settings = tui_rollback_env["settings"]
 
-    def mock_rollback_error(self, sid, ignore_missing=False):
+    def mock_rollback_error(self, sid, selected_step_ids=None):
         raise PermissionError("Access denied when restoring files")
 
     monkeypatch.setattr("app.core.history.HistoryManager.rollback", mock_rollback_error)
@@ -367,12 +367,12 @@ async def test_rollback_uses_the_app_store(tui_rollback_env, monkeypatch):
     used_paths = {}
     real_rollback = HistoryManager.rollback
 
-    def spy_rollback(self, sid, ignore_missing=False):
+    def spy_rollback(self, sid, selected_step_ids=None):
         used_paths["db"] = os.path.normcase(os.path.abspath(self.db.db_path))
         used_paths["cache"] = os.path.normcase(
             os.path.abspath(self.cache_manager.db_path)
         )
-        return real_rollback(self, sid, ignore_missing=ignore_missing)
+        return real_rollback(self, sid, selected_step_ids=selected_step_ids)
 
     monkeypatch.setattr("app.core.history.HistoryManager.rollback", spy_rollback)
 
@@ -433,7 +433,7 @@ async def test_escape_does_not_close_history_modal_mid_rollback(
     started = threading.Event()
     release = threading.Event()
 
-    def blocking_rollback(self, sid, ignore_missing=False):
+    def blocking_rollback(self, sid, selected_step_ids=None):
         started.set()
         release.wait(timeout=10)
         return 2

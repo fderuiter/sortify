@@ -845,10 +845,10 @@ async def test_dropzone_modal_accepts_newly_supported_formats(tmp_path):
         await pilot.pause()
         modal = app.screen
         assert isinstance(modal, DropZoneModal)
-        for p in (deck, note, mail, odt):
+        for p in (deck, note, mail, odt, unknown):
             assert modal._is_supported_file(str(p)) is True
             modal.stage_paths(str(p))
-        modal.stage_paths(str(unknown))
+        assert modal._is_supported_file(str(ignored)) is False
         modal.stage_paths(str(ignored))
         await pilot.pause()
         by_path = {

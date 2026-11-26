@@ -9,7 +9,6 @@ from textual import events, on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.css.query import QueryError
 from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select
 
 from app.ui.heading import Heading
@@ -839,10 +838,9 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Any | None]):
             return
 
         res = self.current_result
-        try:
-            chk = self.query_one("#chk-import-disabled", Checkbox)
-            preserve_native = bool(getattr(res, "preserve_states", False))
-            desired_chk = not preserve_native
+        preserve_native = bool(getattr(res, "preserve_states", False))
+        desired_chk = not preserve_native
+        for chk in self.query("#chk-import-disabled").results(Checkbox):
             if chk.value != desired_chk:
                 self._auto_setting_import_disabled = True
                 try:
@@ -850,14 +848,6 @@ class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Any | None]):
                 finally:
                     self._auto_setting_import_disabled = False
             self.import_disabled = desired_chk
-        except (
-            AttributeError,
-            LookupError,
-            QueryError,
-            RuntimeError,
-            TypeError,
-        ) as exc:
-            logger.debug("Import-disabled checkbox sync skipped: %s", exc)
 
         dt_kw = self.query_one("#dt-imported-keywords", DataTable)
         dt_pol = self.query_one("#dt-imported-policies", DataTable)
