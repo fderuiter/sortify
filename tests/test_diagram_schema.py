@@ -1,14 +1,19 @@
 """Unit tests for lazy diagram schema registry and module-level getattr resolution."""
 
 import concurrent.futures
+import json
 import os
-import time
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 import scripts.diagram_schema as ds
 from scripts.diagram_schema import (
+    CONSTANT_TO_KEY_MAP,
+    BaseDiagramSpec,
     ComponentDiagramSpec,
     DiagramNode,
     LazyDiagramSpecsDict,
@@ -27,22 +32,56 @@ def _is_ci_or_parallel() -> bool:
 
 
 def test_diagram_schema_import_performance():
-    """Verify scripts.diagram_schema import latency is under 50ms with zero top-level spec instantiations."""
-    ds.reset_diagram_specs_cache()
-    assert len(ds._INSTANTIATED_SPECS) == 0
+    """Verify cold scripts.diagram_schema import in a fresh subprocess creates zero eager BaseDiagramSpec models."""
+    repo_root = str(Path(__file__).resolve().parent.parent)
+    probe = (
+        "import json, sys, time\n"
+        f"sys.path.insert(0, {repo_root!r})\n"
+        "from pydantic import BaseModel, Field, field_validator\n"
+        "t0 = time.perf_counter()\n"
+        "import scripts.diagram_schema as ds\n"
+        "import_time_ms = (time.perf_counter() - t0) * 1000\n"
+        "eager_specs = [\n"
+        "    k for k, v in vars(ds).items() if isinstance(v, ds.BaseDiagramSpec)\n"
+        "]\n"
+        "module_dir = dir(ds)\n"
+        "raw_dir = ds.__dir__()\n"
+        "print(json.dumps({\n"
+        "    'import_time_ms': import_time_ms,\n"
+        "    'eager_specs': eager_specs,\n"
+        "    'instantiated_count': len(ds._INSTANTIATED_SPECS),\n"
+        "    'dir_len': len(module_dir),\n"
+        "    'dir_unique_len': len(set(module_dir)),\n"
+        "    'raw_dir_len': len(raw_dir),\n"
+        "    'raw_dir_unique_len': len(set(raw_dir)),\n"
+        "}))\n"
+    )
+    clean_env = {
+        k: v
+        for k, v in os.environ.items()
+        if not k.startswith(("COV_CORE_", "COVERAGE_"))
+    }
+    proc = subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+        check=True,
+        env=clean_env,
+    )
+    payload = json.loads(proc.stdout.strip())
 
-    # Test re-import latency when module is in sys.modules
-    t0 = time.perf_counter()
-    import scripts.diagram_schema  # noqa: F401
+    assert payload["eager_specs"] == []
+    assert payload["instantiated_count"] == 0
+    assert payload["dir_len"] == payload["dir_unique_len"]
+    assert payload["raw_dir_len"] == payload["raw_dir_unique_len"]
 
-    import_time_ms = (time.perf_counter() - t0) * 1000
-    sla_threshold = 200.0 if _is_ci_or_parallel() else 50.0
-    assert import_time_ms < sla_threshold, (
-        f"Import time {import_time_ms:.2f}ms exceeded {sla_threshold}ms SLA threshold"
+    sla_threshold = 250.0 if _is_ci_or_parallel() else 100.0
+    assert payload["import_time_ms"] < sla_threshold, (
+        f"Cold import time {payload['import_time_ms']:.2f}ms exceeded {sla_threshold}ms SLA threshold"
     )
 
-    # Verify zero diagram specs were hydrated at import time
-    assert len(ds._INSTANTIATED_SPECS) == 0
+    assert not any(isinstance(v, BaseDiagramSpec) for v in vars(ds).values())
+    assert CONSTANT_TO_KEY_MAP.keys().isdisjoint(vars(ds).keys())
 
 
 def test_lazy_instantiation_on_access():
@@ -63,25 +102,36 @@ def test_lazy_instantiation_on_access():
 
 
 def test_module_getattr_spec_resolution():
-    """Verify module-level __getattr__ intercepts constant accesses and resolves specs lazily."""
-    ds.reset_diagram_specs_cache()
+    """Verify module-level __getattr__ intercepts constant accesses, populates _INSTANTIATED_SPECS, and deduplicates __dir__."""
+    assert not any(isinstance(v, BaseDiagramSpec) for v in vars(ds).values())
+    assert len(dir(ds)) == len(set(dir(ds)))
+    assert len(ds.__dir__()) == len(set(ds.__dir__()))
+    assert "SYSTEM_DIAGRAM_SPECS" in dir(ds)
+    assert set(CONSTANT_TO_KEY_MAP).issubset(dir(ds))
 
-    # Access via getattr / module import
+    ds.reset_diagram_specs_cache()
+    assert len(ds._INSTANTIATED_SPECS) == 0
+
+    # Access via getattr / module import and confirm _INSTANTIATED_SPECS hydration
     arch_spec = getattr(ds, "CORE_ARCHITECTURE_SPEC")
     assert isinstance(arch_spec, ComponentDiagramSpec)
     assert arch_spec.id == "core_architecture"
+    assert set(ds._INSTANTIATED_SPECS) == {"core_architecture"}
 
     cro_spec = getattr(ds, "CRO_MULTI_STUDY_PIPELINE_SPEC")
     assert isinstance(cro_spec, ComponentDiagramSpec)
     assert cro_spec.id == "cro_multi_study_pipeline"
+    assert "cro_multi_study_pipeline" in ds._INSTANTIATED_SPECS
 
     seq_spec = getattr(ds, "ARCHITECTURE_ASYNC_PROCESSING_SPEC")
     assert isinstance(seq_spec, SequenceDiagramSpec)
     assert seq_spec.id == "architecture_async_processing"
+    assert "architecture_async_processing" in ds._INSTANTIATED_SPECS
 
     state_spec = getattr(ds, "ARCHITECTURE_WATCHDOG_STATE_SPEC")
     assert isinstance(state_spec, StateDiagramSpec)
     assert state_spec.id == "architecture_watchdog_state"
+    assert "architecture_watchdog_state" in ds._INSTANTIATED_SPECS
 
     move_spec = getattr(ds, "ARCHITECTURE_MOVE_ENGINE_STATE_SPEC")
     assert isinstance(move_spec, StateDiagramSpec)
@@ -102,6 +152,17 @@ def test_module_getattr_spec_resolution():
     assert isinstance(dl_spec, StateDiagramSpec)
     assert dl_spec.id == "architecture_download_state"
     assert getattr(ds, "DOWNLOAD_STATE_SPEC") is dl_spec
+
+    # Verify all 52 aliases in CONSTANT_TO_KEY_MAP hydrate _INSTANTIATED_SPECS and match get_diagram_spec
+    ds.reset_diagram_specs_cache()
+    assert len(ds._INSTANTIATED_SPECS) == 0
+    for alias, spec_key in CONSTANT_TO_KEY_MAP.items():
+        assert alias not in vars(ds)
+        resolved = getattr(ds, alias)
+        assert spec_key in ds._INSTANTIATED_SPECS
+        assert resolved is ds._INSTANTIATED_SPECS[spec_key]
+        assert resolved is get_diagram_spec(spec_key)
+    assert len(ds._INSTANTIATED_SPECS) == len(ds._SPEC_FACTORIES) == 48
 
     # Verify accessing non-existent attribute raises AttributeError
     with pytest.raises(

@@ -219,172 +219,6 @@ def compute_normalized_ast_hash(node: ast.AST) -> str:
     return hashlib.sha256(dump_str.encode("utf-8")).hexdigest()
 
 
-class DuplicatePatternVisitor(ast.NodeVisitor):
-    """AST visitor to find duplicate system path utilities or illegal character validations."""
-
-    def __init__(self, filepath: str):
-        self.filepath = filepath.replace("\\", "/")
-        self.errors = []
-
-    def visit_Attribute(self, node):
-        """Visit attribute nodes to look for sys.frozen or sys._MEIPASS usage."""
-        if self.filepath not in ALLOWED_FOR_FROZEN:
-            if (
-                isinstance(node.value, ast.Name)
-                and node.value.id == "sys"
-                and node.attr in ("frozen", "_MEIPASS")
-            ):
-                self.errors.append(
-                    f"{self.filepath}:{node.lineno}: Direct 'sys.{node.attr}' usage found. "
-                    "Use 'app.core.path_utils.is_packaged()' or 'get_meipass_dir()' instead."
-                )
-        self.generic_visit(node)
-
-    def visit_Call(self, node):
-        """Visit function call nodes to look for getattr(sys, 'frozen' / '_MEIPASS') or hasattr(sys, ...)."""
-        if self.filepath not in ALLOWED_FOR_FROZEN:
-            if isinstance(node.func, ast.Name) and node.func.id in (
-                "getattr",
-                "hasattr",
-            ):
-                if len(node.args) >= 2:
-                    arg0, arg1 = node.args[0], node.args[1]
-                    if isinstance(arg0, ast.Name) and arg0.id == "sys":
-                        if isinstance(arg1, ast.Constant) and arg1.value in (
-                            "frozen",
-                            "_MEIPASS",
-                        ):
-                            self.errors.append(
-                                f"{self.filepath}:{node.lineno}: Direct {node.func.id}(sys, '{arg1.value}') usage found. "
-                                "Use 'app.core.path_utils.is_packaged()' or 'get_meipass_dir()' instead."
-                            )
-        self.generic_visit(node)
-
-    def visit_Constant(self, node):
-        """Visit constant nodes to check for forbidden hardcoded strings."""
-        if isinstance(node.value, str):
-            val = node.value
-
-            # Check for "autosorter_sessions"
-            if self.filepath not in ALLOWED_FOR_SESSIONS:
-                if "autosorter_sessions" in val:
-                    self.errors.append(
-                        f"{self.filepath}:{node.lineno}: Direct reference to 'autosorter_sessions' folder found. "
-                        "Use 'app.core.path_utils.get_session_base_dir()' or 'setup_session_directory()' instead."
-                    )
-
-            # Check for hardcoded "secret.key"
-            if self.filepath not in ALLOWED_FOR_KEYS:
-                if "secret.key" in val:
-                    self.errors.append(
-                        f"{self.filepath}:{node.lineno}: Direct reference to 'secret.key' database key file found. "
-                        "Use 'app.core.path_utils.resolve_db_crypto(db_path)' instead."
-                    )
-
-            # Check for hardcoded character validations
-            if self.filepath not in ALLOWED_FOR_CHARS:
-                if val == '<>:"|?*' or val == '[<>:"/\\|?*]':
-                    self.errors.append(
-                        f"{self.filepath}:{node.lineno}: Hardcoded illegal character set or regex pattern '{val}' found. "
-                        "Use shared validators/sanitizers in 'app.core.path_utils' instead."
-                    )
-        self.generic_visit(node)
-
-
-class UtilityAntiDuplicationVisitor(ast.NodeVisitor):
-    """AST visitor to detect re-definitions of canonical utilities and index structural function body hashes."""
-
-    def __init__(self, filepath: str, errors: list, function_hashes: dict):
-        self.filepath = filepath.replace("\\", "/")
-        self.errors = errors
-        self.function_hashes = function_hashes
-        self.current_class: str | None = None
-        self.function_depth = 0
-
-    def visit_ClassDef(self, node):
-        class_name = node.name
-        if class_name in CANONICAL_UTILITY_REGISTRY:
-            expected_home = CANONICAL_UTILITY_REGISTRY[class_name]
-            if self.filepath != expected_home:
-                home_module = expected_home.replace(".py", "").replace("/", ".")
-                self.errors.append(
-                    f"{self.filepath}:{node.lineno}: Re-definition of canonical utility '{class_name}' found. "
-                    f"Use '{home_module}.{class_name}' instead."
-                )
-        prev_class = self.current_class
-        self.current_class = class_name
-        self.generic_visit(node)
-        self.current_class = prev_class
-
-    def _check_function(self, node):
-        func_name = node.name
-
-        # Requirement 2 & 3: Check for re-definition of canonical utilities outside home module (all depths)
-        if func_name in CANONICAL_UTILITY_REGISTRY:
-            expected_home = CANONICAL_UTILITY_REGISTRY[func_name]
-            if self.filepath != expected_home:
-                home_module = expected_home.replace(".py", "").replace("/", ".")
-                self.errors.append(
-                    f"{self.filepath}:{node.lineno}: Re-definition of canonical utility '{func_name}' found. "
-                    f"Use '{home_module}.{func_name}' instead."
-                )
-
-        # Requirement 3b: Flag redundant dictionary adapter methods on domain contract models
-        if (
-            self.function_depth == 0
-            and (
-                self.filepath == "app/core/domain_contracts.py"
-                or self.filepath.startswith("app/plugins/clinical_compliance/")
-            )
-            and (
-                self.current_class in REDUNDANT_DICT_MODELS
-                or (
-                    self.filepath == "app/core/domain_contracts.py"
-                    and self.current_class
-                    and self.current_class
-                    not in (
-                        "DictCompatMixin",
-                        "SortingPlanModel",
-                        "CorpusPreFetchBatchModel",
-                    )
-                )
-            )
-            and func_name in CANONICAL_DICT_METHODS
-        ):
-            self.errors.append(
-                f"{self.filepath}:{node.lineno}: Redundant dictionary adapter method '{func_name}' found in class '{self.current_class}'. "
-                f"Use canonical 'DictCompatMixin' from 'app.core.domain_contracts' instead."
-            )
-
-        # Requirement 4: Record function hash only for outer functions/methods (skip nested closures)
-        if (
-            self.function_depth == 0
-            and func_name not in EXCLUDED_METHOD_NAMES
-            and not _is_overload_decorated(node)
-        ):
-            effective_body = _effective_function_body(node)
-            # Check if function body is non-trivial after stripping any leading docstring
-            if len(effective_body) > 1 or (
-                effective_body and not _is_trivial_stub_statement(effective_body[0])
-            ):
-                h = compute_normalized_ast_hash(node)
-                self.function_hashes.setdefault(h, []).append(
-                    (self.filepath, node.lineno, func_name)
-                )
-
-        self.function_depth += 1
-        try:
-            self.generic_visit(node)
-        finally:
-            self.function_depth -= 1
-
-    def visit_FunctionDef(self, node):
-        self._check_function(node)
-
-    def visit_AsyncFunctionDef(self, node):
-        self._check_function(node)
-
-
 def _is_overload_decorated(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     """Return True when function is a typing.overload signature stub."""
     for dec in node.decorator_list:
@@ -478,39 +312,6 @@ def _report_duplicate_function_hashes(
                             )
 
 
-def validate_codebase_duplication(
-    errors: list,
-    target_files: set[str] | None = None,
-    parsed_files: list[tuple[str, ast.Module]] | None = None,
-) -> None:
-    """Traverse app/ ASTs to run primitive duplicate checks, canonical utility re-definition checks, and structural function hash comparison."""
-    function_hashes: dict[str, list[tuple[str, int, str]]] = {}
-    app_asts = (
-        parsed_files if parsed_files is not None else _collect_parsed_app_files("app")
-    )
-
-    for filepath, tree in app_asts:
-        norm_path = filepath.replace("\\", "/")
-        if target_files is None or norm_path in target_files:
-            ArchitectureASTVisitor(
-                filepath,
-                errors,
-                function_hashes=function_hashes,
-                checks=_CHECK_DUPLICATE_PATTERNS | _CHECK_ANTI_DUPLICATION,
-            ).visit(tree)
-        else:
-            ArchitectureASTVisitor(
-                filepath,
-                [],
-                function_hashes=function_hashes,
-                checks=_CHECK_HASH_INDEX_ONLY,
-            ).visit(tree)
-
-    _report_duplicate_function_hashes(
-        errors, function_hashes, target_files=target_files
-    )
-
-
 def _extract_base_class_name(base: ast.expr) -> str | None:
     """Extract terminal class identifier from a ClassDef base expression."""
     target = base.value if isinstance(base, ast.Subscript) else base
@@ -582,24 +383,6 @@ def _has_unnested_modal_breakpoint_css(css_text: str) -> bool:
         else:
             buf.append(ch)
     return False
-
-
-def validate_modal_shell_conventions(
-    errors: list,
-    target_files: set[str] | None = None,
-    parsed_files: list[tuple[str, ast.Module]] | None = None,
-) -> None:
-    """Enforce ResponsiveModalScreen inheritance, shared shell rules, and nested modal breakpoint CSS."""
-    app_asts = (
-        parsed_files if parsed_files is not None else _collect_parsed_app_files("app")
-    )
-    for filepath, tree in app_asts:
-        norm_path = filepath.replace("\\", "/")
-        if target_files is not None and norm_path not in target_files:
-            continue
-        if norm_path == "app/ui/layout.py":
-            continue
-        ArchitectureASTVisitor(norm_path, errors, checks=_CHECK_MODAL_SHELL).visit(tree)
 
 
 def validate_diagram_schema_and_assets(
@@ -677,22 +460,7 @@ def _matches(name: str, prefix: str) -> bool:
     return name == prefix or name.startswith(prefix + ".")
 
 
-def validate_import_layers(errors: list, filepath: str, tree: ast.AST) -> None:
-    """Flag imports that cross a layer boundary in IMPORT_LAYER_RULES.
-
-    Walks the whole tree, so imports hidden inside functions are caught too.
-    """
-    ArchitectureASTVisitor(filepath, errors, checks=_CHECK_IMPORT_LAYERS).visit(tree)
-
-
 SETTINGS_SOURCE = "app/config.py"
-
-
-def validate_service_ownership(errors: list, filepath: str, tree: ast.AST) -> None:
-    """Keep runtime writer construction in the managed composition root."""
-    ArchitectureASTVisitor(filepath, errors, checks=_CHECK_SERVICE_OWNERSHIP).visit(
-        tree
-    )
 
 
 def _declared_settings_keys_from_tree(tree: ast.Module) -> set[str] | None:
@@ -734,19 +502,6 @@ def _is_settings_receiver(node: ast.AST) -> bool:
     return False
 
 
-def validate_settings_keys(
-    errors: list, filepath: str, tree: ast.AST, declared: set[str]
-) -> None:
-    """Flag `getattr(settings, "KEY", ...)` reads of keys `Settings` doesn't declare.
-
-    `AppSettings` raises for unknown keys, so such a read always falls back to
-    its default and the setting can never be configured.
-    """
-    ArchitectureASTVisitor(
-        filepath, errors, declared_settings=declared, checks=_CHECK_SETTINGS_KEYS
-    ).visit(tree)
-
-
 def _is_global_target(target: ast.AST) -> bool:
     """True for ``sys.modules[...]`` or an attribute chain rooted at ``socket``."""
     if isinstance(target, ast.Subscript):
@@ -776,32 +531,9 @@ def _find_global_target(target: ast.AST) -> ast.AST | None:
     return None
 
 
-def validate_import_time_globals(errors: list, filepath: str, tree: ast.AST) -> None:
-    """Flag module-level writes to ``sys.modules[...]`` or ``socket.*`` (#711).
-
-    Such patches belong in an explicit install() that an entrypoint calls, so
-    statements inside functions are allowed; class bodies run at import and
-    are checked.
-    """
-    ArchitectureASTVisitor(filepath, errors, checks=_CHECK_IMPORT_TIME_GLOBALS).visit(
-        tree
-    )
-
-
 _TEST_DETECTION_NAMES = frozenset(
     {"MagicMock", "NonCallableMock", "mock_add_spec", "PYTEST_CURRENT_TEST"}
 )
-
-
-def validate_no_test_detection(errors: list, filepath: str, tree: ast.AST) -> None:
-    """Flag production code that detects it is under test (#720).
-
-    Branches on ``unittest.mock`` types or ``PYTEST_CURRENT_TEST`` mean tests
-    exercise a path production never runs; inject the dependency instead.
-    """
-    ArchitectureASTVisitor(filepath, errors, checks=_CHECK_NO_TEST_DETECTION).visit(
-        tree
-    )
 
 
 HEAVY_ML_PACKAGES = frozenset(
@@ -830,65 +562,6 @@ def _is_type_checking_expr(test: ast.AST) -> bool:
 def _is_type_checking_guard(node: ast.If) -> bool:
     """True if node represents an `if TYPE_CHECKING:` conditional branch."""
     return _is_type_checking_expr(node.test)
-
-
-class LazyMLImportVisitor(ast.NodeVisitor):
-    """AST visitor to detect top-level or class-level eager imports of heavy ML packages."""
-
-    def __init__(self, filepath: str, errors: list):
-        self.filepath = filepath.replace("\\", "/")
-        self.errors = errors
-
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-        # Lazy imports placed inside function or method bodies are permitted
-        pass
-
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-        # Lazy imports placed inside async function or method bodies are permitted
-        pass
-
-    def visit_Lambda(self, node: ast.Lambda) -> None:
-        # Deferred evaluation inside lambdas is permitted
-        pass
-
-    def visit_If(self, node: ast.If) -> None:
-        if _is_type_checking_guard(node):
-            # Guarded by TYPE_CHECKING; do not inspect body. Inspect orelse branch if present.
-            for stmt in node.orelse:
-                self.visit(stmt)
-        else:
-            self.generic_visit(node)
-
-    def visit_Import(self, node: ast.Import) -> None:
-        for alias in node.names:
-            pkg = alias.name.split(".", 1)[0]
-            if pkg in HEAVY_ML_PACKAGES:
-                self.errors.append(
-                    f"{self.filepath}:{node.lineno}: Top-level import of heavy ML package '{pkg}' found. "
-                    "Heavy ML packages must be lazily imported inside function or method bodies, "
-                    "or guarded under 'if TYPE_CHECKING:'."
-                )
-
-    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-        if node.level == 0 and node.module:
-            pkg = node.module.split(".", 1)[0]
-            if pkg in HEAVY_ML_PACKAGES:
-                self.errors.append(
-                    f"{self.filepath}:{node.lineno}: Top-level import of heavy ML package '{pkg}' found. "
-                    "Heavy ML packages must be lazily imported inside function or method bodies, "
-                    "or guarded under 'if TYPE_CHECKING:'."
-                )
-
-
-def validate_lazy_ml_imports(errors: list, filepath: str, tree: ast.AST) -> None:
-    """Validate that heavy ML packages are not imported at top-level or class-level across app/.
-
-    Heavy ML dependencies (torch, transformers, easyocr, onnxruntime, llama_cpp,
-    sentence_transformers) must be lazily imported inside function or method
-    bodies to prevent startup crashes and bloat in base installations without ML extras.
-    Imports guarded by `if TYPE_CHECKING:` are allowed for type hints.
-    """
-    ArchitectureASTVisitor(filepath, errors, checks=_CHECK_LAZY_ML).visit(tree)
 
 
 _CHECK_IMPORT_LAYERS = 1 << 0

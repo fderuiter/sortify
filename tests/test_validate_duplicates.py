@@ -2,88 +2,86 @@ import ast
 
 from scripts.validate_architecture import (
     CANONICAL_UTILITY_REGISTRY,
-    DuplicatePatternVisitor,
-    UtilityAntiDuplicationVisitor,
+    ArchitectureASTVisitor,
+    _report_duplicate_function_hashes,
     compute_normalized_ast_hash,
 )
 
 
 def test_visitor_catches_frozen():
-    visitor = DuplicatePatternVisitor("app/some_module.py")
+    errors: list[str] = []
     tree = ast.parse("is_packaged = getattr(sys, 'frozen', False)")
-    visitor.visit(tree)
-    assert len(visitor.errors) == 1
-    assert "Direct getattr(sys, 'frozen') usage found" in visitor.errors[0]
+    ArchitectureASTVisitor("app/some_module.py", errors).visit(tree)
+    assert len(errors) == 1
+    assert "Direct getattr(sys, 'frozen') usage found" in errors[0]
 
 
 def test_visitor_catches_sys_frozen_attr():
-    visitor = DuplicatePatternVisitor("app/some_module.py")
+    errors: list[str] = []
     tree = ast.parse("is_packaged = sys.frozen")
-    visitor.visit(tree)
-    assert len(visitor.errors) == 1
-    assert "Direct 'sys.frozen' usage found" in visitor.errors[0]
+    ArchitectureASTVisitor("app/some_module.py", errors).visit(tree)
+    assert len(errors) == 1
+    assert "Direct 'sys.frozen' usage found" in errors[0]
 
 
 def test_visitor_catches_meipass():
-    visitor = DuplicatePatternVisitor("app/some_module.py")
+    errors: list[str] = []
     tree = ast.parse("p = sys._MEIPASS")
-    visitor.visit(tree)
-    assert len(visitor.errors) == 1
-    assert "Direct 'sys._MEIPASS' usage found" in visitor.errors[0]
+    ArchitectureASTVisitor("app/some_module.py", errors).visit(tree)
+    assert len(errors) == 1
+    assert "Direct 'sys._MEIPASS' usage found" in errors[0]
 
 
 def test_visitor_catches_hasattr_meipass():
-    visitor = DuplicatePatternVisitor("app/some_module.py")
+    errors: list[str] = []
     tree = ast.parse("is_pkg = hasattr(sys, '_MEIPASS')")
-    visitor.visit(tree)
-    assert len(visitor.errors) == 1
-    assert "Direct hasattr(sys, '_MEIPASS') usage found" in visitor.errors[0]
+    ArchitectureASTVisitor("app/some_module.py", errors).visit(tree)
+    assert len(errors) == 1
+    assert "Direct hasattr(sys, '_MEIPASS') usage found" in errors[0]
 
 
 def test_visitor_catches_getattr_meipass():
-    visitor = DuplicatePatternVisitor("app/some_module.py")
+    errors: list[str] = []
     tree = ast.parse("p = getattr(sys, '_MEIPASS', None)")
-    visitor.visit(tree)
-    assert len(visitor.errors) == 1
-    assert "Direct getattr(sys, '_MEIPASS') usage found" in visitor.errors[0]
+    ArchitectureASTVisitor("app/some_module.py", errors).visit(tree)
+    assert len(errors) == 1
+    assert "Direct getattr(sys, '_MEIPASS') usage found" in errors[0]
 
 
 def test_visitor_catches_autosorter_sessions():
-    visitor = DuplicatePatternVisitor("app/some_module.py")
+    errors: list[str] = []
     tree = ast.parse("path = '/tmp/autosorter_sessions/abc'")
-    visitor.visit(tree)
-    assert len(visitor.errors) == 1
-    assert "Direct reference to 'autosorter_sessions' folder found" in visitor.errors[0]
+    ArchitectureASTVisitor("app/some_module.py", errors).visit(tree)
+    assert len(errors) == 1
+    assert "Direct reference to 'autosorter_sessions' folder found" in errors[0]
 
 
 def test_visitor_catches_secret_key():
-    visitor = DuplicatePatternVisitor("app/some_module.py")
+    errors: list[str] = []
     tree = ast.parse("key = parent / 'secret.key'")
-    visitor.visit(tree)
-    assert len(visitor.errors) == 1
-    assert (
-        "Direct reference to 'secret.key' database key file found" in visitor.errors[0]
-    )
+    ArchitectureASTVisitor("app/some_module.py", errors).visit(tree)
+    assert len(errors) == 1
+    assert "Direct reference to 'secret.key' database key file found" in errors[0]
 
 
 def test_visitor_catches_hardcoded_illegal_chars():
-    visitor = DuplicatePatternVisitor("app/some_module.py")
+    errors: list[str] = []
     tree = ast.parse("chars = '<>:\"|?*' ")
-    visitor.visit(tree)
-    assert len(visitor.errors) == 1
-    assert "Hardcoded illegal character set or regex pattern" in visitor.errors[0]
+    ArchitectureASTVisitor("app/some_module.py", errors).visit(tree)
+    assert len(errors) == 1
+    assert "Hardcoded illegal character set or regex pattern" in errors[0]
 
 
 def test_visitor_allows_safe_files():
-    visitor = DuplicatePatternVisitor("app/core/path_utils.py")
+    errors: list[str] = []
     tree = ast.parse("""
 is_packaged = getattr(sys, 'frozen', False)
 path = '/tmp/autosorter_sessions/abc'
 key = parent / 'secret.key'
-chars = '<>:\"|?*'
+chars = '<>:"|?*'
 """)
-    visitor.visit(tree)
-    assert len(visitor.errors) == 0
+    ArchitectureASTVisitor("app/core/path_utils.py", errors).visit(tree)
+    assert len(errors) == 0
 
 
 def test_compute_normalized_ast_hash_strips_docstrings_and_annotations():
@@ -147,9 +145,7 @@ def _normalize_trusted_hosts(raw_items=None):
     assert node2.name == "_normalize_trusted_hosts"
 
 
-def test_validate_codebase_duplication_catches_renamed_clones_and_skips_docstring_wrappers():
-    from scripts.validate_architecture import validate_codebase_duplication
-
+def test_duplication_visitor_catches_renamed_clones_and_skips_docstring_wrappers():
     mod_a = ast.parse(
         "def _normalize_model_hosts(items=None):\n"
         '    """Normalize model hosts."""\n'
@@ -170,27 +166,29 @@ def test_validate_codebase_duplication_catches_renamed_clones_and_skips_docstrin
     )
 
     errors: list[str] = []
-    validate_codebase_duplication(
-        errors,
-        parsed_files=[
-            ("app/core/mod_a.py", mod_a),
-            ("app/core/mod_b.py", mod_b),
-        ],
-    )
+    function_hashes: dict[str, list[tuple[str, int, str]]] = {}
+    for filepath, tree in (
+        ("app/core/mod_a.py", mod_a),
+        ("app/core/mod_b.py", mod_b),
+    ):
+        ArchitectureASTVisitor(filepath, errors, function_hashes=function_hashes).visit(
+            tree
+        )
+    _report_duplicate_function_hashes(errors, function_hashes)
     assert len(errors) == 1
     assert "_normalize_advisory_hosts" in errors[0]
     assert "_normalize_model_hosts" in errors[0]
     assert "_get_advisory_hosts" not in errors[0]
 
 
-def test_utility_anti_duplication_visitor_canonical_registry():
-    errors = []
-    hashes = {}
+def test_architecture_visitor_canonical_registry():
+    errors: list[str] = []
+    hashes: dict[str, list[tuple[str, int, str]]] = {}
 
     # Test re-definition outside home module raises error
-    for func_name, home_path in CANONICAL_UTILITY_REGISTRY.items():
-        bad_visitor = UtilityAntiDuplicationVisitor(
-            "app/ui/random_ui.py", errors, hashes
+    for func_name in CANONICAL_UTILITY_REGISTRY:
+        bad_visitor = ArchitectureASTVisitor(
+            "app/ui/random_ui.py", errors, function_hashes=hashes
         )
         tree = ast.parse(f"def {func_name}(x):\n    return x + 1\n")
         bad_visitor.visit(tree)
@@ -205,10 +203,10 @@ def test_utility_anti_duplication_visitor_canonical_registry():
         )
 
     # Test definition inside home module is allowed
-    good_errors = []
-    good_hashes = {}
-    good_visitor = UtilityAntiDuplicationVisitor(
-        "app/core/resilient_file_ops.py", good_errors, good_hashes
+    good_errors: list[str] = []
+    good_hashes: dict[str, list[tuple[str, int, str]]] = {}
+    good_visitor = ArchitectureASTVisitor(
+        "app/core/resilient_file_ops.py", good_errors, function_hashes=good_hashes
     )
     good_tree = ast.parse("def _set_posix_mode(path, mode):\n    pass\n")
     good_visitor.visit(good_tree)
@@ -216,9 +214,11 @@ def test_utility_anti_duplication_visitor_canonical_registry():
 
 
 def test_excluded_methods_not_registered_for_duplication_hash():
-    errors = []
-    hashes = {}
-    visitor = UtilityAntiDuplicationVisitor("app/core/some_model.py", errors, hashes)
+    errors: list[str] = []
+    hashes: dict[str, list[tuple[str, int, str]]] = {}
+    visitor = ArchitectureASTVisitor(
+        "app/core/some_model.py", errors, function_hashes=hashes
+    )
     tree = ast.parse("""
 class MyModel:
     def __init__(self, x):
@@ -237,19 +237,21 @@ def test_dict_compat_mixin_canonical_registration():
     )
 
     # Re-defining DictCompatMixin as a class outside home module raises error
-    errors = []
-    hashes = {}
-    bad_visitor = UtilityAntiDuplicationVisitor("app/ui/custom_ui.py", errors, hashes)
+    errors: list[str] = []
+    hashes: dict[str, list[tuple[str, int, str]]] = {}
+    bad_visitor = ArchitectureASTVisitor(
+        "app/ui/custom_ui.py", errors, function_hashes=hashes
+    )
     tree = ast.parse("class DictCompatMixin:\n    pass\n")
     bad_visitor.visit(tree)
     assert len(errors) == 1
     assert "Re-definition of canonical utility 'DictCompatMixin' found." in errors[0]
 
     # Defining DictCompatMixin inside home module is allowed
-    good_errors = []
-    good_hashes = {}
-    good_visitor = UtilityAntiDuplicationVisitor(
-        "app/core/domain_contracts.py", good_errors, good_hashes
+    good_errors: list[str] = []
+    good_hashes: dict[str, list[tuple[str, int, str]]] = {}
+    good_visitor = ArchitectureASTVisitor(
+        "app/core/domain_contracts.py", good_errors, function_hashes=good_hashes
     )
     good_tree = ast.parse("class DictCompatMixin:\n    pass\n")
     good_visitor.visit(good_tree)
@@ -258,10 +260,10 @@ def test_dict_compat_mixin_canonical_registration():
 
 def test_redundant_dict_adapter_methods_flagged_in_domain_models():
     # Defining redundant dictionary adapter methods in QuarantineRecordModel is flagged
-    errors = []
-    hashes = {}
-    visitor = UtilityAntiDuplicationVisitor(
-        "app/core/domain_contracts.py", errors, hashes
+    errors: list[str] = []
+    hashes: dict[str, list[tuple[str, int, str]]] = {}
+    visitor = ArchitectureASTVisitor(
+        "app/core/domain_contracts.py", errors, function_hashes=hashes
     )
     tree = ast.parse("""
 class QuarantineRecordModel:
@@ -284,10 +286,10 @@ class QuarantineRecordModel:
         )
 
     # DictCompatMixin itself defining dictionary methods is allowed
-    mixin_errors = []
-    mixin_hashes = {}
-    mixin_visitor = UtilityAntiDuplicationVisitor(
-        "app/core/domain_contracts.py", mixin_errors, mixin_hashes
+    mixin_errors: list[str] = []
+    mixin_hashes: dict[str, list[tuple[str, int, str]]] = {}
+    mixin_visitor = ArchitectureASTVisitor(
+        "app/core/domain_contracts.py", mixin_errors, function_hashes=mixin_hashes
     )
     mixin_tree = ast.parse("""
 class DictCompatMixin:
@@ -306,10 +308,12 @@ class DictCompatMixin:
 
 def test_redundant_dict_adapter_methods_flagged_in_clinical_models():
     # Defining redundant dictionary adapter methods in clinical compliance models is flagged
-    errors = []
-    hashes = {}
-    visitor = UtilityAntiDuplicationVisitor(
-        "app/plugins/clinical_compliance/clinical_compliance.py", errors, hashes
+    errors: list[str] = []
+    hashes: dict[str, list[tuple[str, int, str]]] = {}
+    visitor = ArchitectureASTVisitor(
+        "app/plugins/clinical_compliance/clinical_compliance.py",
+        errors,
+        function_hashes=hashes,
     )
     tree = ast.parse("""
 class FoundEssentialDocument:
@@ -331,12 +335,12 @@ class FoundEssentialDocument:
             for err in errors
         )
 
-    pipeline_errors = []
-    pipeline_hashes = {}
-    pipeline_visitor = UtilityAntiDuplicationVisitor(
+    pipeline_errors: list[str] = []
+    pipeline_hashes: dict[str, list[tuple[str, int, str]]] = {}
+    pipeline_visitor = ArchitectureASTVisitor(
         "app/plugins/clinical_compliance/cro_multi_study_pipeline.py",
         pipeline_errors,
-        pipeline_hashes,
+        function_hashes=pipeline_hashes,
     )
     pipeline_tree = ast.parse("""
 class MasterPipelineResult:
@@ -404,7 +408,7 @@ def sample(beta, *vals, toggle=True, **kw):
 def test_nested_closures_skip_hash_while_canonical_registry_checks_all_depths(
     monkeypatch,
 ):
-    """Verify UtilityAntiDuplicationVisitor skips hashing nested closures but enforces canonical registry at all depths."""
+    """Verify ArchitectureASTVisitor skips hashing nested closures but enforces canonical registry at all depths."""
     from scripts import validate_architecture
 
     real_hash = validate_architecture.compute_normalized_ast_hash
@@ -431,8 +435,10 @@ def outer_pipeline(items):
     return result
 """
     errors: list[str] = []
-    hashes: dict = {}
-    visitor = UtilityAntiDuplicationVisitor("app/core/sample.py", errors, hashes)
+    hashes: dict[str, list[tuple[str, int, str]]] = {}
+    visitor = ArchitectureASTVisitor(
+        "app/core/sample.py", errors, function_hashes=hashes
+    )
     visitor.visit(ast.parse(nested_code))
 
     assert errors == []
@@ -450,9 +456,9 @@ def outer_wrapper():
     return _set_posix_mode, deeper_wrapper
 """
     canon_errors: list[str] = []
-    canon_hashes: dict = {}
-    canon_visitor = UtilityAntiDuplicationVisitor(
-        "app/ui/custom_widget.py", canon_errors, canon_hashes
+    canon_hashes: dict[str, list[tuple[str, int, str]]] = {}
+    canon_visitor = ArchitectureASTVisitor(
+        "app/ui/custom_widget.py", canon_errors, function_hashes=canon_hashes
     )
     canon_visitor.visit(ast.parse(canonical_nested_code))
 
