@@ -1100,9 +1100,9 @@ python-bidi==0.6.11 \
     --hash=sha256:f99162d6c6c9522c46eb213f1bc932829c2602131676c92f081cb865b8ef6784 \
     --hash=sha256:fc3b0a6e2460f68de9ab98f71e3098bb21bb984563417ad104dec7ab08ebcadc
     # via easyocr
-python-dateutil==2.9.0.post0 \
-    --hash=sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3 \
-    --hash=sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427
+python-dateutil==4.0.0 \
+    --hash=sha256:a5e246f79eb80475e691bf93862cead98decd8a498cf53ba0516fcdc0f50dc1c \
+    --hash=sha256:d7295ff14fdc0f92f662100bfb6c551d160ca090f2939f1ec5b9794265c03f06
     # via pandas
 python-docx==1.2.0 \
     --hash=sha256:3fd478f3250fbbbfd3b94fe1e985955737c145627498896a8a6bf81f4baf66c7 \
