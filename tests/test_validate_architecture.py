@@ -724,19 +724,22 @@ def test_validate_architecture_full_scan_visits_each_ast_once_without_ast_walk(
             visited_module_ids.append(id(node))
         return real_visit(self, node)
 
-    monkeypatch.setattr(ast, "parse", tracking_parse)
-    monkeypatch.setattr(ast.NodeVisitor, "visit", tracking_visit)
-    monkeypatch.setattr(
-        ast,
-        "walk",
-        lambda *_a, **_kw: (_ for _ in ()).throw(
-            AssertionError("ast.walk must not be called during validate_architecture")
-        ),
-    )
-    monkeypatch.setattr(sys, "argv", ["validate_architecture.py"])
+    with monkeypatch.context() as mp:
+        mp.setattr(ast, "parse", tracking_parse)
+        mp.setattr(ast.NodeVisitor, "visit", tracking_visit)
+        mp.setattr(
+            ast,
+            "walk",
+            lambda *_a, **_kw: (_ for _ in ()).throw(
+                AssertionError(
+                    "ast.walk must not be called during validate_architecture"
+                )
+            ),
+        )
+        mp.setattr(sys, "argv", ["validate_architecture.py"])
 
-    with pytest.raises(SystemExit) as exc_info:
-        main()
+        with pytest.raises(SystemExit) as exc_info:
+            main()
     assert exc_info.value.code == 0
     app_parses = [p for p in parsed_paths if p.startswith("app/") or "/app/" in p]
     assert app_parses
@@ -745,12 +748,33 @@ def test_validate_architecture_full_scan_visits_each_ast_once_without_ast_walk(
     assert len(visited_module_ids) == len(set(visited_module_ids))
 
 
-def test_validate_architecture_drifted_diagram_inputs_fail_without_parsing_app(
-    monkeypatch, tmp_path
-):
-    """Passing drifted diagram asset or diagram_schema.py runs diagram validation without parsing app/."""
+def _forbid_app_ast_parse(monkeypatch: pytest.MonkeyPatch, message: str) -> None:
+    """Fail if validate_architecture parses app/config ASTs, while allowing stdlib signature & pytest source helpers."""
     import ast
 
+    real_parse = ast.parse
+
+    def _guarded_parse(source, filename="<unknown>", mode="exec", *args, **kwargs):
+        norm_filename = str(filename).replace("\\", "/")
+        if norm_filename == "source":
+            return real_parse(source, filename, mode, *args, **kwargs)
+        if norm_filename == "<unknown>" and isinstance(source, (str, bytes)):
+            text = (
+                source.decode("utf-8", errors="ignore")
+                if isinstance(source, bytes)
+                else source
+            )
+            if text.lstrip().startswith("def "):
+                return real_parse(source, filename, mode, *args, **kwargs)
+        raise AssertionError(message)
+
+    monkeypatch.setattr(ast, "parse", _guarded_parse)
+
+
+def test_validate_architecture_drifted_diagram_inputs_fail_without_parsing_app(
+    monkeypatch, tmp_path, capsys
+):
+    """Passing drifted diagram asset or diagram_schema.py runs diagram validation without parsing app/."""
     diagrams_dir = tmp_path / "docs" / "assets" / "diagrams"
     diagrams_dir.mkdir(parents=True)
     (diagrams_dir / "core_architecture.mmd").write_text(
@@ -763,13 +787,8 @@ def test_validate_architecture_drifted_diagram_inputs_fail_without_parsing_app(
     )
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(
-        ast,
-        "parse",
-        lambda *_a, **_kw: (_ for _ in ()).throw(
-            AssertionError("app/ ASTs must not be parsed for diagram-only inputs")
-        ),
-    )
+    guard_msg = "app/ ASTs must not be parsed for diagram-only inputs"
+    _forbid_app_ast_parse(monkeypatch, guard_msg)
 
     for cli_arg in (
         "docs/assets/diagrams/core_architecture.mmd",
@@ -779,23 +798,20 @@ def test_validate_architecture_drifted_diagram_inputs_fail_without_parsing_app(
         with pytest.raises(SystemExit) as exc_info:
             main()
         assert exc_info.value.code == 1
+        out = capsys.readouterr().out
+        assert guard_msg not in out
+        assert "core_architecture" in out
 
 
 def test_validate_architecture_targeted_diagram_hydrates_single_spec(monkeypatch):
     """Passing a single diagram asset hydrates only that spec key in LazyDiagramSpecsDict."""
-    import ast
-
     from scripts import diagram_schema
 
     saved_specs = dict(diagram_schema._INSTANTIATED_SPECS)
     diagram_schema._INSTANTIATED_SPECS.clear()
     try:
-        monkeypatch.setattr(
-            ast,
-            "parse",
-            lambda *_a, **_kw: (_ for _ in ()).throw(
-                AssertionError("app/ ASTs must not be parsed for diagram asset checks")
-            ),
+        _forbid_app_ast_parse(
+            monkeypatch, "app/ ASTs must not be parsed for diagram asset checks"
         )
         monkeypatch.setattr(
             sys,
@@ -846,7 +862,6 @@ def test_validate_architecture_config_and_pyproject_escalate_to_full_scan(
 
 def test_validate_architecture_unrelated_paths_do_not_parse_app(monkeypatch):
     """Unrelated CLI paths exit 0 immediately without walking or parsing app/."""
-    import ast
     import os
 
     monkeypatch.setattr(
@@ -856,13 +871,7 @@ def test_validate_architecture_unrelated_paths_do_not_parse_app(monkeypatch):
             AssertionError("os.walk must not run on unrelated paths")
         ),
     )
-    monkeypatch.setattr(
-        ast,
-        "parse",
-        lambda *_a, **_kw: (_ for _ in ()).throw(
-            AssertionError("ast.parse must not run on unrelated paths")
-        ),
-    )
+    _forbid_app_ast_parse(monkeypatch, "ast.parse must not run on unrelated paths")
     monkeypatch.setattr(
         sys, "argv", ["validate_architecture.py", "README.md", "tests/test_foo.py"]
     )

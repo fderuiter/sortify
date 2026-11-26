@@ -56,11 +56,17 @@ def test_diagram_schema_import_performance():
         "    'raw_dir_unique_len': len(set(raw_dir)),\n"
         "}))\n"
     )
+    clean_env = {
+        k: v
+        for k, v in os.environ.items()
+        if not k.startswith(("COV_CORE_", "COVERAGE_"))
+    }
     proc = subprocess.run(
         [sys.executable, "-c", probe],
         capture_output=True,
         text=True,
         check=True,
+        env=clean_env,
     )
     payload = json.loads(proc.stdout.strip())
 

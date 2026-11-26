@@ -7,7 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from app.core.db_conn import get_db_connection
+from app.core.db_conn import DB_ERRORS, get_db_connection
 from app.core.db_worker import DBWorker
 from app.core.migrations import Migration, add_missing_columns, migrate, table_columns
 
@@ -628,15 +628,45 @@ class Database:
         if not documents:
             return
 
-        precomputed_term_counts = {}
+        from app.core.text_utils import sanitize_text
+
+        parsed_docs = []
+        paths_by_base: dict[str, list[str]] = {}
+        for doc in documents:
+            base_dir, filepath, file_hash, extracted_text = doc[:4]
+            if "::" in filepath:
+                s_root, rel_p = filepath.split("::", 1)
+                base_dir = s_root
+                filepath = rel_p
+            filepath = filepath.replace("\\", "/")
+            parsed_docs.append((base_dir, filepath, file_hash, extracted_text))
+            paths_by_base.setdefault(base_dir, []).append(filepath)
+
+        verified_keys: set[tuple[str, str]] = set()
+        try:
+            conn_read = get_db_connection(self.db_path)
+            batch_size = 500
+            for base_dir, fps in paths_by_base.items():
+                unique_fps = list(dict.fromkeys(fps))
+                for i in range(0, len(unique_fps), batch_size):
+                    batch = unique_fps[i : i + batch_size]
+                    placeholders = ",".join("?" for _ in batch)
+                    cursor = conn_read.execute(
+                        f"SELECT filepath FROM documents WHERE base_dir = ? AND user_verified_target_path IS NOT NULL AND user_verified_target_path != '' AND filepath IN ({placeholders})",
+                        [base_dir, *batch],
+                    )
+                    for (db_fp,) in cursor.fetchall():
+                        verified_keys.add((base_dir, db_fp))
+        except DB_ERRORS:
+            verified_keys = {(b_dir, f_path) for b_dir, f_path, _, _ in parsed_docs}
+
+        precomputed_term_counts: dict[tuple[str, str], dict[str, int] | None] = {}
+        docs_to_tokenize = [
+            doc for doc in parsed_docs if (doc[0], doc[1]) in verified_keys
+        ]
 
         def _process_doc(doc):
-            b_dir, f_path, _, ext_text = doc[:4]
-            if "::" in f_path:
-                s_root, rel_p = f_path.split("::", 1)
-                b_dir = s_root
-                f_path = rel_p
-            f_path = f_path.replace("\\", "/")
+            b_dir, f_path, _, ext_text = doc
             if self._is_tfidf_eligible(f_path, ext_text):
                 try:
                     counts = self.compute_term_frequencies(ext_text)
@@ -645,29 +675,21 @@ class Database:
                     return (b_dir, f_path), {}
             return (b_dir, f_path), None
 
-        if len(documents) > 1:
+        if len(docs_to_tokenize) > 1:
             import concurrent.futures
 
             with concurrent.futures.ThreadPoolExecutor() as executor:
-                results = list(executor.map(_process_doc, documents))
+                results = list(executor.map(_process_doc, docs_to_tokenize))
                 for key, counts in results:
                     precomputed_term_counts[key] = counts
-        else:
-            key, counts = _process_doc(documents[0])
+        elif len(docs_to_tokenize) == 1:
+            key, counts = _process_doc(docs_to_tokenize[0])
             precomputed_term_counts[key] = counts
-
-        from app.core.text_utils import sanitize_text
 
         rows_to_insert = []
         normalized_docs = []
-        for doc in documents:
-            base_dir, filepath, file_hash, extracted_text = doc[:4]
-            if "::" in filepath:
-                s_root, rel_p = filepath.split("::", 1)
-                base_dir = s_root
-                filepath = rel_p
-            filepath = filepath.replace("\\", "/")
-
+        sanitized_by_key: dict[tuple[str, str], str | None] = {}
+        for base_dir, filepath, file_hash, extracted_text in parsed_docs:
             sanitized_text = (
                 sanitize_text(extracted_text) if extracted_text is not None else None
             )
@@ -678,6 +700,7 @@ class Database:
             )
             rows_to_insert.append((base_dir, filepath, file_hash, enc_text))
             normalized_docs.append((base_dir, filepath))
+            sanitized_by_key[(base_dir, filepath)] = sanitized_text
 
         def _write():
             conn = get_db_connection(self.db_path)
@@ -693,16 +716,34 @@ class Database:
                     rows_to_insert,
                 )
 
-                for base_dir, filepath in normalized_docs:
-                    cursor = conn.execute(
-                        "SELECT user_verified_target_path FROM documents WHERE base_dir = ? AND filepath = ?",
-                        (base_dir, filepath),
-                    )
-                    row = cursor.fetchone()
-                    target_path = row[0] if row else None
-                    if target_path:
+                verified_in_tx: set[tuple[str, str]] = set()
+                batch_size = 500
+                for base_dir, fps in paths_by_base.items():
+                    unique_fps = list(dict.fromkeys(fps))
+                    for i in range(0, len(unique_fps), batch_size):
+                        batch = unique_fps[i : i + batch_size]
+                        placeholders = ",".join("?" for _ in batch)
+                        cursor = conn.execute(
+                            f"SELECT filepath FROM documents WHERE base_dir = ? AND user_verified_target_path IS NOT NULL AND user_verified_target_path != '' AND filepath IN ({placeholders})",
+                            [base_dir, *batch],
+                        )
+                        for (db_fp,) in cursor.fetchall():
+                            verified_in_tx.add((base_dir, db_fp))
+
+                if verified_in_tx:
+                    for base_dir, filepath in dict.fromkeys(normalized_docs):
                         key = (base_dir, filepath)
-                        counts = precomputed_term_counts.get(key)
+                        if key not in verified_in_tx:
+                            continue
+                        if key in precomputed_term_counts:
+                            counts = precomputed_term_counts[key]
+                        else:
+                            raw_text = sanitized_by_key.get(key)
+                            counts = (
+                                self.compute_term_frequencies(raw_text)
+                                if self._is_tfidf_eligible(filepath, raw_text)
+                                else None
+                            )
                         if counts is not None:
                             self._update_tfidf_for_document_conn(
                                 conn,
