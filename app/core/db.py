@@ -1174,11 +1174,17 @@ class Database:
                         cached_row_found = True
                         ext_text = row[1]
                         cached_prev_target = row[3] if len(row) > 3 else None
+                        eff_cached_dir = (
+                            cached_prev_target
+                            if isinstance(cached_prev_target, str)
+                            and cached_prev_target.startswith("!")
+                            else new_dir
+                        )
                         self._cached_documents[new_filepath] = (
                             new_filepath,
                             row[1],
                             row[2],
-                            new_dir,
+                            eff_cached_dir,
                         )
                 elif isinstance(self._cached_documents, list):
                     new_docs = []
@@ -1187,16 +1193,31 @@ class Database:
                             cached_row_found = True
                             ext_text = row[1]
                             cached_prev_target = row[3] if len(row) > 3 else None
-                            new_docs.append((new_filepath, row[1], row[2], new_dir))
+                            eff_cached_dir = (
+                                cached_prev_target
+                                if isinstance(cached_prev_target, str)
+                                and cached_prev_target.startswith("!")
+                                else new_dir
+                            )
+                            new_docs.append(
+                                (new_filepath, row[1], row[2], eff_cached_dir)
+                            )
                         else:
                             new_docs.append(row)
                     self._cached_documents = new_docs
 
         precomputed_counts = None
-        if new_dir and not (
-            cached_row_found
-            and cached_prev_target
-            and self._is_tfidf_eligible(old_filepath, ext_text)
+        if (
+            new_dir
+            and not (
+                isinstance(cached_prev_target, str)
+                and cached_prev_target.startswith("!")
+            )
+            and not (
+                cached_row_found
+                and cached_prev_target
+                and self._is_tfidf_eligible(old_filepath, ext_text)
+            )
         ):
             try:
                 if not cached_row_found and not ext_text:
@@ -1216,14 +1237,42 @@ class Database:
                     conn, base_dir, old_filepath, new_filepath
                 )
                 upd_cur = conn.execute(
-                    "UPDATE documents SET filepath = ?, user_verified_target_path = ?, user_verified_target_name = NULL WHERE base_dir = ? AND filepath = ?",
+                    """
+                    UPDATE documents
+                    SET filepath = ?,
+                        user_verified_target_path = CASE
+                            WHEN user_verified_target_path LIKE '!%' THEN user_verified_target_path
+                            ELSE ?
+                        END,
+                        user_verified_target_name = NULL
+                    WHERE base_dir = ? AND filepath = ?
+                    """,
                     (new_filepath, new_dir, base_dir, old_filepath),
                 )
                 if upd_cur.rowcount == 0:
                     conn.execute(
-                        "UPDATE documents SET filepath = ?, user_verified_target_path = ?, user_verified_target_name = NULL WHERE base_dir = ? AND REPLACE(filepath, '\\', '/') = ?",
+                        """
+                        UPDATE documents
+                        SET filepath = ?,
+                            user_verified_target_path = CASE
+                                WHEN user_verified_target_path LIKE '!%' THEN user_verified_target_path
+                                ELSE ?
+                            END,
+                            user_verified_target_name = NULL
+                        WHERE base_dir = ? AND REPLACE(filepath, '\\', '/') = ?
+                        """,
                         (new_filepath, new_dir, base_dir, old_filepath),
                     )
+                vt_row = conn.execute(
+                    "SELECT user_verified_target_path FROM documents WHERE base_dir = ? AND filepath = ?",
+                    (base_dir, new_filepath),
+                ).fetchone()
+                eff_vt = vt_row[0] if vt_row else new_dir
+                eff_positive_dir = (
+                    None
+                    if isinstance(eff_vt, str) and eff_vt.startswith("!")
+                    else new_dir
+                )
                 cursor = conn.execute(
                     "SELECT 1 FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ? LIMIT 1",
                     (base_dir, old_filepath),
@@ -1244,7 +1293,7 @@ class Database:
                                 decrypted_text = self.crypto.decrypt_text(row[0])
                             except Exception:
                                 decrypted_text = None
-                    if new_dir and self._is_tfidf_eligible(
+                    if eff_positive_dir and self._is_tfidf_eligible(
                         new_filepath, decrypted_text
                     ):
                         conn.execute(
@@ -1257,7 +1306,7 @@ class Database:
                             conn, base_dir, old_filepath, None, False
                         )
                 else:
-                    if new_dir:
+                    if eff_positive_dir:
                         if counts is None:
                             if cached_row_found:
                                 decrypted_text = ext_text
@@ -1678,21 +1727,49 @@ class Database:
                     conn, base_dir, old_filepath, new_filepath
                 )
                 upd_cur = conn.execute(
-                    "UPDATE documents SET filepath = ?, user_verified_target_path = ?, user_verified_target_name = NULL WHERE base_dir = ? AND filepath = ?",
+                    """
+                    UPDATE documents
+                    SET filepath = ?,
+                        user_verified_target_path = CASE
+                            WHEN user_verified_target_path LIKE '!%' THEN user_verified_target_path
+                            ELSE ?
+                        END,
+                        user_verified_target_name = NULL
+                    WHERE base_dir = ? AND filepath = ?
+                    """,
                     (new_filepath, new_dir, base_dir, old_filepath),
                 )
                 if upd_cur.rowcount == 0:
                     conn.execute(
-                        "UPDATE documents SET filepath = ?, user_verified_target_path = ?, user_verified_target_name = NULL WHERE base_dir = ? AND REPLACE(filepath, '\\', '/') = ?",
+                        """
+                        UPDATE documents
+                        SET filepath = ?,
+                            user_verified_target_path = CASE
+                                WHEN user_verified_target_path LIKE '!%' THEN user_verified_target_path
+                                ELSE ?
+                            END,
+                            user_verified_target_name = NULL
+                        WHERE base_dir = ? AND REPLACE(filepath, '\\', '/') = ?
+                        """,
                         (new_filepath, new_dir, base_dir, old_filepath),
                     )
+                vt_row = conn.execute(
+                    "SELECT user_verified_target_path FROM documents WHERE base_dir = ? AND filepath = ?",
+                    (base_dir, new_filepath),
+                ).fetchone()
+                eff_vt = vt_row[0] if vt_row else new_dir
+                eff_positive_dir = (
+                    None
+                    if isinstance(eff_vt, str) and eff_vt.startswith("!")
+                    else new_dir
+                )
                 cursor = conn.execute(
                     "SELECT 1 FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ? LIMIT 1",
                     (base_dir, old_filepath),
                 )
                 was_in = cursor.fetchone() is not None
                 if was_in:
-                    if not new_dir or not self._is_tfidf_eligible_extension(
+                    if not eff_positive_dir or not self._is_tfidf_eligible_extension(
                         new_filepath
                     ):
                         still_eligible = False
@@ -1724,7 +1801,7 @@ class Database:
                             conn, base_dir, old_filepath, None, False
                         )
                 else:
-                    if new_dir:
+                    if eff_positive_dir:
                         counts = precomputed_updates_map.get((base_dir, new_filepath))
                         if counts is None:
                             cursor = conn.execute(

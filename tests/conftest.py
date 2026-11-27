@@ -2,6 +2,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import keyring
@@ -103,9 +104,10 @@ def inline_clustering(request, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def embedding_test_defaults(monkeypatch):
-    """Keep test threads at normal priority and skip model checks on stand-in models."""
-    from app.core import semantic_embeddings
+    """Keep test processes/threads at normal priority and skip model checks on stand-in models."""
+    from app.core import daemon, semantic_embeddings
 
+    monkeypatch.setattr(daemon, "LOWER_PROCESS_PRIORITY", False)
     monkeypatch.setattr(semantic_embeddings, "LOWER_THREAD_PRIORITY", False)
     monkeypatch.setattr(
         semantic_embeddings.SemanticEmbeddingManager, "validate_on_init", False
@@ -124,12 +126,29 @@ def cleanup_db_connections():
         pass
 
 
+_CACHED_APP_SETTINGS_REFS: tuple[Any, Any] | None = None
+
+
+def reset_app_settings_observers() -> None:
+    """Reset class-level AppSettings observers while preserving core AI consent cleanup."""
+    global _CACHED_APP_SETTINGS_REFS
+    if _CACHED_APP_SETTINGS_REFS is None:
+        from app.config import AppSettings, _on_ai_consent_changed_core
+
+        _CACHED_APP_SETTINGS_REFS = (AppSettings, _on_ai_consent_changed_core)
+    settings_cls, consent_cb = _CACHED_APP_SETTINGS_REFS
+
+    with settings_cls._class_observer_lock:
+        settings_cls._class_observers.clear()
+    settings_cls.add_observer("AI_CONSENT_GRANTED", consent_cb)
+
+
 @pytest.fixture(autouse=True)
 def reset_shared_registry():
     """Reset singletons (SharedModelRegistry, SharedWorkerPool, DownloadManager) and AppSettings observers before and after each test to prevent test pollution."""
     import shutil
 
-    from app.config import AppSettings, get_app_dir
+    from app.config import get_app_dir
     from app.core.downloader import _VERIFICATION_CACHE, DownloadManager
     from app.core.network_guard import _thread_local
     from app.core.shared_registry import SharedModelRegistry, SharedWorkerPool
@@ -183,7 +202,7 @@ def reset_shared_registry():
             pass
 
     _cleanup_test_app_dir(clear_cache=False)
-    AppSettings.clear_observers()
+    reset_app_settings_observers()
     DownloadManager.reset_instance()
     SharedModelRegistry._instance = None
     _thread_local.sandboxed = False
@@ -196,7 +215,7 @@ def reset_shared_registry():
         SharedWorkerPool._instance = None
     yield
     _cleanup_test_app_dir(clear_cache=True)
-    AppSettings.clear_observers()
+    reset_app_settings_observers()
     DownloadManager.reset_instance()
     SharedModelRegistry._instance = None
     _thread_local.sandboxed = False

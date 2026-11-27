@@ -206,6 +206,9 @@ def test_standalone_subprocess_entry_gates_on_folder_lock_and_exits_nonzero(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Standalone _run_sorting_process_entry gates behind FolderLock and exits non-zero on unhandled errors."""
+    import psutil
+
+    initial_nice = psutil.Process().nice()
     settings = _make_settings(tmp_path, monkeypatch)
     settings.KEYWORD_RULES = {"invoice": "Invoices"}
     settings._save()
@@ -234,9 +237,11 @@ def test_standalone_subprocess_entry_gates_on_folder_lock_and_exits_nonzero(
         assert crash_exc.value.code == 1
 
     # 3. Unlocked run succeeds under FolderLock without nested self-conflict
+    #    and preserves the pytest worker's scheduling priority.
     try:
         _run_sorting_process_entry(str(ws), str(settings._filepath))
         assert (ws / "Invoices" / "invoice_1.txt").is_file()
+        assert psutil.Process().nice() == initial_nice
     finally:
         clear_connection_cache(only_current_and_inactive=False)
 

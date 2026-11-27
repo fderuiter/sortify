@@ -107,7 +107,7 @@ def test_swapping_model_triggers_purge_and_reconstruction(db, temp_dir):
     )
 
     # Verify we have vectors stored
-    stored_vector = manager.get_vector(str(temp_dir), "doc1.txt")
+    stored_vector = db.get_document_vector(str(temp_dir), "doc1.txt")
     assert stored_vector is not None
 
     # Now, let's simulate swapping the model by instantiating a manager with different active properties
@@ -121,7 +121,7 @@ def test_swapping_model_triggers_purge_and_reconstruction(db, temp_dir):
         new_manager = SemanticEmbeddingManager(db, model_path=None)
 
         # Outdated vector records must NOT be purged immediately! They must remain searchable during migration
-        purged_vector = new_manager.get_vector(str(temp_dir), "doc1.txt")
+        purged_vector = db.get_document_vector(str(temp_dir), "doc1.txt")
         assert purged_vector is not None
         assert purged_vector == [0.5] * manager.dimensions
 
@@ -152,7 +152,7 @@ def test_background_reconstruction_spawns(db, temp_dir):
         )
 
         # Ensure no vector is present
-        assert manager.get_vector(str(temp_dir), "doc1.txt") is None
+        assert db.get_document_vector(str(temp_dir), "doc1.txt") is None
 
         # Trigger reconstruction
         manager.trigger_reconstruction(str(temp_dir))
@@ -161,12 +161,12 @@ def test_background_reconstruction_spawns(db, temp_dir):
         timeout = 30.0
         start_time = time.time()
         while time.time() - start_time < timeout:
-            v = manager.get_vector(str(temp_dir), "doc1.txt")
+            v = db.get_document_vector(str(temp_dir), "doc1.txt")
             if v is not None:
                 break
             time.sleep(0.1)
 
-        v = manager.get_vector(str(temp_dir), "doc1.txt")
+        v = db.get_document_vector(str(temp_dir), "doc1.txt")
         assert v is not None
         assert len(v) == manager.dimensions
 
@@ -187,7 +187,6 @@ def test_graceful_fallback_during_reconstruction(db, temp_dir):
 
     try:
         # Set background reconstruction to active
-        analyzer.embedding_manager._reconstruction_active = True
         with patch.object(
             analyzer.embedding_manager, "is_reconstruction_active", return_value=True
         ):
@@ -1133,7 +1132,6 @@ def test_session_startup_missing_vocab_and_missing_onnxruntime_degrades_to_tfidf
     temp_dir, monkeypatch, caplog
 ):
     """Starting AppSession with consented model files when vocab.txt is missing or onnxruntime is absent logs a degraded warning and completes TF-IDF sorting without crashing."""
-    import asyncio
     import logging
     import sys
     from unittest.mock import patch
@@ -1192,28 +1190,20 @@ def test_session_startup_missing_vocab_and_missing_onnxruntime_degrades_to_tfidf
                 "falling back to TF-IDF" in rec.message for rec in caplog.records
             )
 
-            from app.core.extractor import build_corpus_generator_async
+            from app.core.extractor import build_corpus_generator
 
-            async def _ingest():
-                chunk: dict[str, dict[str, str]] = {}
-                async for (
-                    item,
-                    text,
-                    fhash,
-                    was_skipped,
-                ) in build_corpus_generator_async(
-                    str(workspace),
-                    item_paths,
-                    db=session.db,
-                    cancel_check=lambda: False,
-                    settings=session.settings,
-                    source_dirs=session.source_dirs,
-                ):
-                    if not was_skipped and text:
-                        chunk[item] = {"text": text, "hash": fhash or ""}
-                return chunk
-
-            ingested = asyncio.run(_ingest())
+            ingested: dict[str, dict[str, str]] = {}
+            for chunk in build_corpus_generator(
+                str(workspace),
+                item_paths,
+                lambda *_args, **_kwargs: None,
+                max_workers=1,
+                db=session.db,
+                sequential=True,
+                cancel_check=lambda: False,
+                settings=session.settings,
+            ):
+                ingested.update(chunk)
             assert len(ingested) == 4
             session.partial_fit(ingested)
             plan = session.generate_sorting_plan()

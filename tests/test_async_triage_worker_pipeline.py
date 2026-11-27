@@ -8,7 +8,7 @@ from PIL import Image
 
 from app.core.db import Database
 from app.core.db_worker import DBWorker
-from app.core.extractor import fast_triage_extract
+from app.core.extractor import extract_file_text
 
 
 def _is_ci_or_parallel() -> bool:
@@ -25,7 +25,7 @@ def test_fast_triage_extraction_under_50ms(tmp_path: Path):
     text_file.write_text("Invoice number 12345 for medical supplies.", encoding="utf-8")
 
     start_time = time.perf_counter()
-    extracted = fast_triage_extract(str(text_file))
+    extracted = extract_file_text(str(text_file), fast_triage=True)
     elapsed_ms = (time.perf_counter() - start_time) * 1000.0
 
     threshold = 200.0 if _is_ci_or_parallel() else 50.0
@@ -45,7 +45,9 @@ def test_fast_triage_provisional_for_images_and_background_queue(tmp_path: Path)
 
     try:
         start_time = time.perf_counter()
-        res = fast_triage_extract(str(img_file), db=db, base_dir=str(tmp_path))
+        res = extract_file_text(
+            str(img_file), fast_triage=True, db=db, base_dir=str(tmp_path)
+        )
         elapsed_ms = (time.perf_counter() - start_time) * 1000.0
 
         threshold = 200.0 if _is_ci_or_parallel() else 50.0

@@ -295,7 +295,7 @@ show_missing = true
 # scripts/check_ruff_exception_ceilings.py. Unlisted files must have 0 violations.
 [tool.sortify.ruff-exception-ceilings]
 ".agents/skills/run-sortify/driver.py" = 1
-"app/core/analyzer_strategies.py" = 113
+"app/core/analyzer_strategies.py" = 110
 "app/core/db.py" = 55
 "app/core/db_conn.py" = 32
 "app/core/db_worker.py" = 12
@@ -309,7 +309,7 @@ show_missing = true
 "app/ui/mixins/selection.py" = 2
 "app/ui/mixins/tree_view.py" = 22
 "app/ui/modals/drop_zone.py" = 69
-"app/ui/modals/edit.py" = 35
+"app/ui/modals/edit.py" = 34
 "app/ui/modals/models.py" = 5
 "app/ui/modals/quarantine.py" = 13
 "app/ui/modals/reports.py" = 11

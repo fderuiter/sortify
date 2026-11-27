@@ -70,9 +70,10 @@ def isolated_tui_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     import app.config
     import app.core.session_catalog
     from app.core.plugin_registry import PluginRegistry
+    from tests.conftest import reset_app_settings_observers
 
     PluginRegistry.reset_instance()
-    app.config.AppSettings.clear_observers()
+    reset_app_settings_observers()
     monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path))
     monkeypatch.setenv("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
     monkeypatch.setattr(app.config, "get_app_dir", lambda: tmp_path)
@@ -241,6 +242,15 @@ def test_modal_box_scroll_delegation() -> None:
             await pilot.pause()
             assert body.scroll_y == 0
 
+            # Deferred focus scroll_to_center queued before an explicit un-animated
+            # scroll_home/scroll_to_widget must not overwrite the explicit scroll.
+            app.screen.call_after_refresh(
+                lambda: app.screen.scroll_to_center(target, origin_visible=True)
+            )
+            box.scroll_home(animate=False)
+            await pilot.pause()
+            assert body.scroll_y == 0
+
     asyncio.run(_run())
 
 
@@ -406,7 +416,7 @@ def test_rule_import_modal_geometry_and_sticky_footer(
         host = _ModalHostApp(settings=settings, base_dir=str(tmp_path))
         async with host.run_test(size=viewport) as pilot:
             modal = RuleImportModal(settings=settings)
-            host.push_screen(modal)
+            await host.push_screen(modal)
             await pilot.pause()
 
             box = _find_modal_box(modal)
@@ -476,7 +486,7 @@ def test_rollback_and_audit_report_modals_geometry(
         async with host.run_test(size=viewport) as pilot:
             # 1. RollbackConfirmModal Stage 1 & Stage 2
             rb_modal = RollbackConfirmModal(session_info)
-            host.push_screen(rb_modal)
+            await host.push_screen(rb_modal)
             await pilot.pause()
 
             rb_box = _find_modal_box(rb_modal)
@@ -554,7 +564,7 @@ def test_rollback_and_audit_report_modals_geometry(
                 ],
             }
             audit_modal = AuditReportModal(report_data=report_data)
-            host.push_screen(audit_modal)
+            await host.push_screen(audit_modal)
             await pilot.pause()
 
             audit_box = _find_modal_box(audit_modal)
@@ -721,7 +731,7 @@ def test_all_modals_button_labels_tables_and_sticky_footers(
             async with host.run_test(size=viewport) as pilot:
                 modal = factory()
                 name = type(modal).__name__
-                host.push_screen(modal)
+                await host.push_screen(modal)
                 await pilot.pause()
 
                 if name in ("DropZoneModal", "CROForensicModal"):
@@ -855,7 +865,7 @@ def test_settings_modal_tab_scroll_home_forwarding(tmp_path: Path) -> None:
             host = _ModalHostApp(settings=settings, base_dir=str(tmp_path))
             async with host.run_test(size=viewport) as pilot:
                 modal = SettingsModal(settings=settings)
-                host.push_screen(modal)
+                await host.push_screen(modal)
                 await pilot.pause()
 
                 box = modal.query_one(".modal-box", ModalBox)
@@ -886,7 +896,7 @@ def test_cro_forensic_and_migrated_modals_resize_breakpoints(tmp_path: Path) -> 
         host = _ModalHostApp(settings=settings, base_dir=str(tmp_path))
         async with host.run_test(size=(120, 40)) as pilot:
             cro_modal = CROForensicModal(settings=settings, base_dir=str(tmp_path))
-            host.push_screen(cro_modal)
+            await host.push_screen(cro_modal)
             await pilot.pause()
             assert "compact" not in cro_modal.classes
             assert "narrow" not in cro_modal.classes
@@ -909,7 +919,7 @@ def test_cro_forensic_and_migrated_modals_resize_breakpoints(tmp_path: Path) -> 
                 DropPlanConfirmModal("Move 2 files", ["a.pdf -> Finance/"]),
                 RollbackErrorModal("Rollback Failed", "Details"),
             ):
-                host.push_screen(modal)
+                await host.push_screen(modal)
                 await pilot.pause()
                 assert "compact" in modal.classes
                 assert "narrow" in modal.classes
@@ -920,7 +930,7 @@ def test_cro_forensic_and_migrated_modals_resize_breakpoints(tmp_path: Path) -> 
             await pilot.resize_terminal(70, 40)
             await pilot.pause()
             collision_modal = InteractiveCollisionResolverModal(duplicate_groups=[])
-            host.push_screen(collision_modal)
+            await host.push_screen(collision_modal)
             await pilot.pause()
             assert "narrow" not in collision_modal.classes
             assert "compact" in collision_modal.classes

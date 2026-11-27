@@ -45,9 +45,6 @@ from app.core.rule_scopes import (
     resolve_cli_settings_filepath as resolve_cli_settings_filepath,
 )
 from app.core.rule_scopes import (
-    resolve_profile_settings_path as resolve_profile_settings_path,
-)
-from app.core.rule_scopes import (
     resolve_scoped_settings as resolve_scoped_settings,
 )
 
@@ -73,33 +70,6 @@ def _get_schema_validator():
                             f"Failed to load config schema: {e}", exc_info=True
                         )
     return _SCHEMA_VALIDATOR
-
-
-def _dispatch_observer_callback(cb: Any, key: str, value: Any) -> None:
-    try:
-        sig = inspect.signature(cb)
-        params = [
-            p
-            for p in sig.parameters.values()
-            if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
-        ]
-        has_var_args = any(p.kind == p.VAR_POSITIONAL for p in sig.parameters.values())
-
-        if len(params) == 0 and not has_var_args:
-            cb()
-        elif len(params) == 1:
-            cb(value)
-        elif len(params) == 2:
-            cb(key, value)
-        elif has_var_args:
-            cb(value)
-        else:
-            cb(value)
-    except Exception as e:
-        logging.error(
-            f"Error executing config observer callback for key '{key}': {e}",
-            exc_info=True,
-        )
 
 
 def _resolve_app_dir() -> Path:
@@ -576,14 +546,6 @@ class Settings(BaseSettings):
         description=(
             "Maximum width or height in pixels (> 0) to which images are downscaled "
             "while preserving aspect ratio prior to OCR or vision inference."
-        ),
-    )
-    IMAGE_SKIP_THRESHOLD: int = Field(
-        default=3000,
-        gt=0,
-        description=(
-            "Dimension threshold in pixels (> 0) above which oversized images trigger "
-            "pre-processing downscaling or fast-path handling."
         ),
     )
     PDF_TEXT_DENSITY_THRESHOLD: int = Field(
@@ -1973,15 +1935,6 @@ class AppSettings:
             if callback in cls._class_observers[key]:
                 cls._class_observers[key].remove(callback)
 
-    @classmethod
-    def clear_observers(cls, key: str | None = None) -> None:
-        """Clear all registered observers or observers for a specific key."""
-        with cls._class_observer_lock:
-            if key is None:
-                cls._class_observers.clear()
-            elif key in cls._class_observers:
-                cls._class_observers[key].clear()
-
     def _notify_observers(self, key: str, value: Any) -> None:
         """Notify registered setting change observers for `key`."""
         if key == "AI_CONSENT_GRANTED" and value is not True:
@@ -2033,8 +1986,6 @@ class AppSettings:
     def _invoke_observer_callback(
         self, callback: Callable, key: str, value: Any
     ) -> None:
-        import inspect
-
         try:
             sig = inspect.signature(callback)
             params_count = len(sig.parameters)

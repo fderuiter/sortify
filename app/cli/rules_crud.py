@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import re
 import sys
 from collections.abc import Callable
 from typing import Any
@@ -12,7 +13,9 @@ from typing import Any
 from app.cli.error_emitter import emit_cli_error
 from app.cli.settings_args import build_global_subparser_parent
 from app.config import AppSettings
-from app.core.metadata import matches_learned_rule_pattern
+from app.core.policy_engine import compute_active_rule_masking
+
+_NORM_LEARNED_KEY_RE = re.compile(r"[_\-\s.]+")
 
 _RULES_CRUD_SETTINGS_HELP = "Optional path to a specific Sortify settings.json file"
 
@@ -267,6 +270,7 @@ def _collect_rule_rows(
 ) -> list[dict[str, Any]]:
     """Collect normalized rule rows across keyword, learned, extension, and policy tables."""
     rows: list[dict[str, Any]] = []
+    masked_map = compute_active_rule_masking(view)
 
     if kind_filter in ("all", "keyword"):
         if status_filter in ("all", "active"):
@@ -279,6 +283,7 @@ def _collect_rule_rows(
                         "enabled": True,
                         "status": "active",
                         "priority": 80,
+                        "masked_by": masked_map.get(("keyword", k)),
                         "scope": scope_label,
                     }
                 )
@@ -292,6 +297,7 @@ def _collect_rule_rows(
                         "enabled": False,
                         "status": "disabled",
                         "priority": 80,
+                        "masked_by": None,
                         "scope": scope_label,
                     }
                 )
@@ -307,6 +313,7 @@ def _collect_rule_rows(
                         "enabled": True,
                         "status": "active",
                         "priority": 90,
+                        "masked_by": masked_map.get(("learned", k)),
                         "scope": scope_label,
                     }
                 )
@@ -320,6 +327,7 @@ def _collect_rule_rows(
                         "enabled": False,
                         "status": "disabled",
                         "priority": 90,
+                        "masked_by": None,
                         "scope": scope_label,
                     }
                 )
@@ -340,6 +348,7 @@ def _collect_rule_rows(
                                 "enabled": True,
                                 "status": "active",
                                 "priority": 50,
+                                "masked_by": None,
                                 "scope": scope_label,
                             }
                         )
@@ -354,18 +363,20 @@ def _collect_rule_rows(
                             "enabled": True,
                             "status": "active",
                             "priority": 50,
+                            "masked_by": None,
                             "scope": scope_label,
                         }
                     )
 
     if kind_filter in ("all", "policy"):
-        for pol in getattr(view, "POLICIES", []) or []:
+        for idx, pol in enumerate(getattr(view, "POLICIES", []) or []):
             if not isinstance(pol, dict):
                 continue
             enabled = pol.get("enabled") is not False
             status_str = "active" if enabled else "disabled"
             if status_filter not in ("all", status_str):
                 continue
+            masker = masked_map.get(("policy", idx)) if enabled else None
             row: dict[str, Any] = {
                 "kind": "policy",
                 "policy_type": str(pol.get("type", "keyword")),
@@ -373,9 +384,10 @@ def _collect_rule_rows(
                 "target": str(pol.get("target_path", "")),
                 "action": str(pol.get("action") or "move"),
                 "priority": int(pol.get("priority", 75)),
-                "halting": bool(pol.get("halting", True)),
+                "halting": bool(pol.get("halting", False)),
                 "enabled": enabled,
                 "status": status_str,
+                "masked_by": masker,
                 "scope": scope_label,
             }
             if "match_mode" in pol:
@@ -418,7 +430,14 @@ def _find_learned_keys(mapping: dict[str, str], query: str) -> list[str]:
     """Find matching keys in ``LEARNED_RULES`` / ``DISABLED_LEARNED_RULES``."""
     if query in mapping:
         return [query]
-    return [k for k in mapping if matches_learned_rule_pattern(str(k), query)]
+    norm_q = _NORM_LEARNED_KEY_RE.sub(" ", str(query).lower().strip()).strip()
+    if not norm_q:
+        return []
+    return [
+        k
+        for k in mapping
+        if _NORM_LEARNED_KEY_RE.sub(" ", str(k).lower().strip()).strip() == norm_q
+    ]
 
 
 def handle_rules_crud_subcommand(
@@ -474,9 +493,14 @@ def handle_rules_crud_subcommand(
                             )
                         else:
                             extra = f" [{row['policy_type']}:{row['action']}]"
+                    mask_suffix = (
+                        f" [masked by '{row['masked_by']}']"
+                        if row.get("masked_by")
+                        else ""
+                    )
                     print(
                         f"  [{row['status']}] [{row['kind']}{extra}] "
-                        f"{row['pattern']} -> {target_disp} (priority={row['priority']})"
+                        f"{row['pattern']} -> {target_disp} (priority={row['priority']}){mask_suffix}"
                     )
         sys.exit(0)
 

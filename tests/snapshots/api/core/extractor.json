@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "ff8cb6b3022a5bbcd1209890624fc80ccaa577623536df2fe8b8f97bc68a2e6d"
+    "checksum": "190b827715e4edd7c5e73853cd32bec4aee507f6252572f5808aef88d98cccd9"
   },
   "classes": [
     {
@@ -144,54 +144,6 @@
       "returns": null
     },
     {
-      "async": true,
-      "decorators": [],
-      "name": "build_corpus_generator_async",
-      "parameters": [
-        {
-          "annotation": "str",
-          "default": null,
-          "name": "base_dir"
-        },
-        {
-          "annotation": "list",
-          "default": null,
-          "name": "items_to_sort"
-        },
-        {
-          "annotation": null,
-          "default": null,
-          "name": "db"
-        },
-        {
-          "annotation": "Callable | None",
-          "default": "None",
-          "name": "cancel_check"
-        },
-        {
-          "annotation": null,
-          "default": "None",
-          "name": "settings"
-        },
-        {
-          "annotation": "Callable | None",
-          "default": "None",
-          "name": "progress_callback"
-        },
-        {
-          "annotation": "int",
-          "default": "50",
-          "name": "batch_size"
-        },
-        {
-          "annotation": "list[str] | None",
-          "default": "None",
-          "name": "source_dirs"
-        }
-      ],
-      "returns": null
-    },
-    {
       "async": false,
       "decorators": [],
       "name": "evaluate_text_confidence",
@@ -238,34 +190,6 @@
           "annotation": "bool",
           "default": "False",
           "name": "fast_triage"
-        },
-        {
-          "annotation": null,
-          "default": "None",
-          "name": "db"
-        },
-        {
-          "annotation": "str | None",
-          "default": "None",
-          "name": "base_dir"
-        }
-      ],
-      "returns": "ExtractionResult"
-    },
-    {
-      "async": false,
-      "decorators": [],
-      "name": "fast_triage_extract",
-      "parameters": [
-        {
-          "annotation": "str",
-          "default": null,
-          "name": "file_path"
-        },
-        {
-          "annotation": null,
-          "default": "None",
-          "name": "settings"
         },
         {
           "annotation": null,

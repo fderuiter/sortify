@@ -570,13 +570,13 @@ async def test_ac4_tui_reassignment_persists_learned_rule_and_pipeline_applies_t
         app.pop_screen()
         await pilot.pause()
 
-    # Now verify SortPipeline.plan applies LEARNED_RULES to BOTH filename matches AND extracted-text matches!
+    # Now verify SortPipeline.plan applies LEARNED_RULES to filename matches ONLY (never body text)!
     batch_ws = tmp_path / "next_batch"
     batch_ws.mkdir()
     # 1) Filename match (empty/minimal body)
     fn_match = batch_ws / f"april_{learned_pat}_99.txt"
     fn_match.write_text("Short note.")
-    # 2) Extracted-text match with opaque filename (status_match is None!)
+    # 2) Extracted-text match with opaque filename (must NOT match filename-only LEARNED_RULES)
     opaque_text_match = batch_ws / "scan_0042.txt"
     opaque_text_match.write_text(
         f"Scanned receipt containing {learned_pat} approved by finance."
@@ -587,7 +587,7 @@ async def test_ac4_tui_reassignment_persists_learned_rule_and_pipeline_applies_t
         plan = SortPipeline(session).plan()
         dest_map = _extract_planned_destinations(plan)
         assert dest_map.get(fn_match.name) == "Expense_Claims"
-        assert dest_map.get(opaque_text_match.name) == "Expense_Claims"
+        assert dest_map.get(opaque_text_match.name) != "Expense_Claims"
     finally:
         session.close()
 

@@ -13,7 +13,7 @@ The system uses a two-phase pipeline to convert documents into structured sortin
 1. **Extraction (`app.core.extractor`)**:
     - The extractor reads raw files across supported office, markup, data, email, and media formats (`.txt`, `.md`, `.rst`, `.log`, `.csv`, `.tsv`, `.json`, `.yaml`, `.yml`, `.html`, `.htm`, `.xml`, `.pdf`, `.docx`, `.pptx`, `.odt`, `.rtf`, `.eml`, `.xlsx`, `.xls`, plus images `.png`, `.jpg`, `.jpeg`, `.bmp`, `.tiff`, `.webp` via OCR and audio `.mp3`, `.wav`, `.m4a` via Whisper when the `ml` extra is installed).
     - It maps each file to its raw text payload using robust exception-handling to ensure that a failure in one document does not crash the entire run, while computing unique SHA-256 digests (`resilient_file_hash`) even for unsupported binary files.
-    - `build_corpus_generator` submits files to the shared worker pool and yields the extracted text in chunks of 50 to keep memory use low. `build_corpus_generator_async` is the `asyncio` variant used by the daemon.
+    - `build_corpus_generator` submits files to the shared worker pool and yields the extracted text in chunks of 50 to keep memory use low, feeding `SortPipeline` across the CLI, TUI, and daemon.
 
 2. **Analysis (`app.core.analyzer`)**:
     - Extracted text chunks are fed incrementally into the `IncrementalAnalyzer`.

@@ -17,10 +17,6 @@ from app.core.cache import BoundedMemoryCache
 from app.core.exceptions import SemanticEmbeddingError
 
 
-class DimensionMismatchError(SemanticEmbeddingError, ValueError):
-    """Raised when there is a dimension mismatch between model and vector."""
-
-
 class ModelValidationError(SemanticEmbeddingError, ValueError):
     """Raised when the active model configuration contract or SHA-256 validation fails."""
 
@@ -221,7 +217,6 @@ class SemanticEmbeddingManager:
         self.db = db
         self.model_path = model_path
         self._reconstruction_thread = None
-        self._reconstruction_active = False
         self._stop_requested = False
         self._lock = threading.Lock()
 
@@ -793,10 +788,6 @@ class SemanticEmbeddingManager:
 
         # If model_path is None, we run standard deterministic dummy generator (mock/test mode)
         return self._generate_fallback_embedding(text)
-
-    def get_vector(self, base_dir: str, filepath: str) -> list[float] | None:
-        """Retrieve decoupled vector from child store."""
-        return self.db.get_document_vector(base_dir, filepath)
 
     def get_vectors_batch(
         self, base_dir: str, filepaths: list[str], regenerate: bool = True

@@ -139,13 +139,6 @@ Per-file timeout in seconds (> 0) for visual OCR and vision model extraction bef
 
 Maximum width or height in pixels (> 0) to which images are downscaled while preserving aspect ratio prior to OCR or vision inference.
 
-### `IMAGE_SKIP_THRESHOLD`
-- **Type**: `int`
-- **Default**: `3000`
-- **Allowed**: > 0
-
-Dimension threshold in pixels (> 0) above which oversized images trigger pre-processing downscaling or fast-path handling.
-
 ### `PDF_TEXT_DENSITY_THRESHOLD`
 - **Type**: `int`
 - **Default**: `50`

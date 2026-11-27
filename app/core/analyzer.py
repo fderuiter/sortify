@@ -267,7 +267,7 @@ def _validate_sorting_plan_nodes(node: dict[str, Any]) -> dict[str, Any]:
 
 
 def pre_fetch_historical_corpus(
-    db, base_dir, filenames, documents, pre_fetched_vectors=None, max_examples=50
+    db, base_dir, documents, pre_fetched_vectors=None, max_examples=50
 ):
     """Query, decrypt, and package up to 50 relevant historical folder examples from the database."""
     import logging
@@ -488,32 +488,6 @@ def pre_fetch_historical_corpus(
 class IncrementalAnalyzer:
     """Stateful ML analyzer using incremental topic modeling."""
 
-    @staticmethod
-    def detect_duplicate_clusters(
-        base_dir: str,
-        file_paths: Any,
-        detect_original_by: str = "first_seen",
-    ) -> list[dict[str, Any]]:
-        """Group byte-identical files across scanned paths using size pre-filter and raw byte comparison."""
-        from app.core.resilient_file_ops import group_byte_identical_files
-        from app.core.scanner import parse_item_identifier
-
-        resolved_paths: list[str] = []
-        for raw_fp in file_paths or []:
-            if not raw_fp:
-                continue
-            fp_str = str(raw_fp)
-            if os.path.isabs(fp_str) and "::" not in fp_str:
-                resolved_paths.append(os.path.normpath(fp_str))
-            else:
-                src_root, clean_rel = parse_item_identifier(fp_str, base_dir)
-                resolved_paths.append(
-                    os.path.normpath(os.path.abspath(os.path.join(src_root, clean_rel)))
-                )
-        return group_byte_identical_files(
-            resolved_paths, detect_original_by=detect_original_by
-        )
-
     def __init__(
         self,
         max_folders: int,
@@ -529,9 +503,7 @@ class IncrementalAnalyzer:
         self.model_path: str | None = (
             None if isinstance(model_path, _Unspecified) else model_path
         )
-        self.model_name = None
         self.corpus = {}
-        self._last_reconstruction_error = 0.0
 
         if isinstance(model_path, _Unspecified):
             self.model_path = None
@@ -632,9 +604,7 @@ class IncrementalAnalyzer:
             except Exception:
                 logging.debug("Clustering strategy reset failed", exc_info=True)
 
-    def partial_fit(
-        self, base_dir: str, new_corpus: dict, runtime_settings=None
-    ) -> None:
+    def partial_fit(self, base_dir: str, new_corpus: dict) -> None:
         """Update the ML model incrementally with new documents."""
         try:
             filepaths = []
@@ -702,10 +672,6 @@ class IncrementalAnalyzer:
 
         except Exception as e:
             logging.error(f"Failed during partial_fit. Error: {str(e)}", exc_info=True)
-
-    def reload_stop_words(self, new_stop_words: set) -> None:
-        """Reload stop words from config."""
-        self.stop_words = new_stop_words
 
     _FOLDER_SEMANTIC_EXPANSIONS: dict[str, str] = {
         "invoice": "invoice invoices billing bill bills statement payable charge payment remittance vendor receipt due",
@@ -1285,7 +1251,11 @@ class IncrementalAnalyzer:
                 PatternTokenFormatter,
                 resolve_disk_file_date,
             )
-            from app.core.policy_engine import PolicyEngine, PolicyEvaluationResult
+            from app.core.policy_engine import (
+                PolicyEngine,
+                PolicyEvaluationResult,
+                is_pre_learned_policy,
+            )
             from app.core.rule_scopes import resolve_scoped_settings
 
             scope_rule_cache: dict[
@@ -1620,89 +1590,86 @@ class IncrementalAnalyzer:
                 abs_src_root = os.path.abspath(src_root) if src_root else ""
                 abs_paths_map[f] = abs_f
 
-                # Check against unified policies first!
-                # return_halting=True always yields a (result, halt) tuple.
-                matched_policy, halt_evaluation = cast(
-                    "tuple[PolicyEvaluationResult | None, bool]",
-                    PolicyEngine.evaluate_policies(
-                        f,
-                        doc,
-                        status_match,
-                        file_sorted_policies,
-                        return_halting=True,
-                        is_sorted=True,
-                        abs_file_path=abs_f,
-                        is_duplicate=(doc_abs_map.get(str(f), "") in primary_by_abs),
-                    ),
-                )
+                pre_learned_policies = [
+                    p for p in file_sorted_policies if is_pre_learned_policy(p)
+                ]
+                post_learned_policies = [
+                    p for p in file_sorted_policies if not is_pre_learned_policy(p)
+                ]
+                is_dup_file = doc_abs_map.get(str(f), "") in primary_by_abs
 
-                if matched_policy:
+                def _record_policy_match(
+                    matched_pol: Any,
+                    *,
+                    f_key: str = f,
+                    abs_path: str = abs_f,
+                    stat_match: str | None = status_match,
+                    hist_target: str | None = target,
+                ) -> None:
                     from app.core.quarantine_interceptor import (
                         _is_redactable_extension,
                     )
 
                     raw_pol_target = (
-                        matched_policy.target_path
-                        if hasattr(matched_policy, "target_path")
-                        else matched_policy.get("target_path")
+                        matched_pol.target_path
+                        if hasattr(matched_pol, "target_path")
+                        else matched_pol.get("target_path")
                     )
                     pol_expr = (
-                        matched_policy.expression
-                        if hasattr(matched_policy, "expression")
-                        else matched_policy.get("expression", "")
+                        matched_pol.expression
+                        if hasattr(matched_pol, "expression")
+                        else matched_pol.get("expression", "")
                     )
                     pol_type = (
-                        matched_policy.type
-                        if hasattr(matched_policy, "type")
-                        else matched_policy.get("type", "policy")
+                        matched_pol.type
+                        if hasattr(matched_pol, "type")
+                        else matched_pol.get("type", "policy")
                     )
-                    pol_rename_pat = getattr(
-                        matched_policy, "rename_pattern", None
-                    ) or (
-                        matched_policy.get("rename_pattern")
-                        if isinstance(matched_policy, dict)
+                    pol_rename_pat = getattr(matched_pol, "rename_pattern", None) or (
+                        matched_pol.get("rename_pattern")
+                        if isinstance(matched_pol, dict)
                         else None
                     )
-                    pol_action_raw = getattr(matched_policy, "action", None) or (
-                        matched_policy.get("action")
-                        if isinstance(matched_policy, dict)
+                    pol_action_raw = getattr(matched_pol, "action", None) or (
+                        matched_pol.get("action")
+                        if isinstance(matched_pol, dict)
                         else None
                     )
                     pol_action = (
                         str(pol_action_raw).strip().lower() if pol_action_raw else None
                     )
-                    pol_priority = _extract_policy_priority(matched_policy)
+                    pol_priority = _extract_policy_priority(matched_pol)
                     post_unarchive_act = (
-                        getattr(matched_policy, "post_unarchive_action", None)
+                        getattr(matched_pol, "post_unarchive_action", None)
                         or (
-                            matched_policy.get("post_unarchive_action")
-                            if isinstance(matched_policy, dict)
+                            matched_pol.get("post_unarchive_action")
+                            if isinstance(matched_pol, dict)
                             else None
                         )
-                        or getattr(matched_policy, "post_action", None)
+                        or getattr(matched_pol, "post_action", None)
                         or (
-                            matched_policy.get("post_action")
-                            if isinstance(matched_policy, dict)
+                            matched_pol.get("post_action")
+                            if isinstance(matched_pol, dict)
                             else None
                         )
-                        or getattr(matched_policy, "archive_action", None)
+                        or getattr(matched_pol, "archive_action", None)
                         or (
-                            matched_policy.get("archive_action")
-                            if isinstance(matched_policy, dict)
+                            matched_pol.get("archive_action")
+                            if isinstance(matched_pol, dict)
                             else None
                         )
                     )
                     post_unarchive_tgt = (
-                        getattr(matched_policy, "post_unarchive_target", None)
+                        getattr(matched_pol, "post_unarchive_target", None)
                         or (
-                            matched_policy.get("post_unarchive_target")
-                            if isinstance(matched_policy, dict)
+                            matched_pol.get("post_unarchive_target")
+                            if isinstance(matched_pol, dict)
                             else None
                         )
-                        or getattr(matched_policy, "archive_target", None)
+                        or getattr(matched_pol, "archive_target", None)
                         or (
-                            matched_policy.get("archive_target")
-                            if isinstance(matched_policy, dict)
+                            matched_pol.get("archive_target")
+                            if isinstance(matched_pol, dict)
                             else None
                         )
                     )
@@ -1721,7 +1688,7 @@ class IncrementalAnalyzer:
                     if pol_action == "quarantine":
                         resolved_pol_target = cleaned_pol_target or quarantine_dir_cfg
                     elif pol_action == "redact":
-                        if not _is_redactable_extension(f):
+                        if not _is_redactable_extension(f_key):
                             resolved_pol_target = quarantine_dir_cfg
                         else:
                             resolved_pol_target = (
@@ -1736,14 +1703,14 @@ class IncrementalAnalyzer:
                     else:
                         resolved_pol_target = cleaned_pol_target
 
-                    f_date = _get_or_resolve_file_date(f, abs_f, matched_policy)
+                    f_date = _get_or_resolve_file_date(f_key, abs_path, matched_pol)
                     if resolved_pol_target:
                         resolved_pol_target = _expand_folder_template(
-                            resolved_pol_target, f, abs_f, f_date
+                            resolved_pol_target, f_key, abs_path, f_date
                         )
                     resolved_post_unarchive_tgt = (
                         _expand_folder_template(
-                            str(post_unarchive_tgt).strip(), f, abs_f, f_date
+                            str(post_unarchive_tgt).strip(), f_key, abs_path, f_date
                         )
                         if post_unarchive_tgt is not None
                         else None
@@ -1751,11 +1718,11 @@ class IncrementalAnalyzer:
 
                     policy_plan_files.append(
                         (
-                            f,
+                            f_key,
                             resolved_pol_target,
                             pol_expr,
                             pol_type,
-                            status_match,
+                            stat_match,
                             pol_action,
                             str(post_unarchive_act).strip().lower()
                             if post_unarchive_act
@@ -1763,8 +1730,8 @@ class IncrementalAnalyzer:
                             resolved_post_unarchive_tgt,
                         )
                     )
-                    matched_policies_map[f] = {
-                        "rule": matched_policy,
+                    matched_policies_map[f_key] = {
+                        "rule": matched_pol,
                         "type": pol_type,
                         "expression": pol_expr,
                         "target_path": resolved_pol_target,
@@ -1780,8 +1747,27 @@ class IncrementalAnalyzer:
                         ),
                         "post_unarchive_target": resolved_post_unarchive_tgt,
                     }
-                    if target is not None:
-                        historical_overrides[f] = (target, status_match)
+                    if hist_target is not None:
+                        historical_overrides[f_key] = (hist_target, stat_match)
+
+                # Check compliance and priority >= 90 policies first!
+                # return_halting=True always yields a (result, halt) tuple.
+                matched_policy, halt_evaluation = cast(
+                    "tuple[PolicyEvaluationResult | None, bool]",
+                    PolicyEngine.evaluate_policies(
+                        f,
+                        doc,
+                        status_match,
+                        pre_learned_policies,
+                        return_halting=True,
+                        is_sorted=True,
+                        abs_file_path=abs_f,
+                        is_duplicate=is_dup_file,
+                    ),
+                )
+
+                if matched_policy:
+                    _record_policy_match(matched_policy)
                     continue
 
                 if halt_evaluation:
@@ -1876,6 +1862,48 @@ class IncrementalAnalyzer:
                     if target is not None:
                         historical_overrides[f] = (target, status_match)
 
+                if not matched and learned_rules:
+                    for keyword, target_folder in learned_rules.items():
+                        if not str(keyword).strip() or _is_target_rejected(
+                            f, target_folder
+                        ):
+                            continue
+                        if matches_learned_rule_pattern(str(keyword), filename_only):
+                            f_date = _get_or_resolve_file_date(f, abs_f)
+                            exp_folder = _expand_folder_template(
+                                target_folder, f, abs_f, f_date
+                            )
+                            keyword_plan_files.append(
+                                (f, exp_folder, keyword, "learned", status_match)
+                            )
+                            matched = True
+                            break
+
+                if not matched and post_learned_policies:
+                    post_matched_pol, post_halt = cast(
+                        "tuple[PolicyEvaluationResult | None, bool]",
+                        PolicyEngine.evaluate_policies(
+                            f,
+                            doc,
+                            status_match,
+                            post_learned_policies,
+                            return_halting=True,
+                            is_sorted=True,
+                            abs_file_path=abs_f,
+                            is_duplicate=is_dup_file,
+                        ),
+                    )
+                    if post_matched_pol:
+                        _record_policy_match(post_matched_pol)
+                        continue
+                    if post_halt:
+                        if status_match:
+                            unsupported_files.append((f, status_match))
+                        else:
+                            ai_filenames.append(f)
+                            ai_documents.append(doc)
+                        continue
+
                 if not matched and keyword_rules:
                     for keyword, target_folder in keyword_rules.items():
                         if not keyword.strip() or _is_target_rejected(f, target_folder):
@@ -1892,31 +1920,6 @@ class IncrementalAnalyzer:
                             )
                             keyword_plan_files.append(
                                 (f, exp_folder, keyword, "keyword", status_match)
-                            )
-                            matched = True
-                            break
-
-                if not matched and learned_rules:
-                    text_to_search = (
-                        filename_only
-                        if status_match
-                        else (filename_only + " " + doc_lower)
-                    )
-                    norm_search = re.sub(r"[_\-\s]+", " ", text_to_search)
-                    for keyword, target_folder in learned_rules.items():
-                        if not str(keyword).strip() or _is_target_rejected(
-                            f, target_folder
-                        ):
-                            continue
-                        if matches_learned_rule_pattern(
-                            str(keyword), text_to_search, norm_search=norm_search
-                        ):
-                            f_date = _get_or_resolve_file_date(f, abs_f)
-                            exp_folder = _expand_folder_template(
-                                target_folder, f, abs_f, f_date
-                            )
-                            keyword_plan_files.append(
-                                (f, exp_folder, keyword, "pattern", status_match)
                             )
                             matched = True
                             break
@@ -1990,29 +1993,13 @@ class IncrementalAnalyzer:
                         fn_r_low = base_rel_r.lower()
                         ext_r = os.path.splitext(base_rel_r)[1].lower()
                         matched_static_r = False
-                        for kw_k, kw_tf in (kw_r or {}).items():
-                            if (
-                                str(kw_k).strip()
-                                and not _is_target_rejected(f_path, kw_tf)
-                                and str(kw_k).lower() in fn_r_low
-                            ):
-                                r_date = _get_or_resolve_file_date(f_path, abs_r)
-                                exp_tf = _expand_folder_template(
-                                    kw_tf, f_path, abs_r, r_date
-                                )
-                                keyword_plan_files.append(
-                                    (f_path, exp_tf, kw_k, "keyword", None)
-                                )
-                                matched_static_r = True
-                                break
-                        if not matched_static_r and learned_r:
-                            norm_fn_r = re.sub(r"[_\-\s]+", " ", fn_r_low)
+                        if learned_r:
                             for lr_k, lr_tf in learned_r.items():
                                 if (
                                     str(lr_k).strip()
                                     and not _is_target_rejected(f_path, lr_tf)
                                     and matches_learned_rule_pattern(
-                                        str(lr_k), fn_r_low, norm_search=norm_fn_r
+                                        str(lr_k), fn_r_low
                                     )
                                 ):
                                     r_date = _get_or_resolve_file_date(f_path, abs_r)
@@ -2020,7 +2007,23 @@ class IncrementalAnalyzer:
                                         lr_tf, f_path, abs_r, r_date
                                     )
                                     keyword_plan_files.append(
-                                        (f_path, exp_tf, lr_k, "pattern", None)
+                                        (f_path, exp_tf, lr_k, "learned", None)
+                                    )
+                                    matched_static_r = True
+                                    break
+                        if not matched_static_r:
+                            for kw_k, kw_tf in (kw_r or {}).items():
+                                if (
+                                    str(kw_k).strip()
+                                    and not _is_target_rejected(f_path, kw_tf)
+                                    and str(kw_k).lower() in fn_r_low
+                                ):
+                                    r_date = _get_or_resolve_file_date(f_path, abs_r)
+                                    exp_tf = _expand_folder_template(
+                                        kw_tf, f_path, abs_r, r_date
+                                    )
+                                    keyword_plan_files.append(
+                                        (f_path, exp_tf, kw_k, "keyword", None)
                                     )
                                     matched_static_r = True
                                     break
@@ -2618,8 +2621,6 @@ class IncrementalAnalyzer:
                         (uf, st) for uf, st in unsupported_files if uf in rem_set
                     ]
 
-            self._last_reconstruction_error = 0.0
-
             active_strategy_name = self.strategy_name if not fast_path_only else None
             if (
                 active_strategy_name
@@ -2682,7 +2683,6 @@ class IncrementalAnalyzer:
                             raw_corpus = pre_fetch_historical_corpus(
                                 db=self.db,
                                 base_dir=base_dir,
-                                filenames=ai_filenames,
                                 documents=ai_documents,
                                 pre_fetched_vectors=pre_fetched_vectors,
                                 max_examples=50,
@@ -2698,7 +2698,7 @@ class IncrementalAnalyzer:
                             )
 
                     if ai_filenames:
-                        plan, error = strategy.generate_plan(
+                        plan, _ = strategy.generate_plan(
                             ai_filenames,
                             ai_documents,
                             self.max_folders,
@@ -2711,7 +2711,6 @@ class IncrementalAnalyzer:
                         )
                         if hasattr(plan, "plan") and isinstance(plan.plan, dict):
                             plan = plan.plan
-                        self._last_reconstruction_error = error
                     else:
                         plan = {}
                         if active_strategy_name == "generative" and hasattr(
@@ -3715,48 +3714,3 @@ class IncrementalAnalyzer:
                         cast(Any, strategy).clear_isolated_state()
             except Exception:
                 logging.debug("Clearing isolated strategy state failed", exc_info=True)
-
-
-FileAnalyzer = IncrementalAnalyzer
-
-
-def run_incremental_training_in_background(session: Any, base_dir: str) -> None:
-    """Trigger background incremental model training for user-verified documents."""
-    if not session or not hasattr(session, "db") or not hasattr(session, "analyzer"):
-        return
-    db = session.db
-    docs = db.get_all_documents(base_dir) if hasattr(db, "get_all_documents") else []
-    if not docs:
-        return
-    new_corpus = {}
-    for doc in docs:
-        if isinstance(doc, (tuple, list)) and len(doc) >= 4:
-            filepath, text, f_hash, verified_target = doc[0], doc[1], doc[2], doc[3]
-        elif isinstance(doc, dict):
-            filepath = doc.get("filepath") or ""
-            text = doc.get("extracted_text") or doc.get("text") or ""
-            f_hash = doc.get("file_hash") or doc.get("hash") or ""
-            verified_target = doc.get("user_verified_target_path") or doc.get(
-                "verified_target"
-            )
-        else:
-            continue
-        if not verified_target:
-            continue
-        if text and text.strip() and text.strip() != "[STATUS:EMPTY]":
-            try:
-                if (
-                    hasattr(session.analyzer, "embedding_manager")
-                    and session.analyzer.embedding_manager
-                ):
-                    session.analyzer.embedding_manager.generate_embedding(text)
-            except Exception:
-                logging.debug(
-                    f"Embedding generation failed for '{filepath}'", exc_info=True
-                )
-            new_corpus[filepath] = {"text": text, "hash": f_hash}
-    if new_corpus:
-        if hasattr(session.analyzer, "partial_fit"):
-            session.analyzer.partial_fit(
-                base_dir, new_corpus, getattr(session, "settings", None)
-            )

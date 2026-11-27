@@ -22,7 +22,7 @@ from app.core.exceptions import (
     SortifyBaseError,
 )
 from app.core.offline_loader import ModelWeightsNotFoundError, OfflineModelLoadError
-from app.core.semantic_embeddings import DimensionMismatchError, ModelValidationError
+from app.core.semantic_embeddings import ModelValidationError
 
 
 def test_exception_hierarchy():
@@ -36,7 +36,6 @@ def test_exception_hierarchy():
     offline_err = OfflineModelLoadError("offline load error")
     weights_err = ModelWeightsNotFoundError("model_1", ["/path/a"])
 
-    dim_err = DimensionMismatchError("dim mismatch")
     model_val_err = ModelValidationError("model val error")
 
     crypto_err = CryptoError("crypto error")
@@ -51,7 +50,6 @@ def test_exception_hierarchy():
         verif_err,
         offline_err,
         weights_err,
-        dim_err,
         model_val_err,
         crypto_err,
         cache_err,
@@ -63,8 +61,6 @@ def test_exception_hierarchy():
     assert isinstance(net_err, DownloadError)
     assert isinstance(weights_err, OfflineLoaderError)
     assert isinstance(weights_err, OfflineModelLoadError)
-    assert isinstance(dim_err, SemanticEmbeddingError)
-    assert isinstance(dim_err, ValueError)
     assert isinstance(model_val_err, SemanticEmbeddingError)
     assert isinstance(model_val_err, ValueError)
     assert isinstance(crypto_err, RuntimeError)

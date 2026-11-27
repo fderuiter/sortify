@@ -5,7 +5,6 @@ import pytest
 from app.config import AppSettings, Settings
 from app.core.extractor import (
     build_corpus_generator,
-    build_corpus_generator_async,
     extract_file_text,
 )
 from app.core.offline_loader import OfflineModelLoadError
@@ -156,33 +155,6 @@ def test_vlm_router_fallback_on_florence2_exception(mocker, caplog):
     mock_florence_proc.process_image.assert_called_once()
     mock_reader.readtext.assert_called_once_with("np_image")
     assert "Florence-2 vision engine processing failed" in caplog.text
-
-
-@pytest.mark.anyio
-async def test_vlm_router_memory_unloading_after_batch(tmp_path, mocker):
-    mock_registry = MagicMock()
-    mocker.patch(
-        "app.core.shared_registry.SharedModelRegistry.get_instance",
-        return_value=mock_registry,
-    )
-
-    mock_db = MagicMock()
-    mock_db.get_document.return_value = None
-
-    test_file = tmp_path / "test.txt"
-    test_file.write_text("sample content")
-
-    items = [test_file.name]
-
-    # Run build_corpus_generator_async
-    results = []
-    async for item in build_corpus_generator_async(str(tmp_path), items, db=mock_db):
-        results.append(item)
-
-    # Verify model unloading in finally block
-    mock_registry.unload_model.assert_has_calls(
-        [call("easyocr"), call("florence-2")], any_order=True
-    )
 
 
 def test_vlm_router_memory_unloading_sync_generator(tmp_path, mocker):

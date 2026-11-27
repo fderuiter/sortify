@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "5c7c3327abcf81b0e2535b7721a67e022bd1faa5879cae340343b67eddbc314b"
+    "checksum": "63b1861087caba47ba2c5dd310652516afa9f6fe0998d83ae3e2c82b3de9c03d"
   },
   "classes": [
     {
@@ -46,26 +46,6 @@
               "annotation": "Callable",
               "default": null,
               "name": "callback"
-            }
-          ],
-          "returns": "None"
-        },
-        {
-          "async": false,
-          "decorators": [
-            "@classmethod"
-          ],
-          "name": "clear_observers",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "cls"
-            },
-            {
-              "annotation": "str | None",
-              "default": "None",
-              "name": "key"
             }
           ],
           "returns": "None"

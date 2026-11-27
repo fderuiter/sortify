@@ -212,7 +212,7 @@ def extract_text_from_image(
             file_path = file_path or image
             image = Image.open(image)
 
-        # Check image dimensions / skip threshold / downscaling
+        # Check image dimensions for downscaling
         width, height = None, None
         if hasattr(image, "size"):
             try:

@@ -17,7 +17,7 @@
     },
     "tests/test_analyzer.py": {
       "invalid-argument-type": 3,
-      "missing-union-attribute": 59
+      "missing-union-attribute": 54
     },
     "tests/test_async_queue_event_pipeline.py": {
       "invalid-argument-type": 6
