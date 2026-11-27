@@ -18,14 +18,16 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from app.config import AppSettings
-from app.core.domain_contracts import (
-    _make_json_serializable,
-    validate_quarantine_record,
-)
+from app.core.domain_contracts import validate_quarantine_record
 from app.core.lifecycle import LifecycleTelemetryMixin
 from app.core.mover import is_subpath_or_equal
 from app.core.path_utils import safe_relpath
-from app.core.pipeline import SortPipeline, drop_scope, validate_drop_paths
+from app.core.pipeline import (
+    DropBatchCoordinator,
+    SortPipeline,
+    validate_drop_destination,
+)
+from app.core.policy_engine import PolicyEngine
 from app.core.quarantine_interceptor import QuarantineInterceptorService
 from app.core.resilient_file_ops import resilient_remove
 from app.core.rule_scopes import resolve_scoped_settings
@@ -78,6 +80,7 @@ def _run_sorting_process_entry(
     lower_process_priority()
     try:
         from app.config import AppSettings
+        from app.core.folder_lock import FolderLock
 
         settings = (
             AppSettings(filepath=config_filepath) if config_filepath else AppSettings()
@@ -86,9 +89,16 @@ def _run_sorting_process_entry(
         daemon = ContinuousWatchdogDaemon(settings, base_dir)
         daemon._is_running = True
         event_to_pass = cancel_event if cancel_event is not None else threading.Event()
-        daemon._run_sorting_sync(event_to_pass)
+        lock_timeout = float(getattr(AppSession, "folder_lock_timeout", 10.0) or 10.0)
+        with FolderLock(daemon.base_dir, timeout=lock_timeout):
+            daemon._run_sorting_sync(
+                event_to_pass,
+                acquire_locks=False,
+                raise_on_error=True,
+            )
     except Exception as e:
         logger.error(f"Error in process-isolated sorting worker: {e}", exc_info=True)
+        sys.exit(1)
 
 
 @dataclass
@@ -159,14 +169,12 @@ class DaemonFolderHandler(FileSystemEventHandler):
         if dest_path and self.daemon.should_ignore_path(dest_path):
             return
 
-        # Suppress recalculation triggers if file moves are actively running,
-        # but mark dirty flag if external filesystem event occurs
+        # Suppress self-generated events while file moves are actively running,
+        # but mark dirty and enqueue external filesystem events onto the queue.
         if getattr(self.daemon, "is_moving", False):
             if self.daemon.is_self_generated_event(event):
                 return
-            else:
-                self.daemon.mark_pending_dirty()
-                return
+            self.daemon.mark_pending_dirty()
 
         change_event = FileChangeEvent(
             event_type=event_type,
@@ -265,10 +273,14 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         # and the shared analyzer is never used from two threads at once (#717).
         self._sort_executor: concurrent.futures.ThreadPoolExecutor | None = None
 
-        # Process-isolated worker management
+        # Process-isolated worker management & health tracking
         self._sorting_process: multiprocessing.process.BaseProcess | None = None
         self._proc_cancel_event: Any | None = None
         self._rerun_pending: bool = False
+        self._recalc_in_progress: bool = False
+        self._last_worker_error: str | None = None
+        self._closed_proc_ids: set[int] = set()
+        self._stopped_proc_ids: set[int] = set()
 
     @property
     def state(self) -> DaemonState:
@@ -398,6 +410,61 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             "uptime_seconds": round(uptime, 2),
         }
 
+    def _record_worker_error(self, err: BaseException | str) -> None:
+        """Record a background worker error for health telemetry reporting."""
+        msg = (
+            f"{type(err).__name__}: {err}"
+            if isinstance(err, BaseException)
+            else str(err)
+        )
+        with self._lock:
+            self._last_worker_error = msg
+
+    def _inspect_worker_failure_locked(self) -> str | None:
+        """Return the latest worker failure message, inspecting background tasks under ``self._lock``."""
+        if self._last_worker_error:
+            return self._last_worker_error
+        tasks_to_check = list(self._worker_tasks)
+        if self._reconciliation_task is not None:
+            tasks_to_check.append(self._reconciliation_task)
+        for task in tasks_to_check:
+            if task.done() and not task.cancelled():
+                try:
+                    exc = task.exception()
+                except asyncio.InvalidStateError:
+                    exc = None
+                if exc is not None:
+                    self._last_worker_error = f"{type(exc).__name__}: {exc}"
+                    return self._last_worker_error
+                if self._state != DaemonState.STOPPED:
+                    self._last_worker_error = (
+                        "Background worker task exited unexpectedly"
+                    )
+                    return self._last_worker_error
+        return None
+
+    def _is_proc_alive_locked(self, proc: Any) -> bool:
+        """Safely check ``proc.is_alive()`` while holding ``self._lock``."""
+        if proc is None or id(proc) in self._closed_proc_ids:
+            return False
+        try:
+            return bool(proc.is_alive())
+        except (ValueError, OSError):
+            self._closed_proc_ids.add(id(proc))
+            return False
+
+    def _close_proc_locked(self, proc: Any) -> None:
+        """Safely close ``proc`` at most once while holding ``self._lock``."""
+        if proc is None or id(proc) in self._closed_proc_ids:
+            return
+        try:
+            proc.close()
+            self._closed_proc_ids.add(id(proc))
+        except ValueError:
+            logger.debug("Worker process handle already closed or still active")
+        except OSError:
+            logger.debug("OS error closing worker process handle", exc_info=True)
+
     def get_health_telemetry(self) -> dict:
         """Get process health check telemetry for IPC monitoring."""
         queue_depth = self._event_queue.qsize() if self._event_queue is not None else 0
@@ -407,14 +474,23 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         uptime = time.time() - self._start_time if self._start_time else 0.0
         with self._lock:
             paused = self._is_paused
+            last_error = self._inspect_worker_failure_locked()
 
-        status_str = "paused" if paused else ("degraded" if queue_full else "ok")
+        if last_error:
+            status_str = "degraded"
+        elif paused:
+            status_str = "paused"
+        elif queue_full:
+            status_str = "degraded"
+        else:
+            status_str = "ok"
         return {
             "status": status_str,
             "uptime_seconds": round(uptime, 2),
             "queue_full": queue_full,
             "queue_depth": queue_depth,
             "pid": os.getpid(),
+            "last_error": last_error,
         }
 
     def get_metrics_telemetry(self) -> dict:
@@ -607,7 +683,16 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
                         should_trigger = True
 
             if should_trigger:
-                self.trigger_recalculation()
+                loop = self._event_loop
+                if loop is not None and loop.is_running():
+                    with contextlib.suppress(RuntimeError):
+                        loop.call_soon_threadsafe(
+                            lambda: asyncio.create_task(
+                                self._run_reconciliation_audit()
+                            )
+                        )
+                else:
+                    self.trigger_recalculation()
 
     def should_ignore_path(self, path: str) -> bool:
         """Check if path should be ignored to prevent infinite feedback loop."""
@@ -838,11 +923,28 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             except Exception as e:
                 logger.error(f"Failed to start daemon IPC server: {e}", exc_info=True)
 
+            def _on_worker_task_done(done_task: asyncio.Task) -> None:
+                if done_task.cancelled():
+                    return
+                try:
+                    exc = done_task.exception()
+                except asyncio.InvalidStateError:
+                    return
+                if exc is not None:
+                    self._record_worker_error(exc)
+                elif self.is_running:
+                    self._record_worker_error(
+                        "Background worker task exited unexpectedly"
+                    )
+
             self._worker_tasks = [
                 loop.create_task(self._triage_worker(i))
                 for i in range(self.num_workers)
             ]
+            for worker_task in self._worker_tasks:
+                worker_task.add_done_callback(_on_worker_task_done)
             self._reconciliation_task = loop.create_task(self._reconciliation_worker())
+            self._reconciliation_task.add_done_callback(_on_worker_task_done)
 
             ready_event.set()
 
@@ -913,6 +1015,7 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
                 with self._lock:
                     self._events_processed_count += 1
             except Exception as e:
+                self._record_worker_error(e)
                 logger.error(
                     f"Worker {worker_id} error processing event {event}: {e}",
                     exc_info=True,
@@ -1041,6 +1144,8 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         self,
         pipeline: SortPipeline,
         items: list[str],
+        *,
+        acquire_locks: bool = True,
         **plan_kwargs: Any,
     ) -> tuple[Any, Any]:
         """Plan one phase via SortPipeline and execute moves inside scoped_move_phase."""
@@ -1050,7 +1155,14 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         cancel_check = plan_kwargs.get("cancel_check")
         if cancel_check and cancel_check():
             return plan, None
-        outcome = pipeline.execute(plan, move_context=self.scoped_move_phase)
+        exec_kwargs: dict[str, Any] = {}
+        if not acquire_locks:
+            exec_kwargs["acquire_locks"] = False
+        outcome = pipeline.execute(
+            plan,
+            move_context=self.scoped_move_phase,
+            **exec_kwargs,
+        )
         return plan, outcome
 
     def _run_triage_phase(
@@ -1159,12 +1271,12 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         if cancel_check():
             return
 
-        # Execute Phase 0 safety & strict quarantine holds off-thread; non-quarantine
-        # policies (redact, archive, retain, unarchive, routing) flow into SortPipeline.
+        # Execute Phase 0 safety & strict quarantine holds on the serialized sort thread;
+        # non-quarantine policies (redact, archive, retain, unarchive, routing) flow into SortPipeline.
         phase0_fn = getattr(
             interceptor, "_process_phase0_job", interceptor.process_quarantine_job
         )
-        raw_record = await asyncio.to_thread(phase0_fn, job_id)
+        raw_record = await self._in_sort_thread(phase0_fn, job_id)
 
         if cancel_check():
             return
@@ -1194,25 +1306,89 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         ):
             resilient_remove(staged_filepath)
 
-        # Phase 1: Fast-Path Rule Evaluation via SortPipeline (built inside _in_sort_thread)
+        # Phase 1: Fast-Path Rule Evaluation via SortPipeline (skipped when content policies require text extraction)
         if not os.path.exists(abs_path):
             return
 
-        _fast_plan, fast_outcome = await self._in_sort_thread(
-            self._run_triage_phase,
-            app_session,
-            [rel_path],
-            fast_path_only=True,
-            target_paths=[rel_path],
-            run_metadata_pass=True,
-            cancel_check=cancel_check,
+        auto_quarantine_ratings = [
+            r
+            for r in (getattr(scoped_settings, "AUTO_QUARANTINE_RATINGS", []) or [])
+            if r
+        ]
+        has_compliance_content_policies = bool(auto_quarantine_ratings) or any(
+            PolicyEngine.rule_inspects_content(p) for p in (policies or [])
         )
-        if fast_outcome is not None:
-            self._enqueue_unarchived_children(fast_outcome, rel_path)
-            logger.info(
-                f"Targeted Fast-Path triage completed for {rel_path}: {fast_outcome.summary}"
+
+        def _policy_inspects_body_text(pol: Any) -> bool:
+            if PolicyEngine.rule_inspects_content(pol):
+                return True
+            if not (
+                isinstance(pol, dict) or hasattr(pol, "get") or hasattr(pol, "type")
+            ):
+                return False
+            p_enabled = (
+                pol.get("enabled", True)
+                if isinstance(pol, dict)
+                else getattr(pol, "enabled", True)
             )
-            return
+            if p_enabled is False:
+                return False
+            p_conds = (
+                pol.get("conditions")
+                if isinstance(pol, dict)
+                else getattr(pol, "conditions", None)
+            )
+            if isinstance(p_conds, list) and p_conds:
+                return PolicyEngine._conditions_inspect_content(p_conds)
+            p_type = (
+                str(
+                    (
+                        pol.get("type", "")
+                        if isinstance(pol, dict)
+                        else getattr(pol, "type", "")
+                    )
+                    or ""
+                )
+                .strip()
+                .lower()
+            )
+            p_expr = str(
+                (
+                    pol.get("expression", "")
+                    if isinstance(pol, dict)
+                    else getattr(pol, "expression", "")
+                )
+                or ""
+            ).strip()
+            return p_type in (
+                "keyword",
+                "action",
+                "compliance",
+                "secret",
+                "credential",
+                "",
+            ) and bool(p_expr)
+
+        has_text_inspecting_policies = has_compliance_content_policies or any(
+            _policy_inspects_body_text(p) for p in (policies or [])
+        )
+
+        if not has_compliance_content_policies:
+            _fast_plan, fast_outcome = await self._in_sort_thread(
+                self._run_triage_phase,
+                app_session,
+                [rel_path],
+                fast_path_only=True,
+                target_paths=[rel_path],
+                run_metadata_pass=True,
+                cancel_check=cancel_check,
+            )
+            if fast_outcome is not None:
+                self._enqueue_unarchived_children(fast_outcome, rel_path)
+                logger.info(
+                    f"Targeted Fast-Path triage completed for {rel_path}: {fast_outcome.summary}"
+                )
+                return
 
         if cancel_check():
             return
@@ -1222,19 +1398,6 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             return
 
         # Phase 1.5: Inline Non-Generative Jev Triage Phase
-        has_content_policies = any(
-            isinstance(p, dict)
-            and p.get("enabled", True)
-            and (
-                str(p.get("type", "")).lower()
-                in ("keyword", "action", "compliance", "secret", "credential", "")
-                or str(p.get("action", "")).lower()
-                in ("redact", "quarantine", "archive", "retain")
-                or str(p.get("expression", "")).strip().lower()
-                in ("secret", "credential")
-            )
-            for p in (policies or [])
-        )
         deferred_jev_results: dict[str, Any] | None = None
         try:
             from app.core.shared_registry import SharedModelRegistry
@@ -1246,7 +1409,7 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
                 and getattr(jev_res, "is_classified", False)
                 and getattr(jev_res, "confidence", 0.0) >= 0.5
             ):
-                if has_content_policies:
+                if has_text_inspecting_policies:
                     deferred_jev_results = {rel_path: jev_res, abs_path: jev_res}
                 else:
                     _jev_plan, jev_outcome = await self._in_sort_thread(
@@ -1283,7 +1446,7 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             fast_path_only=False,
             target_paths=[rel_path],
             jev_results=deferred_jev_results,
-            run_metadata_pass=False,
+            run_metadata_pass=has_compliance_content_policies,
             cancel_check=cancel_check,
         )
         if slow_outcome is not None:
@@ -1313,6 +1476,7 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
                 try:
                     await self._run_reconciliation_audit(cancel_token=token)
                 except Exception as e:
+                    self._record_worker_error(e)
                     logger.error(
                         f"Error during periodic background reconciliation: {e}",
                         exc_info=True,
@@ -1375,41 +1539,111 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         dest_dir: str | None = None,
         errors: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Run SortPipeline over pre-validated drop target paths."""
-        _ = dest_dir
-        processed_items = []
+        """Plan and execute pre-validated drop target paths through DropBatchCoordinator."""
         error_list = list(errors) if errors is not None else []
+        coordinator = DropBatchCoordinator(self.settings)
+        resolved_dest, dest_err = validate_drop_destination(
+            dest_dir,
+            settings=self.settings,
+        )
+        if dest_err == "protected":
+            error_list.append(f"Protected destination path blocked: {dest_dir}")
+            return {
+                "status": "error",
+                "processed_count": 0,
+                "processed_items": [],
+                "destination_dir": None,
+                "moved_count": 0,
+                "staged_count": 0,
+                "trashed_count": 0,
+                "session_id": None,
+                "results": [],
+                "errors": error_list,
+            }
+        if dest_err == "not_directory":
+            error_list.append(f"Destination path is not a directory: {dest_dir}")
+            return {
+                "status": "error",
+                "processed_count": 0,
+                "processed_items": [],
+                "destination_dir": None,
+                "moved_count": 0,
+                "staged_count": 0,
+                "trashed_count": 0,
+                "session_id": None,
+                "results": [],
+                "errors": error_list,
+            }
 
-        for abs_path in validated_paths:
-            try:
-                if not (os.path.isdir(abs_path) or os.path.isfile(abs_path)):
-                    continue
-                base_dir, files = drop_scope(abs_path)
-                session = AppSession(self.settings, base_dir=base_dir)
-                try:
-                    plan, outcome = SortPipeline(session).run(files, dry_run=dry_run)
-                    if outcome is None:
-                        summary = {
-                            "status": "dry_run",
-                            "plan": _make_json_serializable(plan),
-                        }
-                    else:
-                        summary = outcome.summary
-                    processed_items.append(
-                        {
-                            "path": abs_path,
-                            "type": "directory" if files is None else "file",
-                            "summary": summary,
-                        }
+        existing_paths = [
+            abs_path
+            for abs_path in validated_paths
+            if os.path.isdir(abs_path) or os.path.isfile(abs_path)
+        ]
+        dir_targets = {p for p in existing_paths if os.path.isdir(p)}
+        if not existing_paths:
+            return {
+                "status": "error" if error_list else "no_op",
+                "processed_count": 0,
+                "processed_items": [],
+                "destination_dir": resolved_dest,
+                "moved_count": 0,
+                "staged_count": 0,
+                "trashed_count": 0,
+                "session_id": None,
+                "results": [],
+                "errors": error_list,
+            }
+
+        try:
+            batch_plan = coordinator._plan_validated_batch(
+                existing_paths,
+                resolved_dest=resolved_dest,
+            )
+            if dry_run:
+                batch_result = coordinator.execute_batch(batch_plan, dry_run=True)
+            else:
+                guard_paths: list[str] = list(existing_paths)
+                if batch_plan.resolved_dest:
+                    guard_paths.append(batch_plan.resolved_dest)
+                for item in batch_plan.items:
+                    if item.source_path:
+                        guard_paths.append(item.source_path)
+                    if item.dest_path:
+                        guard_paths.append(item.dest_path)
+                with self.scoped_move_phase(
+                    plan=batch_plan.unified_plan,
+                    active_paths=guard_paths,
+                ):
+                    batch_result = coordinator.execute_batch(
+                        batch_plan,
+                        dry_run=False,
                     )
-                finally:
-                    session.close()
-            except Exception as e:
-                logger.error(
-                    f"Error processing dropped path {abs_path}: {e}", exc_info=True
-                )
-                error_list.append(f"Processing error for {abs_path}: {e}")
+        except Exception as e:
+            logger.error(f"Error processing dropped items: {e}", exc_info=True)
+            error_list.append(f"Processing error: {e}")
+            return {
+                "status": "error",
+                "processed_count": 0,
+                "processed_items": [],
+                "destination_dir": resolved_dest,
+                "moved_count": 0,
+                "staged_count": 0,
+                "trashed_count": 0,
+                "session_id": None,
+                "results": [],
+                "errors": error_list,
+            }
 
+        processed_items = [
+            {
+                "path": tr["target"],
+                "type": "directory" if tr["target"] in dir_targets else "file",
+                "summary": tr["summary"],
+                "plan": tr.get("plan"),
+            }
+            for tr in batch_result.target_results
+        ]
         status_res = (
             "success" if processed_items else ("error" if error_list else "no_op")
         )
@@ -1417,6 +1651,12 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             "status": status_res,
             "processed_count": len(processed_items),
             "processed_items": processed_items,
+            "destination_dir": batch_result.resolved_dest,
+            "moved_count": batch_result.moved_count,
+            "staged_count": batch_result.staged_count,
+            "trashed_count": batch_result.trashed_count,
+            "session_id": batch_result.session_id,
+            "results": batch_result.target_results,
             "errors": error_list,
         }
 
@@ -1427,9 +1667,10 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         dest_dir: str | None = None,
     ) -> dict[str, Any]:
         """Process dropped file or directory path payloads through active triage pipeline."""
-        validated_paths, issues = validate_drop_paths(
+        coordinator = DropBatchCoordinator(self.settings)
+        validated_paths, issues, resolved_dest, dest_err = coordinator.validate(
             paths,
-            settings=self.settings,
+            dest_dir=dest_dir,
             ignore_predicate=self.should_ignore_path,
         )
         errors: list[str] = []
@@ -1441,12 +1682,54 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             elif issue.reason == "protected":
                 errors.append(f"Protected path blocked: {issue.abs_path}")
 
-        return self._execute_dropped_items(
+        if dest_err == "protected":
+            errors.append(f"Protected destination path blocked: {dest_dir}")
+            return {
+                "status": "error",
+                "processed_count": 0,
+                "processed_items": [],
+                "destination_dir": None,
+                "moved_count": 0,
+                "staged_count": 0,
+                "trashed_count": 0,
+                "session_id": None,
+                "results": [],
+                "errors": errors,
+            }
+        if dest_err == "not_directory":
+            errors.append(f"Destination path is not a directory: {dest_dir}")
+            return {
+                "status": "error",
+                "processed_count": 0,
+                "processed_items": [],
+                "destination_dir": None,
+                "moved_count": 0,
+                "staged_count": 0,
+                "trashed_count": 0,
+                "session_id": None,
+                "results": [],
+                "errors": errors,
+            }
+
+        if self._sort_executor is None:
+            self._sort_executor = concurrent.futures.ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="daemon-sort"
+            )
+        if threading.current_thread().name.startswith("daemon-sort"):
+            return self._execute_dropped_items(
+                validated_paths,
+                dry_run=dry_run,
+                dest_dir=resolved_dest,
+                errors=errors,
+            )
+        future = self._sort_executor.submit(
+            self._execute_dropped_items,
             validated_paths,
             dry_run=dry_run,
-            dest_dir=dest_dir,
+            dest_dir=resolved_dest,
             errors=errors,
         )
+        return future.result()
 
     def start(self):
         """Start the continuous watchdog daemon, workers, event loop, and file system observer."""
@@ -1468,6 +1751,10 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             self._sorting_process = None
             self._proc_cancel_event = None
             self._rerun_pending = False
+            self._recalc_in_progress = False
+            self._last_worker_error = None
+            self._closed_proc_ids.clear()
+            self._stopped_proc_ids.clear()
 
         logger.info(f"Starting continuous watchdog daemon for: {self.base_dir}")
 
@@ -1495,6 +1782,7 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             self._move_ref_count = 0
             self._pending_dirty = False
             self._rerun_pending = False
+            self._recalc_in_progress = False
             self._active_move_paths.clear()
             self._queued_triage_paths.clear()
             self._cancel_event.set()
@@ -1514,29 +1802,44 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             proc = self._sorting_process
             self._sorting_process = None
             self._proc_cancel_event = None
+            proc_was_alive = False
+            if proc is not None:
+                self._stopped_proc_ids.add(id(proc))
+                proc_was_alive = self._is_proc_alive_locked(proc)
+                if proc_was_alive:
+                    try:
+                        proc.terminate()
+                    except (ValueError, OSError) as e:
+                        logger.error(
+                            f"Error terminating background worker process: {e}",
+                            exc_info=True,
+                        )
+                        proc_was_alive = False
 
         if proc is not None:
-            if proc.is_alive():
-                try:
-                    proc.terminate()
+            if proc_was_alive:
+                with contextlib.suppress(ValueError, OSError, RuntimeError):
                     proc.join(timeout=3.0)
-                    if proc.is_alive():
-                        proc.kill()
+                need_kill = False
+                with self._lock:
+                    if self._is_proc_alive_locked(proc):
+                        need_kill = True
+                        try:
+                            proc.kill()
+                        except (ValueError, OSError):
+                            need_kill = False
+                if need_kill:
+                    with contextlib.suppress(ValueError, OSError, RuntimeError):
                         proc.join(timeout=1.0)
-                except Exception as e:
-                    logger.error(
-                        f"Error terminating background worker process: {e}",
-                        exc_info=True,
-                    )
             else:
-                try:
-                    proc.join(timeout=1.0)
-                except Exception:
-                    logger.debug("Failed to join worker process", exc_info=True)
-            try:
-                proc.close()
-            except Exception:
-                logger.debug("Failed to close worker process", exc_info=True)
+                already_closed = False
+                with self._lock:
+                    already_closed = id(proc) in self._closed_proc_ids
+                if not already_closed:
+                    with contextlib.suppress(ValueError, OSError, RuntimeError):
+                        proc.join(timeout=1.0)
+            with self._lock:
+                self._close_proc_locked(proc)
 
         if self._ipc_server:
             try:
@@ -1631,8 +1934,31 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             self._debounce_timer.daemon = True
             self._debounce_timer.start()
 
+    async def _run_recalculation_on_executor(
+        self, cancel_event: threading.Event | None
+    ) -> None:
+        """Execute a debounced sorting run on ``_sort_executor`` when ``_event_loop`` is active."""
+        event_to_pass = cancel_event if cancel_event is not None else threading.Event()
+        try:
+            await self._in_sort_thread(self._run_sorting_sync, event_to_pass)
+        finally:
+            should_rerun = False
+            with self._lock:
+                self._recalc_in_progress = False
+                if self.is_running and self._rerun_pending:
+                    self._rerun_pending = False
+                    should_rerun = True
+                elif self._state == DaemonState.RECALCULATING:
+                    self._transition_to(DaemonState.RUNNING)
+            if should_rerun:
+                logger.info(
+                    "Active executor sorting run completed. Executing queued sorting run."
+                )
+                self.trigger_recalculation()
+
     def _schedule_run(self, cancel_event):
-        """Timer callback that executes or queues the worker subprocess execution."""
+        """Timer callback that routes sorting onto ``_sort_executor`` when active, or spawns a subprocess."""
+        loop: asyncio.AbstractEventLoop | None = None
         with self._lock:
             if not self.is_running or (
                 cancel_event is not None and cancel_event.is_set()
@@ -1645,14 +1971,39 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
                 return
             self._first_event_time = None
 
-            if self._sorting_process is not None and self._sorting_process.is_alive():
-                self._rerun_pending = True
-                logger.info(
-                    "Background sorting worker process active; queueing subsequent run."
-                )
+            if self._event_loop is not None and self._event_loop.is_running():
+                if self._recalc_in_progress:
+                    self._rerun_pending = True
+                    logger.info(
+                        "In-process sorting executor active; queueing subsequent run."
+                    )
+                    return
+                self._recalc_in_progress = True
+                self._rerun_pending = False
+                loop = self._event_loop
+            else:
+                if self._is_proc_alive_locked(self._sorting_process):
+                    self._rerun_pending = True
+                    logger.info(
+                        "Background sorting worker process active; queueing subsequent run."
+                    )
+                    return
+
+                self._spawn_sorting_process()
                 return
 
-            self._spawn_sorting_process()
+        if loop is not None:
+            try:
+                loop.call_soon_threadsafe(
+                    lambda: asyncio.create_task(
+                        self._run_recalculation_on_executor(cancel_event)
+                    )
+                )
+            except RuntimeError:
+                with self._lock:
+                    self._recalc_in_progress = False
+                    if self._state == DaemonState.RECALCULATING:
+                        self._transition_to(DaemonState.RUNNING)
 
     def _spawn_sorting_process(self):
         """Spawn a process-isolated worker subprocess to execute the sorting routine."""
@@ -1682,18 +2033,25 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
 
     def _monitor_sorting_process(self, proc: Any):
         """Monitor the lifecycle of the worker subprocess and trigger queued runs upon completion."""
-        try:
-            proc.join()
-        except Exception:
-            logger.debug("Failed to join worker process", exc_info=True)
-
-        try:
-            proc.close()
-        except Exception:
-            logger.debug("Failed to close worker process", exc_info=True)
+        already_closed = False
+        with self._lock:
+            already_closed = id(proc) in self._closed_proc_ids
+        if not already_closed:
+            with contextlib.suppress(ValueError, OSError, RuntimeError):
+                proc.join()
 
         should_rerun = False
         with self._lock:
+            exitcode = None
+            if id(proc) not in self._closed_proc_ids:
+                with contextlib.suppress(ValueError, OSError):
+                    exitcode = getattr(proc, "exitcode", None)
+            was_stopped = id(proc) in self._stopped_proc_ids
+            if exitcode is not None and exitcode != 0 and not was_stopped:
+                self._last_worker_error = (
+                    f"Sorting worker process exited with code {exitcode}"
+                )
+            self._close_proc_locked(proc)
             if self._sorting_process is proc:
                 self._sorting_process = None
                 self._proc_cancel_event = None
@@ -1710,7 +2068,13 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             )
             self.trigger_recalculation()
 
-    def _run_sorting_sync(self, cancel_event):
+    def _run_sorting_sync(
+        self,
+        cancel_event,
+        *,
+        acquire_locks: bool = True,
+        raise_on_error: bool = False,
+    ):
         """Run the core synchronous sorting runner."""
         # Check if canceled before starting
         if cancel_event.is_set():
@@ -1756,6 +2120,7 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             fast_path_plan, fast_outcome = self._plan_and_execute_phase(
                 self._build_pipeline(app_session),
                 files,
+                acquire_locks=acquire_locks,
                 fast_path_only=True,
                 run_metadata_pass=True,
                 cancel_check=cancel_check,
@@ -1797,17 +2162,25 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
                 logger.info("No AI sorting actions needed.")
                 return
 
+            exec_kwargs: dict[str, Any] = {}
+            if not acquire_locks:
+                exec_kwargs["acquire_locks"] = False
             slow_outcome = pipeline.execute(
-                slow_path_plan, move_context=self.scoped_move_phase
+                slow_path_plan,
+                move_context=self.scoped_move_phase,
+                **exec_kwargs,
             )
             logger.info(
                 f"Phase 2 (Slow-Path AI) completed successfully: {slow_outcome.summary}"
             )
 
         except Exception as e:
+            self._record_worker_error(e)
             logger.error(
                 f"Error during continuous watchdog execution run: {e}", exc_info=True
             )
+            if raise_on_error:
+                raise
         finally:
             with self._lock:
                 if (

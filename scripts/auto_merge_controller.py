@@ -39,6 +39,8 @@ logger = logging.getLogger(__name__)
 
 REQUIRED_CI_CHECK = "Required CI"
 CI_WORKFLOW_FILE = "ci.yml"
+DOCS_WORKFLOW_FILE = "docs.yml"
+POST_MERGE_WORKFLOW_FILES = (CI_WORKFLOW_FILE, DOCS_WORKFLOW_FILE)
 DEFAULT_BASE_BRANCH = "main"
 BRANCH_UPDATE_POLL_ATTEMPTS = 6
 BRANCH_UPDATE_POLL_INTERVAL_SECONDS = 2.0
@@ -637,15 +639,16 @@ def process_auto_merge_queue(
                 ).strip()
                 or DEFAULT_BASE_BRANCH
             )
-            try:
-                client.dispatch_workflow(CI_WORKFLOW_FILE, base_ref)
-                logger.info(
-                    f"Dispatched '{CI_WORKFLOW_FILE}' on '{base_ref}' after merging PR #{pr_number}."
-                )
-            except Exception as exc:
-                logger.warning(
-                    f"Merged PR #{pr_number}, but failed to dispatch '{CI_WORKFLOW_FILE}' on '{base_ref}': {exc}"
-                )
+            for workflow_file in POST_MERGE_WORKFLOW_FILES:
+                try:
+                    client.dispatch_workflow(workflow_file, base_ref)
+                    logger.info(
+                        f"Dispatched '{workflow_file}' on '{base_ref}' after merging PR #{pr_number}."
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        f"Merged PR #{pr_number}, but failed to dispatch '{workflow_file}' on '{base_ref}': {exc}"
+                    )
             return AutoMergeResult(action=AutoMergeAction.MERGED, pr_id=pr_number)
         else:
             logger.error(f"Failed to execute squash merge for PR #{pr_number}.")

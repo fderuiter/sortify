@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import pytest
 import requests
@@ -133,7 +133,10 @@ def test_process_queue_merges_eligible_pr():
         "docs: fix typo (#200)",
         "Auto-merged low-risk PR #200\n\nAuthor: fderuiter",
     )
-    client.dispatch_workflow.assert_called_once_with("ci.yml", "main")
+    assert client.dispatch_workflow.call_args_list == [
+        call("ci.yml", "main"),
+        call("docs.yml", "main"),
+    ]
 
 
 def test_process_queue_updates_behind_branch():
@@ -933,7 +936,10 @@ def test_process_queue_skips_behind_fork_branch_and_merges_next_eligible_pr():
     assert res.pr_id == 601
     client.update_branch.assert_not_called()
     client.add_labels.assert_not_called()
-    client.dispatch_workflow.assert_called_once_with("ci.yml", "main")
+    assert client.dispatch_workflow.call_args_list == [
+        call("ci.yml", "main"),
+        call("docs.yml", "main"),
+    ]
 
 
 def test_process_queue_polls_until_new_head_sha_before_dispatching_ci():
@@ -1054,8 +1060,55 @@ def test_process_queue_logs_transient_post_merge_dispatch_error_without_failing(
     res = process_auto_merge_queue(client)
     assert res.action == AutoMergeAction.MERGED
     assert res.pr_id == 604
-    client.dispatch_workflow.assert_called_once_with("ci.yml", "main")
+    assert client.dispatch_workflow.call_args_list == [
+        call("ci.yml", "main"),
+        call("docs.yml", "main"),
+    ]
     assert "failed to dispatch 'ci.yml' on 'main'" in caplog.text
+    assert "failed to dispatch 'docs.yml' on 'main'" in caplog.text
+
+
+def test_process_queue_dispatches_docs_workflow_even_when_ci_dispatch_fails(caplog):
+    client = MagicMock(spec=GitHubClient)
+    client.list_open_pull_requests.return_value = [
+        {"number": 605, "labels": [{"name": "automerge:eligible"}], "draft": False}
+    ]
+    client.get_pull_request.return_value = {
+        "number": 605,
+        "title": "docs: publish pages when ci dispatch errors",
+        "draft": False,
+        "state": "open",
+        "head": {
+            "sha": "sha_merge_605",
+            "ref": "docs/merge-605",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "base": {
+            "ref": "main",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "mergeable": True,
+        "mergeable_state": "clean",
+        "user": {"login": "fderuiter"},
+    }
+    client.get_commit_verification.return_value = {"verified": True}
+    _stub_pr_contents(client, ["docs/guide.md"])
+    client.get_required_ci_conclusion.return_value = "success"
+    client.merge_pull_request.return_value = True
+    client.dispatch_workflow.side_effect = [
+        requests.HTTPError("502 Bad Gateway"),
+        None,
+    ]
+
+    res = process_auto_merge_queue(client)
+    assert res.action == AutoMergeAction.MERGED
+    assert res.pr_id == 605
+    assert client.dispatch_workflow.call_args_list == [
+        call("ci.yml", "main"),
+        call("docs.yml", "main"),
+    ]
+    assert "failed to dispatch 'ci.yml' on 'main'" in caplog.text
+    assert "failed to dispatch 'docs.yml' on 'main'" not in caplog.text
 
 
 def test_auto_merge_controller_workflow_uses_job_level_concurrency_and_permissions():

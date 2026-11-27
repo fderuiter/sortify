@@ -1830,7 +1830,6 @@ class IncrementalAnalyzer:
                             jev_res = v_jev
                             break
 
-                classified_jev_model = None
                 if jev_res:
                     jev_model = validate_jev_classification_result(jev_res)
                     sens_upper = str(jev_model.sensitivity_rating or "LOW").upper()
@@ -1848,12 +1847,6 @@ class IncrementalAnalyzer:
                         continue
                     if target is not None:
                         historical_overrides[f] = (target, status_match)
-                    if (
-                        jev_model.is_classified
-                        and jev_model.confidence > 0.0
-                        and jev_model.category != "Unclassified"
-                    ):
-                        classified_jev_model = jev_model
                 elif auto_quarantine_ratings:
                     try:
                         from app.core.shared_registry import SharedModelRegistry
@@ -1943,17 +1936,6 @@ class IncrementalAnalyzer:
                             ai_documents.append(doc)
                         continue
 
-                if not matched and classified_jev_model is not None:
-                    jev_plan_files.append(
-                        (
-                            f,
-                            classified_jev_model.category,
-                            classified_jev_model,
-                            status_match,
-                        )
-                    )
-                    matched = True
-
                 if not matched and keyword_rules:
                     for keyword, target_folder in keyword_rules.items():
                         if not keyword.strip() or _is_target_rejected(f, target_folder):
@@ -1996,18 +1978,21 @@ class IncrementalAnalyzer:
                 for d_row in docs:
                     raw_df = str(d_row[0]).replace("\\", "/")
                     processed_files.add(raw_df)
-                    processed_files.add(
-                        parse_item_identifier(raw_df, base_dir)[1].replace("\\", "/")
+                    rel_df = parse_item_identifier(raw_df, base_dir)[1].replace(
+                        "\\", "/"
                     )
+                    processed_files.add(rel_df)
+                    processed_files.add(os.path.basename(rel_df))
                 for k_jev, v_jev in jev_results.items():
                     f_path = str(k_jev)
                     src_r, rel_r = parse_item_identifier(f_path, base_dir)
                     norm_rel_r = rel_r.replace("\\", "/")
+                    base_rel_r = os.path.basename(norm_rel_r)
                     if (
                         not _is_quarantine_rel_path(f_path)
                         and f_path.replace("\\", "/") not in processed_files
                         and norm_rel_r not in processed_files
-                        and os.path.basename(f_path) not in processed_files
+                        and base_rel_r not in processed_files
                     ):
                         v_jev_model = validate_jev_classification_result(v_jev)
                         sens_upper = str(
@@ -2031,6 +2016,66 @@ class IncrementalAnalyzer:
                             )
                             processed_files.add(f_path.replace("\\", "/"))
                             processed_files.add(norm_rel_r)
+                            processed_files.add(base_rel_r)
+                            continue
+
+                        scoped_r_cfg, _, kw_r, learned_r = _get_root_scope_rules(
+                            src_r or base_dir or ""
+                        )
+                        fn_r_low = base_rel_r.lower()
+                        ext_r = os.path.splitext(base_rel_r)[1].lower()
+                        matched_static_r = False
+                        if learned_r:
+                            for lr_k, lr_tf in learned_r.items():
+                                if (
+                                    str(lr_k).strip()
+                                    and not _is_target_rejected(f_path, lr_tf)
+                                    and matches_learned_rule_pattern(
+                                        str(lr_k), fn_r_low
+                                    )
+                                ):
+                                    r_date = _get_or_resolve_file_date(f_path, abs_r)
+                                    exp_tf = _expand_folder_template(
+                                        lr_tf, f_path, abs_r, r_date
+                                    )
+                                    keyword_plan_files.append(
+                                        (f_path, exp_tf, lr_k, "learned", None)
+                                    )
+                                    matched_static_r = True
+                                    break
+                        if not matched_static_r:
+                            for kw_k, kw_tf in (kw_r or {}).items():
+                                if (
+                                    str(kw_k).strip()
+                                    and not _is_target_rejected(f_path, kw_tf)
+                                    and str(kw_k).lower() in fn_r_low
+                                ):
+                                    r_date = _get_or_resolve_file_date(f_path, abs_r)
+                                    exp_tf = _expand_folder_template(
+                                        kw_tf, f_path, abs_r, r_date
+                                    )
+                                    keyword_plan_files.append(
+                                        (f_path, exp_tf, kw_k, "keyword", None)
+                                    )
+                                    matched_static_r = True
+                                    break
+                        if not matched_static_r and ext_r not in supported_exts:
+                            cat_r = get_extension_category_target(f_path, scoped_r_cfg)
+                            if cat_r:
+                                keyword_plan_files.append(
+                                    (
+                                        f_path,
+                                        cat_r,
+                                        ext_r,
+                                        "extension_category",
+                                        None,
+                                    )
+                                )
+                                matched_static_r = True
+                        if matched_static_r:
+                            processed_files.add(f_path.replace("\\", "/"))
+                            processed_files.add(norm_rel_r)
+                            processed_files.add(base_rel_r)
                         elif (
                             v_jev_model.is_classified
                             and v_jev_model.confidence > 0.0
@@ -2041,15 +2086,57 @@ class IncrementalAnalyzer:
                             )
                             processed_files.add(f_path.replace("\\", "/"))
                             processed_files.add(norm_rel_r)
+                            processed_files.add(base_rel_r)
+
+            if unsupported_files and jev_results:
+                remaining_unsupported = []
+                processed_unsup_jev = {
+                    str(f_item).replace("\\", "/") for f_item, _, _, _ in jev_plan_files
+                }
+                for uf, u_status in unsupported_files:
+                    norm_uf = uf.replace("\\", "/")
+                    base_uf = os.path.basename(norm_uf)
+                    if uf in historical_overrides or norm_uf in historical_overrides:
+                        remaining_unsupported.append((uf, u_status))
+                        continue
+                    matched_u_jev = None
+                    for k_jev, v_jev in jev_results.items():
+                        norm_k = str(k_jev).replace("\\", "/")
+                        if (
+                            norm_k == norm_uf
+                            or norm_k == base_uf
+                            or norm_uf.endswith(norm_k)
+                            or norm_k.endswith(norm_uf)
+                        ):
+                            matched_u_jev = v_jev
+                            break
+                    if matched_u_jev is not None and norm_uf not in processed_unsup_jev:
+                        u_jev_model = validate_jev_classification_result(matched_u_jev)
+                        if (
+                            u_jev_model.is_classified
+                            and u_jev_model.confidence > 0.0
+                            and u_jev_model.category != "Unclassified"
+                        ):
+                            jev_plan_files.append(
+                                (uf, u_jev_model.category, u_jev_model, u_status)
+                            )
+                            processed_unsup_jev.add(norm_uf)
+                            continue
+                    remaining_unsupported.append((uf, u_status))
+                unsupported_files = remaining_unsupported
 
             # Internal Jev Classifier Fallback execution for unclassified candidate documents in fast-path or for non-extractor files
-            if ai_filenames and (
-                fast_path_only
-                or any(
-                    not registry.is_supported(os.path.splitext(fn)[1].lower())
-                    for fn in ai_filenames
+            orig_internal_jev_eligible = bool(
+                ai_filenames
+                and (
+                    fast_path_only
+                    or any(
+                        not registry.is_supported(os.path.splitext(fn)[1].lower())
+                        for fn in ai_filenames
+                    )
                 )
-            ):
+            )
+            if ai_filenames and (orig_internal_jev_eligible or bool(jev_results)):
                 unclassified_docs_map = (
                     {d[0]: d[1] for d in docs if len(d) > 1} if docs else {}
                 )
@@ -2063,15 +2150,16 @@ class IncrementalAnalyzer:
                     norm_f = f.replace("\\", "/")
                     base_fn = os.path.basename(norm_f)
 
-                    # Historical user assignments take precedence over internal Jev fallback
+                    # Historical user assignments take precedence over Jev category routing
                     if f in historical_overrides or norm_f in historical_overrides:
                         remaining_ai_files.append(f)
                         remaining_ai_docs.append(ai_documents[idx])
                         continue
 
+                    caller_jev_raw = None
                     is_in_caller_jev = False
                     if jev_results:
-                        for k_jev in jev_results.keys():
+                        for k_jev, v_jev in jev_results.items():
                             norm_k = str(k_jev).replace("\\", "/")
                             if (
                                 norm_k == norm_f
@@ -2080,9 +2168,35 @@ class IncrementalAnalyzer:
                                 or norm_k.endswith(norm_f)
                             ):
                                 is_in_caller_jev = True
+                                caller_jev_raw = v_jev
                                 break
 
-                    if not is_in_caller_jev and norm_f not in processed_jev_files:
+                    if is_in_caller_jev:
+                        if (
+                            caller_jev_raw is not None
+                            and norm_f not in processed_jev_files
+                        ):
+                            caller_jev_model = validate_jev_classification_result(
+                                caller_jev_raw
+                            )
+                            if (
+                                caller_jev_model.is_classified
+                                and caller_jev_model.confidence > 0.0
+                                and caller_jev_model.category != "Unclassified"
+                            ):
+                                jev_plan_files.append(
+                                    (
+                                        f,
+                                        caller_jev_model.category,
+                                        caller_jev_model,
+                                        None,
+                                    )
+                                )
+                                processed_jev_files.add(norm_f)
+                                continue
+                    elif (
+                        norm_f not in processed_jev_files and orig_internal_jev_eligible
+                    ):
                         try:
                             from app.core.shared_registry import SharedModelRegistry
 

@@ -470,15 +470,7 @@ class MetadataPass:
             sorted_pols = PolicyEngine.sort_policies(valid_pols)
             has_compliance = bool(auto_quarantine_ratings) or any(
                 bool(_policy_field(p, "enabled", True))
-                and (
-                    PolicyEngine.rule_inspects_content(p)
-                    or str(_policy_field(p, "type", "") or "").lower()
-                    in ("compliance", "action")
-                    or str(_policy_field(p, "action", "") or "").lower()
-                    in ("quarantine", "redact", "archive", "retain")
-                    or str(_policy_field(p, "expression", "") or "").strip().lower()
-                    in ("secret", "credential")
-                )
+                and PolicyEngine.rule_inspects_content(p)
                 for p in sorted_pols
             )
             bundle = (scoped_cfg, sorted_pols, has_compliance)
@@ -565,6 +557,26 @@ class MetadataPass:
                 matched_target = hash_to_target[file_hash]
                 matched_from_policy = True
             else:
+
+                def _cand_inspects_content(pol_cand: object, p_type: str) -> bool:
+                    cand_conditions = _policy_field(pol_cand, "conditions", None)
+                    if isinstance(cand_conditions, list) and cand_conditions:
+                        return PolicyEngine._conditions_inspect_content(cand_conditions)
+                    return PolicyEngine.rule_inspects_content(pol_cand) or (
+                        p_type
+                        in (
+                            "keyword",
+                            "action",
+                            "compliance",
+                            "secret",
+                            "credential",
+                            "",
+                        )
+                        and bool(
+                            str(_policy_field(pol_cand, "expression", "") or "").strip()
+                        )
+                    )
+
                 fn_only_low = os.path.basename(rel_p).lower()
                 pre_pols = [p for p in sorted_policies if is_pre_learned_policy(p)]
                 post_pols = [p for p in sorted_policies if not is_pre_learned_policy(p)]
@@ -585,14 +597,7 @@ class MetadataPass:
                             _policy_field(pol_cand, "action", "") or ""
                         ).lower()
                         break
-                    if p_type in (
-                        "keyword",
-                        "action",
-                        "compliance",
-                        "secret",
-                        "credential",
-                        "",
-                    ) or PolicyEngine.rule_inspects_content(pol_cand):
+                    if _cand_inspects_content(pol_cand, p_type):
                         unmatched_higher_content_policy = True
                     if _policy_field(pol_cand, "halting", False):
                         pre_halted = True
@@ -643,14 +648,7 @@ class MetadataPass:
                                 _policy_field(pol_cand, "action", "") or ""
                             ).lower()
                             break
-                        if p_type in (
-                            "keyword",
-                            "action",
-                            "compliance",
-                            "secret",
-                            "credential",
-                            "",
-                        ) or PolicyEngine.rule_inspects_content(pol_cand):
+                        if _cand_inspects_content(pol_cand, p_type):
                             unmatched_higher_content_policy = True
                         if _policy_field(pol_cand, "halting", False):
                             break
