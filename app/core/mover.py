@@ -993,9 +993,95 @@ def _record_policy_quarantine_audit(
     with db_lock:
         try:
             job_id = f"qjob_mover_{uuid.uuid4().hex[:12]}"
+            resolved_base = os.path.abspath(base_dir) if base_dir else base_dir
+            from app.core.db import Database, get_db_connection
+            from app.core.domain_contracts import validate_quarantine_transition
+
+            db_path = getattr(db, "db_path", None)
+            worker = getattr(db, "worker", None)
+            can_coalesce = (
+                bool(db_path)
+                and worker is not None
+                and hasattr(worker, "execute_write")
+                and getattr(db.stage_quarantine_record, "__func__", None)
+                is Database.stage_quarantine_record
+                and (
+                    not transitions
+                    or (
+                        hasattr(db, "update_quarantine_status")
+                        and getattr(db.update_quarantine_status, "__func__", None)
+                        is Database.update_quarantine_status
+                    )
+                )
+            )
+            if can_coalesce:
+                import json
+
+                staged_ts = time.time()
+                validate_quarantine_transition(None, "STAGED", job_id=job_id)
+                audit_entries: list[dict[str, Any]] = [
+                    {
+                        "timestamp": staged_ts,
+                        "status": "STAGED",
+                        "details": "Initial document placement in quarantine staging",
+                    }
+                ]
+                curr_status = "STAGED"
+                last_ts = staged_ts
+                final_err: str | None = None
+                for idx, (status_val, extra_audit) in enumerate(transitions):
+                    validate_quarantine_transition(
+                        curr_status, status_val, job_id=job_id
+                    )
+                    last_ts = time.time()
+                    entry: dict[str, Any] = {
+                        "timestamp": last_ts,
+                        "status": status_val,
+                        **extra_audit,
+                    }
+                    if "previous_status" not in entry:
+                        entry["previous_status"] = curr_status
+                    audit_entries.append(entry)
+                    curr_status = status_val
+                    if idx == len(transitions) - 1:
+                        final_err = error_message
+
+                norm_orig = original_filepath.replace("\\", "/")
+                norm_staged = staged_filepath.replace("\\", "/")
+                audit_json = json.dumps(audit_entries)
+
+                def _write_coalesced_audit() -> None:
+                    conn = get_db_connection(db_path)
+                    with conn:
+                        conn.execute(
+                            """
+                            INSERT INTO quarantine_records (
+                                job_id, base_dir, original_filepath, staged_filepath,
+                                file_hash, status, policy_action, audit_log,
+                                created_at, updated_at, error_message
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                job_id,
+                                resolved_base,
+                                norm_orig,
+                                norm_staged,
+                                file_hash,
+                                curr_status,
+                                policy_action,
+                                audit_json,
+                                staged_ts,
+                                last_ts,
+                                final_err,
+                            ),
+                        )
+
+                worker.execute_write(_write_coalesced_audit)
+                return
+
             db.stage_quarantine_record(
                 job_id=job_id,
-                base_dir=os.path.abspath(base_dir) if base_dir else base_dir,
+                base_dir=resolved_base,
                 original_filepath=original_filepath,
                 staged_filepath=staged_filepath,
                 file_hash=file_hash,
@@ -2377,35 +2463,131 @@ def _execute_special_policy_move(
         if db:
             with db_lock:
                 try:
-                    if hasattr(db, "_purge_document_vector"):
-                        db._purge_document_vector(base_dir, source_rel_path)
-                        if rel_redacted_dst != source_rel_path:
-                            db._purge_document_vector(base_dir, rel_redacted_dst)
-                    if (
-                        rel_redacted_dst != source_rel_path
-                        and hasattr(db, "worker")
-                        and getattr(db, "db_path", None)
-                    ):
-                        from app.core.db import get_db_connection
+                    from app.core.db import Database, get_db_connection
 
-                        db_p = db.db_path
+                    db_p = getattr(db, "db_path", None)
+                    worker_obj = getattr(db, "worker", None)
+                    crypto_obj = getattr(db, "crypto", None)
+                    can_coalesce_doc = (
+                        bool(db_p)
+                        and worker_obj is not None
+                        and hasattr(worker_obj, "execute_write")
+                        and crypto_obj is not None
+                        and hasattr(db, "_purge_document_vector")
+                        and getattr(db._purge_document_vector, "__func__", None)
+                        is Database._purge_document_vector
+                        and hasattr(db, "upsert_document")
+                        and getattr(db.upsert_document, "__func__", None)
+                        is Database.upsert_document
+                        and hasattr(db, "upsert_documents")
+                        and getattr(db.upsert_documents, "__func__", None)
+                        is Database.upsert_documents
+                    )
+                    if can_coalesce_doc:
+                        from app.core.text_utils import sanitize_text
 
-                        def _delete_orig_doc() -> None:
+                        norm_src_rel = source_rel_path.replace("\\", "/")
+                        norm_dst_rel = rel_redacted_dst.replace("\\", "/")
+                        purge_fps = (
+                            [norm_src_rel, norm_dst_rel]
+                            if norm_dst_rel != norm_src_rel
+                            else [norm_src_rel]
+                        )
+                        for p_fp in purge_fps:
+                            with contextlib.suppress(Exception):
+                                existing_vec = db.get_document_vector(base_dir, p_fp)
+                                if existing_vec is not None:
+                                    from app.core.crypto import zero_vector_buffer
+
+                                    zero_vector_buffer(existing_vec)
+                        db.clear_corrupted_vectors(base_dir, purge_fps)
+                        if getattr(db, "matrix_lru_cache", None):
+                            with contextlib.suppress(Exception):
+                                db.matrix_lru_cache.invalidate(base_dir)
+
+                        sanitized_scrub = (
+                            sanitize_text(scrubbed_text)
+                            if scrubbed_text is not None
+                            else None
+                        )
+                        enc_scrub = (
+                            crypto_obj.encrypt_text(sanitized_scrub)
+                            if sanitized_scrub is not None
+                            else None
+                        )
+                        final_doc_hash = post_redacted_hash or redacted_hash
+
+                        def _apply_scrubbed_db_state() -> None:
                             conn = get_db_connection(db_p)
                             with conn:
+                                for p_fp in purge_fps:
+                                    conn.execute(
+                                        "DELETE FROM document_vectors WHERE base_dir = ? AND filepath = ?",
+                                        (base_dir, p_fp),
+                                    )
+                                if norm_dst_rel != norm_src_rel:
+                                    conn.execute(
+                                        "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                        (base_dir, source_rel_path, norm_src_rel),
+                                    )
                                 conn.execute(
-                                    "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                    (base_dir, source_rel_path, source_rel_path),
+                                    """
+                                    INSERT INTO documents (base_dir, filepath, file_hash, extracted_text)
+                                    VALUES (?, ?, ?, ?)
+                                    ON CONFLICT(base_dir, filepath) DO UPDATE SET
+                                        file_hash = excluded.file_hash,
+                                        extracted_text = excluded.extracted_text
+                                    """,
+                                    (
+                                        base_dir,
+                                        norm_dst_rel,
+                                        final_doc_hash,
+                                        enc_scrub,
+                                    ),
                                 )
+                                cur_ver = conn.execute(
+                                    "SELECT 1 FROM documents WHERE base_dir = ? AND filepath = ? "
+                                    "AND user_verified_target_path IS NOT NULL AND user_verified_target_path != ''",
+                                    (base_dir, norm_dst_rel),
+                                )
+                                if cur_ver.fetchone() is not None:
+                                    db._update_tfidf_for_document_conn(
+                                        conn,
+                                        base_dir,
+                                        norm_dst_rel,
+                                        sanitized_scrub,
+                                        True,
+                                    )
+                            db.invalidate_cache()
 
-                        db.worker.execute_write(_delete_orig_doc)
-                    if hasattr(db, "upsert_document"):
-                        db.upsert_document(
-                            base_dir,
-                            rel_redacted_dst,
-                            post_redacted_hash or redacted_hash,
-                            scrubbed_text,
-                        )
+                        worker_obj.execute_write(_apply_scrubbed_db_state)
+                    else:
+                        if hasattr(db, "_purge_document_vector"):
+                            db._purge_document_vector(base_dir, source_rel_path)
+                            if rel_redacted_dst != source_rel_path:
+                                db._purge_document_vector(base_dir, rel_redacted_dst)
+                        if (
+                            rel_redacted_dst != source_rel_path
+                            and worker_obj is not None
+                            and db_p
+                        ):
+
+                            def _delete_orig_doc() -> None:
+                                conn = get_db_connection(db_p)
+                                with conn:
+                                    conn.execute(
+                                        "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                        (base_dir, source_rel_path, source_rel_path),
+                                    )
+
+                            worker_obj.execute_write(_delete_orig_doc)
+                        if hasattr(db, "upsert_document"):
+                            db.upsert_document(
+                                base_dir,
+                                rel_redacted_dst,
+                                post_redacted_hash or redacted_hash,
+                                scrubbed_text,
+                            )
                 except Exception as vec_err:
                     logging.warning(
                         f"Failed to update scrubbed document/vector state for {rel_redacted_dst}: {vec_err}"
@@ -3406,7 +3588,13 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                 # Without a registered session nothing could undo or roll back the
                 # moves, so refuse to start rather than move files untracked.
                 try:
-                    session_id = history_manager.start_session(base_dir)
+                    from app.core.history import _ACTIVE_RUNTIME_SETTINGS
+
+                    settings_tok = _ACTIVE_RUNTIME_SETTINGS.set(runtime_settings)
+                    try:
+                        session_id = history_manager.start_session(base_dir)
+                    finally:
+                        _ACTIVE_RUNTIME_SETTINGS.reset(settings_tok)
                 except Exception as sess_err:
                     raise RuntimeError(
                         f"Refusing to move files: could not register sort session for {base_dir}: {sess_err}"

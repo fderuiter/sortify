@@ -1211,8 +1211,10 @@ class IncrementalAnalyzer:
                 from app.core.db import DBWorker
 
                 if isinstance(getattr(self.db, "worker", None), DBWorker):
-                    with contextlib.suppress(RuntimeError, OSError):
-                        self.db.worker.execute_write(lambda: None)
+                    worker_q = getattr(self.db.worker, "q", None)
+                    if worker_q is None or getattr(worker_q, "unfinished_tasks", 1) > 0:
+                        with contextlib.suppress(RuntimeError, OSError):
+                            self.db.worker.execute_write(lambda: None)
 
             docs = (
                 self.db.get_all_documents(

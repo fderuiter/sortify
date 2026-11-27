@@ -333,6 +333,7 @@ class QuarantineInterceptorService:
         self.db = db
         self.policies = PolicyEngine.sort_policies(policies)
         self.worker_timeout = worker_timeout
+        self._runtime_settings = runtime_settings
         self.forensic_scanner = ForensicScanner()
         self.dlq_records: list[dict[str, Any]] = []
         if jev_classifier is not None:
@@ -433,14 +434,14 @@ class QuarantineInterceptorService:
             logger.debug("Could not compare staged and release files", exc_info=True)
             return False
 
-    def stage_incoming_file(
+    def _prepare_staged_file(
         self,
         source_path: str,
         base_dir: str,
         original_relative_path: str | None = None,
         policy_action: str | None = None,
     ) -> dict[str, Any]:
-        """Immediately place incoming unverified file into temporary _Quarantine_Staging prior to compliance evaluation."""
+        """Copy an incoming file into _Quarantine_Staging and compute its initial SHA-256 digest."""
         abs_source = os.path.abspath(source_path)
         if not os.path.exists(abs_source):
             raise FileNotFoundError(f"Source file not found for staging: {source_path}")
@@ -474,22 +475,47 @@ class QuarantineInterceptorService:
                 f"Could not hash staged quarantine file '{staged_path}'", exc_info=True
             )
 
-        # Record atomic STAGED state transition in database
-        self.db.stage_quarantine_record(
-            job_id=job_id,
-            base_dir=abs_base_dir,
-            original_filepath=rel_path,
-            staged_filepath=staged_path,
-            file_hash=file_hash,
-            policy_action=policy_action,
-        )
-
         return {
             "job_id": job_id,
             "base_dir": abs_base_dir,
             "original_filepath": rel_path,
             "staged_filepath": staged_path,
             "file_hash": file_hash,
+            "policy_action": policy_action,
+            "status": "STAGED",
+        }
+
+    def stage_incoming_file(
+        self,
+        source_path: str,
+        base_dir: str,
+        original_relative_path: str | None = None,
+        policy_action: str | None = None,
+    ) -> dict[str, Any]:
+        """Immediately place incoming unverified file into temporary _Quarantine_Staging prior to compliance evaluation."""
+        staged = self._prepare_staged_file(
+            source_path=source_path,
+            base_dir=base_dir,
+            original_relative_path=original_relative_path,
+            policy_action=policy_action,
+        )
+
+        # Record atomic STAGED state transition in database
+        self.db.stage_quarantine_record(
+            job_id=staged["job_id"],
+            base_dir=staged["base_dir"],
+            original_filepath=staged["original_filepath"],
+            staged_filepath=staged["staged_filepath"],
+            file_hash=staged["file_hash"],
+            policy_action=policy_action,
+        )
+
+        return {
+            "job_id": staged["job_id"],
+            "base_dir": staged["base_dir"],
+            "original_filepath": staged["original_filepath"],
+            "staged_filepath": staged["staged_filepath"],
+            "file_hash": staged["file_hash"],
             "status": "STAGED",
         }
 
@@ -513,35 +539,114 @@ class QuarantineInterceptorService:
             phase0_only=True,
         )
 
-    def _delete_phase0_record(self, job_id: str) -> None:
-        """Remove a transient Phase 0 staging record when SortPipeline will execute downstream routing."""
+    def _stage_and_process_phase0(
+        self,
+        source_path: str,
+        base_dir: str,
+        original_relative_path: str | None = None,
+        timeout_override: float | None = None,
+        cache_released_document: bool = False,
+    ) -> tuple[dict[str, Any], QuarantineRecordModel]:
+        """Stage and execute Phase 0 safety checks without persisting transient rows when released."""
+        staged = self._prepare_staged_file(
+            source_path=source_path,
+            base_dir=base_dir,
+            original_relative_path=original_relative_path,
+        )
+        result = self._run_quarantine_job(
+            job_id=staged["job_id"],
+            timeout_override=timeout_override,
+            phase0_only=True,
+            pre_staged_record=staged,
+            cache_released_document=cache_released_document,
+        )
+        return staged, result
+
+    def _finalize_phase0_release(
+        self,
+        job_id: str,
+        *,
+        delete_db_record: bool,
+        cached_document: tuple[str, str, str, str] | None = None,
+    ) -> bool:
+        """Prune transient Phase 0 DB state and optionally cache extracted text in one write."""
+        if not delete_db_record and cached_document is None:
+            return False
         try:
             from app.core.db import get_db_connection
+            from app.core.text_utils import sanitize_text
 
             db_path = getattr(self.db, "db_path", None)
             worker = getattr(self.db, "worker", None)
-            if db_path and worker and hasattr(worker, "execute_write"):
+            crypto = getattr(self.db, "crypto", None)
+            if not (db_path and worker and hasattr(worker, "execute_write")):
+                return False
 
-                def _delete_row() -> None:
-                    conn = get_db_connection(db_path)
-                    with conn:
+            enc_payload: tuple[str, str, str, Any] | None = None
+            if cached_document is not None and crypto is not None:
+                c_base, c_rel, c_hash, c_text = cached_document
+                norm_rel = c_rel.replace("\\", "/")
+                sanitized = sanitize_text(c_text)
+                enc_text = crypto.encrypt_text(sanitized)
+                enc_payload = (c_base, norm_rel, c_hash, enc_text)
+
+            def _apply_release_db() -> bool:
+                conn = get_db_connection(db_path)
+                wrote_doc = False
+                with conn:
+                    if delete_db_record:
                         conn.execute(
                             "DELETE FROM quarantine_records WHERE job_id = ?",
                             (job_id,),
                         )
+                    if enc_payload is not None:
+                        p_base, p_rel, p_hash, p_enc = enc_payload
+                        cur = conn.execute(
+                            "SELECT 1 FROM documents WHERE base_dir = ? AND filepath = ? "
+                            "AND user_verified_target_path IS NOT NULL AND user_verified_target_path != ''",
+                            (p_base, p_rel),
+                        )
+                        if cur.fetchone() is None:
+                            conn.execute(
+                                """
+                                INSERT INTO documents (base_dir, filepath, file_hash, extracted_text)
+                                VALUES (?, ?, ?, ?)
+                                ON CONFLICT(base_dir, filepath) DO UPDATE SET
+                                    file_hash = excluded.file_hash,
+                                    extracted_text = excluded.extracted_text
+                                """,
+                                (p_base, p_rel, p_hash, p_enc),
+                            )
+                            wrote_doc = True
+                return wrote_doc
 
-                worker.execute_write(_delete_row)
+            wrote = bool(worker.execute_write(_apply_release_db))
+            if wrote and hasattr(self.db, "invalidate_cache"):
+                self.db.invalidate_cache()
+            return wrote
         except (OSError, ValueError, RuntimeError, AttributeError):
-            logger.debug("Could not prune transient Phase 0 record %s", job_id)
+            logger.debug("Could not finalize Phase 0 release state %s", job_id)
+            return False
+
+    def _delete_phase0_record(self, job_id: str) -> None:
+        """Remove a transient Phase 0 staging record when SortPipeline will execute downstream routing."""
+        self._finalize_phase0_release(job_id, delete_db_record=True)
 
     def _run_quarantine_job(
         self,
         job_id: str,
         timeout_override: float | None = None,
         phase0_only: bool = False,
+        pre_staged_record: dict[str, Any] | None = None,
+        cache_released_document: bool = False,
     ) -> QuarantineRecordModel:
         """Run quarantine job with optional Phase 0 safety-and-hold restriction."""
-        record = self.db.get_quarantine_record(job_id)
+        record_persisted = pre_staged_record is None
+        record = (
+            dict(pre_staged_record)
+            if pre_staged_record is not None
+            else self.db.get_quarantine_record(job_id)
+        )
         if not isinstance(record, dict):
             record = None
         if not record:
@@ -551,17 +656,35 @@ class QuarantineInterceptorService:
             timeout_override if timeout_override is not None else self.worker_timeout
         )
         start_time = time.perf_counter()
+        inspection_recorded = False
 
-        # 1. State transition: STAGED -> IN_INSPECTION
-        self.db.update_quarantine_status(
-            job_id=job_id,
-            status="IN_INSPECTION",
-            audit_entry={
-                "timestamp": time.time(),
-                "status": "IN_INSPECTION",
-                "details": "Background worker started forensic inspection and policy evaluation",
-            },
-        )
+        def _ensure_in_inspection() -> None:
+            nonlocal record_persisted, inspection_recorded
+            if not record_persisted:
+                self.db.stage_quarantine_record(
+                    job_id=job_id,
+                    base_dir=record.get("base_dir") or "",
+                    original_filepath=record.get("original_filepath") or "",
+                    staged_filepath=record.get("staged_filepath") or "",
+                    file_hash=record.get("file_hash"),
+                    policy_action=record.get("policy_action"),
+                )
+                record_persisted = True
+            if not inspection_recorded:
+                inspection_recorded = True
+                self.db.update_quarantine_status(
+                    job_id=job_id,
+                    status="IN_INSPECTION",
+                    audit_entry={
+                        "timestamp": time.time(),
+                        "status": "IN_INSPECTION",
+                        "details": "Background worker started forensic inspection and policy evaluation",
+                    },
+                )
+
+        # 1. State transition: STAGED -> IN_INSPECTION (deferred in phase0_only unless held/errored)
+        if not phase0_only:
+            _ensure_in_inspection()
 
         staged_path = record["staged_filepath"]
         base_dir = record["base_dir"]
@@ -587,6 +710,7 @@ class QuarantineInterceptorService:
 
             # 2. Deep Forensic Scanning & Extraction
             extracted_text = ""
+            did_extract_direct_file = False
             if os.path.exists(staged_path):
                 ext = os.path.splitext(staged_path)[1].lower()
                 if ext in (".zip", ".tar", ".gz", ".tgz", ".tar.gz"):
@@ -599,7 +723,14 @@ class QuarantineInterceptorService:
                         for ef in extracted_files:
                             if os.path.isfile(ef):
                                 _set_posix_mode(ef, 0o600)
-                                t = str(extract_file_text(ef) or "")
+                                raw_ef_text = (
+                                    extract_file_text(
+                                        ef, settings=self._runtime_settings
+                                    )
+                                    if self._runtime_settings is not None
+                                    else extract_file_text(ef)
+                                )
+                                t = str(raw_ef_text or "")
                                 if t:
                                     extracted_texts.append(t)
                         extracted_text = "\n".join(extracted_texts)
@@ -608,6 +739,7 @@ class QuarantineInterceptorService:
                             f"Archive safety limit error in job {job_id}: {ase}"
                         )
                         err_msg = f"Archive safety violation: {ase}"
+                        _ensure_in_inspection()
                         self.db.update_quarantine_status(
                             job_id=job_id,
                             status="MANUAL_REVIEW_REQUIRED",
@@ -630,7 +762,13 @@ class QuarantineInterceptorService:
                         }
                         return validate_quarantine_record(fallback)
                 else:
-                    extracted_text = str(extract_file_text(staged_path) or "")
+                    raw_staged_text = (
+                        extract_file_text(staged_path, settings=self._runtime_settings)
+                        if self._runtime_settings is not None
+                        else extract_file_text(staged_path)
+                    )
+                    extracted_text = str(raw_staged_text or "")
+                    did_extract_direct_file = True
 
             # Re-check timeout guardrail
             if (
@@ -771,8 +909,8 @@ class QuarantineInterceptorService:
                     f"Forensic scanning job exceeded timeout of {effective_timeout}s"
                 )
 
-            current_file_hash = None
-            if staged_path and os.path.exists(staged_path):
+            current_file_hash = record.get("file_hash") if phase0_only else None
+            if not current_file_hash and staged_path and os.path.exists(staged_path):
                 with contextlib.suppress(Exception):
                     current_file_hash = resilient_file_hash(staged_path)
             if not current_file_hash:
@@ -827,6 +965,7 @@ class QuarantineInterceptorService:
                             f"Jev pre-classification assigned sensitivity rating '{sens_rating}' to {orig_rel_path}. "
                             f"Holding file in quarantine staging on compliance hold."
                         )
+                        _ensure_in_inspection()
                         self.db.update_quarantine_status(
                             job_id=job_id,
                             status="QUARANTINED",
@@ -859,6 +998,7 @@ class QuarantineInterceptorService:
             # 5. Policy Lifecycle Action Execution
             if phase0_only:
                 if action == "quarantine":
+                    _ensure_in_inspection()
                     self.db.update_quarantine_status(
                         job_id=job_id,
                         status="QUARANTINED",
@@ -876,6 +1016,38 @@ class QuarantineInterceptorService:
                     record["policy_action"] = "quarantine"
                     return validate_quarantine_record(record)
 
+                cached_doc_tuple: tuple[str, str, str, str] | None = None
+                if (
+                    cache_released_document
+                    and did_extract_direct_file
+                    and base_dir
+                    and orig_rel_path
+                    and current_file_hash
+                    and extracted_text
+                    and extracted_text.strip()
+                    and not extracted_text.startswith("[STATUS:")
+                ):
+                    from app.core.extractor_strategies import registry
+
+                    rel_ext = os.path.splitext(orig_rel_path)[1].lower()
+                    if registry.is_supported(rel_ext):
+                        doc_file_hash = str(current_file_hash)
+                        if (
+                            rel_ext in (".mp3", ".m4a", ".docx", ".xlsx")
+                            and staged_path
+                            and os.path.exists(staged_path)
+                        ):
+                            with contextlib.suppress(Exception):
+                                doc_file_hash = resilient_file_hash(
+                                    staged_path, skip_media_tags=True
+                                )
+                        cached_doc_tuple = (
+                            base_dir,
+                            orig_rel_path,
+                            doc_file_hash,
+                            extracted_text,
+                        )
+
                 for ef in forensic_extracted_files:
                     if os.path.exists(ef):
                         with contextlib.suppress(OSError):
@@ -883,7 +1055,14 @@ class QuarantineInterceptorService:
                 if staged_path and os.path.exists(staged_path):
                     with contextlib.suppress(OSError):
                         resilient_remove(staged_path)
-                self._delete_phase0_record(job_id)
+
+                wrote_doc = self._finalize_phase0_release(
+                    job_id,
+                    delete_db_record=record_persisted,
+                    cached_document=cached_doc_tuple,
+                )
+                if pre_staged_record is not None:
+                    pre_staged_record["document_cached"] = wrote_doc
                 return validate_quarantine_record(
                     {
                         "job_id": job_id,
@@ -1278,6 +1457,8 @@ class QuarantineInterceptorService:
         except TimeoutError as te:
             logger.error(f"Quarantine worker timeout for job {job_id}: {te}")
             err_msg = str(te)
+            with contextlib.suppress(Exception):
+                _ensure_in_inspection()
             self.db.update_quarantine_status(
                 job_id=job_id,
                 status="MANUAL_REVIEW_REQUIRED",
@@ -1306,6 +1487,8 @@ class QuarantineInterceptorService:
                 f"Error processing quarantine job {job_id}: {e}", exc_info=True
             )
             err_msg = str(e)
+            with contextlib.suppress(Exception):
+                _ensure_in_inspection()
             self.db.update_quarantine_status(
                 job_id=job_id,
                 status="MANUAL_REVIEW_REQUIRED",

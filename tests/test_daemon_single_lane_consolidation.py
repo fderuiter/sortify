@@ -83,6 +83,11 @@ def test_external_watchdog_events_during_is_moving_enqueue_and_leave_zero_strand
         external_files: list[Path] = []
         baseline_enqueued = daemon._events_enqueued_count
 
+        # Hold worker consumption during the outer move scope so exiting the outer
+        # scoped_move_phase deterministically drops _move_ref_count to 0 instead of
+        # racing a worker's nested scoped_move_phase or delayed OS FSEvents.
+        daemon.pause()
+
         with daemon.scoped_move_phase(plan={"seed.txt": "Invoices/seed.txt"}):
             assert daemon.is_moving is True
 
@@ -111,19 +116,25 @@ def test_external_watchdog_events_during_is_moving_enqueue_and_leave_zero_strand
             assert str(ws / "seed.txt") not in enqueued_during_moving
             assert daemon._events_enqueued_count - baseline_enqueued >= 4
 
-        # Exiting scoped_move_phase on live _event_loop schedules reconciliation audit
-        # instead of spawning _sorting_process or starting _debounce_timer.
+        # Exiting scoped_move_phase on live _event_loop clears pending_dirty and schedules
+        # reconciliation audit instead of spawning _sorting_process or starting _debounce_timer.
+        assert daemon.is_moving is False
         assert daemon.pending_dirty is False
         assert daemon._sorting_process is None
         assert daemon._debounce_timer is None
 
+        daemon.resume()
+
         deadline = time.monotonic() + 15.0
         while time.monotonic() < deadline:
-            if not [p for p in external_files if p.exists()]:
+            if not [p for p in external_files if p.exists()] and not daemon.is_moving:
                 break
             time.sleep(0.05)
 
         assert [p for p in external_files if p.exists()] == []
+        assert daemon.pending_dirty is False
+        assert daemon._sorting_process is None
+        assert daemon._debounce_timer is None
         assert (ws / "Invoices" / "invoice_ext_0.txt").is_file()
         assert (ws / "Contracts" / "contract_ext_1.txt").is_file()
         assert (ws / "Memos" / "memo_ext_2.txt").is_file()
@@ -810,5 +821,198 @@ async def test_ipc_drop_with_dest_dir_validates_runs_on_sort_executor_in_scoped_
         assert (dest_dir / "Contracts" / "contract_drop.txt").is_file()
     finally:
         server.stop()
+        daemon.stop()
+        clear_connection_cache(only_current_and_inactive=False)
+
+
+def test_phase0_coalesced_staging_caches_released_doc_and_persists_holds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """_stage_and_process_phase0 caches released text in one write and persists full audit logs on holds."""
+    settings = _make_settings(tmp_path, monkeypatch)
+    ws = tmp_path / "coalesce_ws"
+    ws.mkdir()
+
+    clean_doc = ws / "clean_note.txt"
+    clean_doc.write_text("Quarterly summary note", encoding="utf-8")
+    held_doc = ws / "secret_hold.txt"
+    held_doc.write_text("Top secret quarantine_token payload", encoding="utf-8")
+
+    session = AppSession(settings, base_dir=str(ws))
+    try:
+        interceptor = QuarantineInterceptorService(
+            db=session.db,
+            policies=[
+                {
+                    "type": "keyword",
+                    "expression": "quarantine_token",
+                    "action": "quarantine",
+                    "target_path": "_Compliance_Quarantine",
+                    "priority": 100,
+                }
+            ],
+            runtime_settings=settings,
+        )
+
+        staged_rel, rel_res = interceptor._stage_and_process_phase0(
+            source_path=str(clean_doc),
+            base_dir=str(ws),
+            original_relative_path="clean_note.txt",
+            cache_released_document=True,
+        )
+        assert rel_res.status == "RELEASED"
+        assert not os.path.exists(staged_rel["staged_filepath"])
+        assert session.db.get_quarantine_record(staged_rel["job_id"]) is None
+        cached = session.db.get_document(str(ws), "clean_note.txt")
+        assert cached is not None
+        assert cached["file_hash"] == staged_rel["file_hash"]
+        assert "Quarterly summary note" in cached["extracted_text"]
+
+        staged_hold, hold_res = interceptor._stage_and_process_phase0(
+            source_path=str(held_doc),
+            base_dir=str(ws),
+            original_relative_path="secret_hold.txt",
+            cache_released_document=True,
+        )
+        assert hold_res.status == "QUARANTINED"
+        persisted = session.db.get_quarantine_record(staged_hold["job_id"])
+        assert persisted is not None
+        assert persisted["status"] == "QUARANTINED"
+        audit_statuses = [entry["status"] for entry in persisted["audit_log"]]
+        assert audit_statuses == ["STAGED", "IN_INSPECTION", "QUARANTINED"]
+    finally:
+        session.close()
+        clear_connection_cache(only_current_and_inactive=False)
+
+
+def test_mid_triage_external_event_schedules_followup_retriage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Events arriving while a path is in _active_triage_paths schedule a follow-up triage if unmoved."""
+    settings = _make_settings(tmp_path, monkeypatch)
+    settings.DEDUP_WINDOW = 5.0
+    settings.POLICIES = [
+        {
+            "type": "keyword",
+            "expression": "late_invoice_marker",
+            "action": "retain",
+            "target_path": "Invoices",
+            "priority": 100,
+        }
+    ]
+    settings._save()
+
+    ws = tmp_path / "retriage_ws"
+    ws.mkdir()
+    target_file = ws / "draft.txt"
+    target_file.write_text("initial placeholder", encoding="utf-8")
+
+    daemon = ContinuousWatchdogDaemon(settings, str(ws))
+    first_entered = threading.Event()
+    allow_finish_first = threading.Event()
+    triage_count = 0
+    orig_triage = daemon._triage_file_path
+
+    async def _wrapped_triage(
+        abs_path: str, cancel_token: threading.Event | None = None
+    ) -> None:
+        nonlocal triage_count
+        triage_count += 1
+        if triage_count == 1:
+            first_entered.set()
+            await __import__("asyncio").to_thread(allow_finish_first.wait, 3.0)
+            # First triage sees placeholder text via pre-rewrite snapshot or skips; simulate
+            # mid-triage external rewrite arriving while _active_triage_paths holds norm_p.
+            return
+        await orig_triage(abs_path, cancel_token=cancel_token)
+
+    monkeypatch.setattr(daemon, "_triage_file_path", _wrapped_triage)
+
+    try:
+        daemon.start()
+        daemon.enqueue_event(FileChangeEvent("created", str(target_file)))
+        assert first_entered.wait(timeout=3.0)
+
+        # Rewrite file with matching content while first triage is active and inside DEDUP_WINDOW
+        target_file.write_text("Updated late_invoice_marker #777", encoding="utf-8")
+        assert (
+            daemon.enqueue_event(FileChangeEvent("modified", str(target_file))) is False
+        )
+
+        allow_finish_first.set()
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline:
+            if (ws / "Invoices" / "draft.txt").is_file():
+                break
+            time.sleep(0.05)
+
+        assert triage_count >= 2
+        assert not target_file.exists()
+        assert (ws / "Invoices" / "draft.txt").is_file()
+    finally:
+        allow_finish_first.set()
+        daemon.stop()
+        clear_connection_cache(only_current_and_inactive=False)
+
+
+def test_phase0_cached_document_bypasses_duplicate_phase2_extraction(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When Phase 0 caches supported text under content policies, Phase 2 passes bypassed_items and skips build_corpus_generator."""
+    import app.core.extractor as extractor_mod
+
+    settings = _make_settings(tmp_path, monkeypatch)
+    settings.DEDUP_WINDOW = 0.01
+    settings.KEYWORD_RULES = {"invoice": "Invoices"}
+    settings.POLICIES = [
+        {
+            "type": "keyword",
+            "expression": "redact_secret_marker",
+            "action": "redact",
+            "target_path": "Redacted",
+            "priority": 100,
+        }
+    ]
+    settings._save()
+
+    ws = tmp_path / "bypass_ws"
+    ws.mkdir()
+
+    corpus_calls: list[list[str]] = []
+    orig_build_corpus = extractor_mod.build_corpus_generator
+
+    def _spy_build_corpus(*args: Any, **kwargs: Any) -> Any:
+        items = list(kwargs.get("items_to_sort") or (args[1] if len(args) > 1 else []))
+        corpus_calls.append([str(i) for i in items])
+        return orig_build_corpus(*args, **kwargs)
+
+    monkeypatch.setattr(extractor_mod, "build_corpus_generator", _spy_build_corpus)
+
+    daemon = ContinuousWatchdogDaemon(settings, str(ws))
+    try:
+        daemon.start()
+        inv = ws / "invoice_99.txt"
+        inv.write_text("Invoice #99 standard billing summary", encoding="utf-8")
+        red = ws / "secret_99.txt"
+        red.write_text(
+            "Confidential redact_secret_marker SSN 123-45-6789", encoding="utf-8"
+        )
+        daemon.enqueue_event(FileChangeEvent("created", str(inv)))
+        daemon.enqueue_event(FileChangeEvent("created", str(red)))
+
+        deadline = time.monotonic() + 15.0
+        while time.monotonic() < deadline:
+            if (ws / "Invoices" / "invoice_99.txt").is_file() and (
+                ws / "Redacted" / "secret_99.txt"
+            ).is_file():
+                break
+            time.sleep(0.05)
+
+        assert (ws / "Invoices" / "invoice_99.txt").is_file()
+        assert (ws / "Redacted" / "secret_99.txt").is_file()
+        scrubbed = (ws / "Redacted" / "secret_99.txt").read_text(encoding="utf-8")
+        assert "123-45-6789" not in scrubbed
+        assert corpus_calls == []
+    finally:
         daemon.stop()
         clear_connection_cache(only_current_and_inactive=False)

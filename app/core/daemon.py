@@ -253,6 +253,7 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         self._active_path_locks: dict[str, asyncio.Lock] = {}
         self._active_triage_paths: set[str] = set()
         self._queued_triage_paths: set[str] = set()
+        self._pending_retriage_paths: set[str] = set()
         self._last_settings_stat: tuple[int, int] | None = None
         self._worker_tasks: list[asyncio.Task] = []
         self._reconciliation_task: asyncio.Task | None = None
@@ -783,17 +784,21 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             ):
                 self._queued_triage_paths.clear()
 
+            if norm_p in self._active_triage_paths:
+                self._pending_retriage_paths.add(norm_p)
+                logger.debug(
+                    f"Path is actively being triaged, scheduling follow-up check: {file_path}"
+                )
+                return False
+
             last_time = self._recent_events.get(norm_p)
             if last_time is not None and (now - last_time) < self.dedup_window:
                 logger.debug(f"Deduplicating rapid event for path: {file_path}")
                 return False
 
-            if (
-                norm_p in self._active_triage_paths
-                or norm_p in self._queued_triage_paths
-            ):
+            if norm_p in self._queued_triage_paths:
                 logger.debug(
-                    f"Path is already queued or being triaged, deduplicating event: {file_path}"
+                    f"Path is already queued, deduplicating event: {file_path}"
                 )
                 return False
 
@@ -827,17 +832,21 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             if not self._is_running:
                 return False
 
+            if norm_p in self._active_triage_paths:
+                self._pending_retriage_paths.add(norm_p)
+                logger.debug(
+                    f"Path is currently being triaged, scheduling follow-up check: {file_path}"
+                )
+                return False
+
             last_time = self._recent_events.get(norm_p)
             if last_time is not None and (now - last_time) < self.dedup_window:
                 logger.debug(f"Deduplicating rapid event for path: {file_path}")
                 return False
 
-            if (
-                norm_p in self._active_triage_paths
-                or norm_p in self._queued_triage_paths
-            ):
+            if norm_p in self._queued_triage_paths:
                 logger.debug(
-                    f"Path is currently being triaged, deduplicating event: {file_path}"
+                    f"Path is already queued, deduplicating event: {file_path}"
                 )
                 return False
 
@@ -946,7 +955,7 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             self._reconciliation_task = loop.create_task(self._reconciliation_worker())
             self._reconciliation_task.add_done_callback(_on_worker_task_done)
 
-            ready_event.set()
+            loop.call_soon(ready_event.set)
 
             try:
                 loop.run_forever()
@@ -1064,11 +1073,32 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             with self._lock:
                 self._active_triage_paths.add(norm_p)
                 self._queued_triage_paths.discard(norm_p)
+                self._pending_retriage_paths.discard(norm_p)
             try:
                 await self._triage_file_path(abs_path, cancel_token=cancel_token)
             finally:
+                should_retriage = False
                 with self._lock:
                     self._active_triage_paths.discard(norm_p)
+                    if norm_p in self._pending_retriage_paths:
+                        self._pending_retriage_paths.discard(norm_p)
+                        should_retriage = True
+                if (
+                    should_retriage
+                    and self.is_running
+                    and not self._is_cancelled(cancel_token)
+                    and os.path.isfile(abs_path)
+                    and not (self.is_moving and self.is_self_generated_event(event))
+                ):
+                    with self._lock:
+                        self._recent_events.pop(norm_p, None)
+                    self.enqueue_event(
+                        FileChangeEvent(
+                            event_type="modified",
+                            file_path=abs_path,
+                            timestamp=time.time(),
+                        )
+                    )
 
     async def _in_sort_thread(self, fn, /, *args, **kwargs):
         """Run blocking sort work on the daemon's sort thread and await it."""
@@ -1244,20 +1274,63 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         scoped_settings = resolve_scoped_settings(self.settings, self.base_dir)
         policies = getattr(scoped_settings, "POLICIES", [])
         worker_timeout = getattr(self.settings, "WORKER_TIMEOUT", 300.0)
+        auto_quarantine_ratings = [
+            r
+            for r in (getattr(scoped_settings, "AUTO_QUARANTINE_RATINGS", []) or [])
+            if r
+        ]
+        has_compliance_content_policies = bool(auto_quarantine_ratings) or any(
+            PolicyEngine.rule_inspects_content(p) for p in (policies or [])
+        )
+        shared_jev_classifier = None
+        try:
+            from app.core.shared_registry import SharedModelRegistry
+
+            shared_jev_classifier = (
+                SharedModelRegistry.get_instance().get_jev_classifier()
+            )
+        except (ImportError, RuntimeError, OSError, ValueError):
+            shared_jev_classifier = None
+
         interceptor = QuarantineInterceptorService(
             db=app_session.db,
             policies=policies,
             worker_timeout=worker_timeout,
+            jev_classifier=shared_jev_classifier,
             runtime_settings=scoped_settings,
         )
 
-        try:
-            staged_info = await self._in_sort_thread(
-                interceptor.stage_incoming_file,
+        def _execute_phase0() -> tuple[dict[str, Any], Any]:
+            combined_fn = getattr(interceptor, "_stage_and_process_phase0", None)
+            if (
+                callable(combined_fn)
+                and getattr(interceptor.stage_incoming_file, "__func__", None)
+                is QuarantineInterceptorService.stage_incoming_file
+                and getattr(
+                    getattr(interceptor, "_process_phase0_job", None), "__func__", None
+                )
+                is QuarantineInterceptorService._process_phase0_job
+            ):
+                return combined_fn(
+                    source_path=abs_path,
+                    base_dir=self.base_dir,
+                    original_relative_path=rel_path,
+                    cache_released_document=has_compliance_content_policies,
+                )
+            s_info = interceptor.stage_incoming_file(
                 source_path=abs_path,
                 base_dir=self.base_dir,
                 original_relative_path=rel_path,
             )
+            if cancel_check():
+                return s_info, None
+            p0_fn = getattr(
+                interceptor, "_process_phase0_job", interceptor.process_quarantine_job
+            )
+            return s_info, p0_fn(s_info["job_id"])
+
+        try:
+            staged_info, raw_record = await self._in_sort_thread(_execute_phase0)
         except Exception as e:
             logger.error(
                 f"Failed to stage incoming file {abs_path} in quarantine: {e}",
@@ -1265,20 +1338,10 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             )
             return
 
-        job_id = staged_info["job_id"]
         staged_filepath = staged_info.get("staged_filepath")
+        doc_cached_in_phase0 = bool(staged_info.get("document_cached"))
 
-        if cancel_check():
-            return
-
-        # Execute Phase 0 safety & strict quarantine holds on the serialized sort thread;
-        # non-quarantine policies (redact, archive, retain, unarchive, routing) flow into SortPipeline.
-        phase0_fn = getattr(
-            interceptor, "_process_phase0_job", interceptor.process_quarantine_job
-        )
-        raw_record = await self._in_sort_thread(phase0_fn, job_id)
-
-        if cancel_check():
+        if raw_record is None or cancel_check():
             return
 
         quarantine_record = validate_quarantine_record(raw_record)
@@ -1309,15 +1372,6 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         # Phase 1: Fast-Path Rule Evaluation via SortPipeline (skipped when content policies require text extraction)
         if not os.path.exists(abs_path):
             return
-
-        auto_quarantine_ratings = [
-            r
-            for r in (getattr(scoped_settings, "AUTO_QUARANTINE_RATINGS", []) or [])
-            if r
-        ]
-        has_compliance_content_policies = bool(auto_quarantine_ratings) or any(
-            PolicyEngine.rule_inspects_content(p) for p in (policies or [])
-        )
 
         def _policy_inspects_body_text(pol: Any) -> bool:
             if PolicyEngine.rule_inspects_content(pol):
@@ -1439,15 +1493,32 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             return
 
         # Phase 2: Text Extraction, Incremental Model Training, and AI Planning via SortPipeline
+        from app.core.extractor_strategies import registry
+
+        is_supported_ext = registry.is_supported(os.path.splitext(rel_path)[1])
+        slow_plan_kwargs: dict[str, Any] = {
+            "fast_path_only": False,
+            "target_paths": [rel_path],
+            "jev_results": deferred_jev_results,
+            "run_metadata_pass": (
+                has_compliance_content_policies
+                and not is_supported_ext
+                and not doc_cached_in_phase0
+            ),
+            "cancel_check": cancel_check,
+        }
+        if doc_cached_in_phase0:
+            analyzer_obj = getattr(app_session, "analyzer", None)
+            corpus_map = getattr(analyzer_obj, "corpus", None)
+            if isinstance(corpus_map, dict):
+                corpus_map[rel_path] = None
+            slow_plan_kwargs["bypassed_items"] = [rel_path]
+
         _slow_plan, slow_outcome = await self._in_sort_thread(
             self._run_triage_phase,
             app_session,
             [rel_path],
-            fast_path_only=False,
-            target_paths=[rel_path],
-            jev_results=deferred_jev_results,
-            run_metadata_pass=has_compliance_content_policies,
-            cancel_check=cancel_check,
+            **slow_plan_kwargs,
         )
         if slow_outcome is not None:
             self._enqueue_unarchived_children(slow_outcome, rel_path)
@@ -1747,6 +1818,7 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             self._active_path_locks.clear()
             self._active_triage_paths.clear()
             self._queued_triage_paths.clear()
+            self._pending_retriage_paths.clear()
             self._last_settings_stat = None
             self._sorting_process = None
             self._proc_cancel_event = None
@@ -1785,6 +1857,7 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             self._recalc_in_progress = False
             self._active_move_paths.clear()
             self._queued_triage_paths.clear()
+            self._pending_retriage_paths.clear()
             self._cancel_event.set()
             if self._scoped_run_token is not None:
                 self._scoped_run_token.set()
