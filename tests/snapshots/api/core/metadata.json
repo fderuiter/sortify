@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "4f2dbd35f2334ad47f3bac309fbf8b40c85deabdb86ff1ca1b782665be18929d"
+    "checksum": "ec59babc266eca8c60ea670e2e800e6413d3436a02cc1ce6700e08ba4c0fbedb"
   },
   "classes": [
     {
@@ -61,6 +61,19 @@
     }
   ],
   "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "derive_learned_pattern_for_files",
+      "parameters": [
+        {
+          "annotation": "Sequence[str]",
+          "default": null,
+          "name": "file_names"
+        }
+      ],
+      "returns": "tuple[str, list[str], bool]"
+    },
     {
       "async": false,
       "decorators": [],
@@ -134,6 +147,19 @@
         }
       ],
       "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "tokenize_filename_for_rule",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "raw_name"
+        }
+      ],
+      "returns": "tuple[list[str], list[str]]"
     }
   ]
 }

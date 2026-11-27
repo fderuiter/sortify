@@ -1794,19 +1794,49 @@ def canonicalize_condition_node(
     return _canonicalize_condition_node(node, default_case=default_case)
 
 
+COMPLIANCE_POLICY_ACTIONS: frozenset[str] = frozenset(
+    {"quarantine", "redact", "trash", "retain"}
+)
+COMPLIANCE_POLICY_TYPES: frozenset[str] = frozenset(
+    {"compliance", "secret", "credential"}
+)
+_MASK_SEP_RE = re.compile(r"[_\-\s]+")
+
+
+def is_pre_learned_policy(rule: Any) -> bool:
+    """Return True when ``rule`` evaluates ahead of priority-90 ``LEARNED_RULES``."""
+    action = str(_rule_attr(rule, "action", "") or "").strip().lower()
+    rtype = str(_rule_attr(rule, "type", "") or "").strip().lower()
+    expr = str(_rule_attr(rule, "expression", "") or "").strip().lower()
+    halting = bool(_rule_attr(rule, "halting", False))
+    try:
+        priority = int(_rule_attr(rule, "priority", 0) or 0)
+    except (TypeError, ValueError):
+        priority = 0
+    if action in COMPLIANCE_POLICY_ACTIONS or rtype in COMPLIANCE_POLICY_TYPES:
+        return True
+    if rtype == "action" and expr in ("secret", "credential"):
+        return True
+    if halting:
+        return True
+    return priority >= 90
+
+
 def _type_subsumes(ha_type: str, lo_type: str) -> bool:
     """Return True if ``ha_type`` covers at least the same match surface as ``lo_type``."""
     if ha_type == lo_type:
         return True
     if ha_type == "keyword":
         return True
-    if ha_type == "pattern" and lo_type in ("pattern", "override"):
+    if ha_type == "learned" and lo_type in ("learned", "pattern", "override"):
+        return True
+    if ha_type == "pattern" and lo_type in ("pattern", "override", "learned"):
         return True
     return False
 
 
 def is_masked_by(higher_rule: Any, lower_rule: Any) -> bool:
-    """Check if a lower priority policy rule is masked by a higher priority policy rule."""
+    """Check if a lower priority policy or rule is masked by a higher priority rule."""
     ha_type = str(_rule_attr(higher_rule, "type", "") or "").lower()
     lo_type = str(_rule_attr(lower_rule, "type", "") or "").lower()
     if not _type_subsumes(ha_type, lo_type):
@@ -1850,9 +1880,11 @@ def is_masked_by(higher_rule: Any, lower_rule: Any) -> bool:
                 return True
         return False
 
-    ha_raw = str(_rule_attr(higher_rule, "expression", "") or "")
-    lo_raw = str(_rule_attr(lower_rule, "expression", "") or "")
-    if not ha_raw.strip() or not lo_raw.strip():
+    ha_raw = _rule_attr(higher_rule, "expression", "")
+    lo_raw = _rule_attr(lower_rule, "expression", "")
+    if ha_raw is None or lo_raw is None:
+        return False
+    if not str(ha_raw).strip() or not str(lo_raw).strip():
         return False
 
     ha_eff_neg = ha_neg ^ (ha_mode == "none")
@@ -1862,8 +1894,8 @@ def is_masked_by(higher_rule: Any, lower_rule: Any) -> bool:
         return (
             ha_type == lo_type
             and ha_eff_neg == lo_eff_neg
-            and re.sub(r"\s+", "", ha_raw.lower().strip())
-            == re.sub(r"\s+", "", lo_raw.lower().strip())
+            and re.sub(r"\s+", "", str(ha_raw).lower().strip())
+            == re.sub(r"\s+", "", str(lo_raw).lower().strip())
         )
 
     if ha_regex or lo_regex:
@@ -1871,7 +1903,11 @@ def is_masked_by(higher_rule: Any, lower_rule: Any) -> bool:
             return False
         if ha_case and not lo_case:
             return False
-        return (ha_raw == lo_raw) if ha_case else (ha_raw.lower() == lo_raw.lower())
+        return (
+            (str(ha_raw) == str(lo_raw))
+            if ha_case
+            else (ha_raw.lower() == lo_raw.lower())
+        )
 
     if ha_eff_neg != lo_eff_neg:
         return False
@@ -1879,10 +1915,109 @@ def is_masked_by(higher_rule: Any, lower_rule: Any) -> bool:
     if ha_case and not lo_case:
         return False
 
-    ha_cmp = ha_raw.strip() if ha_case else ha_raw.lower().strip()
-    lo_cmp = lo_raw.strip() if ha_case else lo_raw.lower().strip()
+    ha_cmp = str(ha_raw).strip() if ha_case else ha_raw.lower().strip()
+    lo_cmp = str(lo_raw).strip() if ha_case else lo_raw.lower().strip()
+    if not ha_cmp or not lo_cmp:
+        return False
 
     if ha_eff_neg:
         return ha_cmp == lo_cmp
 
+    if ha_type == "pattern" and lo_type == "learned":
+        if any(ch in ha_cmp for ch in "*? _-"):
+            return False
+        return ha_cmp in lo_cmp
+
+    if ha_type == "keyword" and lo_type == "learned":
+        if any(ch in ha_cmp for ch in " _-"):
+            return False
+        return ha_cmp in lo_cmp
+
+    if ha_type == "learned":
+        ha_norm = _MASK_SEP_RE.sub(" ", ha_cmp).strip()
+        lo_norm = _MASK_SEP_RE.sub(" ", lo_cmp).strip()
+        if not ha_norm or not lo_norm:
+            return False
+        if ha_cmp in lo_cmp or ha_norm in lo_norm:
+            return True
+        ha_tokens = [tok for tok in ha_norm.split() if tok]
+        if len(ha_tokens) >= 2 and all(tok in lo_norm for tok in ha_tokens):
+            return True
+        return False
+
     return ha_cmp in lo_cmp
+
+
+def compute_active_rule_masking(view: Any) -> dict[tuple[str, Any], str]:
+    """Compute ``masked_by`` labels across active policies, learned rules, and keyword rules.
+
+    Evaluates rules in exact runtime precedence order:
+    1. Pre-learned policies (compliance / safety or ``priority >= 90``), sorted by priority desc
+    2. Active ``LEARNED_RULES`` (priority ``90``)
+    3. Post-learned policies (``priority < 90`` non-compliance), sorted by priority desc
+    4. Active ``KEYWORD_RULES`` (priority ``80``)
+    """
+    policies = getattr(view, "POLICIES", []) or []
+    learned_rules = getattr(view, "LEARNED_RULES", {}) or {}
+    keyword_rules = getattr(view, "KEYWORD_RULES", {}) or {}
+
+    enabled_policies: list[tuple[int, dict[str, Any]]] = [
+        (idx, pol)
+        for idx, pol in enumerate(policies)
+        if isinstance(pol, dict) and pol.get("enabled", True) is not False
+    ]
+    pre_pols = sorted(
+        [(idx, pol) for idx, pol in enabled_policies if is_pre_learned_policy(pol)],
+        key=lambda pair: int(pair[1].get("priority", 0) or 0),
+        reverse=True,
+    )
+    post_pols = sorted(
+        [(idx, pol) for idx, pol in enabled_policies if not is_pre_learned_policy(pol)],
+        key=lambda pair: int(pair[1].get("priority", 0) or 0),
+        reverse=True,
+    )
+
+    ordered_active: list[tuple[tuple[str, Any], dict[str, Any], str, bool]] = []
+    for idx, pol in pre_pols:
+        expr = str(pol.get("expression", ""))
+        ordered_active.append(
+            (("policy", idx), pol, expr, bool(pol.get("halting", False)))
+        )
+
+    if isinstance(learned_rules, dict):
+        for kw in learned_rules:
+            pat = str(kw)
+            ordered_active.append(
+                (
+                    ("learned", kw),
+                    {"type": "learned", "expression": pat, "priority": 90},
+                    pat,
+                    False,
+                )
+            )
+
+    for idx, pol in post_pols:
+        expr = str(pol.get("expression", ""))
+        ordered_active.append(
+            (("policy", idx), pol, expr, bool(pol.get("halting", False)))
+        )
+
+    if isinstance(keyword_rules, dict):
+        for kw in keyword_rules:
+            pat = str(kw)
+            ordered_active.append(
+                (
+                    ("keyword", kw),
+                    {"type": "keyword", "expression": pat, "priority": 80},
+                    pat,
+                    False,
+                )
+            )
+
+    masked: dict[tuple[str, Any], str] = {}
+    for pos, (low_id, low_rule, _low_label, _low_halt) in enumerate(ordered_active):
+        for _high_id, high_rule, high_label, high_halt in ordered_active[:pos]:
+            if high_halt or is_masked_by(high_rule, low_rule):
+                masked[low_id] = high_label
+                break
+    return masked

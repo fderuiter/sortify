@@ -5,15 +5,150 @@ import logging
 import mimetypes
 import os
 import re
+from collections.abc import Sequence
 from typing import Any
 
 from app.core.extractor import get_file_hash
 from app.core.extractor_strategies import registry
-from app.core.policy_engine import PolicyEngine
+from app.core.policy_engine import PolicyEngine, is_pre_learned_policy
 from app.core.progress import emit_progress
 from app.core.rule_scopes import resolve_scoped_settings
 
-_LEARNED_SEP_RE = re.compile(r"[_\-\s]+")
+_LEARNED_SEP_RE = re.compile(r"[_\-\s.]+")
+_FILENAME_SPLIT_RE = re.compile(r"[^a-z0-9]+")
+_COUNTER_TOKEN_RE = re.compile(
+    r"^(?:v|ver|rev|p|pg|pt|part|seq|num|no|copy)\d+$|^q[1-4]$"
+)
+_HEX_HASH_TOKEN_RE = re.compile(r"^[0-9a-f]{8,}$")
+_FILE_EXT_RE = re.compile(r"^\.[a-z0-9]{1,8}$")
+
+GENERIC_FILENAME_STOPWORDS: frozenset[str] = frozenset(
+    {
+        "scan",
+        "scanned",
+        "scanner",
+        "scans",
+        "img",
+        "image",
+        "images",
+        "dsc",
+        "dscn",
+        "dcim",
+        "screenshot",
+        "screenshots",
+        "screen",
+        "photo",
+        "photos",
+        "pic",
+        "pics",
+        "picture",
+        "pictures",
+        "doc",
+        "docs",
+        "document",
+        "documents",
+        "file",
+        "files",
+        "untitled",
+        "new",
+        "copy",
+        "final",
+        "draft",
+        "temp",
+        "tmp",
+        "download",
+        "downloaded",
+        "export",
+        "exported",
+        "output",
+        "page",
+        "attachment",
+    }
+)
+
+
+def _extract_filename_stem_and_base(raw_name: str) -> tuple[str, str]:
+    """Return lowercase ``(stem, basename)`` stripped of ``::`` root prefix and path dirs."""
+    clean_raw = raw_name.split("::", 1)[1] if "::" in raw_name else raw_name
+    base = os.path.basename(clean_raw.replace("\\", "/")).lower()
+    stem, ext = os.path.splitext(base)
+    if stem and _FILE_EXT_RE.match(ext):
+        return stem, base
+    return base, base
+
+
+def tokenize_filename_for_rule(raw_name: str) -> tuple[list[str], list[str]]:
+    """Extract generalized filename tokens and any stripped generic stopwords.
+
+    Strips dates, numeric counters, version/quarter markers, hex hashes, and
+    generic stopwords such as ``scan`` or ``img``.
+    """
+    if not raw_name or not str(raw_name).strip():
+        return [], []
+    stem, _ = _extract_filename_stem_and_base(str(raw_name))
+    raw_tokens = [tok for tok in _FILENAME_SPLIT_RE.split(stem) if tok]
+    meaningful: list[str] = []
+    seen_meaningful: set[str] = set()
+    stopwords_found: list[str] = []
+    seen_stopwords: set[str] = set()
+
+    for tok in raw_tokens:
+        if tok.isdigit() or len(tok) < 2:
+            continue
+        if _COUNTER_TOKEN_RE.match(tok):
+            continue
+        if _HEX_HASH_TOKEN_RE.match(tok) and any(ch.isdigit() for ch in tok):
+            continue
+        if tok in GENERIC_FILENAME_STOPWORDS:
+            if tok not in seen_stopwords:
+                seen_stopwords.add(tok)
+                stopwords_found.append(tok)
+            continue
+        if tok not in seen_meaningful:
+            seen_meaningful.add(tok)
+            meaningful.append(tok)
+
+    return meaningful, stopwords_found
+
+
+def derive_learned_pattern_for_files(
+    file_names: Sequence[str],
+) -> tuple[str, list[str], bool]:
+    """Derive a generalized filename rule pattern across one or more filenames.
+
+    Returns ``(pattern, stripped_stopwords, is_generic_only)`` where
+    ``is_generic_only`` is True when tokenization produced no meaningful tokens
+    because only generic stopwords/counters were present (e.g. ``scan_001.pdf``).
+    """
+    valid_names = [str(fn) for fn in file_names if fn and str(fn).strip()]
+    if not valid_names:
+        return "", [], False
+
+    per_file_tokens: list[list[str]] = []
+    all_stopwords: list[str] = []
+    seen_stop: set[str] = set()
+
+    for fn in valid_names:
+        toks, stops = tokenize_filename_for_rule(fn)
+        per_file_tokens.append(toks)
+        for st in stops:
+            if st not in seen_stop:
+                seen_stop.add(st)
+                all_stopwords.append(st)
+
+    if len(per_file_tokens) == 1:
+        shared = per_file_tokens[0]
+    else:
+        common_sets = [set(toks) for toks in per_file_tokens[1:]]
+        shared = [
+            tok
+            for tok in per_file_tokens[0]
+            if all(tok in other_set for other_set in common_sets)
+        ]
+
+    pattern = " ".join(shared)
+    is_generic_only = not pattern and bool(all_stopwords)
+    return pattern, all_stopwords, is_generic_only
 
 
 def matches_learned_rule_pattern(
@@ -21,20 +156,30 @@ def matches_learned_rule_pattern(
     text_to_search: str,
     norm_search: str | None = None,
 ) -> bool:
-    """Return True if ``pattern`` matches ``text_to_search`` literally or with separator normalization."""
+    """Return True if ``pattern`` matches the normalized filename in ``text_to_search``."""
     kw_low = str(pattern).lower().strip()
-    if not kw_low:
+    if not kw_low or not text_to_search:
         return False
-    search_low = text_to_search.lower()
-    if kw_low in search_low:
+    stem_low, base_low = _extract_filename_stem_and_base(str(text_to_search))
+    target_low = base_low if "." in kw_low else stem_low
+    if not target_low:
+        return False
+    if kw_low in target_low:
         return True
-    norm_kw = _LEARNED_SEP_RE.sub(" ", kw_low)
+    norm_kw = _LEARNED_SEP_RE.sub(" ", kw_low).strip()
     if len(norm_kw) < 3:
         return False
     effective_norm = (
-        norm_search if norm_search is not None else _LEARNED_SEP_RE.sub(" ", search_low)
+        norm_search
+        if (norm_search is not None and target_low == str(text_to_search).lower())
+        else _LEARNED_SEP_RE.sub(" ", target_low).strip()
     )
-    return norm_kw in effective_norm
+    if norm_kw in effective_norm:
+        return True
+    kw_tokens = [tok for tok in norm_kw.split() if tok]
+    if len(kw_tokens) >= 2:
+        return all(tok in effective_norm for tok in kw_tokens)
+    return False
 
 
 DEFAULT_EXTENSION_CATEGORIES = {
@@ -185,28 +330,67 @@ def evaluate_static_file_routing(
     else:
         active_policies = sorted_policies
 
+    pre_learned_policies = [p for p in active_policies if is_pre_learned_policy(p)]
+    post_learned_policies = [p for p in active_policies if not is_pre_learned_policy(p)]
+    abs_fp = file_path if file_path and os.path.isfile(file_path) else None
+
+    def _apply_matched_policy(pol: Any) -> tuple[str | None, bool]:
+        m_target: str | None = None
+        m_action = False
+        if pol is not None:
+            raw_target = pol.get("target_path")
+            if raw_target:
+                m_target = str(raw_target)
+            raw_action = pol.get("action")
+            if raw_action:
+                m_action = PolicyEngine.validate_policy_action(str(raw_action))
+        return m_target, m_action
+
     eval_out = PolicyEngine.evaluate_policies(
         file_path,
         "",
         "[STATUS:STATIC]",
-        active_policies,
+        pre_learned_policies,
         return_halting=True,
         is_sorted=True,
-        abs_file_path=file_path if file_path and os.path.isfile(file_path) else None,
+        abs_file_path=abs_fp,
     )
     matched_policy, halt_evaluation = (
         eval_out if isinstance(eval_out, tuple) else (eval_out, False)
     )
+    matched_target, matched_action = _apply_matched_policy(matched_policy)
 
-    matched_target: str | None = None
-    matched_action = False
-    if matched_policy is not None:
-        raw_target = matched_policy.get("target_path")
-        if raw_target:
-            matched_target = str(raw_target)
-        raw_action = matched_policy.get("action")
-        if raw_action:
-            matched_action = PolicyEngine.validate_policy_action(str(raw_action))
+    if not halt_evaluation and not matched_target and not matched_action:
+        learned_rules = getattr(settings, "LEARNED_RULES", {}) if settings else {}
+        if isinstance(learned_rules, dict) and learned_rules:
+            for keyword, target_folder in learned_rules.items():
+                if not target_folder:
+                    continue
+                if matches_learned_rule_pattern(str(keyword), fn_lower):
+                    matched_target = str(target_folder)
+                    break
+
+    if (
+        not halt_evaluation
+        and not matched_target
+        and not matched_action
+        and post_learned_policies
+    ):
+        post_out = PolicyEngine.evaluate_policies(
+            file_path,
+            "",
+            "[STATUS:STATIC]",
+            post_learned_policies,
+            return_halting=True,
+            is_sorted=True,
+            abs_file_path=abs_fp,
+        )
+        post_policy, post_halt = (
+            post_out if isinstance(post_out, tuple) else (post_out, False)
+        )
+        matched_target, matched_action = _apply_matched_policy(post_policy)
+        if post_halt:
+            halt_evaluation = True
 
     if not halt_evaluation and not matched_target and not matched_action:
         kw_rules = getattr(settings, "KEYWORD_RULES", {}) if settings else {}
@@ -216,19 +400,6 @@ def evaluate_static_file_routing(
                 if kw_str.strip() and kw_str.lower() in fn_lower and target_folder:
                     matched_target = str(target_folder)
                     break
-
-        if not matched_target:
-            learned_rules = getattr(settings, "LEARNED_RULES", {}) if settings else {}
-            if isinstance(learned_rules, dict) and learned_rules:
-                norm_fn = _LEARNED_SEP_RE.sub(" ", fn_lower)
-                for keyword, target_folder in learned_rules.items():
-                    if not target_folder:
-                        continue
-                    if matches_learned_rule_pattern(
-                        str(keyword), fn_lower, norm_search=norm_fn
-                    ):
-                        matched_target = str(target_folder)
-                        break
 
     if (
         not halt_evaluation
@@ -394,7 +565,11 @@ class MetadataPass:
                 matched_target = hash_to_target[file_hash]
                 matched_from_policy = True
             else:
-                for pol_cand in sorted_policies:
+                fn_only_low = os.path.basename(rel_p).lower()
+                pre_pols = [p for p in sorted_policies if is_pre_learned_policy(p)]
+                post_pols = [p for p in sorted_policies if not is_pre_learned_policy(p)]
+                pre_halted = False
+                for pol_cand in pre_pols:
                     if not _policy_field(pol_cand, "enabled", True):
                         continue
                     p_type = str(_policy_field(pol_cand, "type", "") or "").lower()
@@ -420,13 +595,71 @@ class MetadataPass:
                     ) or PolicyEngine.rule_inspects_content(pol_cand):
                         unmatched_higher_content_policy = True
                     if _policy_field(pol_cand, "halting", False):
+                        pre_halted = True
                         break
+
+                matched_from_learned = False
+                if not matched_from_policy and not pre_halted:
+                    learned_cfg = (
+                        getattr(scoped_settings, "LEARNED_RULES", {})
+                        if scoped_settings
+                        else {}
+                    )
+                    if isinstance(learned_cfg, dict) and learned_cfg:
+                        norm_rel_chk = rel_p.replace("\\", "/")
+                        rej_chk = rejected_by_doc.get(norm_rel_chk, set())
+                        for l_kw, l_target in learned_cfg.items():
+                            if not l_target:
+                                continue
+                            lt_clean = (
+                                str(l_target).replace("\\", "/").strip("/").lower()
+                            )
+                            if lt_clean in rej_chk or (
+                                lt_clean.split("/")[0] in rej_chk
+                            ):
+                                continue
+                            if matches_learned_rule_pattern(str(l_kw), fn_only_low):
+                                matched_from_learned = True
+                                break
+
+                if (
+                    not matched_from_policy
+                    and not pre_halted
+                    and not matched_from_learned
+                ):
+                    for pol_cand in post_pols:
+                        if not _policy_field(pol_cand, "enabled", True):
+                            continue
+                        p_type = str(_policy_field(pol_cand, "type", "") or "").lower()
+                        if PolicyEngine.match_policy(
+                            pol_cand,
+                            item_path,
+                            "",
+                            "[STATUS:STATIC]",
+                            abs_file_path=item_path,
+                        ):
+                            matched_from_policy = True
+                            matched_policy_action = str(
+                                _policy_field(pol_cand, "action", "") or ""
+                            ).lower()
+                            break
+                        if p_type in (
+                            "keyword",
+                            "action",
+                            "compliance",
+                            "secret",
+                            "credential",
+                            "",
+                        ) or PolicyEngine.rule_inspects_content(pol_cand):
+                            unmatched_higher_content_policy = True
+                        if _policy_field(pol_cand, "halting", False):
+                            break
 
                 matched_target, _matched_action, _halt_eval = (
                     evaluate_static_file_routing(
                         item_path,
                         scoped_settings,
-                        filename_only=os.path.basename(rel_p).lower(),
+                        filename_only=fn_only_low,
                         check_extension_categories=not is_supported,
                         sorted_policies=sorted_policies,
                     )

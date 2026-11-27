@@ -1,7 +1,6 @@
 """Plan tree selection, include/exclude, reassign, rename, lock and rating actions."""
 
 import os
-import re
 from typing import Any
 
 from textual.widgets.tree import TreeNode
@@ -291,17 +290,83 @@ def _persist_manual_folders_to_cache(host: Any) -> None:
 
 
 def _derive_learned_pattern(raw_name: str) -> str | None:
-    """Derive a normalized lowercase keyword pattern from a reassigned filename."""
+    """Derive a generalized lowercase keyword pattern from a reassigned filename."""
     if not raw_name:
         return None
-    clean_raw = raw_name.split("::", 1)[1] if "::" in raw_name else raw_name
-    base = os.path.basename(clean_raw.replace("\\", "/"))
-    stem = os.path.splitext(base)[0].lower()
-    cleaned = re.sub(r"^[\s_\-\.()\d]+|[\s_\-\.()\d]+$", "", stem).strip(" _-.")
-    if len(cleaned) >= 3:
-        return cleaned
-    fallback = stem.strip(" _-.")
-    return fallback if len(fallback) >= 2 else None
+    from app.core.metadata import derive_learned_pattern_for_files
+
+    pattern, _stopwords, _is_generic = derive_learned_pattern_for_files([raw_name])
+    return pattern if pattern else None
+
+
+def _remap_learned_rules_for_folder_rename(
+    settings_obj: Any,
+    old_folder_path: str,
+    new_folder_path: str,
+    base_dir: str | None = None,
+) -> int:
+    """Remap ``LEARNED_RULES`` and ``DISABLED_LEARNED_RULES`` destinations after folder rename."""
+    if settings_obj is None:
+        return 0
+    from app.core.path_utils import _is_absolute_path
+
+    if _is_absolute_path(old_folder_path) or _is_absolute_path(new_folder_path):
+        return 0
+    old_norm = old_folder_path.replace("\\", "/").strip("/")
+    new_norm = new_folder_path.replace("\\", "/").strip("/")
+    if not old_norm or not new_norm or old_norm == new_norm:
+        return 0
+
+    def _remap_mapping(mapping: dict[str, str]) -> tuple[dict[str, str], int]:
+        updated: dict[str, str] = {}
+        count = 0
+        for pat, dest in mapping.items():
+            dest_norm = str(dest).replace("\\", "/").strip("/")
+            if dest_norm == old_norm:
+                updated[pat] = new_norm
+                count += 1
+            elif dest_norm.startswith(f"{old_norm}/"):
+                suffix = dest_norm[len(old_norm) + 1 :]
+                updated[pat] = f"{new_norm}/{suffix}"
+                count += 1
+            else:
+                updated[pat] = dest
+        return updated, count
+
+    total_remapped = 0
+    views_to_check: list[Any] = [settings_obj]
+    from app.config import resolve_scoped_settings
+
+    raw_scopes = getattr(settings_obj, "FOLDER_RULE_SCOPES", {}) or {}
+    scope_dirs: list[str] = []
+    if isinstance(raw_scopes, dict):
+        scope_dirs.extend(str(k) for k in raw_scopes if k)
+    if base_dir and str(base_dir) not in scope_dirs:
+        scope_dirs.append(str(base_dir))
+    for s_dir in scope_dirs:
+        scoped_v = resolve_scoped_settings(
+            settings_obj, s_dir, fallback_to_global=False
+        )
+        if scoped_v is not None and scoped_v is not settings_obj:
+            views_to_check.append(scoped_v)
+
+    for view in views_to_check:
+        active_map = dict(getattr(view, "LEARNED_RULES", {}) or {})
+        if active_map:
+            new_active, c_act = _remap_mapping(active_map)
+            if c_act > 0:
+                view.LEARNED_RULES = new_active
+                total_remapped += c_act
+        dis_map = dict(getattr(view, "DISABLED_LEARNED_RULES", {}) or {})
+        if dis_map:
+            new_dis, c_dis = _remap_mapping(dis_map)
+            if c_dis > 0:
+                view.DISABLED_LEARNED_RULES = new_dis
+                total_remapped += c_dis
+
+    if total_remapped > 0 and hasattr(settings_obj, "flush"):
+        settings_obj.flush()
+    return total_remapped
 
 
 class SelectionActionsMixin:
@@ -519,15 +584,23 @@ class SelectionActionsMixin:
                 seen_folders.add(folder.lower())
                 existing_folders.append(folder)
 
-        def on_reassigned(target_folder: str | None) -> None:
-            if not target_folder:
+        def on_reassigned(raw_target_folder: str | None) -> None:
+            if not raw_target_folder:
                 return
 
+            from app.core.metadata import derive_learned_pattern_for_files
             from app.core.path_utils import (
                 _disambiguate_key,
                 _is_absolute_path,
                 prune_empty_plan_ancestors,
             )
+
+            has_explicit_rule_choice = hasattr(raw_target_folder, "learn_rule")
+            explicit_learn_rule = bool(getattr(raw_target_folder, "learn_rule", False))
+            explicit_learned_pattern = str(
+                getattr(raw_target_folder, "learned_pattern", "") or ""
+            ).strip()
+            target_folder = str(raw_target_folder)
 
             host: Any = self
             can_learn_rule = False
@@ -546,6 +619,26 @@ class SelectionActionsMixin:
             settings_obj = getattr(host, "settings", None)
             scoped_learned_updates: dict[str, dict[str, str]] = {}
             manual_folders = getattr(host, "_manual_empty_folders", set())
+
+            fallback_shared_pattern = ""
+            if not has_explicit_rule_choice and can_learn_rule:
+                cand_names = [
+                    str(
+                        fi.get("source_path")
+                        or fi.get("source")
+                        or fi.get("filepath")
+                        or fi.get("target_filename")
+                        or fi.get("key")
+                        or ""
+                    )
+                    for fi in target_files
+                    if isinstance(fi, dict)
+                ]
+                fallback_shared_pattern, _stops, is_gen_only = (
+                    derive_learned_pattern_for_files(cand_names)
+                )
+                if is_gen_only:
+                    fallback_shared_pattern = ""
 
             reassigned_count = 0
             for fi in target_files:
@@ -635,19 +728,23 @@ class SelectionActionsMixin:
                         )
 
                     if can_learn_rule and settings_obj is not None:
-                        pattern = _derive_learned_pattern(
-                            str(doc_relpath or fi.get("source_path") or file_key)
-                        )
-                        if pattern:
+                        pattern_to_save = ""
+                        if has_explicit_rule_choice:
+                            if explicit_learn_rule and explicit_learned_pattern:
+                                pattern_to_save = explicit_learned_pattern.lower()
+                        else:
+                            pattern_to_save = fallback_shared_pattern
+                        if pattern_to_save:
                             scope_dir = str(
                                 db_base or getattr(host, "base_dir", "") or ""
                             )
                             scoped_learned_updates.setdefault(scope_dir, {})[
-                                pattern
+                                pattern_to_save
                             ] = target_folder
 
                     reassigned_count += 1
 
+            saved_rule_patterns: list[str] = []
             if scoped_learned_updates and settings_obj is not None:
                 for scope_dir, updates in scoped_learned_updates.items():
                     scoped_view = resolve_scoped_settings(
@@ -664,6 +761,8 @@ class SelectionActionsMixin:
                     dis_changed = False
                     for pat, dest in updates.items():
                         learned_rules[pat] = dest
+                        if pat not in saved_rule_patterns:
+                            saved_rule_patterns.append(pat)
                         if pat in dis_learned:
                             dis_learned.pop(pat, None)
                             dis_changed = True
@@ -674,9 +773,15 @@ class SelectionActionsMixin:
                     settings_obj.flush()
 
             host.rebuild_tree()
-            host.announce(
-                f"Reassigned {reassigned_count} file(s) to folder '{target_folder}'."
-            )
+            if saved_rule_patterns:
+                host.announce(
+                    f"Reassigned {reassigned_count} file(s) to folder '{target_folder}' "
+                    f"and saved filename rule '{saved_rule_patterns[0]}' (priority 90)."
+                )
+            else:
+                host.announce(
+                    f"Reassigned {reassigned_count} file(s) to folder '{target_folder}'."
+                )
 
         self.push_screen(
             ReassignModal(
@@ -769,7 +874,8 @@ class SelectionActionsMixin:
             if isinstance(v, dict) and v.get("__type__") == "file":
                 is_checked = v.get("is_checked", True)
                 is_excluded = v.get("is_excluded", False)
-                if is_checked and not is_excluded:
+                is_neg_rated = str(v.get("rating") or "").lower() == "negative"
+                if is_checked and not is_excluded and not is_neg_rated:
                     result[k] = v
             elif isinstance(v, dict):
                 sub_path = f"{_prefix}/{k}" if _prefix else k
@@ -1155,12 +1261,23 @@ class SelectionActionsMixin:
                 existing_dest = _resolve_plan_folder_dict(
                     self.plan, eff_folder_path, create=False
                 )
+                remapped_rules = _remap_learned_rules_for_folder_rename(
+                    getattr(self, "settings", None),
+                    old_folder_path,
+                    eff_folder_path,
+                    base_dir=getattr(self, "base_dir", None),
+                )
+                remap_suffix = (
+                    f" (updated {remapped_rules} learned rule(s))"
+                    if remapped_rules > 0
+                    else ""
+                )
                 if existing_dest is not None:
                     _merge_plan_dicts(existing_dest, old_content)
                     _recursively_update_folder(existing_dest, eff_folder_path)
                     self.rebuild_tree(run_validation=True)
                     self.announce(
-                        f"Merged folder category '{old_folder_path}' into '{eff_folder_path}'"
+                        f"Merged folder category '{old_folder_path}' into '{eff_folder_path}'{remap_suffix}"
                     )
                 else:
                     dest_dict = _resolve_plan_folder_dict(
@@ -1174,7 +1291,7 @@ class SelectionActionsMixin:
                     _recursively_update_folder(dest_dict, eff_folder_path)
                     self.rebuild_tree(run_validation=True)
                     self.announce(
-                        f"Renamed folder category '{old_folder_path}' -> '{eff_folder_path}'"
+                        f"Renamed folder category '{old_folder_path}' -> '{eff_folder_path}'{remap_suffix}"
                     )
 
             self.push_screen(modal, on_folder_renamed)
@@ -1662,13 +1779,46 @@ class SelectionActionsMixin:
         current_folder = data.get("folder") or (
             info.get("folder") if isinstance(info, dict) else None
         )
+        db_b, doc_rel_ident, abs_fp = _resolve_source_identity(
+            host,
+            file_key=str(data.get("key") or ""),
+            filepath=filepath,
+            info=info if isinstance(info, dict) else None,
+        )
         if rating_to_set == "negative":
             host.locked_files.pop(str(data.get("key", "")), None)
             host.locked_files.pop(doc_relpath, None)
             host.locked_files.pop(filepath, None)
             if isinstance(info, dict):
                 info["is_locked"] = False
+                info["is_checked"] = False
+                info["is_excluded"] = True
             data["is_locked"] = False
+            data["is_checked"] = False
+            data["is_excluded"] = True
+            _record_manual_edit(
+                host,
+                db_b,
+                doc_rel_ident or doc_relpath,
+                abs_fp,
+                is_checked=False,
+                is_excluded=True,
+                is_locked=False,
+            )
+        elif current == "negative" and rating_to_set != "negative":
+            if isinstance(info, dict):
+                info["is_excluded"] = False
+                info["is_checked"] = True
+            data["is_excluded"] = False
+            data["is_checked"] = True
+            _record_manual_edit(
+                host,
+                db_b,
+                doc_rel_ident or doc_relpath,
+                abs_fp,
+                is_checked=True,
+                is_excluded=False,
+            )
 
         if host.app_session:
             host.app_session.db.set_document_rating(

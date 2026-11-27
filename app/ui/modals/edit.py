@@ -10,13 +10,18 @@ from textual import on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Button, Input, Label, Select, Static
+from textual.widgets import Button, Checkbox, Input, Label, Select, Static
 
+from app.core.metadata import (
+    derive_learned_pattern_for_files,
+    matches_learned_rule_pattern,
+)
 from app.core.path_utils import (
     _is_absolute_path,
     resolve_plan_folder_dict,
     validate_target_path,
 )
+from app.core.rule_scopes import resolve_scoped_settings
 from app.ui.heading import Heading
 from app.ui.layout import ModalBox, ResponsiveModalScreen
 
@@ -52,6 +57,25 @@ class RenameResult(str):
     def to_tuple(self) -> tuple[str, str | None]:
         """Return (name, destination_override) tuple representation."""
         return (str(self), self.destination_override)
+
+
+class ReassignResult(str):
+    """String subclass representing reassigned target folder with optional learned rule."""
+
+    learn_rule: bool = False
+    learned_pattern: str | None = None
+
+    def __new__(
+        cls,
+        value: str,
+        learn_rule: bool = False,
+        learned_pattern: str | None = None,
+    ):
+        """Instantiate target folder string with rule-learning decision."""
+        instance = super().__new__(cls, value)
+        instance.learn_rule = bool(learn_rule)
+        instance.learned_pattern = learned_pattern
+        return instance
 
 
 def _set_collision_warning_helper(modal: Any, msg: str, is_error: bool = False) -> None:
@@ -903,6 +927,10 @@ class ReassignModal(
     ]
 
     MODAL_CSS = """
+    .reassign-subtitle {
+        color: $text-muted;
+        margin-bottom: 1;
+    }
     .modal-warning {
         color: $warning;
         text-style: bold;
@@ -915,15 +943,106 @@ class ReassignModal(
         margin-top: 1;
         margin-bottom: 1;
     }
+    .rule-preview-card {
+        border: round $primary-darken-1;
+        background: $surface;
+        padding: 1;
+        margin-top: 1;
+        height: auto;
+    }
+    .rule-header-row {
+        width: 100%;
+        height: auto;
+        align: left middle;
+    }
+    #chk-learn-rule {
+        width: 1fr;
+        border: none;
+        padding: 0;
+        background: transparent;
+    }
+    .rule-priority-badge {
+        color: $accent;
+        background: $boost;
+        text-style: bold;
+        padding: 0 1;
+        width: auto;
+    }
+    #input-learned-pattern.rule-disabled {
+        opacity: 0.6;
+    }
+    .rule-tokens-preview {
+        width: 100%;
+        height: auto;
+        color: $text;
+        margin-top: 0;
+    }
+    .rule-tokens-warning {
+        color: $warning;
+        text-style: bold;
+    }
+    .rule-match-count {
+        width: 100%;
+        height: auto;
+        color: $success;
+        text-style: bold;
+        margin-top: 0;
+    }
+    .rule-scope-note {
+        width: 100%;
+        height: auto;
+        color: $text-muted;
+        margin-top: 0;
+    }
     .button-row {
         min-height: 3;
     }
     .button-row Button {
         margin-left: 1;
     }
-    Button:focus, Input:focus, Select:focus {
+    Button:focus, Input:focus, Select:focus, Checkbox:focus {
         border: heavy $accent;
         text-style: bold;
+    }
+    ReassignModal {
+        .modal-box {
+            width: 86;
+            max-width: 96%;
+        }
+        &.compact .modal-box, &.narrow .modal-box {
+            width: 96%;
+            max-height: 96%;
+        }
+        &.compact .modal-title {
+            margin-bottom: 0;
+        }
+        &.compact .reassign-subtitle,
+        &.compact .rule-scope-note {
+            display: none;
+        }
+        &.compact .modal-warning,
+        &.compact .modal-error {
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+        &.compact .rule-preview-card {
+            margin-top: 0;
+            padding: 0 1;
+        }
+        &.compact .button-row {
+            margin-top: 0;
+            min-height: 1;
+        }
+        &.compact .button-row Button {
+            height: 1;
+            min-height: 1;
+            border: none;
+            padding: 0 1;
+        }
+        &.narrow .button-row Button {
+            min-width: 0;
+            padding: 0 1;
+        }
     }
     """
 
@@ -961,6 +1080,168 @@ class ReassignModal(
         self.target_files = target_files or []
         self._last_collision_state: str | None = None
 
+        raw_sources: list[str] = []
+        display_sources: list[str] = []
+        for fi in self.target_files:
+            if isinstance(fi, dict):
+                raw_fn = (
+                    fi.get("source_path")
+                    or fi.get("source")
+                    or fi.get("filepath")
+                    or fi.get("key")
+                    or fi.get("target_filename")
+                )
+            else:
+                raw_fn = str(fi) if fi else None
+            if raw_fn:
+                s_fn = str(raw_fn)
+                raw_sources.append(s_fn)
+                clean_s = s_fn.split("::", 1)[1] if "::" in s_fn else s_fn
+                display_sources.append(os.path.basename(clean_s.replace("\\", "/")))
+
+        self._source_filenames = display_sources
+        (
+            self._initial_learned_pattern,
+            self._stripped_stopwords,
+            self._is_generic_only,
+        ) = derive_learned_pattern_for_files(raw_sources)
+        self._default_learn_rule = bool(
+            self._initial_learned_pattern and not self._is_generic_only
+        )
+        self._user_toggled_rule = False
+        self._syncing_rule_checkbox = False
+
+    def _collect_plan_filenames(self) -> list[str]:
+        """Collect distinct source filenames across ``self.plan`` (or ``target_files`` fallback)."""
+        collected: list[str] = []
+
+        def _walk(node_dict: dict[str, Any]) -> None:
+            for k, v in node_dict.items():
+                if not isinstance(v, dict):
+                    continue
+                if v.get("__type__") == "file":
+                    raw = (
+                        v.get("source_path")
+                        or v.get("source")
+                        or v.get("filepath")
+                        or v.get("target_filename")
+                        or k
+                    )
+                    clean = str(raw).split("::", 1)[1] if "::" in str(raw) else str(raw)
+                    base = os.path.basename(clean.replace("\\", "/"))
+                    if base:
+                        collected.append(base)
+                else:
+                    _walk(v)
+
+        if isinstance(self.plan, dict) and self.plan:
+            _walk(self.plan)
+        if not collected and self._source_filenames:
+            collected.extend(self._source_filenames)
+        return collected
+
+    def _resolve_current_target_value(self) -> str:
+        """Read trimmed destination folder from manual input or dropdown select."""
+        target = ""
+        with contextlib.suppress(Exception):
+            target = self.query_one("#input-target-folder", Input).value.strip()
+        if not target:
+            with contextlib.suppress(Exception):
+                sel = self.query_one("#select-folder", Select)
+                if sel.value is not Select.BLANK and sel.value:
+                    target = str(sel.value).strip()
+        return target
+
+    def _update_rule_preview_ui(self) -> None:
+        """Refresh rule toggle state, token preview chips, and live plan match count."""
+        try:
+            chk = self.query_one("#chk-learn-rule", Checkbox)
+            pat_inp = self.query_one("#input-learned-pattern", Input)
+            lbl_tokens = self.query_one("#lbl-rule-tokens", Label)
+            lbl_matches = self.query_one("#lbl-rule-matches", Label)
+        except Exception:
+            return
+
+        target = self._resolve_current_target_value()
+        is_external = bool(target and _is_absolute_path(target))
+        pat_val = pat_inp.value.strip()
+
+        self._syncing_rule_checkbox = True
+        try:
+            if is_external:
+                chk.value = False
+                chk.disabled = True
+            else:
+                chk.disabled = False
+                if not self._user_toggled_rule:
+                    chk.value = bool(self._default_learn_rule and pat_val)
+        finally:
+            self._syncing_rule_checkbox = False
+
+        if chk.value:
+            pat_inp.remove_class("rule-disabled")
+        else:
+            pat_inp.add_class("rule-disabled")
+
+        if is_external:
+            lbl_tokens.update(
+                "External destination path — learned rules require relative workspace folders."
+            )
+            lbl_tokens.add_class("rule-tokens-warning")
+            lbl_matches.update("Matches 0 files in current plan (file move only)")
+            return
+
+        if not pat_val:
+            lbl_tokens.add_class("rule-tokens-warning")
+            if self._is_generic_only and self._stripped_stopwords:
+                stops_fmt = ", ".join(f"'{s}'" for s in self._stripped_stopwords[:3])
+                lbl_tokens.update(
+                    f"Generic stem {stops_fmt} stripped — rule learning disabled by default."
+                )
+            else:
+                lbl_tokens.update(
+                    "No generalized filename tokens — enter a pattern to save a rule."
+                )
+            lbl_matches.update("Matches 0 files in current plan (file move only)")
+            return
+
+        lbl_tokens.remove_class("rule-tokens-warning")
+        tokens = [tok for tok in re.split(r"[_\-\s.]+", pat_val.lower().strip()) if tok]
+        chips = " + ".join(f"[{tok}]" for tok in tokens) if tokens else f"[{pat_val}]"
+        regex_expr = (
+            "".join(f"(?=.*{re.escape(tok)})" for tok in tokens)
+            if len(tokens) > 1
+            else (re.escape(tokens[0]) if tokens else re.escape(pat_val))
+        )
+        lbl_tokens.update(f"Tokens: {chips}   Pattern: (?i){regex_expr}")
+
+        candidates = self._collect_plan_filenames()
+        matched_files = [
+            fn for fn in candidates if matches_learned_rule_pattern(pat_val, fn)
+        ]
+
+        overridden_kw: list[str] = []
+        if matched_files and self.settings is not None:
+            scoped_cfg = resolve_scoped_settings(
+                self.settings, self.base_dir, fallback_to_global=True
+            )
+            kw_rules = getattr(scoped_cfg, "KEYWORD_RULES", {}) or {}
+            if isinstance(kw_rules, dict):
+                for kw in kw_rules:
+                    kw_s = str(kw).strip().lower()
+                    if kw_s and any(kw_s in fn.lower() for fn in matched_files):
+                        overridden_kw.append(str(kw))
+
+        override_note = (
+            f" • Overrides '{overridden_kw[0]}' keyword rule (priority 80)"
+            if overridden_kw
+            else ""
+        )
+        prefix = "Rule active:" if chk.value else "Rule off (move only):"
+        lbl_matches.update(
+            f"{prefix} Matches {len(matched_files)} file(s) in current plan{override_note}"
+        )
+
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
         with ModalBox(classes="modal-box"):
@@ -971,15 +1252,35 @@ class ReassignModal(
                     classes="modal-title",
                     id="modal-title",
                 )
+                if self._source_filenames:
+                    if len(self._source_filenames) == 1:
+                        src_desc = f"Source file: {self._source_filenames[0]}"
+                    elif len(self._source_filenames) <= 2:
+                        src_desc = "Source files: " + ", ".join(self._source_filenames)
+                    else:
+                        shown = ", ".join(self._source_filenames[:2])
+                        src_desc = (
+                            f"Source files: {shown} "
+                            f"(+{len(self._source_filenames) - 2} more)"
+                        )
+                    yield Label(
+                        src_desc,
+                        id="lbl-reassign-source",
+                        classes="reassign-subtitle",
+                    )
                 yield Heading("Select Existing Target Folder:", level=2)
                 options = [(f, f) for f in sorted(self.existing_folders)]
                 if options:
-                    yield Select(options, prompt="Choose folder...", id="select-folder")
+                    sel = Select(options, prompt="Choose folder...", id="select-folder")
+                    sel.tooltip = (
+                        "Choose an existing destination folder from workspace or plan"
+                    )
+                    yield sel
                 yield Heading(
                     "Or Enter Target Category / External Directory Path:", level=2
                 )
                 inp = Input(
-                    placeholder="e.g. Drafts, /Volumes/Backup, or D:\\External\\Archive",
+                    placeholder="e.g. Clients/Acme, /Volumes/Backup, or D:\\External\\Archive",
                     id="input-target-folder",
                 )
                 inp.tooltip = (
@@ -987,6 +1288,49 @@ class ReassignModal(
                 )
                 yield inp
                 yield Label("", id="warning-collision", classes="modal-warning")
+
+                with Vertical(id="rule-preview-card", classes="rule-preview-card"):
+                    with Horizontal(classes="rule-header-row"):
+                        chk = Checkbox(
+                            "Save as filename rule",
+                            value=self._default_learn_rule,
+                            id="chk-learn-rule",
+                        )
+                        chk.tooltip = (
+                            "Toggle saving a priority-90 normalized filename rule"
+                        )
+                        yield chk
+                        yield Label(
+                            "PRIORITY: 90",
+                            id="lbl-rule-priority",
+                            classes="rule-priority-badge",
+                        )
+                    pat_inp = Input(
+                        value=self._initial_learned_pattern,
+                        placeholder="Enter generalized filename tokens (e.g. invoice acme)...",
+                        id="input-learned-pattern",
+                    )
+                    pat_inp.tooltip = (
+                        "Edit normalized filename tokens matched during future sorts"
+                    )
+                    yield pat_inp
+                    yield Label(
+                        "",
+                        id="lbl-rule-tokens",
+                        classes="rule-tokens-preview",
+                        markup=False,
+                    )
+                    yield Label(
+                        "",
+                        id="lbl-rule-matches",
+                        classes="rule-match-count",
+                        markup=False,
+                    )
+                    yield Label(
+                        "Evaluated on normalized filenames only (never document body text).",
+                        id="lbl-rule-scope-note",
+                        classes="rule-scope-note",
+                    )
             with Horizontal(classes="button-row"):
                 btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
                 btn_cancel.tooltip = "Cancel reassign dialog"
@@ -1001,6 +1345,7 @@ class ReassignModal(
         self.query_one("#input-target-folder", Input).focus()
         self.announce(f"Opened bulk reassign dialog for {self.count} items.")
         self._check_collision_and_update_ui()
+        self._update_rule_preview_ui()
 
     def _check_collision_and_update_ui(self) -> tuple[bool, str | None]:
         """Run live collision check and path validation across plan and filesystem."""
@@ -1125,13 +1470,27 @@ class ReassignModal(
 
     @on(Input.Changed, "#input-target-folder")
     def on_input_changed(self, event: Input.Changed) -> None:
-        """Update collision status on manual target folder input change."""
+        """Update collision status and rule preview on manual target folder input change."""
         self._check_collision_and_update_ui()
+        self._update_rule_preview_ui()
 
     @on(Select.Changed, "#select-folder")
     def on_select_changed(self, event: Select.Changed) -> None:
-        """Update collision status on select folder change."""
+        """Update collision status and rule preview on select folder change."""
         self._check_collision_and_update_ui()
+        self._update_rule_preview_ui()
+
+    @on(Input.Changed, "#input-learned-pattern")
+    def on_learned_pattern_changed(self, event: Input.Changed) -> None:
+        """Refresh live token chips and plan match count when learned pattern is edited."""
+        self._update_rule_preview_ui()
+
+    @on(Checkbox.Changed, "#chk-learn-rule")
+    def on_learn_rule_toggled(self, event: Checkbox.Changed) -> None:
+        """Record explicit user opt-in/opt-out decision for saving filename rule."""
+        if not self._syncing_rule_checkbox:
+            self._user_toggled_rule = True
+        self._update_rule_preview_ui()
 
     @on(Button.Pressed, "#btn-confirm")
     def action_confirm(self) -> None:
@@ -1141,19 +1500,30 @@ class ReassignModal(
             self.announce(f"Cannot confirm reassignment: {err}")
             return
 
-        val = self.query_one("#input-target-folder", Input).value.strip()
+        val = self._resolve_current_target_value()
         if not val:
-            try:
-                sel = self.query_one("#select-folder", Select)
-                if sel.value is not Select.BLANK and sel.value:
-                    val = str(sel.value).strip()
-            except Exception:
-                pass
-        if val:
-            self.announce(f"Reassigning to target folder '{val}'.")
-        else:
             self.announce("Cancelled bulk reassign.")
-        self.dismiss(val if val else None)
+            self.dismiss(None)
+            return
+
+        learn_checked = False
+        learned_pat: str | None = None
+        with contextlib.suppress(Exception):
+            chk = self.query_one("#chk-learn-rule", Checkbox)
+            pat_inp = self.query_one("#input-learned-pattern", Input)
+            raw_pat = re.sub(r"[_\-\s.]+", " ", pat_inp.value.strip().lower()).strip()
+            if chk.value and raw_pat and not _is_absolute_path(val):
+                learn_checked = True
+                learned_pat = raw_pat
+
+        self.announce(f"Reassigning to target folder '{val}'.")
+        self.dismiss(
+            ReassignResult(
+                val,
+                learn_rule=learn_checked,
+                learned_pattern=learned_pat,
+            )
+        )
 
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:

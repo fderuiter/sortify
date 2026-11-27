@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "e41ab55ed421549c9b444313000a5ded69e99f9346010e2f5a208c8f26a26c5b"
+    "checksum": "d0986cd069bc7dcf3e1de3a353d8a1d3fd719932f6470accdac5e809fdb38de9"
   },
   "classes": [
     {
@@ -334,6 +334,19 @@
     {
       "async": false,
       "decorators": [],
+      "name": "compute_active_rule_masking",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "view"
+        }
+      ],
+      "returns": "dict[tuple[str, Any], str]"
+    },
+    {
+      "async": false,
+      "decorators": [],
       "name": "evaluate_age_expression",
       "parameters": [
         {
@@ -409,6 +422,19 @@
           "annotation": "Any",
           "default": null,
           "name": "lower_rule"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "is_pre_learned_policy",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "rule"
         }
       ],
       "returns": "bool"
