@@ -1,5 +1,6 @@
 """Literal square-bracket badge helpers and inspector markup formatting for Textual widgets."""
 
+import os
 from collections.abc import Mapping
 from typing import Any
 
@@ -45,6 +46,36 @@ def format_file_inspector_lines(
     target_fn = info.get("target_filename")
     if target_fn:
         lines.append(format_labeled_markup_line("Target Filename", target_fn))
+
+    explicit_rename_src = info.get("rename_source")
+    raw_src_ref = str(
+        info.get("source_path") or info.get("filepath") or key or ""
+    ).replace("\\", "/")
+    if "::" in raw_src_ref:
+        raw_src_ref = raw_src_ref.split("::", 1)[1]
+    src_basename = os.path.basename(raw_src_ref)
+
+    rename_src_display: str | None = None
+    if explicit_rename_src and str(explicit_rename_src).strip():
+        rename_src_display = str(explicit_rename_src).strip()
+    elif target_fn and src_basename and str(target_fn) != src_basename:
+        routed_by_val = str(info.get("routed_by") or "").strip().lower()
+        if info.get("is_locked") and info.get("confirmed"):
+            rename_src_display = "Manual"
+        elif info.get("is_confirmed") and routed_by_val not in (
+            "",
+            "clustering",
+            "historical",
+            "keyword",
+            "learned",
+            "extension",
+        ):
+            rename_src_display = "Policy Rule"
+        else:
+            rename_src_display = "Template"
+
+    if rename_src_display:
+        lines.append(format_labeled_markup_line("Rename Source", rename_src_display))
 
     lines.append(format_labeled_markup_line("Locked", locked))
     lines.append(format_labeled_markup_line("ML Rating", rating))

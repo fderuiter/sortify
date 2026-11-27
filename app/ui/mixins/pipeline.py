@@ -601,8 +601,15 @@ class SortPipelineMixin:
 
             if manual_tf:
                 file_info["target_filename"] = dest_key
+                file_info["rename_source"] = str(edit.get("rename_source") or "Manual")
                 file_info["confirmed"] = bool(edit.get("confirmed", True))
                 self.locked_files[dest_key] = target_folder
+            elif edit.get("reverted_target_name"):
+                file_info.pop("target_filename", None)
+                file_info.pop("rename_source", None)
+                file_info.pop("confirmed", None)
+                file_info.pop("is_confirmed", None)
+                file_info.pop("user_confirmed", None)
 
             if "is_locked" in edit:
                 is_locked_val = bool(edit["is_locked"])

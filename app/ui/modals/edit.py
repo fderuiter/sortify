@@ -29,6 +29,7 @@ class RenameResult(str):
     destination_override: str | None = None
     batch_items: list[dict[str, Any]] | None = None
     is_batch: bool = False
+    is_reset: bool = False
 
     def __new__(
         cls,
@@ -36,12 +37,14 @@ class RenameResult(str):
         destination_override: str | None = None,
         batch_items: list[dict[str, Any]] | None = None,
         is_batch: bool = False,
+        is_reset: bool = False,
     ):
         """Instantiate string value with optional destination path override."""
         instance = super().__new__(cls, value)
         instance.destination_override = destination_override
         instance.batch_items = batch_items
         instance.is_batch = is_batch
+        instance.is_reset = is_reset
         return instance
 
     @property
@@ -99,16 +102,19 @@ class RenameModal(
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("alt+r", "reset_original", "Reset to Original", show=False),
         Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
         Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     MODAL_CSS = """
     .modal-subtitle {
+        width: 100%;
         color: $text-muted;
         margin-bottom: 1;
     }
     .token-help {
+        width: 100%;
         color: $text-muted;
         margin-bottom: 1;
     }
@@ -130,6 +136,18 @@ class RenameModal(
     .button-row Button {
         margin-left: 1;
     }
+    RenameModal {
+        &.narrow .button-row {
+            layout: grid;
+            grid-size: 2;
+            grid-gutter: 0 1;
+        }
+        &.narrow .button-row Button {
+            width: 100%;
+            min-width: 0;
+            margin-left: 0;
+        }
+    }
     Button:focus, Input:focus {
         border: heavy $accent;
         text-style: bold;
@@ -150,6 +168,8 @@ class RenameModal(
         base_dir: str | None = None,
         source_path: str | None = None,
         files: list[Any] | None = None,
+        original_name: str = "",
+        keywords: str = "",
     ):
         super().__init__()
         self.modal_title = title
@@ -164,6 +184,15 @@ class RenameModal(
         self.plan = plan
         self.base_dir = base_dir
         self.source_path = source_path
+        if original_name:
+            self.original_name = original_name
+        elif not is_folder and source_path:
+            clean_sp = str(source_path).split("::", 1)[-1].replace("\\", "/")
+            sp_stem = os.path.splitext(os.path.basename(clean_sp))[0]
+            self.original_name = sp_stem if sp_stem else current_name
+        else:
+            self.original_name = current_name
+        self.keywords = keywords
         if not self.file_date and not self.is_folder and self.source_path:
             from app.core.pattern_formatter import resolve_disk_file_date
 
@@ -222,10 +251,26 @@ class RenameModal(
             if not item_fp and key and self.base_dir:
                 item_fp = os.path.join(self.base_dir, str(key))
 
-            stem = f.get("original") or f.get("current_name") or f.get("stem")
-            ext = f.get("extension") or f.get("ext")
+            immutable_src = (
+                f.get("source_path")
+                or (info.get("source_path") if isinstance(info, dict) else None)
+                or f.get("filepath")
+                or (info.get("filepath") if isinstance(info, dict) else None)
+            )
+            imm_stem = ""
+            imm_ext: str | None = None
+            if immutable_src:
+                clean_imm = str(immutable_src).split("::", 1)[-1].replace("\\", "/")
+                imm_stem, imm_ext = os.path.splitext(os.path.basename(clean_imm))
+
+            stem = (
+                f.get("original") or f.get("current_name") or f.get("stem") or imm_stem
+            )
+            ext = f.get("extension") if f.get("extension") is not None else f.get("ext")
+            if ext is None and imm_stem and imm_ext is not None:
+                ext = imm_ext
             if not stem or ext is None:
-                base = os.path.basename(key or (item_fp or ""))
+                base = os.path.basename(str(key or (item_fp or "")).replace("\\", "/"))
                 base_stem, base_ext = os.path.splitext(base)
                 if not stem:
                     stem = base_stem
@@ -256,11 +301,17 @@ class RenameModal(
                 )
                 or self.file_date
             )
+            item_kw = str(
+                f.get("keywords")
+                or (info.get("keywords") if isinstance(info, dict) else "")
+                or ""
+            )
             seq_val = f.get("seq", seq)
             fallback = f"{stem}{ext}" if ext else stem
             meta = {
                 "original": stem,
                 "stem": stem,
+                "keywords": item_kw,
                 "extension": ext,
                 "category": folder,
                 "date": date,
@@ -318,20 +369,22 @@ class RenameModal(
 
         from app.core.pattern_formatter import PatternTokenFormatter
 
+        source_stem = (
+            self.current_name
+            if self.is_folder
+            else (self.original_name or self.current_name)
+        )
         metadata = {
-            "original": self.current_name,
-            "stem": self.current_name,
+            "original": source_stem,
+            "stem": source_stem,
+            "keywords": self.keywords,
             "extension": self.extension,
             "category": self.category,
             "date": self.file_date,
             "seq": self.seq,
             "base_dir": self.base_dir,
         }
-        fallback = (
-            f"{self.current_name}{self.extension}"
-            if self.extension
-            else self.current_name
-        )
+        fallback = f"{source_stem}{self.extension}" if self.extension else source_stem
         if self.is_folder and ("/" in pattern_str or "\\" in pattern_str):
             if _is_absolute_path(pattern_str):
                 return pattern_str
@@ -377,13 +430,26 @@ class RenameModal(
                         f"Batch renaming {len(self.files)} files. Sequential index starts at {self.seq:02d}.",
                         classes="modal-subtitle",
                     )
-                elif self.extension:
-                    yield Label(
-                        f"Extension '{self.extension}' is locked unless modified in template",
-                        classes="modal-subtitle",
+                elif not self.is_folder:
+                    orig_full = (
+                        f"{self.original_name}{self.extension}"
+                        if self.original_name
+                        else ""
                     )
+                    if orig_full and self.original_name != self.current_name:
+                        subtitle_txt = (
+                            f"Original file: {orig_full} • Extension '{self.extension}' is locked unless modified in template"
+                            if self.extension
+                            else f"Original file: {orig_full}"
+                        )
+                        yield Label(subtitle_txt, classes="modal-subtitle")
+                    elif self.extension:
+                        yield Label(
+                            f"Extension '{self.extension}' is locked unless modified in template",
+                            classes="modal-subtitle",
+                        )
                 yield Label(
-                    "Tokens: {date}, {category}, {original}, {extension}, {seq}",
+                    "Tokens: {date}, {category}, {stem}, {keywords}, {original}, {extension}, {seq}",
                     classes="token-help",
                 )
                 inp = Input(
@@ -414,6 +480,14 @@ class RenameModal(
                     classes="modal-preview",
                 )
             with Horizontal(classes="button-row"):
+                if not self.is_folder and not self.files:
+                    btn_reset = Button(
+                        "Reset to Original",
+                        id="btn-reset-original",
+                        variant="default",
+                    )
+                    btn_reset.tooltip = "Restore original source filename and clear rename suggestion [Alt+R]"
+                    yield btn_reset
                 btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
                 btn_cancel.tooltip = "Cancel rename action and close dialog"
                 yield btn_cancel
@@ -581,51 +655,148 @@ class RenameModal(
                             "Contents will merge safely."
                         )
         elif self.files:
-            target_folder = dest_val if dest_val else self.category
             if batch_previews:
-                seen_names = set()
-                dup_name = None
-                for nm in batch_previews:
-                    if nm in seen_names:
-                        dup_name = nm
+                batch_resolved: list[
+                    tuple[str, str, str, str | None, dict[str, Any] | None]
+                ] = []
+                batch_info_ids: set[int] = set()
+                batch_fps_norm: set[str] = set()
+
+                for idx, item in enumerate(self.files):
+                    if idx >= len(batch_previews):
                         break
-                    seen_names.add(nm)
+                    _meta, _fb, _key, item_folder, item_info = (
+                        self._extract_file_metadata(item, self.seq + idx)
+                    )
+                    fn = batch_previews[idx]
+                    eff_folder = str(dest_val if dest_val else (item_folder or ""))
+                    norm_folder = (
+                        eff_folder
+                        if _is_absolute_path(eff_folder)
+                        else eff_folder.replace("\\", "/").strip("/")
+                    )
+                    item_fp_raw = _meta.get("filepath")
+                    item_fp_str = str(item_fp_raw) if item_fp_raw else None
+                    if isinstance(item_info, dict):
+                        batch_info_ids.add(id(item_info))
+                        for src_k in ("filepath", "source_path"):
+                            if item_info.get(src_k):
+                                batch_fps_norm.add(
+                                    os.path.normcase(
+                                        os.path.normpath(str(item_info[src_k]))
+                                    )
+                                )
+                    if isinstance(item, dict):
+                        for src_k in ("filepath", "source_path"):
+                            if item.get(src_k):
+                                batch_fps_norm.add(
+                                    os.path.normcase(os.path.normpath(str(item[src_k])))
+                                )
+                    if item_fp_str:
+                        batch_fps_norm.add(
+                            os.path.normcase(os.path.normpath(item_fp_str))
+                        )
+                    batch_resolved.append(
+                        (eff_folder, norm_folder, fn, item_fp_str, item_info)
+                    )
+
+                # 1. Group duplicates per resolved destination folder
+                seen_per_folder: dict[str, set[str]] = {}
+                dup_name: str | None = None
+                dup_folder: str = ""
+                for eff_folder, norm_folder, fn, _fp, _info in batch_resolved:
+                    fld_bucket = seen_per_folder.setdefault(norm_folder.lower(), set())
+                    if fn.lower() in fld_bucket:
+                        dup_name = fn
+                        dup_folder = eff_folder
+                        break
+                    fld_bucket.add(fn.lower())
+
                 if dup_name:
                     collision_msg = (
-                        f"Collision detected: Multiple files resolve to duplicate name '{dup_name}'. "
-                        "Names will be disambiguated upon renaming."
+                        f"Collision detected: Multiple files resolve to duplicate name '{dup_name}' "
+                        f"in '{dup_folder or 'root'}'. Names will be disambiguated upon renaming."
                     )
-                elif self.plan:
-                    folder_dict = resolve_plan_folder_dict(
-                        self.plan, target_folder, create=False
-                    )
-                    if isinstance(folder_dict, dict):
-                        batch_info_ids = {
-                            id(item.get("info"))
-                            for item in self.files
-                            if isinstance(item, dict)
-                            and isinstance(item.get("info"), dict)
-                        }
-                        batch_fps = {
-                            str(item.get("filepath"))
-                            for item in self.files
-                            if isinstance(item, dict) and item.get("filepath")
-                        }
-                        for fn in batch_previews:
-                            if fn in folder_dict:
-                                existing_batch_node = folder_dict[fn]
-                                if isinstance(existing_batch_node, dict) and (
-                                    id(existing_batch_node) in batch_info_ids
-                                    or (
-                                        existing_batch_node.get("filepath")
-                                        and str(existing_batch_node.get("filepath"))
-                                        in batch_fps
-                                    )
+
+                # 2. Inspect every checked target folder in self.plan
+                if not collision_msg and self.plan:
+                    for eff_folder, _norm_folder, fn, _fp, _info in batch_resolved:
+                        folder_dict = resolve_plan_folder_dict(
+                            self.plan, eff_folder, create=False
+                        )
+                        if not isinstance(folder_dict, dict):
+                            continue
+                        for sib_key, sib_node in folder_dict.items():
+                            if isinstance(sib_node, dict):
+                                if id(sib_node) in batch_info_ids:
+                                    continue
+                                sib_fp = sib_node.get("filepath") or sib_node.get(
+                                    "source_path"
+                                )
+                                if (
+                                    sib_fp
+                                    and os.path.normcase(os.path.normpath(str(sib_fp)))
+                                    in batch_fps_norm
                                 ):
                                     continue
+                                sib_tf = sib_node.get("target_filename")
+                                if sib_key.lower() == fn.lower() or (
+                                    sib_tf and str(sib_tf).lower() == fn.lower()
+                                ):
+                                    collision_msg = (
+                                        f"Collision detected: '{fn}' already exists in "
+                                        f"'{eff_folder or 'root'}'. Overwrite will be blocked (names disambiguated)."
+                                    )
+                                    break
+                            elif sib_key.lower() == fn.lower():
                                 collision_msg = (
                                     f"Collision detected: '{fn}' already exists in "
-                                    f"'{target_folder or 'root'}'. Overwrite will be blocked (names disambiguated)."
+                                    f"'{eff_folder or 'root'}'. Overwrite will be blocked (names disambiguated)."
+                                )
+                                break
+                        if collision_msg:
+                            break
+
+                # 3. Run os.path.lexists disk checks per destination folder
+                if not collision_msg:
+                    for (
+                        eff_folder,
+                        _norm_folder,
+                        fn,
+                        item_fp_str,
+                        _info,
+                    ) in batch_resolved:
+                        if not (
+                            self.base_dir
+                            or (eff_folder and _is_absolute_path(eff_folder))
+                        ):
+                            continue
+                        if eff_folder and _is_absolute_path(eff_folder):
+                            dest_file_path = os.path.normpath(
+                                os.path.join(eff_folder, fn)
+                            )
+                        elif self.base_dir:
+                            dest_file_path = os.path.normpath(
+                                os.path.join(self.base_dir, eff_folder, fn)
+                            )
+                        else:
+                            dest_file_path = None
+
+                        if dest_file_path and os.path.lexists(dest_file_path):
+                            is_same = False
+                            if item_fp_str and os.path.lexists(item_fp_str):
+                                try:
+                                    is_same = os.path.samefile(
+                                        dest_file_path, item_fp_str
+                                    )
+                                except OSError:
+                                    is_same = os.path.normcase(
+                                        os.path.abspath(dest_file_path)
+                                    ) == os.path.normcase(os.path.abspath(item_fp_str))
+                            if not is_same:
+                                collision_msg = (
+                                    f"Collision detected: File '{fn}' exists on disk at destination. "
+                                    "Overwrite will be blocked (names disambiguated)."
                                 )
                                 break
         else:
@@ -635,18 +806,37 @@ class RenameModal(
                     folder_dict = resolve_plan_folder_dict(
                         self.plan, target_folder, create=False
                     )
-                    if isinstance(folder_dict, dict) and formatted_name in folder_dict:
-                        existing_node = folder_dict[formatted_name]
-                        if not (
-                            isinstance(existing_node, dict)
-                            and existing_node.get("filepath")
-                            and self.source_path
-                            and existing_node.get("filepath") == self.source_path
-                        ):
-                            collision_msg = (
-                                f"Collision detected: '{formatted_name}' already exists in "
-                                f"'{target_folder or 'root'}'. Overwrite will be blocked (names disambiguated)."
-                            )
+                    if isinstance(folder_dict, dict):
+                        for sib_key, existing_node in folder_dict.items():
+                            if isinstance(existing_node, dict):
+                                sib_fp = existing_node.get(
+                                    "filepath"
+                                ) or existing_node.get("source_path")
+                                if (
+                                    sib_fp
+                                    and self.source_path
+                                    and os.path.normcase(os.path.normpath(str(sib_fp)))
+                                    == os.path.normcase(
+                                        os.path.normpath(str(self.source_path))
+                                    )
+                                ):
+                                    continue
+                                sib_tf = existing_node.get("target_filename")
+                                if sib_key.lower() == formatted_name.lower() or (
+                                    sib_tf
+                                    and str(sib_tf).lower() == formatted_name.lower()
+                                ):
+                                    collision_msg = (
+                                        f"Collision detected: '{formatted_name}' already exists in "
+                                        f"'{target_folder or 'root'}'. Overwrite will be blocked (names disambiguated)."
+                                    )
+                                    break
+                            elif sib_key.lower() == formatted_name.lower():
+                                collision_msg = (
+                                    f"Collision detected: '{formatted_name}' already exists in "
+                                    f"'{target_folder or 'root'}'. Overwrite will be blocked (names disambiguated)."
+                                )
+                                break
 
                 if not collision_msg and (
                     self.base_dir
@@ -772,6 +962,28 @@ class RenameModal(
         else:
             self.announce("Cancelled rename action.")
             self.dismiss(None)
+
+    @on(Button.Pressed, "#btn-reset-original")
+    def action_reset_original(self) -> None:
+        """Reset single-file rename input to original source stem and confirm revert."""
+        if self.is_folder or self.files:
+            return
+        orig_stem = self.original_name or self.current_name
+        if not orig_stem:
+            return
+        with contextlib.suppress(Exception):
+            self.query_one("#input-name", Input).value = orig_stem
+            self.query_one("#input-destination", Input).value = ""
+            lbl = self.query_one("#label-preview", Label)
+            lbl.update(f"Preview: {self._evaluate_preview(orig_stem)}")
+        restored = f"{orig_stem}{self.extension}" if self.extension else orig_stem
+        result = RenameResult(
+            restored,
+            destination_override=None,
+            is_reset=True,
+        )
+        self.announce(f"Reset filename to original '{restored}'.")
+        self.dismiss(result)
 
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:
