@@ -2,13 +2,11 @@
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from app.config import AppSettings
 from app.core.analyzer import IncrementalAnalyzer
 from app.core.db import Database
 from app.core.db_worker import DBWorker
-from app.core.extractor import build_corpus_generator, build_corpus_generator_async
+from app.core.extractor import build_corpus_generator
 
 
 def test_batch_chunking_50_item_increments(tmp_path):
@@ -117,37 +115,5 @@ def test_large_directory_5000_files_no_queue_saturation(tmp_path):
 
     assert total_processed == 5000
     assert chunk_count == 100  # 5000 / 50 = 100 chunks
-
-    db_worker.stop()
-
-
-@pytest.mark.anyio
-async def test_async_generator_50_item_batching(tmp_path):
-    """Verify build_corpus_generator_async processes in 50-item batches sequentially."""
-    base_dir = tmp_path / "async_base"
-    base_dir.mkdir()
-
-    filenames = [f"async_file_{i:03d}.txt" for i in range(110)]
-    for fname in filenames:
-        (base_dir / fname).write_text(f"Async content {fname}")
-
-    db_worker = DBWorker()
-    db = Database(tmp_path / "test.db", db_worker)
-    settings = AppSettings()
-
-    results = []
-    gen = build_corpus_generator_async(
-        base_dir=str(base_dir),
-        items_to_sort=filenames,
-        db=db,
-        settings=settings,
-        batch_size=50,
-    )
-
-    async for item, text, fhash, was_skipped in gen:
-        results.append((item, text, fhash, was_skipped))
-
-    assert len(results) == 110
-    assert results[0][0] == "async_file_000.txt"
 
     db_worker.stop()

@@ -396,7 +396,6 @@ async def test_plan_tree_routing_badges_and_inspector_details(tmp_path: Path):
                 "contract.txt": "NDA confidential legal agreement",
                 "receipt.txt": "coffee shop receipt",
             },
-            runtime_settings=cfg,
         )
         generated = analyzer.generate_sorting_plan(
             base_dir=str(ws),

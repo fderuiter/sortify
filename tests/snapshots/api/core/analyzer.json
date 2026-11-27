@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "a5ffceffd9b4f2e9cbdd7bc6bc5e65a3b24e20f3f660f3a65973080c7b67c1d8"
+    "checksum": "1331be2f9cde37ccbcb9d320403958ee6da247869f852d2a5d6b9a17823afec7"
   },
   "classes": [
     {
@@ -57,31 +57,6 @@
             }
           ],
           "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [
-            "@staticmethod"
-          ],
-          "name": "detect_duplicate_clusters",
-          "parameters": [
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "base_dir"
-            },
-            {
-              "annotation": "Any",
-              "default": null,
-              "name": "file_paths"
-            },
-            {
-              "annotation": "str",
-              "default": "'first_seen'",
-              "name": "detect_original_by"
-            }
-          ],
-          "returns": "list[dict[str, Any]]"
         },
         {
           "async": false,
@@ -165,29 +140,6 @@
               "annotation": "dict",
               "default": null,
               "name": "new_corpus"
-            },
-            {
-              "annotation": null,
-              "default": "None",
-              "name": "runtime_settings"
-            }
-          ],
-          "returns": "None"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "reload_stop_words",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "set",
-              "default": null,
-              "name": "new_stop_words"
             }
           ],
           "returns": "None"
@@ -472,11 +424,6 @@
         {
           "annotation": null,
           "default": null,
-          "name": "filenames"
-        },
-        {
-          "annotation": null,
-          "default": null,
           "name": "documents"
         },
         {
@@ -491,24 +438,6 @@
         }
       ],
       "returns": null
-    },
-    {
-      "async": false,
-      "decorators": [],
-      "name": "run_incremental_training_in_background",
-      "parameters": [
-        {
-          "annotation": "Any",
-          "default": null,
-          "name": "session"
-        },
-        {
-          "annotation": "str",
-          "default": null,
-          "name": "base_dir"
-        }
-      ],
-      "returns": "None"
     }
   ]
 }

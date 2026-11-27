@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import os
 import threading
@@ -18,7 +17,7 @@ from app.core import db_conn, resilient_file_ops
 from app.core import ledger as ledger_mod
 from app.core import mover as mover_mod
 from app.core.db import Database
-from app.core.extractor import build_corpus_generator, build_corpus_generator_async
+from app.core.extractor import build_corpus_generator
 from app.core.history import HistoryManager, open_session_history
 from app.core.ledger import KeyAuditLedger
 from app.core.moves import INTENT, VERIFIED
@@ -290,9 +289,7 @@ def test_extractor_and_analyzer_chunked_upserts_and_async_cancel_flush(
             max_workers=4,
             settings=settings,
         ):
-            session.analyzer.partial_fit(
-                str(work_dir), chunk, runtime_settings=settings
-            )
+            session.analyzer.partial_fit(str(work_dir), chunk)
 
         assert upsert_batches == [50, 50, 20]
         assert single_upserts == []
@@ -313,33 +310,40 @@ def test_extractor_and_analyzer_chunked_upserts_and_async_cancel_flush(
         assert sum(len(c) for c in second_chunks) == 120
         assert upsert_batches == []
 
-        # Async generator cancelled mid-chunk -> flushes pending buffered rows before exiting
-        async_dir = tmp_path / "async_docs"
-        _populate_topic_files(async_dir, 30)
-        async_items = sorted(p.name for p in async_dir.iterdir() if p.is_file())
-
-        async def _consume_partial_and_close() -> int:
-            agen = build_corpus_generator_async(
-                str(async_dir),
-                async_items,
-                session.db,
-                settings=settings,
-                batch_size=50,
+        # Generator cancelled mid-chunk -> flushes pending buffered rows before exiting
+        cancel_dir = tmp_path / "cancel_docs"
+        cancel_dir.mkdir(parents=True, exist_ok=True)
+        for idx in range(30):
+            words, label = TOPICS[idx % len(TOPICS)]
+            (cancel_dir / f"cancel_{idx:03d}_{label.lower()}.txt").write_text(
+                f"Cancel Document {idx:03d} ({label})\n{words} cancel_item_{idx}\n",
+                encoding="utf-8",
             )
-            seen = 0
-            try:
-                async for _ in agen:
-                    seen += 1
-                    if seen >= 8:
-                        break
-            finally:
-                await agen.aclose()
-            return seen
+        cancel_items = sorted(p.name for p in cancel_dir.iterdir() if p.is_file())
+        upsert_batches.clear()
+        seen = 0
 
-        consumed = asyncio.run(_consume_partial_and_close())
-        assert consumed == 8
-        persisted_hashes = session.db.get_document_hashes(str(async_dir), async_items)
-        assert len(persisted_hashes) >= 8
+        def _progress_count(*_args: Any, **_kwargs: Any) -> None:
+            nonlocal seen
+            seen += 1
+
+        partial_chunks = list(
+            build_corpus_generator(
+                str(cancel_dir),
+                cancel_items,
+                _progress_count,
+                max_workers=1,
+                db=session.db,
+                chunk_size=50,
+                sequential=True,
+                cancel_check=lambda: seen >= 8,
+                settings=settings,
+            )
+        )
+        assert sum(len(c) for c in partial_chunks) == 8
+        assert upsert_batches == [8]
+        persisted_hashes = session.db.get_document_hashes(str(cancel_dir), cancel_items)
+        assert sum(1 for h in persisted_hashes.values() if h) == 8
     finally:
         session.close()
         db_conn.clear_connection_cache(only_current_and_inactive=False)

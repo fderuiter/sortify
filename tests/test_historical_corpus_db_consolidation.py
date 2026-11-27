@@ -267,7 +267,6 @@ def test_consolidated_callers_avoid_get_db_connection_and_guard_stubs() -> None:
         batch_stub = pre_fetch_historical_corpus(
             in_mem_stub,
             base_dir="/nonexistent",
-            filenames=["a.txt"],
             documents=["sample document"],
         )
         assert len(batch_stub["examples"]) == 0
@@ -277,7 +276,6 @@ def test_consolidated_callers_avoid_get_db_connection_and_guard_stubs() -> None:
         batch_magic = pre_fetch_historical_corpus(
             magic_stub,
             base_dir="/nonexistent",
-            filenames=["a.txt"],
             documents=["sample document"],
         )
         assert len(batch_magic["examples"]) == 0

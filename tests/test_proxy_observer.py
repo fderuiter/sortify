@@ -17,15 +17,16 @@ from app.core.downloader import (
     run_background_download,
 )
 from app.core.shared_registry import SharedModelRegistry
+from tests.conftest import reset_app_settings_observers
 
 
 @pytest.fixture(autouse=True)
 def clean_observers():
     """Ensure AppSettings observers and DownloadManager singleton are reset before and after each test."""
-    AppSettings.clear_observers()
+    reset_app_settings_observers()
     DownloadManager.reset_instance()
     yield
-    AppSettings.clear_observers()
+    reset_app_settings_observers()
     DownloadManager.reset_instance()
 
 

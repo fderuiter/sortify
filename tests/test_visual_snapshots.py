@@ -57,9 +57,10 @@ def isolated_app_dir(monkeypatch, tmp_path):
     import app.config
     import app.core.session_catalog
     from app.core.plugin_registry import PluginRegistry
+    from tests.conftest import reset_app_settings_observers
 
     PluginRegistry.reset_instance()
-    app.config.AppSettings.clear_observers()
+    reset_app_settings_observers()
     monkeypatch.setenv("FORCE_COLOR", "1")
     monkeypatch.setenv("COLORTERM", "truecolor")
     monkeypatch.setenv("TERM", "xterm-256color")

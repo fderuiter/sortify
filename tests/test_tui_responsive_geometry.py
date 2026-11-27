@@ -70,9 +70,10 @@ def isolated_tui_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     import app.config
     import app.core.session_catalog
     from app.core.plugin_registry import PluginRegistry
+    from tests.conftest import reset_app_settings_observers
 
     PluginRegistry.reset_instance()
-    app.config.AppSettings.clear_observers()
+    reset_app_settings_observers()
     monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path))
     monkeypatch.setenv("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
     monkeypatch.setattr(app.config, "get_app_dir", lambda: tmp_path)

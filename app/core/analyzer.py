@@ -267,7 +267,7 @@ def _validate_sorting_plan_nodes(node: dict[str, Any]) -> dict[str, Any]:
 
 
 def pre_fetch_historical_corpus(
-    db, base_dir, filenames, documents, pre_fetched_vectors=None, max_examples=50
+    db, base_dir, documents, pre_fetched_vectors=None, max_examples=50
 ):
     """Query, decrypt, and package up to 50 relevant historical folder examples from the database."""
     import logging
@@ -488,32 +488,6 @@ def pre_fetch_historical_corpus(
 class IncrementalAnalyzer:
     """Stateful ML analyzer using incremental topic modeling."""
 
-    @staticmethod
-    def detect_duplicate_clusters(
-        base_dir: str,
-        file_paths: Any,
-        detect_original_by: str = "first_seen",
-    ) -> list[dict[str, Any]]:
-        """Group byte-identical files across scanned paths using size pre-filter and raw byte comparison."""
-        from app.core.resilient_file_ops import group_byte_identical_files
-        from app.core.scanner import parse_item_identifier
-
-        resolved_paths: list[str] = []
-        for raw_fp in file_paths or []:
-            if not raw_fp:
-                continue
-            fp_str = str(raw_fp)
-            if os.path.isabs(fp_str) and "::" not in fp_str:
-                resolved_paths.append(os.path.normpath(fp_str))
-            else:
-                src_root, clean_rel = parse_item_identifier(fp_str, base_dir)
-                resolved_paths.append(
-                    os.path.normpath(os.path.abspath(os.path.join(src_root, clean_rel)))
-                )
-        return group_byte_identical_files(
-            resolved_paths, detect_original_by=detect_original_by
-        )
-
     def __init__(
         self,
         max_folders: int,
@@ -529,9 +503,7 @@ class IncrementalAnalyzer:
         self.model_path: str | None = (
             None if isinstance(model_path, _Unspecified) else model_path
         )
-        self.model_name = None
         self.corpus = {}
-        self._last_reconstruction_error = 0.0
 
         if isinstance(model_path, _Unspecified):
             self.model_path = None
@@ -632,9 +604,7 @@ class IncrementalAnalyzer:
             except Exception:
                 logging.debug("Clustering strategy reset failed", exc_info=True)
 
-    def partial_fit(
-        self, base_dir: str, new_corpus: dict, runtime_settings=None
-    ) -> None:
+    def partial_fit(self, base_dir: str, new_corpus: dict) -> None:
         """Update the ML model incrementally with new documents."""
         try:
             filepaths = []
@@ -702,10 +672,6 @@ class IncrementalAnalyzer:
 
         except Exception as e:
             logging.error(f"Failed during partial_fit. Error: {str(e)}", exc_info=True)
-
-    def reload_stop_words(self, new_stop_words: set) -> None:
-        """Reload stop words from config."""
-        self.stop_words = new_stop_words
 
     _FOLDER_SEMANTIC_EXPANSIONS: dict[str, str] = {
         "invoice": "invoice invoices billing bill bills statement payable charge payment remittance vendor receipt due",
@@ -2493,8 +2459,6 @@ class IncrementalAnalyzer:
                         (uf, st) for uf, st in unsupported_files if uf in rem_set
                     ]
 
-            self._last_reconstruction_error = 0.0
-
             active_strategy_name = self.strategy_name if not fast_path_only else None
             if (
                 active_strategy_name
@@ -2557,7 +2521,6 @@ class IncrementalAnalyzer:
                             raw_corpus = pre_fetch_historical_corpus(
                                 db=self.db,
                                 base_dir=base_dir,
-                                filenames=ai_filenames,
                                 documents=ai_documents,
                                 pre_fetched_vectors=pre_fetched_vectors,
                                 max_examples=50,
@@ -2573,7 +2536,7 @@ class IncrementalAnalyzer:
                             )
 
                     if ai_filenames:
-                        plan, error = strategy.generate_plan(
+                        plan, _ = strategy.generate_plan(
                             ai_filenames,
                             ai_documents,
                             self.max_folders,
@@ -2586,7 +2549,6 @@ class IncrementalAnalyzer:
                         )
                         if hasattr(plan, "plan") and isinstance(plan.plan, dict):
                             plan = plan.plan
-                        self._last_reconstruction_error = error
                     else:
                         plan = {}
                         if active_strategy_name == "generative" and hasattr(
@@ -3576,48 +3538,3 @@ class IncrementalAnalyzer:
                         cast(Any, strategy).clear_isolated_state()
             except Exception:
                 logging.debug("Clearing isolated strategy state failed", exc_info=True)
-
-
-FileAnalyzer = IncrementalAnalyzer
-
-
-def run_incremental_training_in_background(session: Any, base_dir: str) -> None:
-    """Trigger background incremental model training for user-verified documents."""
-    if not session or not hasattr(session, "db") or not hasattr(session, "analyzer"):
-        return
-    db = session.db
-    docs = db.get_all_documents(base_dir) if hasattr(db, "get_all_documents") else []
-    if not docs:
-        return
-    new_corpus = {}
-    for doc in docs:
-        if isinstance(doc, (tuple, list)) and len(doc) >= 4:
-            filepath, text, f_hash, verified_target = doc[0], doc[1], doc[2], doc[3]
-        elif isinstance(doc, dict):
-            filepath = doc.get("filepath") or ""
-            text = doc.get("extracted_text") or doc.get("text") or ""
-            f_hash = doc.get("file_hash") or doc.get("hash") or ""
-            verified_target = doc.get("user_verified_target_path") or doc.get(
-                "verified_target"
-            )
-        else:
-            continue
-        if not verified_target:
-            continue
-        if text and text.strip() and text.strip() != "[STATUS:EMPTY]":
-            try:
-                if (
-                    hasattr(session.analyzer, "embedding_manager")
-                    and session.analyzer.embedding_manager
-                ):
-                    session.analyzer.embedding_manager.generate_embedding(text)
-            except Exception:
-                logging.debug(
-                    f"Embedding generation failed for '{filepath}'", exc_info=True
-                )
-            new_corpus[filepath] = {"text": text, "hash": f_hash}
-    if new_corpus:
-        if hasattr(session.analyzer, "partial_fit"):
-            session.analyzer.partial_fit(
-                base_dir, new_corpus, getattr(session, "settings", None)
-            )

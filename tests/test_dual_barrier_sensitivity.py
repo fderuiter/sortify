@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from app.config import Settings
-from app.core.analyzer import FileAnalyzer
+from app.core.analyzer import IncrementalAnalyzer
 from app.core.daemon import ContinuousWatchdogDaemon
 from app.core.db import Database
 from app.core.db_worker import DBWorker
@@ -141,7 +141,7 @@ async def test_upstream_daemon_halts_on_sensitivity_hold(tmp_path):
 
 
 def test_analyzer_plan_node_sensitivity_metadata():
-    """Requirement 3 / Acceptance Criterion 3: FileAnalyzer records sensitivity_rating and sensitivity_score in plan nodes."""
+    """Requirement 3 / Acceptance Criterion 3: IncrementalAnalyzer records sensitivity_rating and sensitivity_score in plan nodes."""
     sample_dir = os.path.join(_test_dir, "analyzer_sample")
     os.makedirs(sample_dir, exist_ok=True)
 
@@ -173,7 +173,7 @@ def test_analyzer_plan_node_sensitivity_metadata():
         "readme.txt": jev_classifier.classify(pub_file),
     }
 
-    analyzer = FileAnalyzer(max_folders=12, stop_words=set(), db=db)
+    analyzer = IncrementalAnalyzer(max_folders=12, stop_words=set(), db=db)
     sorting_plan = analyzer.generate_sorting_plan(
         base_dir=sample_dir, jev_results=jev_results
     )

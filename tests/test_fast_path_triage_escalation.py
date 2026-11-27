@@ -9,7 +9,7 @@ from PIL import Image
 from app.core.cache import SparseMatrixLRUCache
 from app.core.db import Database
 from app.core.db_worker import DBWorker
-from app.core.extractor import evaluate_text_confidence, fast_triage_extract
+from app.core.extractor import evaluate_text_confidence, extract_file_text
 
 
 def _is_ci_or_parallel() -> bool:
@@ -53,11 +53,11 @@ def test_standard_text_and_csv_triage_under_50ms(tmp_path: Path):
     csv_file.write_text("Patient,ID,Status\nJohn Doe,101,Active", encoding="utf-8")
 
     start_time = time.perf_counter()
-    res_text = fast_triage_extract(str(text_file))
+    res_text = extract_file_text(str(text_file), fast_triage=True)
     elapsed_text_ms = (time.perf_counter() - start_time) * 1000.0
 
     start_time = time.perf_counter()
-    res_csv = fast_triage_extract(str(csv_file))
+    res_csv = extract_file_text(str(csv_file), fast_triage=True)
     elapsed_csv_ms = (time.perf_counter() - start_time) * 1000.0
 
     threshold = 500.0 if _is_ci_or_parallel() else 50.0
@@ -86,11 +86,15 @@ def test_low_confidence_escalation_non_blocking(tmp_path: Path):
 
     try:
         start_time = time.perf_counter()
-        res_img = fast_triage_extract(str(img_file), db=db, base_dir=str(tmp_path))
+        res_img = extract_file_text(
+            str(img_file), fast_triage=True, db=db, base_dir=str(tmp_path)
+        )
         elapsed_img_ms = (time.perf_counter() - start_time) * 1000.0
 
         start_time = time.perf_counter()
-        res_pdf = fast_triage_extract(str(pdf_file), db=db, base_dir=str(tmp_path))
+        res_pdf = extract_file_text(
+            str(pdf_file), fast_triage=True, db=db, base_dir=str(tmp_path)
+        )
         elapsed_pdf_ms = (time.perf_counter() - start_time) * 1000.0
 
         threshold = 2000.0 if _is_ci_or_parallel() else 50.0
@@ -185,7 +189,7 @@ def test_overall_pipeline_per_file_latency_under_150ms(tmp_path: Path):
         p.write_text(content, encoding="utf-8")
 
         start = time.perf_counter()
-        _ = fast_triage_extract(str(p))
+        _ = extract_file_text(str(p), fast_triage=True)
         elapsed_ms = (time.perf_counter() - start) * 1000.0
         latencies.append(elapsed_ms)
 
