@@ -1,6 +1,5 @@
 """Settings dialog and its scrub-artifacts and consent-revocation confirmations."""
 
-import contextlib
 import logging
 import os
 from typing import Any
@@ -9,6 +8,7 @@ from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.css.query import NoMatches
 from textual.widgets import Button, Input, Label, Select, Switch, TabbedContent, TabPane
 
 from app.ui.heading import Heading
@@ -843,17 +843,17 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
         """Synchronize disabled and value state on #switch-ai-assisted-naming and its row."""
         try:
             sw = self.query_one("#switch-ai-assisted-naming", Switch)
-            self._syncing_ai_switches = True
-            try:
-                sw.disabled = not enabled
-                if sw.parent is not None and isinstance(sw.parent, LabeledSwitch):
-                    sw.parent.disabled = not enabled
-                if value is not None:
-                    sw.value = value
-            finally:
-                self._syncing_ai_switches = False
-        except Exception:
-            pass
+        except (NoMatches, LookupError, AttributeError):
+            return
+        self._syncing_ai_switches = True
+        try:
+            sw.disabled = not enabled
+            if sw.parent is not None and isinstance(sw.parent, LabeledSwitch):
+                sw.parent.disabled = not enabled
+            if value is not None:
+                sw.value = value
+        finally:
+            self._syncing_ai_switches = False
 
     @on(Switch.Changed, "#switch-ai-assisted-naming")
     def on_ai_assisted_naming_changed(self, event: Switch.Changed) -> None:
@@ -870,7 +870,7 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
         """Synchronize AI Assisted Naming switch when sorting strategy changes."""
         try:
             ai_consent_on = bool(self.query_one("#switch-ai-consent", Switch).value)
-        except Exception:
+        except (NoMatches, LookupError, AttributeError):
             ai_consent_on = bool(getattr(self.settings, "AI_CONSENT_GRANTED", False))
         if not ai_consent_on:
             self._set_ai_assisted_switch_enabled(False, value=False)
@@ -889,11 +889,12 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
         """Prompt user confirmation when AI consent switch is toggled off."""
         if event.value:
             self._staged_consent_revocation = False
-            strat_now = "default"
-            with contextlib.suppress(Exception):
+            try:
                 strat_now = str(
                     self.query_one("#select-strategy", Select).value or "default"
                 )
+            except (NoMatches, LookupError, AttributeError):
+                strat_now = "default"
             restore_val = True if strat_now == "generative" else None
             self._set_ai_assisted_switch_enabled(True, value=restore_val)
             return
@@ -1238,7 +1239,7 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
             sw_ai_assisted_val = bool(
                 self.query_one("#switch-ai-assisted-naming", Switch).value
             )
-        except Exception:
+        except (NoMatches, LookupError, AttributeError):
             sw_ai_assisted_val = bool(
                 getattr(self.settings, "AI_ASSISTED_NAMING", False)
             )
