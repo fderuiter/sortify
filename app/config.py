@@ -395,9 +395,11 @@ class Settings(BaseSettings):
     RENAME_PATTERN: str = Field(
         default="",
         description=(
-            "Optional default rename pattern template combining extracted document or file dates "
-            "with descriptive terms (for example '{date}_{stem}'; supports {date}, {year}, {month}, "
-            "{day}, {category}, {seq}, {sequence}, {extension}, {stem}, and {original} placeholders)."
+            "Optional default rename pattern template applied to sorted files even when "
+            "contextual renaming is disabled (for example '{date}_{stem}{extension}' or "
+            "'{date}_{keywords}_{stem}'; supports {date}, {year}, {month}, {day}, {category}, "
+            "{seq}, {sequence}, {extension}, literal source {stem} / {original}, and extracted "
+            "{keywords} placeholders)."
         ),
     )
     PRESERVE_HIERARCHY: bool = Field(

@@ -80,6 +80,12 @@ Press `?` or `F1` in the app to see these shortcuts.
 | `i` | Re-inspect item |
 | `Ctrl+R` | Refresh vault |
 
+### Rename
+
+| Keys | Action |
+|---|---|
+| `Alt+R` | Reset to Original |
+
 ### Rollback Confirm
 
 | Keys | Action |

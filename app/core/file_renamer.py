@@ -46,6 +46,34 @@ GENERIC_BASE_PATTERNS = [
     r"^statement",
 ]
 
+# Exact generic words for multi-token compound stem checks (e.g. scan_001_invoice)
+_GENERIC_EXACT_WORDS = {
+    "scan",
+    "scanned",
+    "image",
+    "img",
+    "photo",
+    "doc",
+    "document",
+    "file",
+    "untitled",
+    "new",
+    "copy",
+    "download",
+    "output",
+    "draft",
+    "temp",
+    "tmp",
+    "page",
+    "paper",
+    "item",
+    "data",
+    "text",
+    "receipt",
+    "invoice",
+    "statement",
+}
+
 # Patterns for numeric suffixes / timestamps / copy counters
 NUMERIC_SUFFIX_PATTERNS = [
     r"[-_\s]?\d+$",
@@ -115,6 +143,21 @@ class HeuristicEvaluator:
                     )
                 ):
                     return True
+
+        # Rule 4: Compound stem composed solely of generic words and numeric/version tokens
+        parts = [p for p in re.split(r"[\s\-_\.,\(\)\[\]]+", base_clean) if p]
+        if parts and all(
+            p in _GENERIC_EXACT_WORDS
+            or bool(
+                re.match(
+                    r"^(?:v?\d+(?:\.\d+)?|(?:19|20)\d{6,8}|[a-f0-9]{8,32})$",
+                    p,
+                    re.IGNORECASE,
+                )
+            )
+            for p in parts
+        ):
+            return True
 
         return False
 
@@ -476,31 +519,43 @@ class FileRenamerEngine:
         self.db = db
         self.embedding_manager = embedding_manager
 
-    def generate_contextual_name(
+    def _resolve_lazy_text(
         self,
-        original_filename: str,
+        raw_text: str | None,
+        file_path: str | None,
+        base_dir: str | None = None,
+    ) -> str:
+        """Lazily read offline file text when contextual keywords are needed for bypassed files."""
+        if raw_text and not raw_text.startswith("[STATUS:"):
+            return raw_text
+        if not file_path or not os.path.isfile(file_path):
+            return ""
+        try:
+            from app.core.extractor import _read_preview_text_offline
+
+            lazy_text, _ = _read_preview_text_offline(
+                file_path,
+                settings=self.settings,
+                db=self.db,
+                base_dir=base_dir,
+            )
+            if lazy_text and not lazy_text.startswith("[STATUS:"):
+                return lazy_text
+        except Exception as err:
+            logger.debug(
+                f"Lazy text extraction skipped for '{file_path}': {err}",
+                exc_info=True,
+            )
+        return ""
+
+    def _extract_contextual_keywords(
+        self,
         text: str,
         stop_words: set[str] | None = None,
-        file_date: str | None = None,
-        category: str = "",
-        seq: int = 1,
-        file_path: str | None = None,
-    ) -> str:
-        """Generate a context-aware descriptive filename for a file.
-
-        Verifies AI consent before using machine learning models.
-        Ranks candidate keyphrases semantically via ONNX embeddings when AI_ASSISTED_NAMING
-        and AI_CONSENT_GRANTED are active, falling back to TF-IDF when offline or withheld,
-        and applies date/rename templates when configured or when assisted naming resolves a date.
-        """
-        from app.core.pattern_formatter import (
-            PatternTokenFormatter,
-            resolve_disk_file_date,
-        )
-
-        base, ext = os.path.splitext(os.path.basename(original_filename))
+    ) -> tuple[str, bool]:
+        """Extract sanitized keyword stem and semantic-model indicator from document text."""
         if not text or text.startswith("[STATUS:"):
-            return sanitize_name(original_filename)
+            return "", False
 
         ai_consent = (
             getattr(self.settings, "AI_CONSENT_GRANTED", None)
@@ -550,21 +605,156 @@ class FileRenamerEngine:
             )
 
         if not keywords:
-            return sanitize_name(original_filename)
+            return "", False
+        safe_kw = sanitize_name("_".join(keywords))
+        return safe_kw, (used_semantic and bool(safe_kw))
 
-        new_base = "_".join(keywords)
-        safe_base = sanitize_name(new_base)
-        if not safe_base:
-            return sanitize_name(original_filename)
+    def _generate_rename_proposal(
+        self,
+        original_filename: str,
+        text: str,
+        stop_words: set[str] | None = None,
+        file_date: str | None = None,
+        category: str = "",
+        seq: int = 1,
+        file_path: str | None = None,
+        *,
+        allow_lazy_read: bool = False,
+        base_dir: str | None = None,
+    ) -> tuple[str, str | None]:
+        """Generate ``(proposed_filename, rename_source)`` honoring literal stems and consent."""
+        from app.core.pattern_formatter import (
+            PatternTokenFormatter,
+            resolve_disk_file_date,
+        )
 
-        doc_date = ContextExtractor.extract_document_date(text)
-        effective_date = doc_date or file_date or resolve_disk_file_date(file_path)
+        orig_basename = os.path.basename(original_filename)
+        orig_stem, ext = os.path.splitext(orig_basename)
+        safe_orig_full = sanitize_name(orig_basename)
 
         configured_template = (
             str(getattr(self.settings, "RENAME_PATTERN", "") or "").strip()
             if self.settings
             else ""
         )
+        tokens_lower = {
+            t.lower() for t in PatternTokenFormatter.parse_tokens(configured_template)
+        }
+        has_keywords_token = "keywords" in tokens_lower
+
+        contextual_enabled = (
+            True
+            if self.settings is None
+            else bool(
+                getattr(self.settings, "CONTEXTUAL_RENAMING", False)
+                or getattr(self.settings, "CLINICAL_SMART_RENAMING", False)
+            )
+        )
+        poorly_named = HeuristicEvaluator.is_poorly_named(orig_basename)
+        replace_stem_with_keywords = (
+            contextual_enabled and (not has_keywords_token) and poorly_named
+        )
+        need_keywords = has_keywords_token or replace_stem_with_keywords
+
+        if not need_keywords:
+            if not configured_template:
+                return safe_orig_full, None
+            in_memory_date = (
+                ContextExtractor.extract_document_date(text)
+                if (contextual_enabled and text and not text.startswith("[STATUS:"))
+                else None
+            )
+            effective_date = (
+                in_memory_date
+                or file_date
+                or resolve_disk_file_date(file_path, base_dir=base_dir)
+            )
+            formatted_name = PatternTokenFormatter.format_pattern(
+                configured_template,
+                metadata={
+                    "date": effective_date,
+                    "category": category or "uncategorized",
+                    "stem": orig_stem,
+                    "original": orig_stem,
+                    "keywords": "",
+                    "extension": ext,
+                    "base_dir": base_dir,
+                },
+                seq=seq,
+                fallback_original=orig_basename,
+                file_path=file_path,
+            )
+            if formatted_name and formatted_name != orig_basename:
+                return formatted_name, "Template"
+            return safe_orig_full, None
+
+        effective_text = ""
+        if text and not text.startswith("[STATUS:"):
+            effective_text = text
+        elif allow_lazy_read and file_path:
+            effective_text = self._resolve_lazy_text(text, file_path, base_dir=base_dir)
+
+        safe_kw, used_semantic = self._extract_contextual_keywords(
+            effective_text, stop_words=stop_words
+        )
+        doc_date = (
+            ContextExtractor.extract_document_date(effective_text)
+            if effective_text
+            else None
+        )
+        effective_date = (
+            doc_date
+            or file_date
+            or resolve_disk_file_date(file_path, base_dir=base_dir)
+        )
+        kw_source = (
+            "AI Keyphrases"
+            if used_semantic
+            else ("Contextual Keywords" if safe_kw else "Template")
+        )
+
+        if has_keywords_token:
+            formatted_name = PatternTokenFormatter.format_pattern(
+                configured_template,
+                metadata={
+                    "date": effective_date,
+                    "category": category or "uncategorized",
+                    "stem": orig_stem,
+                    "original": orig_stem,
+                    "keywords": safe_kw,
+                    "extension": ext,
+                    "base_dir": base_dir,
+                },
+                seq=seq,
+                fallback_original=orig_basename,
+                file_path=file_path,
+            )
+            if formatted_name and formatted_name != orig_basename:
+                return formatted_name, kw_source
+            return safe_orig_full, None
+
+        # replace_stem_with_keywords is True (CONTEXTUAL_RENAMING=True, no {keywords}, poorly_named=True)
+        if not safe_kw:
+            if configured_template:
+                formatted_fallback = PatternTokenFormatter.format_pattern(
+                    configured_template,
+                    metadata={
+                        "date": effective_date,
+                        "category": category or "uncategorized",
+                        "stem": orig_stem,
+                        "original": orig_stem,
+                        "keywords": "",
+                        "extension": ext,
+                        "base_dir": base_dir,
+                    },
+                    seq=seq,
+                    fallback_original=orig_basename,
+                    file_path=file_path,
+                )
+                if formatted_fallback and formatted_fallback != orig_basename:
+                    return formatted_fallback, "Template"
+            return safe_orig_full, None
+
         active_template = configured_template
         if not active_template and used_semantic and effective_date:
             active_template = "{date}_{stem}"
@@ -575,24 +765,94 @@ class FileRenamerEngine:
                 metadata={
                     "date": effective_date,
                     "category": category or "uncategorized",
-                    "stem": safe_base,
-                    "original": safe_base,
+                    "stem": safe_kw,
+                    "original": safe_kw,
+                    "keywords": safe_kw,
                     "extension": ext,
+                    "base_dir": base_dir,
                 },
                 seq=seq,
-                fallback_original=original_filename,
+                fallback_original=orig_basename,
                 file_path=file_path,
             )
             if (
                 formatted_name
-                and os.path.splitext(formatted_name)[0].lower() != base.lower()
+                and os.path.splitext(formatted_name)[0].lower() != orig_stem.lower()
             ):
-                return formatted_name
+                return formatted_name, kw_source
 
-        if safe_base.lower() == base.lower():
-            return sanitize_name(original_filename)
+        if safe_kw.lower() == orig_stem.lower():
+            return safe_orig_full, None
 
-        return f"{safe_base}{ext}"
+        return f"{safe_kw}{ext}", kw_source
+
+    def generate_contextual_name(
+        self,
+        original_filename: str,
+        text: str,
+        stop_words: set[str] | None = None,
+        file_date: str | None = None,
+        category: str = "",
+        seq: int = 1,
+        file_path: str | None = None,
+    ) -> str:
+        """Generate a context-aware descriptive filename for a file.
+
+        Verifies AI consent before using machine learning models.
+        Ranks candidate keyphrases semantically via ONNX embeddings when AI_ASSISTED_NAMING
+        and AI_CONSENT_GRANTED are active, falling back to TF-IDF when offline or withheld,
+        and applies date/rename templates when configured or when assisted naming resolves a date.
+        """
+        proposed_name, _ = self._generate_rename_proposal(
+            original_filename=original_filename,
+            text=text,
+            stop_words=stop_words,
+            file_date=file_date,
+            category=category,
+            seq=seq,
+            file_path=file_path,
+            allow_lazy_read=bool(file_path),
+        )
+        return proposed_name
+
+    @staticmethod
+    def _is_same_disk_path(path_a: str, path_b: str | None) -> bool:
+        """Return True when ``path_a`` and ``path_b`` refer to the exact same filesystem entry."""
+        if not path_b:
+            return False
+        if os.path.lexists(path_a) and os.path.lexists(path_b):
+            with contextlib.suppress(OSError):
+                if os.path.samefile(path_a, path_b):
+                    return True
+        return os.path.normcase(os.path.abspath(path_a)) == os.path.normcase(
+            os.path.abspath(path_b)
+        )
+
+    @classmethod
+    def _disambiguate_folder_target(
+        cls,
+        proposed_fn: str,
+        occupied_lower: set[str],
+        dest_folder_disk: str | None,
+        src_abs_path: str | None,
+    ) -> str:
+        """Disambiguate ``proposed_fn`` against sibling plan entries and destination disk paths."""
+        stem, ext = os.path.splitext(proposed_fn)
+        candidate = proposed_fn
+        counter = 1
+        while True:
+            in_plan = candidate.lower() in occupied_lower
+            on_disk = False
+            if dest_folder_disk:
+                cand_disk = os.path.normpath(os.path.join(dest_folder_disk, candidate))
+                if os.path.lexists(cand_disk) and not cls._is_same_disk_path(
+                    cand_disk, src_abs_path
+                ):
+                    on_disk = True
+            if not in_plan and not on_disk:
+                return candidate
+            candidate = f"{stem}_{counter}{ext}"
+            counter += 1
 
     def process_sorting_plan(
         self,
@@ -602,10 +862,15 @@ class FileRenamerEngine:
         locked_files: dict | None = None,
         stop_words: set[str] | None = None,
     ) -> dict:
-        """Traverse and update sorting plan with target_filename for poorly-named files.
+        """Traverse and update sorting plan with target_filename for eligible files.
 
+        Applies standalone ``RENAME_PATTERN`` templates or contextual keyword renames,
+        lazy-loads bypassed document text only when contextual keywords are needed,
+        scopes ``{seq}`` per destination folder, and disambiguates collisions against
+        both sibling plan entries and destination disk paths.
         Purges temporary context buffers immediately after execution.
         """
+        from app.core.path_utils import _is_absolute_path, safe_relpath
         from app.core.pattern_formatter import resolve_disk_file_date
 
         protected_paths = (
@@ -616,139 +881,207 @@ class FileRenamerEngine:
             if self.settings
             else ""
         )
+        contextual_enabled = (
+            True
+            if self.settings is None
+            else bool(
+                getattr(self.settings, "CONTEXTUAL_RENAMING", False)
+                or getattr(self.settings, "CLINICAL_SMART_RENAMING", False)
+            )
+        )
 
-        context_buffer: dict[str, str] = {}
-        node_meta_by_key: dict[str, dict[str, object]] = {}
+        doc_by_norm: dict[str, str] = {}
+        doc_by_base_counts: Counter[str] = Counter()
+        doc_by_base: dict[str, str] = {}
 
-        def _collect_node_meta(curr_node: object, folder_chain: str = "") -> None:
+        for raw_fp, raw_txt in (documents_map or {}).items():
+            norm_fp = os.path.normpath(str(raw_fp)).replace("\\", "/")
+            doc_by_norm[norm_fp] = raw_txt
+            if "::" in str(raw_fp):
+                _, after_sep = str(raw_fp).split("::", 1)
+                norm_after = os.path.normpath(after_sep).replace("\\", "/")
+                doc_by_norm.setdefault(norm_after, raw_txt)
+            if base_dir and os.path.isabs(str(raw_fp)):
+                with contextlib.suppress(Exception):
+                    rel_fp = safe_relpath(str(raw_fp), base_dir).replace("\\", "/")
+                    if not rel_fp.startswith(".."):
+                        doc_by_norm.setdefault(
+                            os.path.normpath(rel_fp).replace("\\", "/"), raw_txt
+                        )
+            base_low = os.path.basename(norm_fp).lower()
+            doc_by_base_counts[base_low] += 1
+            doc_by_base[base_low] = raw_txt
+
+        def _lookup_doc_text(
+            key_str: str,
+            src_rel_str: str,
+            src_root_str: str,
+            abs_cand_str: str,
+        ) -> str:
+            candidates = [
+                f"{src_root_str}::{src_rel_str}" if src_root_str else "",
+                src_rel_str,
+                key_str,
+                abs_cand_str,
+            ]
+            for cand in candidates:
+                if not cand:
+                    continue
+                norm_c = os.path.normpath(cand).replace("\\", "/")
+                if norm_c in doc_by_norm:
+                    return doc_by_norm[norm_c]
+            base_low = os.path.basename(src_rel_str or key_str).lower()
+            if doc_by_base_counts.get(base_low, 0) == 1:
+                return doc_by_base.get(base_low, "")
+            return ""
+
+        def _is_file_leaf(val: object) -> bool:
+            return val is None or (
+                isinstance(val, dict)
+                and (
+                    val.get("__type__") == "file"
+                    or "relative_source" in val
+                    or "source_path" in val
+                    or "status" in val
+                    or "routed_by" in val
+                )
+            )
+
+        def _process_folder(curr_node: dict, folder_chain: str = "") -> None:
             if not isinstance(curr_node, dict):
                 return
-            for k, v in curr_node.items():
-                is_file = v is None or (
-                    isinstance(v, dict)
-                    and (
-                        v.get("__type__") == "file"
-                        or "relative_source" in v
-                        or "status" in v
-                        or "routed_by" in v
+
+            leaf_cat = (
+                folder_chain.replace("\\", "/").strip("/").split("/")[-1]
+                if folder_chain
+                else "uncategorized"
+            )
+            dest_folder_disk: str | None = None
+            if folder_chain and _is_absolute_path(folder_chain):
+                dest_folder_disk = folder_chain
+            elif base_dir:
+                dest_folder_disk = (
+                    os.path.join(base_dir, folder_chain) if folder_chain else base_dir
+                )
+
+            occupied_lower: set[str] = set()
+            pending_proposals: list[tuple[str, object, str, str, str | None]] = []
+            folder_seq = 0
+
+            for k, v in list(curr_node.items()):
+                if not _is_file_leaf(v):
+                    if isinstance(v, dict):
+                        next_chain = f"{folder_chain}/{k}" if folder_chain else k
+                        _process_folder(v, next_chain)
+                    continue
+
+                v_dict = v if isinstance(v, dict) else {}
+                src_root = str(v_dict.get("source_root") or base_dir or "")
+                src_rel = str(v_dict.get("source_path") or k)
+                if "::" in src_rel:
+                    parsed_root, src_rel = src_rel.split("::", 1)
+                    if not v_dict.get("source_root") and parsed_root:
+                        src_root = parsed_root
+
+                abs_candidate = (
+                    os.path.join(src_root, src_rel)
+                    if src_root and not os.path.isabs(src_rel)
+                    else src_rel
+                )
+                orig_basename = os.path.basename(src_rel or k)
+                existing_target = v_dict.get("target_filename")
+
+                is_locked_or_protected = (
+                    is_file_protected_or_locked(k, locked_files, protected_paths)
+                    or is_file_protected_or_locked(
+                        src_rel, locked_files, protected_paths
+                    )
+                    or (
+                        bool(abs_candidate)
+                        and is_file_protected_or_locked(
+                            abs_candidate, locked_files, protected_paths
+                        )
                     )
                 )
-                if is_file:
-                    leaf_cat = (
-                        folder_chain.replace("\\", "/").strip("/").split("/")[-1]
-                        if folder_chain
-                        else "uncategorized"
-                    )
-                    meta_entry = {
-                        "category": leaf_cat,
-                        "file_date": v.get("file_date")
-                        if isinstance(v, dict)
-                        else None,
-                        "target_filename": (
-                            v.get("target_filename") if isinstance(v, dict) else None
-                        ),
-                        "is_excluded": (
-                            bool(v.get("is_excluded")) if isinstance(v, dict) else False
-                        ),
-                        "duplicate_action": (
-                            v.get("duplicate_action") if isinstance(v, dict) else None
-                        ),
-                        "policy_action": (
-                            v.get("policy_action") if isinstance(v, dict) else None
-                        ),
-                        "source_root": (
-                            v.get("source_root") if isinstance(v, dict) else None
-                        )
-                        or base_dir,
-                        "source_path": (
-                            v.get("source_path") if isinstance(v, dict) else None
-                        )
-                        or k,
-                        "is_user_locked": (
-                            bool(v.get("is_locked") or v.get("confirmed"))
-                            if isinstance(v, dict)
-                            else False
-                        ),
-                    }
-                    norm_k = os.path.normpath(k).replace("\\", "/")
-                    node_meta_by_key[norm_k] = meta_entry
-                    node_meta_by_key[os.path.basename(k).lower()] = meta_entry
-                    raw_sp_meta = str(meta_entry["source_path"])
-                    norm_sp_meta = os.path.normpath(raw_sp_meta).replace("\\", "/")
-                    node_meta_by_key[norm_sp_meta] = meta_entry
-                    node_meta_by_key[os.path.basename(norm_sp_meta).lower()] = (
-                        meta_entry
-                    )
-                elif isinstance(v, dict):
-                    next_chain = f"{folder_chain}/{k}" if folder_chain else k
-                    _collect_node_meta(v, next_chain)
+                is_ineligible = (
+                    is_locked_or_protected
+                    or bool(v_dict.get("is_excluded"))
+                    or bool(v_dict.get("is_locked") or v_dict.get("confirmed"))
+                    or v_dict.get("duplicate_action") in ("stage", "trash", "skip")
+                    or v_dict.get("policy_action")
+                    in ("trash", "quarantine", "unarchive")
+                    or (bool(existing_target) and str(existing_target) != orig_basename)
+                )
+                if is_ineligible:
+                    eff_existing = str(existing_target or os.path.basename(k))
+                    occupied_lower.add(eff_existing.lower())
+                    continue
 
-        _collect_node_meta(plan)
+                if not (
+                    bool(configured_template)
+                    or (
+                        contextual_enabled
+                        and HeuristicEvaluator.is_poorly_named(orig_basename)
+                    )
+                ):
+                    eff_existing = str(existing_target or os.path.basename(k))
+                    occupied_lower.add(eff_existing.lower())
+                    continue
+
+                folder_seq += 1
+                doc_text = _lookup_doc_text(k, src_rel, src_root, abs_candidate)
+                f_date = (
+                    str(v_dict.get("file_date"))
+                    if v_dict.get("file_date")
+                    else resolve_disk_file_date(abs_candidate, base_dir=src_root)
+                )
+                proposed_fn, rename_source = self._generate_rename_proposal(
+                    original_filename=orig_basename,
+                    text=doc_text,
+                    stop_words=stop_words,
+                    file_date=f_date,
+                    category=leaf_cat,
+                    seq=folder_seq,
+                    file_path=abs_candidate,
+                    allow_lazy_read=True,
+                    base_dir=src_root or base_dir,
+                )
+                if proposed_fn and proposed_fn != orig_basename:
+                    pending_proposals.append(
+                        (k, v, abs_candidate, proposed_fn, rename_source)
+                    )
+                else:
+                    occupied_lower.add(os.path.basename(k).lower())
+
+            for k, v, abs_candidate, proposed_fn, rename_source in pending_proposals:
+                final_fn = self._disambiguate_folder_target(
+                    proposed_fn=proposed_fn,
+                    occupied_lower=occupied_lower,
+                    dest_folder_disk=dest_folder_disk,
+                    src_abs_path=abs_candidate,
+                )
+                occupied_lower.add(final_fn.lower())
+                if v is None:
+                    node_payload: dict[str, object] = {
+                        "__type__": "file",
+                        "relative_source": k,
+                        "target_filename": final_fn,
+                    }
+                    if rename_source:
+                        node_payload["rename_source"] = rename_source
+                    curr_node[k] = node_payload
+                elif isinstance(v, dict):
+                    v["target_filename"] = final_fn
+                    if rename_source:
+                        v["rename_source"] = rename_source
 
         try:
-            seq_idx = 0
-            for filepath, doc_text in documents_map.items():
-                filename = os.path.basename(filepath)
-
-                if is_file_protected_or_locked(filepath, locked_files, protected_paths):
-                    continue
-
-                norm_fp = os.path.normpath(filepath).replace("\\", "/")
-                meta_info = node_meta_by_key.get(norm_fp) or node_meta_by_key.get(
-                    filename.lower(), {}
-                )
-                if (
-                    meta_info.get("is_excluded")
-                    or meta_info.get("is_user_locked")
-                    or meta_info.get("duplicate_action") in ("stage", "trash", "skip")
-                    or meta_info.get("policy_action")
-                    in ("trash", "quarantine", "unarchive")
-                ):
-                    continue
-                existing_target = meta_info.get("target_filename")
-                if existing_target and str(existing_target) != filename:
-                    # Preserve explicit policy rename_pattern assignments
-                    continue
-
-                if HeuristicEvaluator.is_poorly_named(filename) or bool(
-                    configured_template
-                ):
-                    seq_idx += 1
-                    src_root = str(meta_info.get("source_root") or base_dir or "")
-                    src_rel = str(meta_info.get("source_path") or filepath)
-                    if "::" in src_rel:
-                        src_root, src_rel = src_rel.split("::", 1)
-                    abs_candidate = (
-                        os.path.join(src_root, src_rel)
-                        if src_root and not os.path.isabs(src_rel)
-                        else src_rel
-                    )
-                    f_date = (
-                        str(meta_info.get("file_date"))
-                        if meta_info.get("file_date")
-                        else resolve_disk_file_date(abs_candidate)
-                    )
-                    cat_str = str(meta_info.get("category") or "")
-                    new_fn = self.generate_contextual_name(
-                        filename,
-                        doc_text,
-                        stop_words,
-                        file_date=f_date,
-                        category=cat_str,
-                        seq=seq_idx,
-                        file_path=abs_candidate,
-                    )
-                    if new_fn and new_fn != filename:
-                        context_buffer[filepath] = new_fn
-
-            if context_buffer:
-                self._inject_renames_into_plan(plan, context_buffer)
-
+            _process_folder(plan)
             return plan
         finally:
-            context_buffer.clear()
-            node_meta_by_key.clear()
-            del context_buffer
+            doc_by_norm.clear()
+            doc_by_base_counts.clear()
+            doc_by_base.clear()
             gc.collect()
 
     def _inject_renames_into_plan(

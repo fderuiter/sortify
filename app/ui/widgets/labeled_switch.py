@@ -45,7 +45,7 @@ class LabeledSwitch(Horizontal):
         effective_switch_id = switch_id or (
             id if id and id.startswith("switch-") else None
         )
-        self.switch = Switch(value=value, id=effective_switch_id)
+        self.switch = Switch(value=value, id=effective_switch_id, disabled=disabled)
         if tooltip:
             self.tooltip = tooltip
             self.switch.tooltip = tooltip
