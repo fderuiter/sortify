@@ -2908,6 +2908,7 @@ class IncrementalAnalyzer:
                     pol_renamed = _compute_policy_rename(f, target_folder)
                     if pol_renamed:
                         pol_node_info["target_filename"] = pol_renamed
+                        pol_node_info["rename_source"] = "Policy Rule"
                         pol_node_info["is_confirmed"] = True
                         pol_node_info["user_confirmed"] = True
 
@@ -3112,6 +3113,7 @@ class IncrementalAnalyzer:
                     pol_renamed = _compute_policy_rename(f, target_folder)
                     if pol_renamed:
                         pol_flat_info["target_filename"] = pol_renamed
+                        pol_flat_info["rename_source"] = "Policy Rule"
                         pol_flat_info["is_confirmed"] = True
                         pol_flat_info["user_confirmed"] = True
                 plan[target_folder][f] = pol_flat_info
@@ -3245,6 +3247,7 @@ class IncrementalAnalyzer:
                         pol_renamed = _compute_policy_rename(f, target_folder)
                         if pol_renamed:
                             info["target_filename"] = pol_renamed
+                            info["rename_source"] = "Policy Rule"
                             info["is_confirmed"] = True
                             info["user_confirmed"] = True
                 elif used_rule_routing and matched_rule:
@@ -3424,6 +3427,8 @@ class IncrementalAnalyzer:
                                 curr_node.pop(k, None)
                                 curr_node[dest_key] = v
                             v["target_filename"] = dest_key
+                            if dest_key != os.path.basename(norm_rel_v):
+                                v["rename_source"] = "Manual"
                             v["confirmed"] = True
                             v["is_confirmed"] = True
                             v["user_confirmed"] = True
@@ -3465,6 +3470,11 @@ class IncrementalAnalyzer:
                         "match": "user assignment",
                         "status": None,
                         "target_filename": dest_key,
+                        "rename_source": (
+                            "Manual"
+                            if dest_key != os.path.basename(norm_rel_u)
+                            else None
+                        ),
                         "confirmed": True,
                         "is_confirmed": True,
                         "user_confirmed": True,
@@ -3672,9 +3682,13 @@ class IncrementalAnalyzer:
             if primary_group_map or primary_by_abs:
                 _tag_byte_duplicates(clean_plan)
 
+            has_rename_pattern = bool(
+                str(getattr(runtime_settings, "RENAME_PATTERN", "") or "").strip()
+            )
             if runtime_settings and (
                 getattr(runtime_settings, "CONTEXTUAL_RENAMING", False)
                 or getattr(runtime_settings, "CLINICAL_SMART_RENAMING", False)
+                or has_rename_pattern
             ):
                 try:
                     import gc

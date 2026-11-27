@@ -1,9 +1,9 @@
 """Pattern token formatter for dynamic file renaming and destination folder paths.
 
 Parses pattern template strings containing metadata tokens such as
-{date}, {year}, {month}, {day}, {category}, {original}, {stem}, {extension},
-{seq}, and {sequence}, substitutes values, resolves disk modification timestamps
-lazily, and validates/sanitizes output filenames and relative folder paths.
+{date}, {year}, {month}, {day}, {category}, {original}, {stem}, {keywords},
+{extension}, {seq}, and {sequence}, substitutes values, resolves disk modification
+timestamps lazily, and validates/sanitizes output filenames and relative folder paths.
 """
 
 import logging
@@ -25,6 +25,7 @@ SUPPORTED_TOKENS = {
     "category",
     "original",
     "stem",
+    "keywords",
     "extension",
     "seq",
     "sequence",
@@ -38,6 +39,7 @@ DEFAULT_TOKEN_FALLBACKS: dict[str, Any] = {
     "category": "uncategorized",
     "original": "file",
     "stem": "file",
+    "keywords": "",
     "extension": "",
     "seq": "1",
     "sequence": "1",
@@ -199,6 +201,9 @@ class PatternTokenFormatter:
         ):
             meta["category"] = DEFAULT_TOKEN_FALLBACKS["category"]
 
+        raw_keywords = meta.get("keywords")
+        meta["keywords"] = "" if raw_keywords is None else str(raw_keywords).strip()
+
         raw_seq = meta.get("seq")
         if raw_seq is None:
             raw_seq = meta.get("sequence")
@@ -263,6 +268,9 @@ class PatternTokenFormatter:
                 return safe_stem
 
             has_extension_token = "extension" in [t.lower() for t in tokens_in_pattern]
+            has_empty_keywords = "keywords" in [
+                t.lower() for t in tokens_in_pattern
+            ] and not meta.get("keywords")
 
             formatted = pattern
 
@@ -295,12 +303,25 @@ class PatternTokenFormatter:
             if has_extension_token:
                 # Pattern explicitly controlled extension
                 base, ext = os.path.splitext(formatted)
+                if has_empty_keywords:
+                    base = re.sub(r"([_\-\s])\1+", r"\1", base).strip("_- ")
+                    if not base:
+                        base = str(meta.get("stem") or DEFAULT_TOKEN_FALLBACKS["stem"])
                 safe_base = sanitize_name(base)
                 safe_ext = ext if ext else ext_val
                 return f"{safe_base}{safe_ext}"
             else:
                 # Pattern formatted file stem; preserve extension
-                safe_stem = sanitize_name(formatted)
+                stem_candidate = formatted
+                if has_empty_keywords:
+                    stem_candidate = re.sub(
+                        r"([_\-\s])\1+", r"\1", stem_candidate
+                    ).strip("_- ")
+                    if not stem_candidate:
+                        stem_candidate = str(
+                            meta.get("stem") or DEFAULT_TOKEN_FALLBACKS["stem"]
+                        )
+                safe_stem = sanitize_name(stem_candidate)
                 if ext_val and not safe_stem.endswith(ext_val):
                     return f"{safe_stem}{ext_val}"
                 return safe_stem
