@@ -281,6 +281,7 @@ class SortingPlanNodeModel(DictCompatMixin, BaseModel):
     archival_priority_score: float | None = None
     confidence: float | None = None
     target_filename: str | None = None
+    rename_source: str | None = None
     is_locked: bool | None = None
     confirmed: bool | None = None
     is_confirmed: bool | None = None
