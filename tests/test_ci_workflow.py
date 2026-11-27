@@ -1,4 +1,4 @@
-"""Tests for CI workflow configuration, stage gates, and doc-deploy pipeline."""
+"""Tests for CI workflow configuration, stage gates, and dedicated Pages docs workflow."""
 
 import os
 import shutil
@@ -10,9 +10,19 @@ from pathlib import Path
 import pytest
 import yaml
 
+UPLOAD_PAGES_ARTIFACT_SHA = "fc324d3547104276b827a68afc52ff2a11cc49c9"
+DEPLOY_PAGES_SHA = "368f82528645a54fb793d4d04e342629a3f51346"
+
 
 def _load_ci_workflow():
     workflow_path = Path(".github/workflows/ci.yml")
+    assert workflow_path.exists(), f"Workflow file missing: {workflow_path}"
+    with open(workflow_path, encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+
+def _load_docs_workflow():
+    workflow_path = Path(".github/workflows/docs.yml")
     assert workflow_path.exists(), f"Workflow file missing: {workflow_path}"
     with open(workflow_path, encoding="utf-8") as f:
         return yaml.safe_load(f)
@@ -27,11 +37,24 @@ def test_no_changes_path_filter_job():
     )
 
 
-def test_static_checks_builds_and_uploads_docs_site_artifact_on_main():
-    """Verify static-checks builds docs under read-only permissions and uploads docs-site on main."""
+def test_static_checks_validates_docs_without_artifact_upload_or_doc_deploy():
+    """Verify static-checks validates docs under read-only permissions and ci.yml removes doc-deploy."""
+    raw_ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     workflow = _load_ci_workflow()
     jobs = workflow.get("jobs", {})
     assert "static-checks" in jobs, "Missing 'static-checks' job in ci.yml"
+    assert "doc-deploy" not in jobs, (
+        "Legacy 'doc-deploy' job must be removed from ci.yml in favor of docs.yml"
+    )
+    assert "refs/heads/gh-pages" not in raw_ci, (
+        "ci.yml must not push commits to refs/heads/gh-pages"
+    )
+
+    for job_name, job_cfg in jobs.items():
+        perms = job_cfg.get("permissions") or {}
+        assert perms.get("contents") != "write", (
+            f"ci.yml job {job_name!r} must not request contents: write"
+        )
 
     job = jobs["static-checks"]
     assert "permissions" not in job or job.get("permissions") == {"contents": "read"}
@@ -67,95 +90,175 @@ def test_static_checks_builds_and_uploads_docs_site_artifact_on_main():
     assert compile_step is not None, (
         "Missing 'scripts/generate_docs.py --check' step in static-checks"
     )
+    assert compile_step.get("name") == "Validate Documentation and Integrity"
     assert "if" not in compile_step, (
         "Documentation compilation and validation must run on PRs as well as main"
+    )
+
+    assert not any(
+        (s.get("with") or {}).get("name") == "docs-site"
+        or s.get("name") == "Upload Documentation Site Artifact"
+        for s in steps
+    ), "Upload Documentation Site Artifact must be removed from ci.yml static-checks"
+
+    assert steps.index(sync_step) < steps.index(compile_step), (
+        "uv sync must run before doc validation"
+    )
+
+
+def test_docs_workflow_triggers_build_and_oidc_pages_deployment():
+    """Verify docs.yml triggers on main pushes and workflow_dispatch, builds in read-only build-docs, and deploys via OIDC in deploy-docs."""
+    docs_path = Path(".github/workflows/docs.yml")
+    raw_docs = docs_path.read_text(encoding="utf-8")
+    workflow = _load_docs_workflow()
+
+    triggers = workflow.get("on") or workflow.get(True) or {}
+    assert "workflow_dispatch" in triggers, (
+        "docs.yml must support workflow_dispatch for post-merge auto-merge orchestration"
+    )
+    push_cfg = triggers.get("push") or {}
+    assert push_cfg.get("branches") == ["main"], (
+        "docs.yml push trigger must target branches: ['main']"
+    )
+    push_paths = set(push_cfg.get("paths") or [])
+    for required_filter in (
+        ".github/workflows/docs.yml",
+        "docs/**",
+        "mkdocs.yml",
+        "*.md",
+        "app/**",
+        "scripts/**",
+        "sandbox_cli.py",
+        "network_rules.json",
+        "pyproject.toml",
+        "uv.lock",
+    ):
+        assert required_filter in push_paths, (
+            f"docs.yml push.paths missing documentation/source input filter {required_filter!r}"
+        )
+
+    assert workflow.get("permissions") == {"contents": "read"}
+    wf_concurrency = workflow.get("concurrency") or {}
+    assert "ci-" not in str(wf_concurrency.get("group", "")), (
+        "docs.yml concurrency must stay independent of ci.yml"
+    )
+    assert wf_concurrency.get("cancel-in-progress") is False
+
+    jobs = workflow.get("jobs") or {}
+    assert set(jobs) == {"build-docs", "deploy-docs"}
+
+    # 1. Verify read-only build-docs job
+    build_job = jobs["build-docs"]
+    assert build_job.get("timeout-minutes") == 15
+    assert build_job.get("permissions") == {"contents": "read"}
+    assert not _needs_set(build_job)
+
+    build_steps = build_job.get("steps") or []
+    checkout_step = next(
+        (s for s in build_steps if "actions/checkout@" in s.get("uses", "")), None
+    )
+    assert checkout_step is not None, "Missing actions/checkout step in build-docs"
+    assert (checkout_step.get("with") or {}).get("persist-credentials") is False
+
+    sync_steps = [s for s in build_steps if "uv sync" in s.get("run", "")]
+    assert len(sync_steps) == 1, "build-docs must run uv sync exactly once"
+    sync_step = sync_steps[0]
+    assert "--frozen" in sync_step.get("run", "")
+    assert "--group docs" in sync_step.get("run", "")
+
+    build_step = next(
+        (
+            s
+            for s in build_steps
+            if "scripts/generate_docs.py --check --local-only --build"
+            in s.get("run", "")
+        ),
+        None,
+    )
+    assert build_step is not None, (
+        "build-docs must run 'scripts/generate_docs.py --check --local-only --build'"
     )
 
     upload_step = next(
         (
             s
-            for s in steps
-            if "actions/upload-artifact@" in s.get("uses", "")
-            and (s.get("with") or {}).get("name") == "docs-site"
+            for s in build_steps
+            if s.get("uses")
+            == f"actions/upload-pages-artifact@{UPLOAD_PAGES_ARTIFACT_SHA}"
         ),
         None,
     )
     assert upload_step is not None, (
-        "Missing actions/upload-artifact step for docs-site in static-checks"
+        f"build-docs must upload Pages artifact via actions/upload-pages-artifact@{UPLOAD_PAGES_ARTIFACT_SHA}"
     )
-    assert upload_step.get("if") == "github.ref == 'refs/heads/main'"
-    upload_with = upload_step.get("with") or {}
-    assert upload_with.get("path") == "site/"
-    assert upload_with.get("if-no-files-found") == "error"
-
-    sync_idx = steps.index(sync_step)
-    compile_idx = steps.index(compile_step)
-    upload_idx = steps.index(upload_step)
-
-    assert sync_idx < compile_idx, "uv sync must run before doc compilation"
-    assert compile_idx < upload_idx, (
-        "Documentation compilation must run before uploading docs-site"
+    upload_path = str((upload_step.get("with") or {}).get("path", "")).rstrip("/")
+    assert upload_path == "site", (
+        f"Expected upload-pages-artifact path 'site/', got {upload_path!r}"
+    )
+    assert (
+        build_steps.index(checkout_step)
+        < build_steps.index(sync_step)
+        < build_steps.index(build_step)
+        < build_steps.index(upload_step)
     )
 
-
-def test_doc_deploy_job_gated_behind_required_ci_and_isolated():
-    """Verify doc-deploy waits for required-ci, locks concurrency, and deploys without checkout or build tools."""
-    workflow = _load_ci_workflow()
-    jobs = workflow.get("jobs", {})
-    assert "doc-deploy" in jobs, "Missing 'doc-deploy' job in ci.yml"
-
-    job = jobs["doc-deploy"]
-    assert job.get("timeout-minutes") == 15
-    assert job.get("if") == "github.ref == 'refs/heads/main'"
-    assert _needs_set(job) == {"required-ci"}
-    assert job.get("concurrency") == {
-        "group": "doc-deploy",
+    # 2. Verify isolated OIDC deploy-docs job
+    deploy_job = jobs["deploy-docs"]
+    assert _needs_set(deploy_job) == {"build-docs"}
+    assert deploy_job.get("if") == "github.ref == 'refs/heads/main'"
+    assert deploy_job.get("timeout-minutes") == 15
+    assert deploy_job.get("concurrency") == {
+        "group": "pages-deploy",
         "cancel-in-progress": False,
     }
-    assert job.get("permissions") == {"contents": "write"}
+    assert deploy_job.get("permissions") == {
+        "contents": "read",
+        "pages": "write",
+        "id-token": "write",
+    }
 
-    steps = job.get("steps", [])
+    env_cfg = deploy_job.get("environment")
+    if isinstance(env_cfg, dict):
+        assert env_cfg.get("name") == "github-pages"
+        assert env_cfg.get("url") == "${{ steps.deployment.outputs.page_url }}"
+    else:
+        assert env_cfg == "github-pages"
+
+    deploy_steps = deploy_job.get("steps") or []
     forbidden_uses = (
         "actions/checkout",
         "astral-sh/setup-uv",
         "actions/setup-python",
         "actions/setup-node",
     )
-    for step in steps:
+    for step in deploy_steps:
         uses = step.get("uses", "")
         run_cmd = step.get("run", "")
         assert not any(action in uses for action in forbidden_uses), (
-            f"doc-deploy must not check out code or install build toolchains, found {uses!r}"
+            f"deploy-docs must not check out code or install build toolchains, found {uses!r}"
         )
-        assert "npm " not in run_cmd and "uv " not in run_cmd, (
-            "doc-deploy must not execute npm or uv under contents: write"
+        assert not run_cmd.strip(), (
+            f"deploy-docs must not execute shell build commands, found {run_cmd!r}"
         )
-        assert "mkdocs" not in run_cmd, (
-            "doc-deploy must publish the prebuilt artifact rather than running mkdocs"
-        )
-
-    download_step = next(
-        (s for s in steps if "actions/download-artifact@" in s.get("uses", "")), None
-    )
-    assert download_step is not None, (
-        "Missing actions/download-artifact step in doc-deploy"
-    )
-    assert download_step.get("with") == {"name": "docs-site", "path": "site"}
 
     deploy_step = next(
-        (s for s in steps if s.get("name") == "Deploy Documentation"), None
+        (
+            s
+            for s in deploy_steps
+            if s.get("uses") == f"actions/deploy-pages@{DEPLOY_PAGES_SHA}"
+        ),
+        None,
     )
-    assert deploy_step is not None, "Missing 'Deploy Documentation' step in doc-deploy"
-    assert deploy_step.get("env") == {"GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}"}
+    assert deploy_step is not None, (
+        f"deploy-docs must publish via actions/deploy-pages@{DEPLOY_PAGES_SHA}"
+    )
+    if isinstance(env_cfg, dict) and "steps.deployment.outputs.page_url" in str(
+        env_cfg.get("url", "")
+    ):
+        assert deploy_step.get("id") == "deployment"
 
-    deploy_script = deploy_step.get("run", "")
-    assert "${{ secrets.GITHUB_TOKEN }}" not in deploy_script, (
-        "GITHUB_TOKEN must be passed through env rather than interpolated into run"
-    )
-    assert ".nojekyll" in deploy_script
-    assert "GITHUB_SHA" in deploy_script
-    assert "refs/heads/gh-pages" in deploy_script
-    assert steps.index(download_step) < steps.index(deploy_step)
+    assert "contents: write" not in raw_docs
+    assert "gh-pages" not in raw_docs
 
 
 def _find_git_bash() -> str:
@@ -170,7 +273,7 @@ def _find_git_bash() -> str:
                 if candidate.is_file():
                     return str(candidate)
     bash_exe = shutil.which("bash")
-    assert bash_exe is not None, "bash executable is required to test doc-deploy script"
+    assert bash_exe is not None, "bash executable is required to test workflow scripts"
     return bash_exe
 
 
@@ -183,138 +286,6 @@ def _run_git(cwd: Path, *args: str) -> str:
         text=True,
     )
     return res.stdout.strip()
-
-
-def test_doc_deploy_script_publishes_site_and_skips_stale_reruns(tmp_path: Path):
-    """Execute the ci.yml doc-deploy shell script against a bare git remote across edge cases."""
-    workflow = _load_ci_workflow()
-    deploy_step = next(
-        s
-        for s in workflow["jobs"]["doc-deploy"]["steps"]
-        if s.get("name") == "Deploy Documentation"
-    )
-    deploy_script = deploy_step["run"]
-    bash_exe = _find_git_bash()
-
-    server_root = tmp_path / "server"
-    bare_repo = server_root / "fderuiter" / "sortify.git"
-    bare_repo.parent.mkdir(parents=True)
-    subprocess.run(["git", "init", "--bare", "--quiet", str(bare_repo)], check=True)
-
-    # Create three linear commits on main: sha1 -> sha2 -> sha3
-    upstream_work = tmp_path / "upstream"
-    upstream_work.mkdir()
-    _run_git(upstream_work, "init", "--quiet")
-    _run_git(upstream_work, "config", "user.name", "Test User")
-    _run_git(upstream_work, "config", "user.email", "test@example.com")
-
-    shas: list[str] = []
-    for idx in (1, 2, 3):
-        (upstream_work / "README.md").write_text(f"commit {idx}\n", encoding="utf-8")
-        _run_git(upstream_work, "add", "README.md")
-        _run_git(upstream_work, "commit", "--quiet", "-m", f"main commit {idx}")
-        shas.append(_run_git(upstream_work, "rev-parse", "HEAD"))
-    _run_git(upstream_work, "push", "--quiet", str(bare_repo), "HEAD:refs/heads/main")
-    sha1, sha2, sha3 = shas
-
-    def run_deploy(sha: str, files: dict[str, str]) -> subprocess.CompletedProcess[str]:
-        runner_dir = tmp_path / f"run-{sha[:7]}-{len(list(tmp_path.iterdir()))}"
-        site_dir = runner_dir / "site"
-        site_dir.mkdir(parents=True)
-        for rel_path, content in files.items():
-            target = site_dir / rel_path
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content, encoding="utf-8")
-
-        env = os.environ.copy()
-        env.update(
-            {
-                "GITHUB_TOKEN": "ghs_ephemeral_test_token_value",
-                "GITHUB_SERVER_URL": server_root.resolve().as_uri(),
-                "GITHUB_REPOSITORY": "fderuiter/sortify",
-                "GITHUB_SHA": sha,
-            }
-        )
-        return subprocess.run(
-            [bash_exe, "-c", deploy_script],
-            cwd=runner_dir,
-            env=env,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-
-    # 1. Initial publish when gh-pages does not exist yet
-    run_deploy(sha1, {"index.html": "<h1>v1</h1>", "stale/page.html": "old"})
-    gh_files = set(
-        _run_git(
-            bare_repo, "ls-tree", "-r", "--name-only", "refs/heads/gh-pages"
-        ).splitlines()
-    )
-    assert gh_files == {".nojekyll", "index.html", "stale/page.html"}
-    assert f"Deployed {sha1}" in _run_git(
-        bare_repo, "log", "-1", "--format=%B", "refs/heads/gh-pages"
-    )
-
-    # 2. Publish sha2: removes stale files, restores .nojekyll, fast-forwards gh-pages
-    run_deploy(sha2, {"index.html": "<h1>v2</h1>"})
-    gh_files_v2 = set(
-        _run_git(
-            bare_repo, "ls-tree", "-r", "--name-only", "refs/heads/gh-pages"
-        ).splitlines()
-    )
-    assert gh_files_v2 == {".nojekyll", "index.html"}
-    assert (
-        _run_git(bare_repo, "show", "refs/heads/gh-pages:index.html") == "<h1>v2</h1>"
-    )
-    head_after_v2 = _run_git(bare_repo, "rev-parse", "refs/heads/gh-pages")
-
-    # 3. Out-of-order rerun of older sha1 must skip pushing and preserve sha2 on gh-pages
-    stale_res = run_deploy(sha1, {"index.html": "<h1>v1-rerun</h1>"})
-    assert "Skipping deployment" in stale_res.stdout
-    assert _run_git(bare_repo, "rev-parse", "refs/heads/gh-pages") == head_after_v2
-    assert (
-        _run_git(bare_repo, "show", "refs/heads/gh-pages:index.html") == "<h1>v2</h1>"
-    )
-
-    # 4. Legacy MkDocs short-SHA message ("Deployed <short> with MkDocs version: 1.6.1") also blocks older reruns
-    _run_git(upstream_work, "fetch", "--quiet", str(bare_repo), "refs/heads/gh-pages")
-    _run_git(upstream_work, "checkout", "--quiet", "-B", "gh-pages", "FETCH_HEAD")
-    _run_git(
-        upstream_work,
-        "commit",
-        "--quiet",
-        "--amend",
-        "-m",
-        f"Deployed {sha2[:7]} with MkDocs version: 1.6.1",
-    )
-    _run_git(
-        upstream_work,
-        "push",
-        "--quiet",
-        "--force",
-        str(bare_repo),
-        "HEAD:refs/heads/gh-pages",
-    )
-    legacy_head = _run_git(bare_repo, "rev-parse", "refs/heads/gh-pages")
-    legacy_stale_res = run_deploy(sha1, {"index.html": "<h1>v1-against-legacy</h1>"})
-    assert "Skipping deployment" in legacy_stale_res.stdout
-    assert _run_git(bare_repo, "rev-parse", "refs/heads/gh-pages") == legacy_head
-
-    # 5. Revert commit sha3 (identical tree to v2) still records sha3 so a later sha1/sha2 rerun cannot clobber
-    run_deploy(sha3, {"index.html": "<h1>v2</h1>"})
-    assert f"Deployed {sha3}" in _run_git(
-        bare_repo, "log", "-1", "--format=%B", "refs/heads/gh-pages"
-    )
-    head_after_v3 = _run_git(bare_repo, "rev-parse", "refs/heads/gh-pages")
-
-    # 6. Same-SHA rerun with identical site skips empty push cleanly
-    same_res = run_deploy(sha3, {"index.html": "<h1>v2</h1>"})
-    assert "already up to date" in same_res.stdout
-    assert _run_git(bare_repo, "rev-parse", "refs/heads/gh-pages") == head_after_v3
-    assert "ghs_ephemeral_test_token_value" not in (bare_repo / "config").read_text(
-        encoding="utf-8"
-    )
 
 
 FAST_STAGE_JOBS = {"security-and-audit", "type-check", "static-checks"}
