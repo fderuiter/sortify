@@ -224,7 +224,7 @@ def _record_manual_edit(
     if abs_filepath and not entry.get("abs_filepath"):
         entry["abs_filepath"] = abs_filepath
     for k, v in updates.items():
-        if v is None and k in ("folder", "target_filename"):
+        if v is None and k in ("folder", "target_filename", "rename_source"):
             entry.pop(k, None)
         else:
             entry[k] = v
@@ -909,6 +909,12 @@ class SelectionActionsMixin:
                                 info,
                                 data.get("filepath"),
                             )
+                            _, doc_rel, _ = _resolve_source_identity(
+                                self,
+                                file_key=str(entry_key),
+                                filepath=resolved_fp,
+                                info=info,
+                            )
                             entries.append(
                                 {
                                     "key": entry_key,
@@ -916,6 +922,7 @@ class SelectionActionsMixin:
                                     or info.get("folder", ""),
                                     "info": info,
                                     "filepath": resolved_fp,
+                                    "source_path": info.get("source_path") or doc_rel,
                                     "date": resolved_date,
                                     "file_date": resolved_date,
                                     "category": data.get("folder")
@@ -964,12 +971,20 @@ class SelectionActionsMixin:
                                     )
                                     or ""
                                 )
+                                _, doc_rel_p, _ = _resolve_source_identity(
+                                    self,
+                                    file_key=k,
+                                    filepath=fp,
+                                    info=v,
+                                )
                                 entries.append(
                                     {
                                         "key": k,
                                         "folder": v.get("folder") or current_folder,
                                         "info": v,
                                         "filepath": fp,
+                                        "source_path": v.get("source_path")
+                                        or doc_rel_p,
                                         "date": resolved_date,
                                         "file_date": resolved_date,
                                         "category": v.get("folder") or current_folder,
@@ -1328,7 +1343,9 @@ class SelectionActionsMixin:
                         if abs_fp and not data_info.get("filepath"):
                             data_info["filepath"] = abs_fp
                         target_container[new_filename] = data_info
+                        data_info["key"] = new_filename
                         data_info["target_filename"] = new_filename
+                        data_info["rename_source"] = "Manual"
                         data_info["folder"] = target_folder
                         data_info["is_locked"] = True
                         data_info["confirmed"] = True
@@ -1338,7 +1355,9 @@ class SelectionActionsMixin:
                     else:
                         new_info: dict[str, Any] = {
                             "__type__": "file",
+                            "key": new_filename,
                             "target_filename": new_filename,
+                            "rename_source": "Manual",
                             "folder": target_folder,
                             "is_locked": True,
                             "confirmed": True,
@@ -1352,6 +1371,8 @@ class SelectionActionsMixin:
                         )
                         target_container[new_filename] = new_info
 
+                    if old_name != new_filename:
+                        self.locked_files.pop(old_name, None)
                     self.locked_files[new_filename] = target_folder
                     if doc_relpath:
                         self.locked_files[doc_relpath] = target_folder
@@ -1368,6 +1389,8 @@ class SelectionActionsMixin:
                             doc_relpath,
                             abs_fp,
                             target_filename=new_filename,
+                            rename_source="Manual",
+                            reverted_target_name=False,
                             folder=target_folder,
                             is_locked=True,
                             confirmed=True,
@@ -1392,7 +1415,6 @@ class SelectionActionsMixin:
         if is_file:
             from app.core.pattern_formatter import resolve_disk_file_date
 
-            stem, ext = os.path.splitext(old_name)
             folder_cat = data.get("folder", "")
             info_dict = data.get("info") if isinstance(data.get("info"), dict) else {}
             filepath = _resolve_source_disk_path(
@@ -1402,6 +1424,20 @@ class SelectionActionsMixin:
                 info_dict,
                 explicit_fp=data.get("filepath"),
             )
+            _, doc_relpath_init, _ = _resolve_source_identity(
+                self,
+                file_key=str(old_name or ""),
+                filepath=filepath,
+                info=info_dict,
+            )
+            orig_basename = os.path.basename(
+                str(doc_relpath_init or filepath or old_name or "").replace("\\", "/")
+            )
+            orig_stem, orig_ext = os.path.splitext(orig_basename)
+            active_target_name = str(info_dict.get("target_filename") or old_name or "")
+            active_stem, active_ext = os.path.splitext(active_target_name)
+            ext = active_ext or orig_ext
+
             resolved_file_date = str(
                 data.get("file_date")
                 or data.get("date")
@@ -1411,8 +1447,8 @@ class SelectionActionsMixin:
                 or ""
             )
             modal = RenameModal(
-                title=f"Rename File: {old_name}",
-                current_name=stem,
+                title=f"Rename File: {orig_basename or old_name}",
+                current_name=active_stem,
                 extension=ext,
                 category=folder_cat,
                 file_date=resolved_file_date,
@@ -1420,6 +1456,7 @@ class SelectionActionsMixin:
                 plan=self.plan,
                 base_dir=self.base_dir,
                 source_path=filepath,
+                original_name=orig_stem,
             )
 
             def on_renamed(new_formatted: str | Any | None) -> None:
@@ -1432,6 +1469,7 @@ class SelectionActionsMixin:
                     prune_empty_plan_ancestors,
                 )
 
+                is_reset = bool(getattr(new_formatted, "is_reset", False))
                 dest_override = getattr(new_formatted, "destination_override", None)
                 if isinstance(new_formatted, tuple):
                     new_formatted_str, dest_override = new_formatted
@@ -1461,7 +1499,96 @@ class SelectionActionsMixin:
                             f"Invalid destination folder: {err}", priority="assertive"
                         )
                         return
-                if not dest_override and new_filename == old_name:
+
+                is_revert = is_reset or (
+                    not dest_override
+                    and bool(orig_basename)
+                    and new_filename == orig_basename
+                )
+                if is_revert:
+                    existing_tf = info_dict.get("target_filename")
+                    has_active_rename = (old_name != orig_basename) or (
+                        bool(existing_tf) and str(existing_tf) != orig_basename
+                    )
+                    if not has_active_rename:
+                        return
+
+                    old_folder = str(folder_cat or "")
+                    old_container = _resolve_plan_folder_dict(self.plan, old_folder)
+                    if old_container is None or old_name not in old_container:
+                        found_folder, found_container, _ = _find_file_in_plan(
+                            self.plan,
+                            old_name,
+                            target_info=data.get("info")
+                            if isinstance(data.get("info"), dict)
+                            else None,
+                        )
+                        if found_container is not None:
+                            old_container = found_container
+                            old_folder = found_folder
+
+                    file_info = data.get("info")
+                    db_base, doc_relpath, abs_fp = _resolve_source_identity(
+                        self,
+                        file_key=old_name,
+                        filepath=filepath,
+                        info=file_info if isinstance(file_info, dict) else None,
+                    )
+                    restored_key = orig_basename
+                    if old_container is not None:
+                        if old_name in old_container and old_name != restored_key:
+                            old_container.pop(old_name, None)
+                        if (
+                            restored_key in old_container
+                            and old_container[restored_key] is not file_info
+                        ):
+                            restored_key = _disambiguate_key(
+                                old_container, restored_key, is_file=True
+                            )
+                        if isinstance(file_info, dict):
+                            old_container[restored_key] = file_info
+
+                    if isinstance(file_info, dict):
+                        if doc_relpath and not file_info.get("source_path"):
+                            file_info["source_path"] = doc_relpath
+                        if abs_fp and not file_info.get("filepath"):
+                            file_info["filepath"] = abs_fp
+                        file_info["key"] = restored_key
+                        file_info.pop("target_filename", None)
+                        file_info.pop("rename_source", None)
+                        file_info.pop("confirmed", None)
+                        file_info.pop("is_confirmed", None)
+                        file_info.pop("user_confirmed", None)
+
+                    if old_name and old_name != restored_key:
+                        self.locked_files.pop(old_name, None)
+                    if doc_relpath:
+                        if self.app_session:
+                            self.app_session.db.set_user_verified_target_name(
+                                db_base,
+                                doc_relpath,
+                                None,
+                            )
+                        _record_manual_edit(
+                            self,
+                            db_base,
+                            doc_relpath,
+                            abs_fp,
+                            target_filename=None,
+                            rename_source=None,
+                            confirmed=False,
+                            reverted_target_name=True,
+                        )
+                    data["key"] = restored_key
+                    self.rebuild_tree(run_validation=True)
+                    self.announce(f"Restored original filename '{restored_key}'")
+                    return
+
+                if (
+                    not dest_override
+                    and new_filename == old_name
+                    and bool(info_dict.get("confirmed"))
+                ):
                     return
 
                 manual_folders = getattr(self, "_manual_empty_folders", set())
@@ -1516,7 +1643,9 @@ class SelectionActionsMixin:
                     if abs_fp and not file_info.get("filepath"):
                         file_info["filepath"] = abs_fp
                     target_container[new_filename] = file_info
+                    file_info["key"] = new_filename
                     file_info["target_filename"] = new_filename
+                    file_info["rename_source"] = "Manual"
                     file_info["folder"] = target_folder
                     file_info["is_locked"] = True
                     file_info["confirmed"] = True
@@ -1526,7 +1655,9 @@ class SelectionActionsMixin:
                 else:
                     file_info = {
                         "__type__": "file",
+                        "key": new_filename,
                         "target_filename": new_filename,
+                        "rename_source": "Manual",
                         "folder": target_folder,
                         "is_locked": True,
                         "confirmed": True,
@@ -1540,6 +1671,9 @@ class SelectionActionsMixin:
                     )
                     data["info"] = file_info
                     target_container[new_filename] = file_info
+                if old_name and old_name != new_filename:
+                    self.locked_files.pop(old_name, None)
+                data["key"] = new_filename
                 data["folder"] = target_folder
                 data["is_locked"] = True
                 self.locked_files[new_filename] = target_folder
@@ -1558,6 +1692,8 @@ class SelectionActionsMixin:
                         doc_relpath,
                         abs_fp,
                         target_filename=new_filename,
+                        rename_source="Manual",
+                        reverted_target_name=False,
                         folder=target_folder,
                         is_locked=True,
                         confirmed=True,

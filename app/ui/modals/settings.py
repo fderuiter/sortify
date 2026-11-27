@@ -1,5 +1,6 @@
 """Settings dialog and its scrub-artifacts and consent-revocation confirmations."""
 
+import contextlib
 import logging
 import os
 from typing import Any
@@ -202,6 +203,11 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
         color: $text;
         text-style: bold;
     }
+    .setting-hint {
+        width: 100%;
+        color: $text-muted;
+        margin-bottom: 1;
+    }
     .switch-row {
         margin-top: 1;
         margin-bottom: 1;
@@ -256,6 +262,8 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
         self.help_url = f"{TROUBLESHOOTING_URL}#settings-configuration"
         self._announced_switch_values: dict[str, bool] = {}
         self._staged_consent_revocation: bool = False
+        self._ai_assisted_naming_touched: bool = False
+        self._syncing_ai_switches: bool = False
 
     def query_one(self, selector: Any, expect_type: Any = None) -> Any:
         """Query one widget, aliasing alternative switch IDs."""
@@ -280,6 +288,11 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
             "#switch-hierarchy",
         ):
             selector = "#switch-preserve-hierarchy"
+        elif selector in (
+            "#switch-ai-assisted",
+            "#switch-assisted-naming",
+        ):
+            selector = "#switch-ai-assisted-naming"
         return super().query_one(selector, expect_type=expect_type)
 
     def compose(self) -> ComposeResult:
@@ -507,11 +520,30 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
                             tooltip=sw_tip,
                         )
 
+                    ai_consent_val = bool(
+                        getattr(self.settings, "AI_CONSENT_GRANTED", False)
+                    )
+                    ai_assisted_val = bool(
+                        ai_consent_val
+                        and (
+                            strat == "generative"
+                            or getattr(self.settings, "AI_ASSISTED_NAMING", False)
+                        )
+                    )
+
                     yield LabeledSwitch(
                         label="AI Consent Granted",
-                        value=bool(getattr(self.settings, "AI_CONSENT_GRANTED", False)),
+                        value=ai_consent_val,
                         switch_id="switch-ai-consent",
                         tooltip="Toggle AI consent for semantic document classification and processing",
+                    )
+
+                    yield LabeledSwitch(
+                        label="AI Assisted Naming",
+                        value=ai_assisted_val,
+                        switch_id="switch-ai-assisted-naming",
+                        disabled=not ai_consent_val,
+                        tooltip="Rank semantic keyphrases via local ONNX embeddings or generative AI (requires AI Consent Granted)",
                     )
 
                     yield LabeledSwitch(
@@ -520,22 +552,27 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
                             getattr(self.settings, "CONTEXTUAL_RENAMING", False)
                         ),
                         switch_id="switch-contextual-renaming",
-                        tooltip="Toggle AI contextual file renaming",
+                        tooltip="Replace generic scan stems (e.g. scan_01) with document keywords while keeping descriptive stems intact unless {keywords} is in template",
                     )
 
                     yield Label(
                         "Default Rename Template:",
                         classes="field-label",
                     )
+                    yield Label(
+                        "Applies standalone with literal {stem}/{original}; enable AI Contextual Renaming or add {keywords} to insert document terms.",
+                        classes="setting-hint",
+                        id="lbl-rename-template-hint",
+                    )
                     ren_pat_val = str(
                         getattr(self.settings, "RENAME_PATTERN", "") or ""
                     )
                     inp_ren_pat = Input(
                         value=ren_pat_val,
-                        placeholder="e.g. {date}_{stem}{extension}",
+                        placeholder="e.g. {date}_{stem}{extension} or {date}_{keywords}_{stem}",
                         id="input-rename-pattern",
                     )
-                    inp_ren_pat.tooltip = "Optional default rename template combining {date}, {year}, {month}, {day}, {category}, {seq}, {stem}, {extension}"
+                    inp_ren_pat.tooltip = "Standalone rename template supporting literal {stem}/{original}, extracted {keywords}, {date}, {year}, {month}, {day}, {category}, {seq}, and {extension}"
                     yield inp_ren_pat
 
                     current_auto_ratings = {
@@ -800,12 +837,68 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
                 ScrubArtifactsModal(v_count, footprint_mb), _on_scrub_modal_result
             )
 
+    def _set_ai_assisted_switch_enabled(
+        self, enabled: bool, value: bool | None = None
+    ) -> None:
+        """Synchronize disabled and value state on #switch-ai-assisted-naming and its row."""
+        try:
+            sw = self.query_one("#switch-ai-assisted-naming", Switch)
+            self._syncing_ai_switches = True
+            try:
+                sw.disabled = not enabled
+                if sw.parent is not None and isinstance(sw.parent, LabeledSwitch):
+                    sw.parent.disabled = not enabled
+                if value is not None:
+                    sw.value = value
+            finally:
+                self._syncing_ai_switches = False
+        except Exception:
+            pass
+
+    @on(Switch.Changed, "#switch-ai-assisted-naming")
+    def on_ai_assisted_naming_changed(self, event: Switch.Changed) -> None:
+        """Record explicit user toggles on AI Assisted Naming."""
+        if self._syncing_ai_switches:
+            return
+        self._ai_assisted_naming_touched = True
+        state_str = "enabled" if event.value else "disabled"
+        if hasattr(self, "announce"):
+            self.announce(f"AI assisted naming {state_str}.", priority="polite")
+
+    @on(Select.Changed, "#select-strategy")
+    def on_strategy_changed(self, event: Select.Changed) -> None:
+        """Synchronize AI Assisted Naming switch when sorting strategy changes."""
+        try:
+            ai_consent_on = bool(self.query_one("#switch-ai-consent", Switch).value)
+        except Exception:
+            ai_consent_on = bool(getattr(self.settings, "AI_CONSENT_GRANTED", False))
+        if not ai_consent_on:
+            self._set_ai_assisted_switch_enabled(False, value=False)
+            return
+        if event.value == "generative":
+            self._set_ai_assisted_switch_enabled(True, value=True)
+        else:
+            initial_strat = str(
+                getattr(self.settings, "SORTING_STRATEGY", "default") or "default"
+            )
+            if initial_strat == "generative" and not self._ai_assisted_naming_touched:
+                self._set_ai_assisted_switch_enabled(True, value=False)
+
     @on(Switch.Changed, "#switch-ai-consent")
     def on_ai_consent_changed(self, event: Switch.Changed) -> None:
         """Prompt user confirmation when AI consent switch is toggled off."""
         if event.value:
             self._staged_consent_revocation = False
+            strat_now = "default"
+            with contextlib.suppress(Exception):
+                strat_now = str(
+                    self.query_one("#select-strategy", Select).value or "default"
+                )
+            restore_val = True if strat_now == "generative" else None
+            self._set_ai_assisted_switch_enabled(True, value=restore_val)
             return
+
+        self._set_ai_assisted_switch_enabled(False, value=False)
 
         db_inst = getattr(self.app, "db", None) if hasattr(self, "app") else None
         v_count = _get_vector_count(db_inst)
@@ -814,6 +907,7 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
         def _on_revoke_modal_result(confirmed: bool | None) -> None:
             if confirmed:
                 self._staged_consent_revocation = True
+                self._set_ai_assisted_switch_enabled(False, value=False)
                 if hasattr(self, "announce"):
                     self.announce(
                         "AI consent revocation staged; save settings to apply.",
@@ -1140,15 +1234,23 @@ class SettingsModal(ResponsiveModalScreen[dict[str, Any] | None]):
         initial_strat = str(
             getattr(self.settings, "SORTING_STRATEGY", "default") or "default"
         )
-        ai_assisted_naming = (
-            True
-            if strat == "generative"
-            else (
-                False
-                if initial_strat == "generative"
-                else bool(getattr(self.settings, "AI_ASSISTED_NAMING", False))
+        try:
+            sw_ai_assisted_val = bool(
+                self.query_one("#switch-ai-assisted-naming", Switch).value
             )
-        )
+        except Exception:
+            sw_ai_assisted_val = bool(
+                getattr(self.settings, "AI_ASSISTED_NAMING", False)
+            )
+
+        if not ai_consent:
+            ai_assisted_naming = False
+        elif strat == "generative":
+            ai_assisted_naming = True
+        elif initial_strat == "generative" and not self._ai_assisted_naming_touched:
+            ai_assisted_naming = False
+        else:
+            ai_assisted_naming = sw_ai_assisted_val
 
         res = {
             "PROTECTED_PATHS": p_list,
