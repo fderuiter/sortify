@@ -310,17 +310,20 @@ class DaemonIPCServer:
 
         dry_run = bool(params.get("dry_run", False))
         dest_dir = params.get("dest_dir")
+        if dest_dir is not None and not isinstance(dest_dir, str):
+            raise ValueError("Parameter 'dest_dir' must be a string")
 
-        from app.core.pipeline import validate_drop_paths
+        from app.core.pipeline import DropBatchCoordinator
 
         ignore_predicate = (
             self.daemon.should_ignore_path
             if hasattr(self.daemon, "should_ignore_path")
             else None
         )
-        validated_paths, issues = validate_drop_paths(
+        coordinator = DropBatchCoordinator(getattr(self.daemon, "settings", None))
+        validated_paths, issues, resolved_dest, dest_err = coordinator.validate(
             path_list,
-            settings=getattr(self.daemon, "settings", None),
+            dest_dir=dest_dir,
             ignore_predicate=ignore_predicate,
         )
 
@@ -341,25 +344,37 @@ class DaemonIPCServer:
             )
             raise ValueError(f"Path validation failed: {reasons_str}")
 
+        if dest_err == "protected":
+            raise ValueError(f"Destination path blocked (protected): {dest_dir}")
+        if dest_err == "not_directory":
+            raise ValueError(f"Destination path is not a directory: {dest_dir}")
+
+        async def _dispatch_drop(fn: Any, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            if hasattr(self.daemon, "_in_sort_thread") and callable(
+                self.daemon._in_sort_thread
+            ):
+                return await self.daemon._in_sort_thread(fn, *args, **kwargs)
+            return await asyncio.to_thread(fn, *args, **kwargs)
+
         daemon_dict = getattr(self.daemon, "__dict__", {})
         if (
             hasattr(self.daemon, "_execute_dropped_items")
             and "process_dropped_items" not in daemon_dict
         ):
-            res = await asyncio.to_thread(
+            res = await _dispatch_drop(
                 self.daemon._execute_dropped_items,
                 validated_paths,
                 dry_run=dry_run,
-                dest_dir=dest_dir,
+                dest_dir=resolved_dest,
             )
             res["validated_paths"] = validated_paths
             return res
         if hasattr(self.daemon, "process_dropped_items"):
-            res = await asyncio.to_thread(
+            res = await _dispatch_drop(
                 self.daemon.process_dropped_items,
                 validated_paths,
                 dry_run=dry_run,
-                dest_dir=dest_dir,
+                dest_dir=resolved_dest,
             )
             res["validated_paths"] = validated_paths
             return res
@@ -367,6 +382,7 @@ class DaemonIPCServer:
             "status": "success",
             "processed_count": len(validated_paths),
             "validated_paths": validated_paths,
+            "destination_dir": resolved_dest,
             "message": f"Successfully forwarded {len(validated_paths)} dropped items to triage pipeline",
         }
 
