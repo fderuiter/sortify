@@ -88,7 +88,7 @@ class PathLookupIndex(NamedTuple):
 class TreeViewMixin:
     """Render the plan tree, filter it by search query and fill the inspector."""
 
-    _tree_expansion_memory: dict[str, bool] = {}
+    _tree_expansion_memory: dict[str, bool]
     _last_cursor_key: str | None = None
 
     def _build_path_lookup_index(

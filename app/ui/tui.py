@@ -423,6 +423,8 @@ class AutoSorterTUI(
         self._last_ai_poll_token: tuple[Any, ...] | None = None
         self._manual_plan_edits: dict[str, dict[str, Any]] = {}
         self._manual_empty_folders: set[str] = set()
+        self._tree_expansion_memory: dict[str, bool] = {}
+        self._last_cursor_key: str | None = None
         self._tree_filter_timer: Any = None
         self._tree_filter_pending: bool = False
         self._flushed_search_value: str | None = None

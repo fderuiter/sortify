@@ -1445,3 +1445,56 @@ def test_status_bar_and_meta_details_preserve_literal_brackets_and_rich_labels(
             assert "[COLLISION: RENAME]" in svg_text
 
     asyncio.run(_test())
+
+
+def test_tree_expansion_memory_isolated_across_tui_instances(tmp_path):
+    """Collapsing a folder in one AutoSorterTUI instance must not leak into subsequent instances."""
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    settings._settings_model.AI_CONSENT_GRANTED = True
+
+    async def _run_first():
+        app_a = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
+        async with app_a.run_test(size=(100, 30)) as pilot:
+            app_a.plan = {
+                "Finance": {
+                    "q1_invoice.pdf": {
+                        "__type__": "file",
+                        "filepath": str(tmp_path / "q1_invoice.pdf"),
+                        "target_filename": "q1_invoice.pdf",
+                    }
+                }
+            }
+            app_a.rebuild_tree(run_validation=False)
+            await pilot.pause()
+
+            tree_a = app_a.query_one("#plan-tree", Tree)
+            finance_a = tree_a.root.children[0]
+            finance_a.collapse()
+            await pilot.pause()
+            assert app_a._tree_expansion_memory.get("Finance") is False
+        return app_a
+
+    async def _run_second(app_a: AutoSorterTUI):
+        app_b = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
+        assert app_b._tree_expansion_memory is not app_a._tree_expansion_memory
+        assert app_b._tree_expansion_memory == {}
+
+        async with app_b.run_test(size=(100, 30)) as pilot:
+            app_b.plan = {
+                "Finance": {
+                    "q1_invoice.pdf": {
+                        "__type__": "file",
+                        "filepath": str(tmp_path / "q1_invoice.pdf"),
+                        "target_filename": "q1_invoice.pdf",
+                    }
+                }
+            }
+            app_b.rebuild_tree(run_validation=False)
+            await pilot.pause()
+
+            tree_b = app_b.query_one("#plan-tree", Tree)
+            finance_b = tree_b.root.children[0]
+            assert finance_b.is_expanded is True
+
+    app_first = asyncio.run(_run_first())
+    asyncio.run(_run_second(app_first))
