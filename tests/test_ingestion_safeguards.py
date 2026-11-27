@@ -22,17 +22,50 @@ def test_config_safeguard_bounds():
     with pytest.raises(ValidationError):
         Settings(IMAGE_MAX_DIMENSION=0)
 
-    # Image skip threshold must be positive
-    with pytest.raises(ValidationError):
-        Settings(IMAGE_SKIP_THRESHOLD=0)
-
     # Valid settings work
-    settings = Settings(
-        VISUAL_TIMEOUT=5, IMAGE_MAX_DIMENSION=800, IMAGE_SKIP_THRESHOLD=2500
-    )
+    settings = Settings(VISUAL_TIMEOUT=5, IMAGE_MAX_DIMENSION=800)
     assert settings.VISUAL_TIMEOUT == 5
     assert settings.IMAGE_MAX_DIMENSION == 800
-    assert settings.IMAGE_SKIP_THRESHOLD == 2500
+
+
+def test_legacy_unknown_keys_ignored_on_load_and_rejected_by_cli(tmp_path, monkeypatch):
+    """Verify legacy removed keys in settings.json or environment are ignored on load while rejected by config --set."""
+    import json
+    import sys
+
+    from app.config import AppSettings
+    from app.main import main
+
+    legacy_key = "LEGACY_REMOVED_THRESHOLD"
+    monkeypatch.setenv(f"SORTIFY_{legacy_key}", "3000")
+
+    cfg_path = tmp_path / "settings.json"
+    cfg_path.write_text(
+        json.dumps({"IMAGE_MAX_DIMENSION": 900, legacy_key: 3000}),
+        encoding="utf-8",
+    )
+
+    loaded = AppSettings(filepath=str(cfg_path))
+    assert loaded.IMAGE_MAX_DIMENSION == 900
+    assert not hasattr(loaded._settings_model, legacy_key)
+    assert loaded._validation_errors == []
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "smart-autosorter",
+            "--settings-file",
+            str(cfg_path),
+            "config",
+            "--set",
+            legacy_key,
+            "3000",
+        ],
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
 
 
 def test_image_downscaling_oversized_resolution(caplog):
@@ -40,7 +73,7 @@ def test_image_downscaling_oversized_resolution(caplog):
     mock_image = MagicMock()
     mock_image.size = (3500, 2000)  # Exceeds max dimension of 1000
 
-    settings = Settings(IMAGE_SKIP_THRESHOLD=3000, IMAGE_MAX_DIMENSION=1000)
+    settings = Settings(IMAGE_MAX_DIMENSION=1000)
 
     mock_reader = MagicMock()
     mock_reader.readtext.return_value = [
@@ -67,7 +100,7 @@ def test_image_downscaling_aspect_ratio():
     # Case 1: Image exceeds max_dimension and is downscaled keeping aspect ratio (e.g., 2000 x 1500 -> 1000 x 750)
     mock_image1 = MagicMock()
     mock_image1.size = (2000, 1500)
-    settings = Settings(IMAGE_SKIP_THRESHOLD=5000, IMAGE_MAX_DIMENSION=1000)
+    settings = Settings(IMAGE_MAX_DIMENSION=1000)
 
     with (
         patch("app.core.extractor_strategies.get_ocr_reader", return_value=MagicMock()),
@@ -90,7 +123,7 @@ def test_image_downscaling_hard_minimum():
     # Standard scale: 2000 -> 1000, 500 -> 250. But 250 < 400, so height is clamped to 400.
     mock_image2 = MagicMock()
     mock_image2.size = (2000, 500)
-    settings = Settings(IMAGE_SKIP_THRESHOLD=5000, IMAGE_MAX_DIMENSION=1000)
+    settings = Settings(IMAGE_MAX_DIMENSION=1000)
 
     with (
         patch("app.core.extractor_strategies.get_ocr_reader", return_value=MagicMock()),

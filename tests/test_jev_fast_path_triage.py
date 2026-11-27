@@ -7,7 +7,7 @@ import time
 import pytest
 
 from app.config import AppSettings
-from app.core.analyzer import FileAnalyzer, SortingPlan
+from app.core.analyzer import IncrementalAnalyzer, SortingPlan
 from app.core.daemon import ContinuousWatchdogDaemon
 from app.core.jev_classifier import JevClassificationResult, JevClassifierEngine
 from app.core.shared_registry import SharedModelRegistry
@@ -124,7 +124,7 @@ def test_jev_classifier_engine_exception_safety():
 
 
 def test_file_analyzer_generate_sorting_plan_with_jev_results(tmp_path):
-    """Verify FileAnalyzer.generate_sorting_plan incorporates Jev typed results."""
+    """Verify IncrementalAnalyzer.generate_sorting_plan incorporates Jev typed results."""
     from unittest.mock import Mock
 
     mock_db = Mock()
@@ -133,7 +133,7 @@ def test_file_analyzer_generate_sorting_plan_with_jev_results(tmp_path):
         ("invoice_2026.csv", "Invoice ID, Amount", "hash123", None)
     ]
 
-    analyzer = FileAnalyzer(max_folders=5, stop_words=set(), db=mock_db)
+    analyzer = IncrementalAnalyzer(max_folders=5, stop_words=set(), db=mock_db)
 
     jev_res = JevClassificationResult(
         category="Financial Reports",
@@ -248,7 +248,7 @@ async def test_daemon_triage_leaves_no_duplicate(tmp_path):
 
 
 def test_file_analyzer_internal_jev_fallback_when_jev_results_none(tmp_path):
-    """Verify FileAnalyzer.generate_sorting_plan executes internal Jev fallback when jev_results is None."""
+    """Verify IncrementalAnalyzer.generate_sorting_plan executes internal Jev fallback when jev_results is None."""
     from unittest.mock import Mock
 
     invoice_file = tmp_path / "invoice_2026_q1.csv"
@@ -260,7 +260,7 @@ def test_file_analyzer_internal_jev_fallback_when_jev_results_none(tmp_path):
         ("invoice_2026_q1.csv", "Invoice ID, Amount, Tax, Total", "hash123", None)
     ]
 
-    analyzer = FileAnalyzer(max_folders=5, stop_words=set(), db=mock_db)
+    analyzer = IncrementalAnalyzer(max_folders=5, stop_words=set(), db=mock_db)
 
     # Call generate_sorting_plan with jev_results=None
     plan = analyzer.generate_sorting_plan(
@@ -278,7 +278,7 @@ def test_file_analyzer_internal_jev_fallback_when_jev_results_none(tmp_path):
 def test_file_analyzer_internal_jev_fallback_when_file_absent_from_jev_results(
     tmp_path,
 ):
-    """Verify FileAnalyzer.generate_sorting_plan executes internal Jev fallback for files absent from caller-provided jev_results."""
+    """Verify IncrementalAnalyzer.generate_sorting_plan executes internal Jev fallback for files absent from caller-provided jev_results."""
     from unittest.mock import Mock
 
     mock_db = Mock()
@@ -293,7 +293,7 @@ def test_file_analyzer_internal_jev_fallback_when_file_absent_from_jev_results(
         ),
     ]
 
-    analyzer = FileAnalyzer(max_folders=5, stop_words=set(), db=mock_db)
+    analyzer = IncrementalAnalyzer(max_folders=5, stop_words=set(), db=mock_db)
 
     explicit_res = JevClassificationResult(
         category="Administrative Records",
@@ -330,7 +330,7 @@ def test_file_analyzer_internal_jev_fallback_precedence(tmp_path):
         ("invoice_2026_q1.csv", "Invoice ID, Amount, Tax, Total", "hash123", None)
     ]
 
-    analyzer = FileAnalyzer(max_folders=5, stop_words=set(), db=mock_db)
+    analyzer = IncrementalAnalyzer(max_folders=5, stop_words=set(), db=mock_db)
 
     # Caller explicitly provides unclassified result for invoice_2026_q1.csv
     caller_unclassified = JevClassificationResult(
@@ -349,7 +349,7 @@ def test_file_analyzer_internal_jev_fallback_precedence(tmp_path):
 
 
 def test_file_analyzer_internal_jev_fallback_exception_handling(tmp_path, monkeypatch):
-    """Verify FileAnalyzer handles exceptions during internal Jev fallback gracefully."""
+    """Verify IncrementalAnalyzer handles exceptions during internal Jev fallback gracefully."""
     from unittest.mock import Mock
 
     mock_db = Mock()
@@ -358,7 +358,7 @@ def test_file_analyzer_internal_jev_fallback_exception_handling(tmp_path, monkey
         ("invoice_2026.csv", "Invoice ID, Amount", "hash123", None)
     ]
 
-    analyzer = FileAnalyzer(max_folders=5, stop_words=set(), db=mock_db)
+    analyzer = IncrementalAnalyzer(max_folders=5, stop_words=set(), db=mock_db)
 
     # Mock JevClassifierEngine.classify to raise an exception
     def faulty_classify(*args, **kwargs):
@@ -388,7 +388,7 @@ def test_file_analyzer_internal_jev_fallback_windows_paths(tmp_path):
         )
     ]
 
-    analyzer = FileAnalyzer(max_folders=5, stop_words=set(), db=mock_db)
+    analyzer = IncrementalAnalyzer(max_folders=5, stop_words=set(), db=mock_db)
 
     plan = analyzer.generate_sorting_plan(
         str(tmp_path), fast_path_only=True, jev_results=None

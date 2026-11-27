@@ -1,13 +1,8 @@
 {
   "_metadata": {
-    "checksum": "465f410a3915c9371ba157c90b855dc3722f2307e2a6eb399ddaf2b345665902"
+    "checksum": "1090cec7b23d2bfb631110046aabc5938e77ecefe2e78d58ba366344bf52aeb8"
   },
   "classes": [
-    {
-      "class_name": "DimensionMismatchError",
-      "decorators": [],
-      "methods": []
-    },
     {
       "class_name": "ModelProperties",
       "decorators": [],
@@ -90,29 +85,6 @@
             }
           ],
           "returns": "list[float]"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "get_vector",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "base_dir"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "filepath"
-            }
-          ],
-          "returns": "list[float] | None"
         },
         {
           "async": false,

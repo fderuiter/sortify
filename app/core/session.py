@@ -251,7 +251,7 @@ class AppSession:
         )
         if not effective_base_dir:
             return
-        self.analyzer.partial_fit(effective_base_dir, chunk, self.settings)
+        self.analyzer.partial_fit(effective_base_dir, chunk)
 
     def generate_sorting_plan(
         self,

@@ -26,7 +26,6 @@ from app.core.domain_contracts import (
 )
 from app.core.path_utils import (
     _get_long_path_name,
-    _get_short_path_name,  # noqa: F401
     scrub_user_home_paths,
 )
 from app.core.text_utils import sanitize_text
@@ -595,21 +594,10 @@ def recursive_kmeans_worker_main(
         # Perform the actual clustering calculation
         plan = strategy._cluster_recursive(filenames, cast(list, documents), depth=1)
 
-        worker_pid = os.getpid()
-        worker_niceness = None
-        if sys.platform != "win32":
-            try:
-                worker_niceness = os.nice(0)
-            except Exception:
-                pass
-
         res_data = {
             "status": "success",
             "plan": plan,
             "error": strategy._error,
-            "worker_pid": worker_pid,
-            "worker_niceness": worker_niceness,
-            "worker_thread_limit": thread_limit,
             "is_degraded": getattr(strategy, "is_degraded", False),
             "degradation_state": getattr(strategy, "degradation_state", "HEALTHY"),
             "degradation_reason": getattr(strategy, "degradation_reason", None),
@@ -925,9 +913,6 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
             )
 
         if result and result.get("status") == "success":
-            self._last_worker_pid = result.get("worker_pid")
-            self._last_worker_niceness = result.get("worker_niceness")
-            self._last_worker_thread_limit = result.get("worker_thread_limit")
             if result.get("is_degraded") or result.get("degradation_state") in (
                 "DEGRADED_FALLBACK",
                 "FAILED",

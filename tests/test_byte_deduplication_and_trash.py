@@ -15,7 +15,6 @@ from unittest import mock
 import pytest
 
 from app.config import AppSettings, PolicyRule
-from app.core.analyzer import IncrementalAnalyzer
 from app.core.extractor import get_file_hash
 from app.core.ledger import KeyAuditLedger
 from app.core.mover import DUPLICATE_STAGING_DIR, _stage_disposal_item
@@ -122,22 +121,7 @@ def test_exact_byte_grouping_ignores_metadata_stripped_hash_matches(tmp_path: Pa
         str(inv_copy2),
     ]
 
-    # 1. IncrementalAnalyzer.detect_duplicate_clusters
-    clusters = IncrementalAnalyzer.detect_duplicate_clusters(
-        str(tmp_path), all_paths, detect_original_by="name"
-    )
-    assert len(clusters) == 1
-    cluster_members = set(clusters[0]["paths"])
-    assert not any(os.path.samefile(p, docx_a) for p in cluster_members)
-    assert not any(os.path.samefile(p, mp3_a) for p in cluster_members)
-    assert cluster_members == {
-        os.path.normpath(str(inv_orig)),
-        os.path.normpath(str(inv_copy1)),
-        os.path.normpath(str(inv_copy2)),
-    }
-    assert clusters[0]["original"] == os.path.normpath(str(inv_orig))
-
-    # 2. VerificationEngine.get_duplicate_groups
+    # VerificationEngine.get_duplicate_groups
     plan = {
         os.path.relpath(p, tmp_path): {
             "node_type": "file",

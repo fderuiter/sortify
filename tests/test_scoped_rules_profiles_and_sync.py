@@ -21,12 +21,12 @@ from app.config import (
     Settings,
     get_app_dir,
     normalize_folder_scope_key,
-    resolve_profile_settings_path,
 )
 from app.core.db_conn import clear_connection_cache
 from app.core.downloader import resolve_default_model_dir
 from app.core.metadata import MetadataPass, matches_learned_rule_pattern
 from app.core.pipeline import SortPipeline
+from app.core.rule_scopes import resolve_profile_settings_path
 from app.core.rule_templates import apply_starter_templates, export_active_rules
 from app.core.scanner import get_files_recursively
 from app.core.services import acquire_services

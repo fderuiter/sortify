@@ -394,41 +394,6 @@ def test_empty_files_bypassed_from_ai_clustering(mocker):
     assert called_args[1] == ["This is some normal text for clustering."]
 
 
-def test_empty_files_bypass_incremental_training(mocker):
-    base_dir = "test_incremental_bypass_base"
-    db.clear(base_dir)
-
-    # Create a mock session containing our db and analyzer
-    analyzer = IncrementalAnalyzer(
-        max_folders=3, stop_words={"the", "and"}, db=db, model_path="all-MiniLM-L6-v2"
-    )
-
-    mock_session = SimpleNamespace(db=db, analyzer=analyzer, settings=SimpleNamespace())
-
-    # Document in DB with verified target path but with EMPTY status tag
-    db.upsert_document(base_dir, "empty_reassigned.txt", "hash_e", "[STATUS:EMPTY]")
-    db.set_user_verified_target(base_dir, "hash_e", "SomeFolder")
-
-    # Document in DB with verified target path and normal text
-    db.upsert_document(base_dir, "normal_reassigned.txt", "hash_n", "Normal text")
-    db.set_user_verified_target(base_dir, "hash_n", "SomeFolder")
-
-    # Spy on generate_embedding to see which texts are embedded
-    mock_generate_embedding = mocker.spy(
-        analyzer.embedding_manager, "generate_embedding"
-    )
-
-    from app.core.analyzer import run_incremental_training_in_background
-
-    run_incremental_training_in_background(mock_session, base_dir)
-
-    # Verify that we only called generate_embedding for normal text, not the empty status tag
-    # Since we mocked generate_embedding, we can inspect its call arguments
-    called_texts = [call.args[0] for call in mock_generate_embedding.call_args_list]
-    assert "Normal text" in called_texts
-    assert "[STATUS:EMPTY]" not in called_texts
-
-
 def test_analyzer_no_n_plus_one_queries(mocker):
     """Verify that during generate_sorting_plan, no sequential single-item database queries
     occur. Instead, they are batched using get_vectors_batch.
@@ -454,8 +419,8 @@ def test_analyzer_no_n_plus_one_queries(mocker):
     }
     analyzer.partial_fit(base_dir, corpus)
 
-    # Spies/Mocks on single retrieval get_vector vs batch retrieval get_vectors_batch
-    spy_get_vector = mocker.spy(analyzer.embedding_manager, "get_vector")
+    # Spies on single retrieval get_document_vector vs batch retrieval get_vectors_batch
+    spy_get_doc_vector = mocker.spy(db, "get_document_vector")
     spy_get_vectors_batch = mocker.spy(analyzer.embedding_manager, "get_vectors_batch")
 
     # Force the semantic path by mocking is_mock and is_model_valid
@@ -469,10 +434,11 @@ def test_analyzer_no_n_plus_one_queries(mocker):
     # Generate plan
     plan = analyzer.generate_sorting_plan(base_dir)
 
-    # Assert that get_vector was NOT called during the similarity and pre-fetching phases!
+    # Assert that single-item get_document_vector was NOT called during similarity and pre-fetching phases!
     # Specifically, any retrievals of vector embeddings for active or historical docs
     # must go through get_vectors_batch.
-    assert spy_get_vector.call_count == 0
+    assert plan is not None
+    assert spy_get_doc_vector.call_count == 0
     assert spy_get_vectors_batch.call_count > 0
 
 
@@ -500,7 +466,6 @@ def test_prefetch_deferred_decryption_count(mocker):
     batch = pre_fetch_historical_corpus(
         db,
         base_dir=base_dir,
-        filenames=[],
         documents=[],
         pre_fetched_vectors=pre_fetched_vectors,
         max_examples=50,
@@ -534,7 +499,6 @@ def test_prefetch_small_batch_shortcut(mocker):
     batch = pre_fetch_historical_corpus(
         db,
         base_dir=base_dir,
-        filenames=[],
         documents=[],
         pre_fetched_vectors=None,
         max_examples=50,
@@ -570,7 +534,6 @@ def test_prefetch_corrupt_payload_handling(mocker):
     batch = pre_fetch_historical_corpus(
         db,
         base_dir=base_dir,
-        filenames=[],
         documents=[],
         pre_fetched_vectors=None,
         max_examples=50,
@@ -617,7 +580,6 @@ def test_prefetch_semantic_ranking_order(mocker):
     batch = pre_fetch_historical_corpus(
         db,
         base_dir=base_dir,
-        filenames=[],
         documents=[],
         pre_fetched_vectors=active_centroid,
         max_examples=50,
