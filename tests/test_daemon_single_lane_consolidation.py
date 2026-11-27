@@ -113,6 +113,11 @@ def test_external_watchdog_events_during_is_moving_enqueue_and_leave_zero_strand
 
         # Exiting scoped_move_phase on live _event_loop schedules reconciliation audit
         # instead of spawning _sorting_process or starting _debounce_timer.
+        # If a triage worker concurrently entered a nested scoped_move_phase on one of
+        # the enqueued items, wait briefly for _move_ref_count to reach 0.
+        settle_deadline = time.monotonic() + 5.0
+        while daemon.is_moving and time.monotonic() < settle_deadline:
+            time.sleep(0.01)
         assert daemon.pending_dirty is False
         assert daemon._sorting_process is None
         assert daemon._debounce_timer is None
@@ -195,6 +200,9 @@ def test_standalone_subprocess_entry_gates_on_folder_lock_and_exits_nonzero(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Standalone _run_sorting_process_entry gates behind FolderLock and exits non-zero on unhandled errors."""
+    import psutil
+
+    initial_nice = psutil.Process().nice()
     settings = _make_settings(tmp_path, monkeypatch)
     settings.KEYWORD_RULES = {"invoice": "Invoices"}
     settings._save()
@@ -223,9 +231,11 @@ def test_standalone_subprocess_entry_gates_on_folder_lock_and_exits_nonzero(
         assert crash_exc.value.code == 1
 
     # 3. Unlocked run succeeds under FolderLock without nested self-conflict
+    #    and preserves the pytest worker's scheduling priority.
     try:
         _run_sorting_process_entry(str(ws), str(settings._filepath))
         assert (ws / "Invoices" / "invoice_1.txt").is_file()
+        assert psutil.Process().nice() == initial_nice
     finally:
         clear_connection_cache(only_current_and_inactive=False)
 

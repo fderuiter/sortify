@@ -103,9 +103,10 @@ def inline_clustering(request, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def embedding_test_defaults(monkeypatch):
-    """Keep test threads at normal priority and skip model checks on stand-in models."""
-    from app.core import semantic_embeddings
+    """Keep test processes/threads at normal priority and skip model checks on stand-in models."""
+    from app.core import daemon, semantic_embeddings
 
+    monkeypatch.setattr(daemon, "LOWER_PROCESS_PRIORITY", False)
     monkeypatch.setattr(semantic_embeddings, "LOWER_THREAD_PRIORITY", False)
     monkeypatch.setattr(
         semantic_embeddings.SemanticEmbeddingManager, "validate_on_init", False
