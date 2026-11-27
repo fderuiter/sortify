@@ -1726,7 +1726,28 @@ class DropBatchCoordinator:
             raise NotADirectoryError(
                 f"Destination path '{dest_dir}' is not a directory."
             )
+        return self._plan_validated_batch(
+            validated_paths,
+            issues=issues,
+            resolved_dest=resolved_dest,
+            staged_roots=staged_roots,
+            conflict_policy=conflict_policy,
+            progress_callback=progress_callback,
+            cancel_check=cancel_check,
+        )
 
+    def _plan_validated_batch(
+        self,
+        validated_paths: list[str],
+        *,
+        issues: list[DropPathIssue] | None = None,
+        resolved_dest: str | None = None,
+        staged_roots: dict[str, str | None] | None = None,
+        conflict_policy: str | None = None,
+        progress_callback: Callable[[Any], None] | None = None,
+        cancel_check: Callable[[], bool] | None = None,
+    ) -> DropBatchPlan:
+        """Build a ``DropBatchPlan`` from already-validated drop paths and destination."""
         default_policy = str(
             conflict_policy
             or getattr(self.settings, "CONFLICT_POLICY", None)
@@ -1841,7 +1862,7 @@ class DropBatchCoordinator:
 
         batch_plan = DropBatchPlan(
             validated_paths=validated_paths,
-            issues=issues,
+            issues=list(issues) if issues is not None else [],
             resolved_dest=resolved_dest,
             groups=groups,
             conflict_policy=default_policy,

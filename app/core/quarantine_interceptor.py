@@ -521,12 +521,16 @@ class QuarantineInterceptorService:
             db_path = getattr(self.db, "db_path", None)
             worker = getattr(self.db, "worker", None)
             if db_path and worker and hasattr(worker, "execute_write"):
-                worker.execute_write(
-                    lambda: get_db_connection(db_path).execute(
-                        "DELETE FROM quarantine_records WHERE job_id = ?",
-                        (job_id,),
-                    )
-                )
+
+                def _delete_row() -> None:
+                    conn = get_db_connection(db_path)
+                    with conn:
+                        conn.execute(
+                            "DELETE FROM quarantine_records WHERE job_id = ?",
+                            (job_id,),
+                        )
+
+                worker.execute_write(_delete_row)
         except (OSError, ValueError, RuntimeError, AttributeError):
             logger.debug("Could not prune transient Phase 0 record %s", job_id)
 

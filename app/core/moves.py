@@ -976,11 +976,55 @@ class MoveLedger(LifecycleTelemetryMixin):
 
     def reconcile_incomplete_transactions(self, db: Any = None) -> int:
         """Resolve in-flight ``intent`` rows in ``moves`` by inspecting filesystem paths and hashes."""
+        from app.core.folder_lock import FolderBusyError, FolderLock, _lock_path
         from app.core.resilient_file_ops import (
             resilient_move,
             resilient_remove,
             same_file_content,
         )
+
+        locked_folder_cache: dict[str, bool] = {}
+
+        def _is_folder_locked(folder_path: str) -> bool:
+            if not folder_path:
+                return False
+            canon = os.path.normcase(os.path.realpath(os.path.abspath(folder_path)))
+            cached = locked_folder_cache.get(canon)
+            if cached is not None:
+                return cached
+            try:
+                lock_file = _lock_path(folder_path, None)
+                if not lock_file.exists():
+                    locked_folder_cache[canon] = False
+                    return False
+                with FolderLock(folder_path, timeout=0.0):
+                    locked_folder_cache[canon] = False
+                    return False
+            except FolderBusyError:
+                locked_folder_cache[canon] = True
+                return True
+            except OSError:
+                locked_folder_cache[canon] = False
+                return False
+
+        def _is_entry_locked(base_dir_val: str, src_path: str, dst_path: str) -> bool:
+            candidates: list[str] = []
+            if base_dir_val:
+                candidates.append(base_dir_val)
+            for p_raw in (src_path, dst_path):
+                if not p_raw:
+                    continue
+                curr = os.path.dirname(os.path.abspath(p_raw))
+                while curr:
+                    candidates.append(curr)
+                    parent = os.path.dirname(curr)
+                    if parent == curr:
+                        break
+                    curr = parent
+            for cand in candidates:
+                if _is_folder_locked(cand):
+                    return True
+            return False
 
         def _sha256_file(filepath: str) -> str:
             digest = hashlib.sha256()
@@ -1084,6 +1128,13 @@ class MoveLedger(LifecycleTelemetryMixin):
             dst_rel = entry["dest_rel_path"]
             displaced = entry.get("displaced")
             expected_hash = entry.get("file_hash") or None
+
+            if _is_entry_locked(base_dir, src, dst):
+                logger.debug(
+                    "Skipping reconciliation of in-flight move %s on locked folder.",
+                    entry_id,
+                )
+                continue
 
             src_exists = os.path.exists(src) or os.path.islink(src)
             dst_exists = os.path.exists(dst) or os.path.islink(dst)
