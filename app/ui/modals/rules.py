@@ -2019,7 +2019,7 @@ class RuleEditModal(ResponsiveModalScreen[dict | None]):
             if kind == "learned":
                 from app.core.metadata import matches_learned_rule_pattern
 
-                return matches_learned_rule_pattern(pattern, text_to_search)
+                return matches_learned_rule_pattern(pattern, filename_only)
             return pattern.lower() in text_to_search
 
     def _refresh_preview(self, announce_change: bool = False) -> None:
@@ -2939,21 +2939,25 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
 
     def _load_rules_data(self) -> list[dict]:
         """Aggregate active keyword rules, disabled keyword rules, learned rules, and policies with masking detection."""
-        from app.core.policy_engine import is_masked_by
+        from app.core.policy_engine import compute_active_rule_masking
 
+        masked_map = compute_active_rule_masking(self.settings)
         rules = []
         kw_rules = getattr(self.settings, "KEYWORD_RULES", {}) or {}
         for kw, target in sorted(kw_rules.items()):
+            masker = masked_map.get(("keyword", kw))
+            status_str = f"⚠ Masked by '{masker}'" if masker is not None else "Active"
             rules.append(
                 {
                     "kind": "keyword",
-                    "status": "Active",
+                    "status": status_str,
                     "enabled": True,
+                    "masked_by": masker,
                     "type": "keyword",
                     "action": "move",
                     "pattern": str(kw),
                     "target_folder": str(target),
-                    "priority": 0,
+                    "priority": 80,
                     "original_key": kw,
                 }
             )
@@ -2965,27 +2969,31 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
                     "kind": "keyword",
                     "status": "Disabled",
                     "enabled": False,
+                    "masked_by": None,
                     "type": "keyword",
                     "action": "move",
                     "pattern": str(kw),
                     "target_folder": str(target),
-                    "priority": 0,
+                    "priority": 80,
                     "original_key": kw,
                 }
             )
 
         learned_rules = getattr(self.settings, "LEARNED_RULES", {}) or {}
         for kw, target in sorted(learned_rules.items()):
+            masker = masked_map.get(("learned", kw))
+            status_str = f"⚠ Masked by '{masker}'" if masker is not None else "Active"
             rules.append(
                 {
                     "kind": "learned",
-                    "status": "Active",
+                    "status": status_str,
                     "enabled": True,
+                    "masked_by": masker,
                     "type": "learned",
                     "action": "move",
                     "pattern": str(kw),
                     "target_folder": str(target),
-                    "priority": 0,
+                    "priority": 90,
                     "original_key": kw,
                 }
             )
@@ -2997,39 +3005,21 @@ class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[bool]):
                     "kind": "learned",
                     "status": "Disabled",
                     "enabled": False,
+                    "masked_by": None,
                     "type": "learned",
                     "action": "move",
                     "pattern": str(kw),
                     "target_folder": str(target),
-                    "priority": 0,
+                    "priority": 90,
                     "original_key": kw,
                 }
             )
 
         policies = getattr(self.settings, "POLICIES", []) or []
-        enabled_indexed = [
-            (idx, pol)
-            for idx, pol in enumerate(policies)
-            if isinstance(pol, dict) and pol.get("enabled", True)
-        ]
-        enabled_sorted = sorted(
-            enabled_indexed,
-            key=lambda pair: pair[1].get("priority", 0),
-            reverse=True,
-        )
-        masked_by_idx: dict[int, str] = {}
-        for pos, (low_idx, low_pol) in enumerate(enabled_sorted):
-            for _high_idx, high_pol in enabled_sorted[:pos]:
-                if is_masked_by(high_pol, low_pol) or bool(
-                    high_pol.get("halting", False)
-                ):
-                    masked_by_idx[low_idx] = str(high_pol.get("expression", ""))
-                    break
-
         for idx, pol in enumerate(policies):
             if isinstance(pol, dict):
                 is_enabled = bool(pol.get("enabled", True))
-                masker = masked_by_idx.get(idx) if is_enabled else None
+                masker = masked_map.get(("policy", idx)) if is_enabled else None
                 if not is_enabled:
                     status_str = "Disabled"
                 elif masker is not None:

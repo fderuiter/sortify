@@ -37,8 +37,16 @@ from app.core.session import AppSession
 logger = logging.getLogger("app.daemon")
 
 
+# Background worker processes drop to lowest priority so sorting never starves
+# interactive desktop tasks. Tests turn this off when calling entry points
+# in-process because OS priority lowering cannot be undone by unprivileged processes.
+LOWER_PROCESS_PRIORITY = True
+
+
 def lower_process_priority() -> None:
     """Immediately lower the scheduling priority of the current process across Linux, macOS, and Windows upon startup."""
+    if not LOWER_PROCESS_PRIORITY:
+        return
     try:
         import psutil
 

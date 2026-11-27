@@ -124,6 +124,7 @@ class SamplePlaygroundModal(ResponsiveModalScreen[None]):
             margin-bottom: 0;
         }
         &.narrow .button-row Button {
+            margin-left: 0;
             min-width: 0;
             padding: 0 1;
         }

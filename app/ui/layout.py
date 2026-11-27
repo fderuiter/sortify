@@ -83,6 +83,47 @@ Button.hidden {
 class ModalBox(Vertical):
     """Modal outer container that forwards scroll helpers to an inner ``.modal-body``."""
 
+    _explicit_scroll_seq: int = 0
+
+    def _guard_explicit_scroll(
+        self,
+        targets: list[Widget],
+        reapply: Any,
+    ) -> None:
+        """Cancel stale deferred initial-focus animations that fire after an explicit un-animated scroll."""
+        self._explicit_scroll_seq += 1
+        seq = self._explicit_scroll_seq
+
+        def _make_checker(remaining: int) -> Any:
+            def _check_and_reapply() -> None:
+                if seq != self._explicit_scroll_seq or not self.is_mounted:
+                    return
+                animator = self.app.animator
+                animated = [
+                    t
+                    for t in targets
+                    if t.is_mounted
+                    and (
+                        animator.is_being_animated(t, "scroll_y")
+                        or animator.is_being_animated(t, "scroll_x")
+                    )
+                ]
+                if animated:
+                    for t in animated:
+                        t.scroll_to(
+                            x=t.scroll_x,
+                            y=t.scroll_y,
+                            animate=False,
+                            immediate=True,
+                        )
+                    reapply()
+                if remaining > 1:
+                    self.call_after_refresh(_make_checker(remaining - 1))
+
+            return _check_and_reapply
+
+        self.call_after_refresh(_make_checker(3))
+
     def _body_scroll_target(self, widget: Widget | None = None) -> Widget | None:
         """Return inner scrollable ``.modal-body`` when outer box itself does not scroll.
 
@@ -132,12 +173,25 @@ class ModalBox(Vertical):
         bool
             True if scrolling was scheduled or performed.
         """
-        if kwargs.get("animate") is False and "immediate" not in kwargs:
+        is_unanimated = kwargs.get("animate") is False
+        if is_unanimated and "immediate" not in kwargs:
             kwargs["immediate"] = True
         target = self._body_scroll_target(widget)
         if target is not None:
-            return target.scroll_to_widget(widget, *args, **kwargs)
-        return super().scroll_to_widget(widget, *args, **kwargs)
+            res = target.scroll_to_widget(widget, *args, **kwargs)
+            if is_unanimated:
+                self._guard_explicit_scroll(
+                    [target],
+                    lambda: target.scroll_to_widget(widget, *args, **kwargs),
+                )
+            return res
+        res = super().scroll_to_widget(widget, *args, **kwargs)
+        if is_unanimated:
+            self._guard_explicit_scroll(
+                [self],
+                lambda: ModalBox.scroll_to_widget(self, widget, *args, **kwargs),
+            )
+        return res
 
     def scroll_home(self, *args: Any, **kwargs: Any) -> None:
         """Scroll inner ``.modal-body`` to top when separated from pinned footer.
@@ -149,14 +203,27 @@ class ModalBox(Vertical):
         **kwargs : Any
             Keyword arguments forwarded to ``Widget.scroll_home``.
         """
-        if kwargs.get("animate") is False and "immediate" not in kwargs:
+        is_unanimated = kwargs.get("animate") is False
+        if is_unanimated and "immediate" not in kwargs:
             kwargs["immediate"] = True
         bodies = list(self.query(".modal-body"))
         if self.max_scroll_y <= 0 and bodies:
             for body in bodies:
                 body.scroll_home(*args, **kwargs)
+            if is_unanimated:
+                self._guard_explicit_scroll(
+                    bodies,
+                    lambda: [
+                        b.scroll_home(*args, **kwargs) for b in bodies if b.is_mounted
+                    ],
+                )
             return
         super().scroll_home(*args, **kwargs)
+        if is_unanimated:
+            self._guard_explicit_scroll(
+                [self],
+                lambda: Vertical.scroll_home(self, *args, **kwargs),
+            )
 
 
 class ResponsiveLayoutMixin:
