@@ -9,6 +9,7 @@ import time
 import uuid
 from collections.abc import Callable, Collection, Generator, Sequence
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,9 @@ from app.core.moves import (
 from app.core.path_utils import safe_relpath
 
 UNDO_BATCH_SIZE = 50
+_ACTIVE_RUNTIME_SETTINGS: ContextVar[Any] = ContextVar(
+    "_ACTIVE_RUNTIME_SETTINGS", default=None
+)
 
 # Valid session lifecycle statuses
 ACTIVE = "active"
@@ -658,7 +662,10 @@ class HistoryManager:
         return self._run_write(_write)
 
     def _start_session_internal(
-        self, base_dir: str, session_id: str | None = None
+        self,
+        base_dir: str,
+        session_id: str | None = None,
+        runtime_settings: Any = None,
     ) -> str:
         if not base_dir or not os.path.isdir(base_dir):
             raise OSError(f"Base directory does not exist: {base_dir}")
@@ -667,12 +674,20 @@ class HistoryManager:
         timestamp = time.time()
 
         policies = None
-        try:
-            from app.config import AppSettings
+        retention_days = None
+        settings_obj = runtime_settings
+        if settings_obj is None:
+            try:
+                from app.config import AppSettings
 
-            policies = getattr(AppSettings(), "RETENTION_POLICIES", None)
-        except Exception:
-            policies = None
+                settings_obj = AppSettings()
+            except Exception:
+                settings_obj = None
+        if settings_obj is not None:
+            policies = getattr(settings_obj, "RETENTION_POLICIES", None)
+            retention_days = getattr(settings_obj, "SNAPSHOT_RETENTION_DAYS", None)
+        if retention_days is None:
+            retention_days = 30
 
         conn = get_db_connection(self.db_path)
         with conn:
@@ -680,14 +695,21 @@ class HistoryManager:
                 "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, ?)",
                 (sid, timestamp, base_dir, ACTIVE),
             )
-            self._prune_snapshots(conn, policies=policies)
+            self._prune_snapshots(
+                conn, retention_days=retention_days, policies=policies
+            )
         return sid
 
     def start_session(self, base_dir: str, session_id: str | None = None) -> str:
         """Register a new sort session in ``sessions`` without walking ``base_dir``."""
+        active_settings = _ACTIVE_RUNTIME_SETTINGS.get()
 
         def _write() -> str:
-            return self._start_session_internal(base_dir, session_id=session_id)
+            return self._start_session_internal(
+                base_dir,
+                session_id=session_id,
+                runtime_settings=active_settings,
+            )
 
         return self.db.worker.execute_write(_write)
 

@@ -481,8 +481,10 @@ class MetadataPass:
             from app.core.db import DBWorker
 
             if isinstance(getattr(db, "worker", None), DBWorker):
-                with contextlib.suppress(RuntimeError, OSError):
-                    db.worker.execute_write(lambda: None)
+                worker_q = getattr(db.worker, "q", None)
+                if worker_q is None or getattr(worker_q, "unfinished_tasks", 1) > 0:
+                    with contextlib.suppress(RuntimeError, OSError):
+                        db.worker.execute_write(lambda: None)
 
         docs = db.get_all_documents(base_dir, source_dirs=source_dirs) if db else []
         doc_ratings = (
